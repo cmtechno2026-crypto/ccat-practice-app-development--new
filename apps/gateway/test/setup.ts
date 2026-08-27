@@ -42,7 +42,7 @@ export default async function () {
   await c.query(`insert into question_sets(id,grade_id,category_id,subcategory_id,name)
     values ('e0000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000005','b0000000-0000-0000-0000-000000000001','b1000000-0000-0000-0000-000000000001','Analogies 1')`);
   await c.query(`insert into question_set_versions(id,question_set_id,version_number,difficulty_id,question_count,allowed_practice,allowed_exam,state,published_at)
-    values ('e1000000-0000-0000-0000-000000000001','e0000000-0000-0000-0000-000000000001',1,'c0000000-0000-0000-0000-000000000001',5,true,true,'published',now())`);
+    values ('e1000000-0000-0000-0000-000000000001','e0000000-0000-0000-0000-000000000001',1,'c0000000-0000-0000-0000-000000000001',1,true,true,'published',now())`);
   await c.query(`insert into set_version_questions(set_version_id,question_version_id,position)
     values ('e1000000-0000-0000-0000-000000000001','d1000000-0000-0000-0000-000000000001',1)`);
   // Multi-correct ("pick all") fixture: a question whose correct set is {o1,o3}, in its own set.

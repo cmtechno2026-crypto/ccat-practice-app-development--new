@@ -5,12 +5,14 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { verifySecret, hashToken } from '../security/crypto.js';
 import { signToken, newRefreshToken } from '../security/token.js';
+import { withTransaction } from '../db.js';
 
 const loginSchema = z.object({
-  username: z.string(),
+  username: z.string().trim().toLowerCase(),
   pin: z.string().regex(/^\d{4}$/),
   device_hash: z.string(),
 });
+const refreshSchema = z.object({ refresh_token: z.string().min(32) });
 
 export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // Rate-limit login (all logins, preview included) so the public/guessable preview credentials
@@ -76,6 +78,35 @@ export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     );
     await db.query('update ccat.student_devices set last_seen_at = now() where id = $1', [enrolled.id]);
     return { access_token: access, refresh_token: refresh, expires_in: cfg.accessTokenTtlSeconds };
+  });
+
+  // Rotate the opaque refresh token and issue a new short-lived access token. The refresh token is
+  // never stored in plaintext; the session/device/student are revalidated on every rotation.
+  app.post('/v1/auth/refresh', { config: { rateLimit: { max: loginMax, timeWindow: '1 minute' } } }, async (req) => {
+    const body = refreshSchema.parse(req.body);
+    const presentedHash = hashToken(body.refresh_token);
+    const tokens = await withTransaction(db, async (c) => {
+      const r = await c.query(
+        `select a.id, a.student_id, a.device_id, a.expires_at, a.revoked_at,
+                s.status student_status, d.status device_status
+           from ccat.auth_sessions a
+           join ccat.students s on s.id=a.student_id
+           join ccat.student_devices d on d.id=a.device_id
+          where a.refresh_hash=$1 for update of a`, [presentedHash]);
+      if (r.rows.length === 0) throw Errors.unauthorized('Invalid refresh token');
+      const a = r.rows[0]!;
+      if (a.revoked_at || new Date(a.expires_at).getTime() <= Date.now()) throw Errors.unauthorized('Refresh session expired');
+      if (a.student_status !== 'active') throw Errors.forbidden('ACCOUNT_NOT_ACTIVE', `Account is ${a.student_status}`);
+      if (a.device_status !== 'active') throw Errors.deviceNotEnrolled();
+      const nextRefresh = newRefreshToken();
+      await c.query('update ccat.auth_sessions set refresh_hash=$2,last_used_at=now() where id=$1', [a.id, hashToken(nextRefresh)]);
+      const access = signToken(
+        { sub: a.student_id, did: a.device_id, sid: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds },
+        cfg.hmacSecret,
+      );
+      return { access_token: access, refresh_token: nextRefresh, expires_in: cfg.accessTokenTtlSeconds };
+    });
+    return tokens;
   });
 
   app.post('/v1/auth/logout', { preHandler: [app.authenticateStudent] }, async (req, reply) => {

@@ -21,6 +21,7 @@ export function StudentDetail() {
   const [purgeRef, setPurgeRef] = useState('');
   const [purgeErr, setPurgeErr] = useState('');
   const [purging, setPurging] = useState(false);
+  const [revealedGuardians, setRevealedGuardians] = useState<any[] | null>(null);
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox e={error} />;
@@ -51,6 +52,10 @@ export function StudentDetail() {
   const revoke = async () => { if (!confirm('Revoke this device and end the student\'s sessions?')) return; try { await api.revokeDevice(id!, 'admin console'); toast('Device revoked'); reload(); } catch (e) { toast((e as Error).message); } };
   const approveBg = async (reqId: string) => { try { await api.approveBreakGlass(id!, reqId); toast('Device enrolled — audited'); reload(); } catch (e) { toast((e as Error).message); } };
   const denyBg = async (reqId: string) => { try { await api.denyBreakGlass(id!, reqId); toast('Request denied'); reload(); } catch (e) { toast((e as Error).message); } };
+  const revealGuardian = async () => {
+    try { const r = await api.revealGuardian(id!); setRevealedGuardians(r.guardians); toast('Guardian contact revealed — action audited'); }
+    catch (e) { toast((e as Error).message); }
+  };
   const doAdjust = async () => {
     if (!form.reason.trim() || !form.reference.trim()) { setErr('Reason and reference required'); return; }
     try { await api.rewardAdjust(id!, form.kind, Number(form.delta), form.reason.trim(), form.reference.trim()); setAdjust(false); toast('Reward adjusted'); reload(); }
@@ -80,8 +85,8 @@ export function StudentDetail() {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <Panel title="Guardians">
-          {d.guardians.length === 0 ? <div className="muted">None on file.</div> : d.guardians.map((g: any, i: number) => (
+        <Panel title="Guardians" right={d.guardians.length ? <button className="btn ghost sm" onClick={revealGuardian}>{revealedGuardians ? 'Refresh revealed contact' : 'Reveal contact'}</button> : undefined}>
+          {(revealedGuardians ?? d.guardians).length === 0 ? <div className="muted">None on file.</div> : (revealedGuardians ?? d.guardians).map((g: any, i: number) => (
             <div key={i} className="kvs" style={{ marginBottom: 8 }}>
               <span className="k">Email</span><span>{g.email || '—'} {g.email_verified_at && <span className="tag">verified</span>}</span>
               <span className="k">Phone</span><span>{g.phone || '—'} {g.phone_verified_at && <span className="tag">verified</span>}</span>

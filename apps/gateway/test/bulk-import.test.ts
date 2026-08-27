@@ -77,6 +77,21 @@ describe('scoped bulk import', () => {
     expect(keys.every((k: any) => k.state === 'draft' && Array.isArray(k.correct_option_ids) && k.correct_option_ids.length >= 1)).toBe(true);
   });
 
+  it('is replay-safe: importing the same normalized rows again creates no duplicate records', async () => {
+    const rows = [
+      q(5, 'Verbal', 'Analogies', 'Easy', 'Replay-safe Q1'),
+      q(5, 'Verbal', 'Analogies', 'Easy', 'Replay-safe Q2'),
+    ];
+    const first = await j('POST', '/v1/admin/content/import', { token: su, body: { rows } });
+    expect(first.body.imported).toBe(2);
+    const second = await j('POST', '/v1/admin/content/import', { token: su, body: { rows } });
+    expect(second.status).toBe(200);
+    expect(second.body.imported).toBe(0);
+    expect(second.body.sets).toEqual([]);
+    expect(second.body.rejected).toHaveLength(2);
+    expect(second.body.rejected.every((x: any) => x.reasons.join(' ').match(/already imported/i))).toBe(true);
+  });
+
   it('rejects rows with unresolvable scope and imports the rest (reasons returned, nothing silent)', async () => {
     const rows = [
       q(5, 'Klingon', 'Analogies', 'Easy', 'bad battery'),

@@ -4,7 +4,7 @@ import { Modal, useToast } from './ui';
 
 // Create or edit a DRAFT question. Builds the block-based prompt/option/explanation payloads the
 // Gateway expects, supports an optional prompt image (uploaded via the storage service), and
-// enforces 2–5 options with at least one correct answer before saving.
+// enforces 2–6 options with at least one correct answer before saving.
 interface Props {
   taxonomy: any;
   editing?: any | null; // question detail when editing a draft
@@ -47,6 +47,7 @@ export function QuestionEditor({ taxonomy, editing, onClose, onSaved }: Props) {
     }
     return [{ option_id: 'a', text: '', correct: true }, { option_id: 'b', text: '', correct: false }, { option_id: 'c', text: '', correct: false }, { option_id: 'd', text: '', correct: false }];
   });
+  const [multi, setMulti] = useState(() => (editing?.correct_option_ids?.length ?? 0) > 1 || editing?.question_type === 'multi_select');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -56,7 +57,8 @@ export function QuestionEditor({ taxonomy, editing, onClose, onSaved }: Props) {
 
   const setOpt = (i: number, patch: Partial<Opt>) => setOpts(o => o.map((x, j) => j === i ? { ...x, ...patch } : x));
   const markCorrect = (i: number) => setOpts(o => o.map((x, j) => ({ ...x, correct: j === i })));
-  const addOpt = () => { if (opts.length >= 5) return; const id = 'abcde'[opts.length]; setOpts(o => [...o, { option_id: id, text: '', correct: false }]); };
+  const toggleCorrect = (i: number) => setOpts(o => o.map((x, j) => j === i ? { ...x, correct: !x.correct } : x));
+  const addOpt = () => { if (opts.length >= 6) return; const id = 'abcdef'[opts.length]; setOpts(o => [...o, { option_id: id, text: '', correct: false }]); };
   const rmOpt = (i: number) => { if (opts.length <= 2) return; setOpts(o => o.filter((_, j) => j !== i)); };
 
   const pickImage = async (f: File) => {
@@ -135,15 +137,21 @@ export function QuestionEditor({ taxonomy, editing, onClose, onSaved }: Props) {
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) pickImage(f); }} />
         </div>
 
-        <label style={{ marginTop: 14 }}>Options — mark the correct one</label>
+        <div className="rowactions" style={{ marginTop: 14, justifyContent: 'space-between' }}>
+          <label style={{ margin: 0 }}>Options — mark {multi ? 'all correct answers' : 'the correct answer'}</label>
+          <label className="muted" style={{ margin: 0, fontSize: 12.5 }}><input type="checkbox" checked={multi} onChange={e => {
+            const on = e.target.checked; setMulti(on);
+            if (!on) setOpts(o => o.map((x, j) => ({ ...x, correct: j === Math.max(0, o.findIndex(y => y.correct)) })));
+          }} style={{ width: 'auto', marginRight: 6 }} />Multiple correct</label>
+        </div>
         {opts.map((o, i) => (
           <div className="opt" key={i}>
-            <label className="mark"><input type="radio" name="correct" checked={o.correct} onChange={() => markCorrect(i)} style={{ width: 'auto' }} /> {o.option_id.toUpperCase()}</label>
+            <label className="mark"><input type={multi ? 'checkbox' : 'radio'} name="correct" checked={o.correct} onChange={() => multi ? toggleCorrect(i) : markCorrect(i)} style={{ width: 'auto' }} /> {o.option_id.toUpperCase()}</label>
             <input type="text" value={o.text} onChange={e => setOpt(i, { text: e.target.value })} placeholder={`Option ${o.option_id.toUpperCase()}`} />
             {opts.length > 2 && <button className="rm" onClick={() => rmOpt(i)} title="Remove">✕</button>}
           </div>
         ))}
-        {opts.length < 5 && <button className="btn ghost sm" onClick={addOpt}>+ Add option</button>}
+        {opts.length < 6 && <button className="btn ghost sm" onClick={addOpt}>+ Add option</button>}
 
         <label style={{ marginTop: 14 }}>Explanation (optional)</label>
         <textarea rows={2} value={explanation} onChange={e => setExplanation(e.target.value)} placeholder="Why the answer is correct — shown after review." />

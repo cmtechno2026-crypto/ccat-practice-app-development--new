@@ -8,6 +8,7 @@ import { verifySecret } from '../security/crypto.js';
 import { signAdminToken } from '../security/token.js';
 import { makeAuthenticateAdmin, loadAdminPermissions, requirePermission } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
+import { maskEmail, maskPhone } from '../lib/pii.js';
 
 // Audit event categories (mockup: Content / Student accounts / Economy / Governance). Each maps to
 // a set of event_type prefixes; used for the category filter chips and the colored row grouping.
@@ -164,7 +165,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
         return {
           id: r.id, display_name: r.display_name, username: r.username, status: r.status, display_status,
           version: r.version, grade_number: r.grade_number, age_years: deriveAgeYears(r.birth_month, r.birth_year),
-          guardian_email: r.guardian_email, guardian_phone: r.guardian_phone, guardian_name: r.guardian_name ?? null,
+          guardian_email: maskEmail(r.guardian_email), guardian_phone: maskPhone(r.guardian_phone), guardian_name: r.guardian_name ?? null,
           xp_total: Number(r.cached_xp_total), coins: Number(r.cached_coin_balance),
           readiness_pct: r.readiness_pct === null ? null : Number(r.readiness_pct),
           readiness_band: r.readiness_band ?? null, readiness_insufficient: r.insufficient_data ?? false,

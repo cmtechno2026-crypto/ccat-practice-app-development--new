@@ -30,13 +30,13 @@ const consentSchema = z.object({
 });
 const studentSchema = z.object({
   registration_grant: z.string(),
-  display_name: z.string().min(1),
-  username: z.string().min(3).max(40),
+  display_name: z.string().trim().min(1).max(80),
+  username: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_.-]{2,39}$/, 'Username may contain letters, numbers, dots, underscores and hyphens'),
   grade_id: z.string().uuid(),
   birth_month: z.number().int().min(1).max(12),
   birth_year: z.number().int().min(1990).max(2100),
   pin: z.string().regex(/^\d{4}$/),
-  device_hash: z.string().min(3),
+  device_hash: z.string().min(3).max(200),
   referral_code: z.string().trim().min(4).max(16).optional(), // optional invite code (Gate 2B)
 });
 

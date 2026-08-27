@@ -21,6 +21,9 @@ export function Questions() {
   const { can } = useAuth();
   const toast = useToast();
   const [state, setState] = useState('');
+  const [search, setSearch] = useState('');
+  const [gradeId, setGradeId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<any>(null);
@@ -32,10 +35,10 @@ export function Questions() {
 
   const load = async () => {
     setLoading(true); setError(null);
-    try { const r = await api.questions(state ? { state } : {}); setItems(r.items); }
+    try { const r = await api.questions({ state: state || undefined, search: search.trim() || undefined, grade_id: gradeId || undefined, category_id: categoryId || undefined }); setItems(r.items); }
     catch (e) { setError(e); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [state]); // eslint-disable-line
+  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [state, search, gradeId, categoryId]); // eslint-disable-line
   useEffect(() => { api.taxonomy().then(setTaxonomy).catch(() => {}); }, []);
 
   const act = async (fn: () => Promise<any>, msg: string) => {
@@ -43,6 +46,14 @@ export function Questions() {
   };
   const openEdit = async (id: string) => { const d = await api.question(id); setEditing(d); };
   const openHistory = async (id: string) => { const r = await api.questionVersions(id); setHistory(r.items); };
+  const revise = async (id: string) => {
+    try { const r = await api.reviseQuestion(id); await openEdit(r.id); toast('New editable version created'); load(); }
+    catch (e) { toast((e as Error).message); }
+  };
+  const removeDraft = async (id: string) => {
+    if (!confirm('Delete this unreferenced draft question? This cannot be undone.')) return;
+    await act(() => api.deleteQuestion(id), 'Draft deleted');
+  };
 
   return (
     <div>
@@ -60,6 +71,17 @@ export function Questions() {
       <div className="filterchips">
         {STATES.map(s => <button key={s.key} className={`chipbtn ${state === s.key ? 'on' : ''}`} onClick={() => setState(s.key)}>{s.label}</button>)}
       </div>
+      <div className="panel" style={{ padding: 12, marginBottom: 12 }}>
+        <div className="rowactions" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search question text or type…" style={{ minWidth: 260, flex: 1 }} />
+          <select value={gradeId} onChange={e => setGradeId(e.target.value)} style={{ width: 150 }}>
+            <option value="">All grades</option>{(taxonomy?.grades ?? []).map((g: any) => <option key={g.id} value={g.id}>Grade {g.grade_number}</option>)}
+          </select>
+          <select value={categoryId} onChange={e => setCategoryId(e.target.value)} style={{ width: 210 }}>
+            <option value="">All categories</option>{(taxonomy?.categories ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      </div>
 
       {error ? <ErrorBox e={error} /> : (
         <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
@@ -74,10 +96,12 @@ export function Questions() {
                 <td><span className={`pill dotted s-${q.state}`} style={{ textTransform: 'none' }}>{STATE_LABEL[q.state] || q.state}</span></td>
                 <td><div className="rowactions">
                   {q.state === 'draft' && can('content.create') && <button className="btn ghost sm" onClick={() => openEdit(q.id)}>Edit</button>}
+                  {q.state === 'draft' && can('content.edit') && <button className="btn warn sm" onClick={() => removeDraft(q.id)}>Delete</button>}
                   {q.state === 'draft' && can('content.review') && <button className="btn green sm" onClick={() => act(() => api.reviewQuestion(q.id, 'approved'), 'Approved')}>Approve</button>}
                   {q.state === 'approved' && can('content.review') && <button className="btn ghost sm" onClick={() => act(() => api.reviewQuestion(q.id, 'changes_requested'), 'Sent back to draft')}>Request changes</button>}
                   {q.state === 'approved' && can('content.publish') && <button className="btn sm" onClick={() => act(() => api.publishQuestion(q.id), 'Published')}>Publish</button>}
                   {q.state === 'published' && can('content.retire') && <button className="btn warn sm" onClick={() => act(() => api.retireQuestion(q.id), 'Retired')}>Retire</button>}
+                  {q.state !== 'draft' && can('content.edit') && <button className="btn ghost sm" onClick={() => revise(q.id)}>Revise</button>}
                   <button className="btn ghost sm" onClick={() => openHistory(q.id)}>History</button>
                 </div></td>
               </tr>

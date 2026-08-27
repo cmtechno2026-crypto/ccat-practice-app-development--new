@@ -1,0 +1,55 @@
+name: Core platform CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/admin/**'
+      - 'apps/web/**'
+      - 'apps/gateway/**'
+      - 'packages/api-client/**'
+      - 'packages/contracts/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/core-ci.yml'
+  push:
+    branches: [master]
+
+jobs:
+  verify-core:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ADMIN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/ccat_test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/ccat_test
+      GATEWAY_HMAC_SECRET: ci-only-gateway-secret
+      PIN_PEPPER: dev-pepper
+      NODE_ENV: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ccat/api-client typecheck
+      - run: pnpm --filter @ccat/gateway typecheck
+      - run: pnpm --filter @ccat/gateway test
+      - run: pnpm --filter @ccat/admin build
+      - run: pnpm --filter @ccat/web build

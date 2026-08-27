@@ -6,6 +6,7 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
+import { maskEmail, maskPhone } from '../lib/pii.js';
 
 // Shared break-glass enrollment: revoke any active device + live sessions, then enroll the new device
 // as the sole active one. Runs inside a caller-provided transaction so approve/direct share one path.
@@ -56,11 +57,25 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
       grade_number: st.grade_number, grade_name: st.grade_name, status: st.status, version: st.version,
       age_years: deriveAgeYears(st.birth_month, st.birth_year), birth_month: st.birth_month, birth_year: st.birth_year,
       timezone: st.timezone, xp_total: Number(st.cached_xp_total), coins: Number(st.cached_coin_balance),
-      guardians: guardians.rows, devices: devices.rows, status_history: history.rows,
+      guardians: guardians.rows.map(g => ({ ...g, email: maskEmail(g.email), phone: maskPhone(g.phone), masked: true })), devices: devices.rows, status_history: history.rows,
       readiness: readiness.rows[0] ?? null, progress: progress.rows[0] ?? null,
       recent_sessions: sessions.rows, consents: consents.rows, streak,
       break_glass_requests: breakGlass.rows,
     };
+  });
+
+  // Guardian contact details are masked in normal directory/detail responses. A deliberate reveal is
+  // permission-checked and audited; no privileged data is ever sent to the student frontend.
+  app.get('/v1/admin/students/:id/guardian-contact', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    const r = await db.query(
+      `select gc.name, gc.email, gc.phone, sg.relationship, sg.is_primary
+         from ccat.student_guardians sg join ccat.guardian_contacts gc on gc.id=sg.guardian_id
+        where sg.student_id=$1 order by sg.is_primary desc`, [id]);
+    if (r.rows.length === 0) throw Errors.notFound('Guardian contact not found');
+    await auditLog(db, req.admin!.adminId, 'student.guardian_contact.revealed', 'student', id, null);
+    return { guardians: r.rows };
   });
 
   // Break-glass device enrollment (§5.2) — bypasses guardian OTP, so it needs a Super-Admin signature.

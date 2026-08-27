@@ -33,7 +33,12 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
          join ccat.categories cat on cat.id = qs.category_id
          join ccat.subcategories sub on sub.id = qs.subcategory_id
          join ccat.question_set_versions sv on sv.question_set_id = qs.id and sv.state = 'published'
-          and exists (select 1 from ccat.set_version_questions svq where svq.set_version_id = sv.id and svq.active = true)
+          and sv.question_count = (
+            select count(*)::int from ccat.set_version_questions svq
+            join ccat.question_versions qv on qv.id=svq.question_version_id
+            where svq.set_version_id=sv.id and svq.active=true and qv.state='published'
+          )
+          and sv.question_count > 0
          left join ccat.difficulties d on d.id = sv.difficulty_id
          left join lateral (
             select ss.id as session_id, ss.state, ss.mode,

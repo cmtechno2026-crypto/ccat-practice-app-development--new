@@ -213,11 +213,14 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     const id = (req.params as any).id;
     const qid = (req.params as any).qid;
     const b = z.object({ active: z.boolean() }).parse(req.body ?? {});
-    const sv = await db.query('select state from ccat.question_set_versions where id=$1', [id]);
-    if (sv.rows.length === 0) throw Errors.notFound('Set not found');
-    if (sv.rows[0]!.state !== 'draft') throw Errors.validation('Only draft sets can change question activation');
-    const r = await db.query('update ccat.set_version_questions set active=$3 where set_version_id=$1 and question_version_id=$2 returning question_version_id', [id, qid, b.active]);
-    if (r.rows.length === 0) throw Errors.notFound('Question is not a member of this set');
+    await withTransaction(db, async (c) => {
+      const sv = await c.query('select state from ccat.question_set_versions where id=$1 for update', [id]);
+      if (sv.rows.length === 0) throw Errors.notFound('Set not found');
+      if (sv.rows[0]!.state !== 'draft') throw Errors.validation('Only draft sets can change question activation');
+      const r = await c.query('update ccat.set_version_questions set active=$3 where set_version_id=$1 and question_version_id=$2 returning question_version_id', [id, qid, b.active]);
+      if (r.rows.length === 0) throw Errors.notFound('Question is not a member of this set');
+      await c.query(`update ccat.question_set_versions set question_count=(select count(*) from ccat.set_version_questions where set_version_id=$1 and active=true) where id=$1`, [id]);
+    });
     await audit(db, req, 'content.set.question.active', 'set_version', id, b.active ? 'activated' : 'deactivated');
     return { id: qid, active: b.active };
   });
@@ -227,24 +230,25 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     requirePermission(req, 'content.create');
     const id = (req.params as any).id;
     const b = membershipSchema.parse(req.body);
-    const cur = await db.query('select state from ccat.question_set_versions where id=$1', [id]);
-    if (cur.rows.length === 0) throw Errors.notFound('Set not found');
-    if (cur.rows[0]!.state !== 'draft') throw Errors.validation('Only draft sets can change membership');
-    await withTransaction(db, async (c) => {
+    const questionCount = await withTransaction(db, async (c) => {
+      const cur = await c.query('select state from ccat.question_set_versions where id=$1 for update', [id]);
+      if (cur.rows.length === 0) throw Errors.notFound('Set not found');
+      if (cur.rows[0]!.state !== 'draft') throw Errors.validation('Only draft sets can change membership');
+      if (new Set(b.question_version_ids).size !== b.question_version_ids.length) throw Errors.validation('A question can appear only once in a set');
       // Preserve per-question active flags across a membership edit: a question toggled inactive must
       // stay inactive when another question is added/removed (the mockup keeps that state).
       const prev = await c.query('select question_version_id from ccat.set_version_questions where set_version_id=$1 and active=false', [id]);
       const inactive = new Set(prev.rows.map((r) => r.question_version_id as string));
-      // update count first so the hard bound is satisfied before rows change
-      await c.query('update ccat.question_set_versions set question_count=$2 where id=$1', [id, b.question_version_ids.length]);
       await c.query('delete from ccat.set_version_questions where set_version_id=$1', [id]);
       let pos = 1;
       for (const qvid of b.question_version_ids) {
         await c.query('insert into ccat.set_version_questions(set_version_id, question_version_id, position, active) values ($1,$2,$3,$4)', [id, qvid, pos++, !inactive.has(qvid)]);
       }
+      const n = await c.query(`update ccat.question_set_versions set question_count=(select count(*) from ccat.set_version_questions where set_version_id=$1 and active=true) where id=$1 returning question_count`, [id]);
+      return n.rows[0]!.question_count as number;
     });
     await audit(db, req, 'content.set.membership', 'set_version', id, `${b.question_version_ids.length} questions`);
-    return { question_count: b.question_version_ids.length };
+    return { question_count: questionCount };
   });
 
   // ---- Google-Forms-style batch authoring (CONTENT editor) --------------------------------------
@@ -280,6 +284,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     // Structural validation per card: the answer key must reference existing option ids.
     for (const q of b.questions) {
       const ids = new Set(q.option_blocks.map((o) => o.option_id));
+      if (ids.size !== q.option_blocks.length) throw Errors.validation('Option ids must be unique on each card');
       if (!q.correct_option_ids.every((cid) => ids.has(cid))) throw Errors.validation('correct_option_ids must reference option ids on the same card');
     }
     const out = await withTransaction(db, async (c) => {
@@ -287,9 +292,14 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
       for (const q of b.questions) {
         let qvId = q.id;
         if (qvId) {
-          const cur = await c.query('select state from ccat.question_versions where id=$1', [qvId]);
+          const cur = await c.query(
+            `select qv.state, lq.category_id, lq.subcategory_id
+               from ccat.question_versions qv join ccat.logical_questions lq on lq.id=qv.logical_question_id
+              where qv.id=$1`, [qvId]);
           if (cur.rows.length === 0) throw Errors.notFound('Question not found');
           if (cur.rows[0]!.state !== 'draft') throw Errors.validation('Only draft questions can be edited; a published version is immutable (create a new version).');
+          if (cur.rows[0]!.category_id !== q.category_id || cur.rows[0]!.subcategory_id !== q.subcategory_id)
+            throw Errors.validation('An existing question cannot change category scope; create a new question instead');
           await c.query(`update ccat.question_versions set grade_id=$2,difficulty_id=$3,question_type=$4,prompt_blocks=$5,option_blocks=$6,correct_option_ids=$7,explanation_blocks=$8 where id=$1`,
             [qvId, q.grade_id, q.difficulty_id, q.question_type, JSON.stringify(q.prompt_blocks), JSON.stringify(q.option_blocks), q.correct_option_ids, q.explanation_blocks ? JSON.stringify(q.explanation_blocks) : null]);
         } else {
@@ -312,12 +322,13 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
         keepIds = existing.rows.map((r) => r.id as string); keepActive = existing.rows.map((r) => r.active as boolean);
       }
       const finalIds = [...keepIds, ...authored]; const finalActive = [...keepActive, ...authoredActive];
-      await c.query('update ccat.question_set_versions set question_count=$2 where id=$1', [id, finalIds.length]);
       await c.query('delete from ccat.set_version_questions where set_version_id=$1', [id]);
       let pos = 1;
       for (let i = 0; i < finalIds.length; i++)
         await c.query('insert into ccat.set_version_questions(set_version_id,question_version_id,position,active) values ($1,$2,$3,$4)', [id, finalIds[i], pos++, finalActive[i]]);
-      return { authored, count: finalIds.length };
+      const activeCount = finalActive.filter(Boolean).length;
+      await c.query('update ccat.question_set_versions set question_count=$2 where id=$1', [id, activeCount]);
+      return { authored, count: activeCount };
     });
     await audit(db, req, 'content.set.authored', 'set_version', id, `${b.questions.length} card(s), ${out.count} total`);
     return { set_version_id: id, question_version_ids: out.authored, question_count: out.count };
@@ -357,9 +368,10 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     const subs = (await db.query(`select id, category_id, lower(key) key, lower(name) name from ccat.subcategories where active`)).rows as any[];
     const diffs = (await db.query(`select id, lower(key) key, lower(name) name from ccat.difficulties`)).rows as any[];
 
-    type Ready = { grade: any; cat: any; sub: any; diff: any; row: any; filled: { text: string; correct: boolean }[] };
+    type Ready = { grade: any; cat: any; sub: any; diff: any; row: any; filled: { text: string; correct: boolean }[]; fingerprint: string };
     const rejected: { index: number; reasons: string[] }[] = [];
-    const ready: Ready[] = [];
+    let ready: Ready[] = [];
+    const seenFingerprints = new Set<string>();
     b.rows.forEach((row, index) => {
       const reasons: string[] = [];
       const gnum = Number(String(row.grade).replace(/[^0-9]/g, ''));
@@ -375,9 +387,32 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
       if (!row.stem.trim()) reasons.push('missing stem');
       if (filled.length < 2) reasons.push('needs ≥2 options');
       if (!filled.some(o => o.correct)) reasons.push('needs a correct answer');
+      const fingerprint = createHash('sha256').update(JSON.stringify({
+        grade: grade?.id, category: cat?.id, subcategory: sub?.id, difficulty: diff?.id,
+        stem: norm(row.stem), options: filled.map(o => ({ text: norm(o.text), correct: o.correct })),
+        explanation: norm(row.explanation ?? ''), question_type: norm(row.question_type ?? ''),
+      })).digest('hex');
+      if (!reasons.length && seenFingerprints.has(fingerprint)) reasons.push('duplicate row in this import');
       if (reasons.length) rejected.push({ index, reasons });
-      else ready.push({ grade, cat, sub, diff, row, filled });
+      else { seenFingerprints.add(fingerprint); ready.push({ grade, cat, sub, diff, row, filled, fingerprint }); }
     });
+
+    // Replaying the same file is safe: previously imported fingerprints are rejected rather than
+    // creating duplicate questions/sets. The provenance stays in PostgreSQL with the content.
+    if (ready.length) {
+      const existing = await db.query(
+        `select provenance->>'import_fingerprint' fingerprint from ccat.question_versions
+          where provenance->>'import_fingerprint'=any($1::text[])`, [ready.map(r => r.fingerprint)]);
+      const old = new Set(existing.rows.map(r => r.fingerprint as string));
+      if (old.size) {
+        const keep: Ready[] = [];
+        for (const r of ready) {
+          if (old.has(r.fingerprint)) rejected.push({ index: b.rows.indexOf(r.row), reasons: ['question was already imported'] });
+          else keep.push(r);
+        }
+        ready = keep;
+      }
+    }
 
     // Group ready rows by resolved scope.
     const groups = new Map<string, Ready[]>();
@@ -416,7 +451,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
                JSON.stringify([{ type: 'text', value: r.row.stem.trim() }]),
                JSON.stringify(optionBlocks), correct,
                r.row.explanation?.trim() ? JSON.stringify([{ type: 'text', value: r.row.explanation.trim() }]) : null,
-               JSON.stringify({ origin: 'human', via: 'bulk_import' }), req.admin!.adminId]);
+               JSON.stringify({ origin: 'human', via: 'bulk_import', import_fingerprint: r.fingerprint }), req.admin!.adminId]);
             await c.query('insert into ccat.set_version_questions(set_version_id,question_version_id,position,active) values ($1,$2,$3,true)', [setVersionId, qv.rows[0]!.id, ++pos]);
             imported++;
           }

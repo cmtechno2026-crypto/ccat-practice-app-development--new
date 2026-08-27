@@ -39,12 +39,14 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
   // Questions list (filter by state / grade / category)
   app.get('/v1/admin/content/questions', guard, async (req) => {
     requirePermission(req, 'content.create');
-    const q = req.query as { state?: string; grade_id?: string; category_id?: string; limit?: string };
-    const limit = Math.min(Number(q.limit ?? 100), 200);
+    const q = req.query as { state?: string; grade_id?: string; category_id?: string; search?: string; limit?: string; cursor?: string };
+    const limit = Math.min(Math.max(Number(q.limit ?? 100), 1), 200);
+    const offset = Math.max(Number(q.cursor ?? 0), 0);
+    const search = q.search?.trim() ? `%${q.search.trim()}%` : null;
     const rows = await db.query(
       `select qv.id, qv.question_type, qv.state, qv.version_number, qv.published_at, qv.created_at,
               qv.prompt_blocks, cat.name category, cat.key category_key, sub.name subcategory, d.key difficulty, g.grade_number,
-              (qv.provenance->>'origin') origin
+              (qv.provenance->>'origin') origin, count(*) over()::int matched
          from ccat.question_versions qv
          join ccat.logical_questions lq on lq.id = qv.logical_question_id
          join ccat.categories cat on cat.id = lq.category_id
@@ -54,10 +56,17 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         where ($1::text is null or qv.state::text = $1)
           and ($2::uuid is null or qv.grade_id = $2)
           and ($3::uuid is null or lq.category_id = $3)
-        order by qv.created_at desc limit $4`,
-      [q.state ?? null, q.grade_id ?? null, q.category_id ?? null, limit],
+          and ($4::text is null or qv.question_type ilike $4 or cat.name ilike $4 or sub.name ilike $4
+               or qv.prompt_blocks::text ilike $4)
+        order by qv.created_at desc limit $5 offset $6`,
+      [q.state ?? null, q.grade_id ?? null, q.category_id ?? null, search, limit, offset],
     );
-    return { items: rows.rows.map(r => ({ ...r, preview: preview(r.prompt_blocks) })) };
+    const matched = rows.rows[0]?.matched ?? 0;
+    return {
+      matched,
+      items: rows.rows.map(({ matched: _matched, ...r }) => ({ ...r, preview: preview(r.prompt_blocks) })),
+      next_cursor: rows.rows.length === limit ? String(offset + limit) : null,
+    };
   });
 
   app.get('/v1/admin/content/questions/:id', guard, async (req) => {
@@ -83,15 +92,63 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     const b = createQuestionSchema.parse(req.body);
     // structural validation (schema §17): correct ids must exist among options
     const optIds = new Set(b.option_blocks.map(o => o.option_id));
+    if (optIds.size !== b.option_blocks.length) throw Errors.validation('Option ids must be unique');
     if (!b.correct_option_ids.every(c => optIds.has(c))) throw Errors.validation('correct_option_ids must reference option ids');
-    const lq = await db.query('insert into ccat.logical_questions(category_id,subcategory_id,created_by) values ($1,$2,$3) returning id',
-      [b.category_id, b.subcategory_id, req.admin!.adminId]);
-    const qv = await db.query(
-      `insert into ccat.question_versions(logical_question_id,version_number,grade_id,difficulty_id,question_type,prompt_blocks,option_blocks,correct_option_ids,explanation_blocks,state,provenance,created_by)
-       values ($1,1,$2,$3,$4,$5,$6,$7,$8,'draft',$9,$10) returning id`,
-      [lq.rows[0]!.id, b.grade_id, b.difficulty_id, b.question_type, JSON.stringify(b.prompt_blocks), JSON.stringify(b.option_blocks), b.correct_option_ids, b.explanation_blocks ? JSON.stringify(b.explanation_blocks) : null, JSON.stringify({ origin: 'human' }), req.admin!.adminId]);
-    await audit(db, req, 'content.question.created', 'question_version', qv.rows[0]!.id, b.question_type);
-    return { id: qv.rows[0]!.id, state: 'draft' };
+    const id = await withTransaction(db, async (c) => {
+      const scope = await c.query('select 1 from ccat.subcategories where id=$1 and category_id=$2 and active=true', [b.subcategory_id, b.category_id]);
+      if (scope.rows.length === 0) throw Errors.validation('Subcategory does not belong to the selected category');
+      const lq = await c.query('insert into ccat.logical_questions(category_id,subcategory_id,created_by) values ($1,$2,$3) returning id',
+        [b.category_id, b.subcategory_id, req.admin!.adminId]);
+      const qv = await c.query(
+        `insert into ccat.question_versions(logical_question_id,version_number,grade_id,difficulty_id,question_type,prompt_blocks,option_blocks,correct_option_ids,explanation_blocks,state,provenance,created_by)
+         values ($1,1,$2,$3,$4,$5,$6,$7,$8,'draft',$9,$10) returning id`,
+        [lq.rows[0]!.id, b.grade_id, b.difficulty_id, b.question_type, JSON.stringify(b.prompt_blocks), JSON.stringify(b.option_blocks), b.correct_option_ids, b.explanation_blocks ? JSON.stringify(b.explanation_blocks) : null, JSON.stringify({ origin: 'human' }), req.admin!.adminId]);
+      return qv.rows[0]!.id as string;
+    });
+    await audit(db, req, 'content.question.created', 'question_version', id, b.question_type);
+    return { id, state: 'draft' };
+  });
+
+  // Create the next editable version of an immutable question. Published sets keep their pinned
+  // version; an admin deliberately places this new draft into a copied/new set before publishing it.
+  app.post('/v1/admin/content/questions/:id/revise', guard, async (req) => {
+    requirePermission(req, 'content.edit');
+    const sourceId = (req.params as any).id;
+    const id = await withTransaction(db, async (c) => {
+      const src = await c.query('select * from ccat.question_versions where id=$1 for update', [sourceId]);
+      if (src.rows.length === 0) throw Errors.notFound('Question not found');
+      if (src.rows[0]!.state === 'draft') throw Errors.conflict('BAD_STATE', 'This question is already an editable draft');
+      const next = await c.query('select coalesce(max(version_number),0)+1::int n from ccat.question_versions where logical_question_id=$1', [src.rows[0]!.logical_question_id]);
+      const r = await c.query(
+        `insert into ccat.question_versions(logical_question_id,version_number,grade_id,difficulty_id,question_type,prompt_blocks,option_blocks,correct_option_ids,explanation_blocks,accessibility,state,provenance,created_by)
+         select logical_question_id,$2,grade_id,difficulty_id,question_type,prompt_blocks,option_blocks,correct_option_ids,explanation_blocks,accessibility,'draft',
+                coalesce(provenance,'{}'::jsonb) || jsonb_build_object('revised_from',$1::text,'origin','human'),$3
+           from ccat.question_versions where id=$1 returning id`,
+        [sourceId, next.rows[0]!.n, req.admin!.adminId],
+      );
+      return r.rows[0]!.id as string;
+    });
+    await audit(db, req, 'content.question.revised', 'question_version', id, `from ${sourceId}`);
+    return { id, state: 'draft' };
+  });
+
+  // Drafts may be deleted only while unreferenced. Published history is retired, never deleted.
+  app.delete('/v1/admin/content/questions/:id', guard, async (req) => {
+    requirePermission(req, 'content.edit');
+    const id = (req.params as any).id;
+    await withTransaction(db, async (c) => {
+      const cur = await c.query('select state, logical_question_id from ccat.question_versions where id=$1 for update', [id]);
+      if (cur.rows.length === 0) throw Errors.notFound('Question not found');
+      if (cur.rows[0]!.state !== 'draft') throw Errors.conflict('BAD_STATE', 'Only unreferenced drafts can be deleted; published questions are retired');
+      const refs = await c.query('select 1 from ccat.set_version_questions where question_version_id=$1 limit 1', [id]);
+      if (refs.rows.length) throw Errors.conflict('QUESTION_IN_SET', 'Remove the question from its draft set before deleting it');
+      await c.query('delete from ccat.content_reviews where target_kind=\'question_version\' and target_id=$1', [id]);
+      await c.query('delete from ccat.question_versions where id=$1', [id]);
+      const left = await c.query('select 1 from ccat.question_versions where logical_question_id=$1 limit 1', [cur.rows[0]!.logical_question_id]);
+      if (left.rows.length === 0) await c.query('delete from ccat.logical_questions where id=$1', [cur.rows[0]!.logical_question_id]);
+    });
+    await audit(db, req, 'content.question.deleted', 'question_version', id, null);
+    return { deleted: true };
   });
 
   // Record a review decision (question-level or set expert review)
@@ -126,7 +183,12 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.post('/v1/admin/content/questions/:id/retire', guard, async (req) => {
     requirePermission(req, 'content.retire');
     const id = (req.params as any).id;
-    await db.query(`update ccat.question_versions set state='retired', retired_at=now() where id=$1 and state='published'`, [id]);
+    const referenced = await db.query(
+      `select 1 from ccat.set_version_questions svq join ccat.question_set_versions sv on sv.id=svq.set_version_id
+        where svq.question_version_id=$1 and svq.active=true and sv.state='published' limit 1`, [id]);
+    if (referenced.rows.length) throw Errors.conflict('QUESTION_IN_PUBLISHED_SET', 'Retire the published set before retiring this question');
+    const retired = await db.query(`update ccat.question_versions set state='retired', retired_at=now() where id=$1 and state='published' returning id`, [id]);
+    if (retired.rows.length === 0) throw Errors.conflict('BAD_STATE', 'Only a published question can be retired');
     await audit(db, req, 'content.retired', 'question_version', id, null);
     return { state: 'retired' };
   });
@@ -165,7 +227,8 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.post('/v1/admin/content/sets/:id/copy', guard, async (req) => {
     requirePermission(req, 'content.create');
     const id = (req.params as any).id;
-    const src = await db.query(`select sv.id, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.difficulty_id,
+    const src = await db.query(`select sv.id, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.allowed_timers,
+        sv.duration_minutes, sv.preserve_order, sv.difficulty_id,
         qs.grade_id, qs.category_id, qs.subcategory_id, qs.name
         from ccat.question_set_versions sv join ccat.question_sets qs on qs.id=sv.question_set_id where sv.id=$1`, [id]);
     if (src.rows.length === 0) throw Errors.notFound('Set not found');
@@ -173,10 +236,11 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     const newId = await withTransaction(db, async (c) => {
       const nqs = await c.query(`insert into ccat.question_sets(grade_id,category_id,subcategory_id,name,created_by)
           values ($1,$2,$3,$4,$5) returning id`, [s.grade_id, s.category_id, s.subcategory_id, `${s.name} (copy)`, req.admin!.adminId]);
-      const nsv = await c.query(`insert into ccat.question_set_versions(question_set_id,version_number,difficulty_id,question_count,allowed_practice,allowed_exam,state)
-          values ($1,1,$2,$3,$4,$5,'draft') returning id`, [nqs.rows[0]!.id, s.difficulty_id, s.question_count, s.allowed_practice, s.allowed_exam]);
-      await c.query(`insert into ccat.set_version_questions(set_version_id,question_version_id,position)
-          select $1, question_version_id, position from ccat.set_version_questions where set_version_id=$2`, [nsv.rows[0]!.id, id]);
+      const nsv = await c.query(`insert into ccat.question_set_versions(question_set_id,version_number,difficulty_id,question_count,allowed_practice,allowed_exam,allowed_timers,duration_minutes,preserve_order,state,created_by)
+          values ($1,1,$2,$3,$4,$5,$6,$7,$8,'draft',$9) returning id`,
+        [nqs.rows[0]!.id, s.difficulty_id, s.question_count, s.allowed_practice, s.allowed_exam, s.allowed_timers, s.duration_minutes, s.preserve_order, req.admin!.adminId]);
+      await c.query(`insert into ccat.set_version_questions(set_version_id,question_version_id,position,active)
+          select $1, question_version_id, position, active from ccat.set_version_questions where set_version_id=$2`, [nsv.rows[0]!.id, id]);
       return nsv.rows[0]!.id;
     });
     await audit(db, req, 'content.set.copied', 'set_version', newId, `from ${id}`);
@@ -201,27 +265,36 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.post('/v1/admin/content/sets/:id/publish', guard, async (req) => {
     requirePermission(req, 'content.publish');
     const id = (req.params as any).id;
-    const cur = await db.query('select state, question_count from ccat.question_set_versions where id=$1', [id]);
-    if (cur.rows.length === 0) throw Errors.notFound('Set not found');
-    const cnt = await db.query('select count(*)::int n, count(*) filter (where active)::int a from ccat.set_version_questions where set_version_id=$1', [id]);
-    if (cnt.rows[0]!.n !== cur.rows[0]!.question_count) throw Errors.validation('Set membership does not match question_count');
-    if (cnt.rows[0]!.a < 5) throw Errors.validation('A set needs at least 5 active questions before it can be published (§18)');
-    // Validate every ACTIVE member card is complete before publish (blocks an invalid publish):
-    // a stem, ≥2 options, ≥1 correct answer, no empty option content.
-    const memberQs = await db.query(
-      `select qv.id, qv.state, qv.prompt_blocks, qv.option_blocks, qv.correct_option_ids
-         from ccat.set_version_questions svq join ccat.question_versions qv on qv.id=svq.question_version_id
-        where svq.set_version_id=$1 and svq.active=true`, [id]);
     const blockText = (blocks: any): string => Array.isArray(blocks)
       ? blocks.map((x: any) => (x?.type === 'text' || x?.type === 'rich_text' || x?.type === 'math' ? String(x.value ?? '') : (x?.type === 'image' ? '[img]' : ''))).join(' ').trim() : '';
-    for (const q of memberQs.rows) {
-      const opts = (q.option_blocks as any[]) || [];
-      if (!blockText(q.prompt_blocks)) throw Errors.validation('Every question needs a stem before publish');
-      if (opts.length < 2) throw Errors.validation('Every question needs at least 2 options before publish');
-      if (opts.some((o: any) => !blockText(o.content))) throw Errors.validation('Options cannot be empty');
-      if (((q.correct_option_ids as string[]) || []).length < 1) throw Errors.validation('Every question needs a marked correct answer before publish');
-    }
     await withTransaction(db, async (c) => {
+      // The row lock serializes publication with membership edits. All checks and the state change
+      // happen in the same transaction, so a set cannot be published from a stale membership view.
+      const cur = await c.query(
+        `select sv.state, sv.question_count, qs.grade_id
+           from ccat.question_set_versions sv join ccat.question_sets qs on qs.id=sv.question_set_id
+          where sv.id=$1 for update of sv`, [id]);
+      if (cur.rows.length === 0) throw Errors.notFound('Set not found');
+      if (!['draft', 'approved'].includes(cur.rows[0]!.state)) throw Errors.conflict('BAD_STATE', 'Only a draft or approved set can be published');
+      const memberQs = await c.query(
+        `select qv.id, qv.state, qv.grade_id, qv.prompt_blocks, qv.option_blocks, qv.correct_option_ids
+           from ccat.set_version_questions svq join ccat.question_versions qv on qv.id=svq.question_version_id
+          where svq.set_version_id=$1 and svq.active=true order by svq.position`, [id]);
+      if (memberQs.rows.length !== cur.rows[0]!.question_count)
+        throw Errors.validation('The active membership must exactly match question_count; remove inactive questions or reactivate them');
+      if (memberQs.rows.length < 5 || memberQs.rows.length > 20)
+        throw Errors.validation('A published set must contain 5–20 active questions (§18)');
+      for (const q of memberQs.rows) {
+        if (q.grade_id !== cur.rows[0]!.grade_id) throw Errors.validation('Every question must match the set grade');
+        if (q.state === 'retired') throw Errors.validation('Retired questions cannot be published in a set');
+        const opts = (q.option_blocks as any[]) || [];
+        const ids = new Set(opts.map((o: any) => o.option_id));
+        if (!blockText(q.prompt_blocks)) throw Errors.validation('Every question needs a stem before publish');
+        if (opts.length < 2 || ids.size !== opts.length) throw Errors.validation('Every question needs at least 2 uniquely identified options');
+        if (opts.some((o: any) => !blockText(o.content))) throw Errors.validation('Options cannot be empty');
+        const correct = ((q.correct_option_ids as string[]) || []);
+        if (correct.length < 1 || !correct.every((cid) => ids.has(cid))) throw Errors.validation('Every question needs a valid marked correct answer');
+      }
       // Auto-approve on set publish (owner decision): admin-authored draft/approved member questions
       // become published (immutable) together with the set — the publishing admin's action is the
       // approval. Already-published members are left untouched.
@@ -233,7 +306,12 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
       for (const r of promoted.rows)
         await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','content.published','question_version',$2,$3)`,
           [req.admin!.adminId, r.id, JSON.stringify({ state: 'published', via: 'set_publish' })]);
-      await c.query(`update ccat.question_set_versions set state='published', published_at=now() where id=$1`, [id]);
+      const invalid = await c.query(
+        `select 1 from ccat.set_version_questions svq join ccat.question_versions qv on qv.id=svq.question_version_id
+          where svq.set_version_id=$1 and svq.active=true and qv.state<>'published' limit 1`, [id]);
+      if (invalid.rows.length) throw Errors.validation('Every active question must be publishable');
+      const updated = await c.query(`update ccat.question_set_versions set state='published', published_at=now() where id=$1 and state in ('draft','approved') returning id`, [id]);
+      if (updated.rows.length === 0) throw Errors.conflict('BAD_STATE', 'Set state changed while publishing');
       await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value) values ($1,'admin','content.published','set_version',$2,$3,$4)`,
         [req.admin!.adminId, id, JSON.stringify({ state: cur.rows[0]!.state }), JSON.stringify({ state: 'published', questions_promoted: promoted.rows.length })]);
     });

@@ -58,7 +58,10 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
     const { studentId, deviceId } = req.student!;
 
     const sv = await db.query(
-      `select sv.id, sv.allowed_practice, sv.allowed_exam, sv.state, sv.ruleset_version_id, qs.grade_id
+      `select sv.id, sv.allowed_practice, sv.allowed_exam, sv.state, sv.ruleset_version_id, sv.question_count, qs.grade_id,
+              (select count(*)::int from ccat.set_version_questions svq
+                join ccat.question_versions qv on qv.id=svq.question_version_id
+               where svq.set_version_id=sv.id and svq.active=true and qv.state='published') served_question_count
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id = sv.question_set_id
         where sv.id = $1`,
@@ -73,6 +76,8 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
     const gs = await db.query(`select grade_id from ccat.students where id = $1`, [studentId]);
     if (gs.rows.length === 0 || gs.rows[0]!.grade_id !== set.grade_id) throw Errors.notFound('Set version not found');
     if (set.state !== 'published') throw Errors.validation('Set version is not published', { code: 'SET_NOT_PUBLISHED' });
+    if (Number(set.question_count) < 1 || Number(set.served_question_count) !== Number(set.question_count))
+      throw Errors.validation('Published set content is incomplete', { code: 'SET_CONTENT_INVALID' });
     // Grade-level practice switch (Admin → Practice control). When practice is disabled for the
     // student's grade, the server refuses to start a practice session regardless of client state —
     // the toggle is authoritative, not merely a UI hint.
@@ -168,7 +173,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
               qcat.key as category_key, qcat.name as category_name,
               sa.selected_option_ids, sa.answer_version
          from ccat.set_version_questions svq
-         join ccat.question_versions qv on qv.id = svq.question_version_id
+         join ccat.question_versions qv on qv.id = svq.question_version_id and qv.state='published'
          join ccat.logical_questions lq on lq.id = qv.logical_question_id
          join ccat.categories qcat on qcat.id = lq.category_id
          left join ccat.session_answers sa on sa.session_id = $1 and sa.question_version_id = qv.id
