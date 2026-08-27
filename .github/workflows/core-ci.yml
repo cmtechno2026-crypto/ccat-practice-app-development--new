@@ -48,6 +48,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Create Supabase-compatible database roles
+        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/contracts/docker/init-roles.sql
       - run: pnpm --filter @ccat/api-client typecheck
       - run: pnpm --filter @ccat/gateway typecheck
       - run: pnpm --filter @ccat/gateway test
