@@ -222,6 +222,16 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     await audit(db, req, 'content.unpublished', 'set_version', id, null);
     return { state: 'retired' };
   });
+  // Explicit retire endpoint used by both Admin set lists. It has the same immutable lifecycle
+  // effect as unpublish, but is authorized by content.retire rather than content.publish.
+  app.post('/v1/admin/content/sets/:id/retire', guard, async (req) => {
+    requirePermission(req, 'content.retire');
+    const id = (req.params as any).id;
+    const r = await db.query(`update ccat.question_set_versions set state='retired', retired_at=now() where id=$1 and state='published' returning id`, [id]);
+    if (r.rows.length === 0) throw Errors.conflict('BAD_STATE', 'Only a published set can be retired');
+    await audit(db, req, 'content.retired', 'set_version', id, null);
+    return { state: 'retired' };
+  });
   // Copy a set → a new question_set (same grade/category/subcategory/difficulty) with a fresh
   // DRAFT version that duplicates the source version's question membership.
   app.post('/v1/admin/content/sets/:id/copy', guard, async (req) => {

@@ -8,7 +8,7 @@ import { buildApp } from '../src/app.js';
 //  (1) Grade practice switch — disabling it blocks practice session-start (422) AND strips
 //      'practice' from the student catalog's allowed_modes; exam is unaffected.
 //  (2) Retiring a published set removes it from the student catalog (published sets are immutable
-//      and may only be retired, never unpublished — /unpublish returns a clean 409, never a 500).
+//      and may only transition to retired; both /unpublish and /retire perform that transition.
 const GRADE5 = 'a0000000-0000-0000-0000-000000000005';
 const PRACTICE_SET = 'e1000000-0000-0000-0000-000000000001'; // practice+exam, published
 const EXAM_ONLY_SET = 'e1000000-0000-0000-0000-0000000000b2'; // exam-only, published
@@ -74,11 +74,14 @@ describe('Admin Practice control — reflects on the student surface', () => {
     expect(modesFor(after.body, PRACTICE_SET)).toContain('practice');
   });
 
-  it('unpublishing a published set is refused with a clean 409 (immutable — retire instead)', async () => {
+  it('unpublishing a draft is refused with a clean 409 and does not mutate shared published fixtures', async () => {
     const admin = await adminToken();
-    const r = await json('POST', `/v1/admin/content/sets/${EXAM_ONLY_SET}/unpublish`, {}, admin);
+    const copied = await json('POST', `/v1/admin/content/sets/${EXAM_ONLY_SET}/copy`, {}, admin);
+    expect(copied.status).toBe(200);
+    const r = await json('POST', `/v1/admin/content/sets/${copied.body.id}/unpublish`, {}, admin);
     expect(r.status).toBe(409);
-    expect(r.body.error.code).toBe('IMMUTABLE_PUBLISHED');
+    expect(r.body.error.code).toBe('BAD_STATE');
+    expect((await json('DELETE', `/v1/admin/content/sets/${copied.body.id}`, undefined, admin)).status).toBe(200);
   });
 
   it('retiring a published set removes it from the student catalog', async () => {
