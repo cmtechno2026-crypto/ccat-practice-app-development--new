@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "CCAT Practice",
+    "slug": "ccat-practice",
+    "scheme": "ccat",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": { "backgroundColor": "#f7f8fc" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "ca.conceptmastery.ccat" },
+    "android": { "package": "ca.conceptmastery.ccat" },
+    "web": { "bundler": "metro" },
+    "extra": {
+      "gatewayUrl": "http://172.20.107.98:8080"
+    }
+  }
+}

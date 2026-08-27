@@ -1,0 +1,1285 @@
+openapi: 3.1.0
+info:
+  title: CCAT Practice App — Gateway API
+  version: "1.0.0-phase0"
+  description: >
+    Normative /v1 API for the Concept Mastery CCAT Practice App. The Gateway is the ONLY
+    application-data boundary exposed to the student app (Blueprint v10.0 §1.1, §33).
+    Direct student Supabase/PostgREST access is prohibited (§41). All sensitive mutations
+    use idempotency keys; all mutable Admin resources use expected-version/ETag concurrency
+    (§22.4, §32.1). This document is Phase 0 and covers the endpoint surface of §32; request
+    bodies for Admin write operations are represented by shared envelopes and will be
+    expanded per-domain in Phase 1.
+  contact:
+    name: Concept Mastery
+    email: admin@conceptmastery.ca
+servers:
+  - url: https://api.conceptmastery.ca/v1
+    description: Production
+  - url: https://staging-api.conceptmastery.ca/v1
+    description: Staging (no real child PII, §38.1)
+
+tags:
+  - name: registration
+  - name: auth
+  - name: devices
+  - name: catalog
+  - name: profile
+  - name: learning
+  - name: rewards
+  - name: books
+  - name: admin-students
+  - name: admin-content
+  - name: admin-config
+  - name: admin-rewards
+  - name: admin-comms
+  - name: admin-health
+  - name: admin-audit
+  - name: admin-accounts
+  - name: health
+
+security:
+  - studentSession: []
+
+paths:
+
+  # ------------------------------------------------------------------ health
+  /health/live:
+    get:
+      tags: [health]
+      operationId: healthLive
+      security: []
+      summary: Liveness probe (§27.3)
+      responses:
+        "200": { description: Alive }
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: healthReady
+      security: []
+      summary: Readiness probe (§27.3)
+      responses:
+        "200": { description: Ready }
+        "503": { description: Not ready }
+
+  # ------------------------------------------------------------ registration
+  /registration/contact/start:
+    post:
+      tags: [registration]
+      operationId: registrationContactStart
+      security: []
+      summary: Begin guardian contact verification (§4.1, §32.2)
+      parameters: [ { $ref: "#/components/parameters/IdempotencyKey" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, destination]
+              properties:
+                channel: { $ref: "#/components/schemas/ContactChannel" }
+                destination: { type: string, description: Email or E.164 phone }
+      responses:
+        "202": { description: OTP dispatched, $ref: "#/components/responses/ChallengeStarted" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        default: { $ref: "#/components/responses/Error" }
+  /registration/contact/verify:
+    post:
+      tags: [registration]
+      operationId: registrationContactVerify
+      security: []
+      summary: Verify guardian OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, code]
+              properties:
+                challenge_id: { type: string, format: uuid }
+                code: { type: string }
+      responses:
+        "200":
+          description: Verified; returns a short-lived registration grant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { registration_grant: { type: string } }
+        "401": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /registration/consent:
+    post:
+      tags: [registration]
+      operationId: registrationConsent
+      security: []
+      summary: Record immutable versioned guardian consent (§4.5)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [registration_grant, policy_version, consent_hash]
+              properties:
+                registration_grant: { type: string }
+                policy_version: { type: string }
+                consent_hash: { type: string }
+      responses:
+        "201": { description: Consent recorded }
+        default: { $ref: "#/components/responses/Error" }
+  /registration/student:
+    post:
+      tags: [registration]
+      operationId: registrationStudent
+      security: []
+      summary: Create the student account after consent (§4.1, §4.3)
+      parameters: [ { $ref: "#/components/parameters/IdempotencyKey" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StudentRegistration" }
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StudentProfile" }
+        "422":
+          description: Grade/age validation failed (§4.3)
+          $ref: "#/components/responses/Error"
+        default: { $ref: "#/components/responses/Error" }
+
+  # -------------------------------------------------------------------- auth
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: authLogin
+      security: []
+      summary: Student login with username + 4-digit PIN on the sole enrolled device (§4.4)
+      parameters: [ { $ref: "#/components/parameters/IdempotencyKey" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, pin, device_hash]
+              properties:
+                username: { type: string }
+                pin: { type: string, pattern: "^[0-9]{4}$" }
+                device_hash: { type: string }
+                installation_pubkey: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "401": { description: Invalid credentials (throttled), $ref: "#/components/responses/Error" }
+        "403": { description: Device not enrolled / account not active, $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        default: { $ref: "#/components/responses/Error" }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: authRefresh
+      security: []
+      summary: Rotate token family (§5.4, §36.1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties: { refresh_token: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: authLogout
+      summary: Revoke current application session
+      responses:
+        "204": { description: Logged out }
+
+  /recovery/pin/start:
+    post:
+      tags: [auth]
+      operationId: recoveryPinStart
+      security: []
+      summary: Begin guardian-OTP PIN recovery (§4.4)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, channel]
+              properties:
+                username: { type: string }
+                channel: { $ref: "#/components/schemas/ContactChannel" }
+      responses:
+        "202": { $ref: "#/components/responses/ChallengeStarted" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /recovery/pin/complete:
+    post:
+      tags: [auth]
+      operationId: recoveryPinComplete
+      security: []
+      summary: Verify OTP, set new PIN, revoke existing app sessions (§4.4)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, code, new_pin]
+              properties:
+                challenge_id: { type: string, format: uuid }
+                code: { type: string }
+                new_pin: { type: string, pattern: "^[0-9]{4}$" }
+      responses:
+        "200": { description: PIN reset; fresh login required }
+        "401": { $ref: "#/components/responses/Error" }
+
+  # ----------------------------------------------------------------- devices
+  /devices/replacement/start:
+    post:
+      tags: [devices]
+      operationId: deviceReplacementStart
+      security: []
+      summary: Begin single-device replacement (§5.2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, new_device_hash, channel]
+              properties:
+                username: { type: string }
+                new_device_hash: { type: string }
+                channel: { $ref: "#/components/schemas/ContactChannel" }
+      responses:
+        "202": { $ref: "#/components/responses/ChallengeStarted" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /devices/replacement/verify:
+    post:
+      tags: [devices]
+      operationId: deviceReplacementVerify
+      security: []
+      summary: Verify OTP; revoke old device + sessions; enroll new sole device (§5.2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, code]
+              properties:
+                challenge_id: { type: string, format: uuid }
+                code: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "401": { $ref: "#/components/responses/Error" }
+  /device:
+    get:
+      tags: [devices]
+      operationId: getDevice
+      summary: Current enrolled device
+      responses:
+        "200":
+          description: Device
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+    delete:
+      tags: [devices]
+      operationId: revokeDevice
+      summary: Revoke current device (self-initiated)
+      responses:
+        "204": { description: Revoked }
+
+  # ---------------------------------------------------------- catalog/profile
+  /grades:
+    get:
+      tags: [catalog]
+      operationId: listGrades
+      summary: Data-driven grade catalog (§29 — client MUST NOT hard-code)
+      responses:
+        "200":
+          description: Grades
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Grade" } }
+  /catalog:
+    get:
+      tags: [catalog]
+      operationId: getCatalog
+      summary: Category/subcategory/set catalog for the student's grade
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Catalog page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogPage" }
+  /sets/{idOrVersionId}:
+    get:
+      tags: [catalog]
+      operationId: getSetDetail
+      summary: Set Detail (§8.4). No Download action exists.
+      parameters:
+        - name: idOrVersionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Set detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetDetail" }
+        "404": { $ref: "#/components/responses/Error" }
+  /profile:
+    get:
+      tags: [profile]
+      operationId: getProfile
+      summary: Current student profile (age is a computed field, §4.2)
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StudentProfile" }
+  /profile/safe:
+    patch:
+      tags: [profile]
+      operationId: patchProfileSafe
+      summary: Update non-sensitive profile fields (display name, timezone)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name: { type: string }
+                timezone: { type: string }
+      responses:
+        "200": { description: Updated }
+  /profile/contact/change:
+    post:
+      tags: [profile]
+      operationId: profileContactChange
+      summary: Guardian-OTP-gated contact change
+      responses:
+        "202": { $ref: "#/components/responses/ChallengeStarted" }
+  /profile/deletion/request:
+    post:
+      tags: [profile]
+      operationId: profileDeletionRequest
+      summary: Guardian-authorized deletion (§7.1)
+      responses:
+        "202": { description: Deletion requested; 30-day restore window }
+  /profile/deletion/restore:
+    post:
+      tags: [profile]
+      operationId: profileDeletionRestore
+      summary: Restore before purge, guardian-verified (§7.3)
+      responses:
+        "200": { description: Restored }
+  /profile/export:
+    post:
+      tags: [profile]
+      operationId: profileExport
+      summary: DSAR export request (separate from deletion, §7.4)
+      responses:
+        "202": { description: Export requested }
+
+  # ---------------------------------------------------------------- learning
+  /sessions/start:
+    post:
+      tags: [learning]
+      operationId: sessionStart
+      summary: Create an immutable learning session (§9.2). One active session per student.
+      parameters: [ { $ref: "#/components/parameters/IdempotencyKey" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [set_version_id, mode, timer_type]
+              properties:
+                set_version_id: { type: string, format: uuid }
+                mode: { $ref: "#/components/schemas/Mode" }
+                timer_type: { $ref: "#/components/schemas/TimerType" }
+                duration_seconds: { type: integer, description: Required when timed }
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "409":
+          description: ACTIVE_SESSION_EXISTS (§9.1)
+          $ref: "#/components/responses/Error"
+        "422":
+          description: SET_NOT_PUBLISHED / MODE_NOT_ALLOWED / TIMER_NOT_ALLOWED
+          $ref: "#/components/responses/Error"
+        default: { $ref: "#/components/responses/Error" }
+  /sessions/active:
+    get:
+      tags: [learning]
+      operationId: getActiveSession
+      summary: The student's current IN_PROGRESS session, if any (§32.4)
+      responses:
+        "200":
+          description: Active session or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/Session" }
+                  - { type: "null" }
+  /sessions/{id}:
+    get:
+      tags: [learning]
+      operationId: getSession
+      summary: Session detail with questions (server-shuffled by seeds)
+      parameters: [ { $ref: "#/components/parameters/SessionId" } ]
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionWithQuestions" }
+        "404": { $ref: "#/components/responses/Error" }
+  /sessions/{id}/answers:
+    patch:
+      tags: [learning]
+      operationId: patchAnswers
+      summary: Debounced autosave of versioned answers (§12). Stale writes rejected.
+      parameters: [ { $ref: "#/components/parameters/SessionId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                answers:
+                  type: array
+                  items: { $ref: "#/components/schemas/AnswerWrite" }
+      responses:
+        "200":
+          description: Accepted answer versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AnswerAck" }
+        "409":
+          description: STALE_ANSWER / SESSION_TERMINAL
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/submit:
+    post:
+      tags: [learning]
+      operationId: submitSession
+      summary: Exactly-once final submission (§13). Idempotent by submission_id.
+      parameters:
+        - { $ref: "#/components/parameters/SessionId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submission_id, expected_session_version]
+              properties:
+                submission_id: { type: string, description: Client-generated idempotency key }
+                expected_session_version: { type: integer }
+      responses:
+        "200":
+          description: Authoritative result (same result returned on retries)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResult" }
+        "409":
+          description: SESSION_VERSION_CONFLICT / SESSION_TERMINAL / DEADLINE_PASSED
+          $ref: "#/components/responses/Error"
+  /sessions/{id}/abandon:
+    post:
+      tags: [learning]
+      operationId: abandonSession
+      summary: Explicit abandonment (§10.1, §10.2 requires confirm for Exam)
+      parameters: [ { $ref: "#/components/parameters/SessionId" } ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { confirm: { type: boolean, description: Required true for Exam } }
+      responses:
+        "200": { description: Session ABANDONED }
+        "409": { $ref: "#/components/responses/Error" }
+  /sessions/{id}/result:
+    get:
+      tags: [learning]
+      operationId: getSessionResult
+      summary: Result recovery after a lost submit response (§13.3)
+      parameters: [ { $ref: "#/components/parameters/SessionId" } ]
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResult" }
+        "404": { $ref: "#/components/responses/Error" }
+  /sessions/{id}/review:
+    get:
+      tags: [learning]
+      operationId: getSessionReview
+      summary: Post-completion review/explanations (Practice only, §10.1)
+      parameters: [ { $ref: "#/components/parameters/SessionId" } ]
+      responses:
+        "200": { description: Review payload }
+  /bookmarks:
+    get:
+      tags: [learning]
+      operationId: listBookmarks
+      responses:
+        "200":
+          description: Bookmarks
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Bookmark" } }
+    put:
+      tags: [learning]
+      operationId: putBookmark
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [logical_question_id]
+              properties:
+                logical_question_id: { type: string, format: uuid }
+                note: { type: string }
+      responses:
+        "200": { description: Bookmarked }
+    delete:
+      tags: [learning]
+      operationId: deleteBookmark
+      parameters:
+        - name: logical_question_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Removed }
+
+  # ----------------------------------------------------------------- rewards
+  /rewards/summary:
+    get:
+      tags: [rewards]
+      operationId: getRewardsSummary
+      summary: XP total + coin balance from authoritative ledgers (§19)
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RewardsSummary" }
+  /achievements:
+    get:
+      tags: [rewards]
+      operationId: listAchievements
+      responses:
+        "200": { description: Achievements }
+  /avatars:
+    get:
+      tags: [rewards]
+      operationId: listAvatars
+      responses:
+        "200": { description: Owned + available avatar stages (§20.1) }
+  /avatars/equip:
+    post:
+      tags: [rewards]
+      operationId: equipAvatar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [avatar_stage_id]
+              properties: { avatar_stage_id: { type: string, format: uuid } }
+      responses:
+        "200": { description: Equipped }
+        "403": { description: Not owned, $ref: "#/components/responses/Error" }
+  /themes:
+    get:
+      tags: [rewards]
+      operationId: listThemes
+      responses:
+        "200": { description: Themes (§20.2) }
+  /themes/equip:
+    post:
+      tags: [rewards]
+      operationId: equipTheme
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [theme_id]
+              properties: { theme_id: { type: string, format: uuid } }
+      responses:
+        "200": { description: Equipped }
+
+  /readiness:
+    get:
+      tags: [rewards]
+      operationId: getReadiness
+      summary: Readiness % (§16). Insufficient activity => insufficient_data, not 0%.
+      responses:
+        "200":
+          description: Readiness
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+  /progress:
+    get:
+      tags: [rewards]
+      operationId: getProgress
+      summary: Versioned learning-plan coverage (§15)
+      responses:
+        "200":
+          description: Progress
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Progress" }
+
+  # -------------------------------------------------------------------- books
+  /books:
+    get:
+      tags: [books]
+      operationId: listBooks
+      summary: Book Store — external retailer links only (§21)
+      responses:
+        "200": { description: Books }
+  /books/{id}/adult-challenge:
+    post:
+      tags: [books]
+      operationId: bookAdultChallenge
+      summary: Adult-oriented challenge (no OTP, §21)
+      parameters: [ { name: id, in: path, required: true, schema: { type: string, format: uuid } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties: { answer: { type: string } }
+      responses:
+        "200": { description: Challenge passed; short-lived handoff grant }
+        "403": { $ref: "#/components/responses/Error" }
+  /books/{id}/retailer-handoff:
+    post:
+      tags: [books]
+      operationId: bookRetailerHandoff
+      summary: Returns only an allowlisted HTTPS destination (§21, §32.6)
+      parameters: [ { name: id, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        "200":
+          description: Allowlisted destination
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { destination_url: { type: string, format: uri } }
+
+  # ================================================================= ADMIN ===
+  /admin/students:
+    get:
+      tags: [admin-students]
+      operationId: adminListStudents
+      security: [ { adminSession: [] } ]
+      summary: Student directory (Age computed; raw guardian PII if permitted §24)
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Directory page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminStudentPage" }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/students/{id}/status:
+    post:
+      tags: [admin-students]
+      operationId: adminChangeStudentStatus
+      security: [ { adminSession: [] } ]
+      summary: Suspend/unsuspend/ban/unban (§6). Requires permission + reason + audit.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IfMatch" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StudentStatusChange" }
+      responses:
+        "200": { description: Status changed }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /admin/students/{id}/device/replace:
+    post:
+      tags: [admin-students]
+      operationId: adminBreakGlassReplace
+      security: [ { adminSession: [] } ]
+      summary: Break-glass device replacement (§5.3). No Super-Admin co-sign required.
+      parameters: [ { name: id, in: path, required: true, schema: { type: string, format: uuid } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BreakGlassRequest" }
+      responses:
+        "200": { description: Replaced }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/sessions/{id}/invalidate:
+    post:
+      tags: [admin-students]
+      operationId: adminInvalidateSession
+      security: [ { adminSession: [] } ]
+      summary: Scoped session invalidation (§28)
+      parameters: [ { name: id, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        "200": { description: INVALIDATED }
+  /admin/rewards/adjust:
+    post:
+      tags: [admin-rewards]
+      operationId: adminRewardAdjust
+      security: [ { adminSession: [] } ]
+      summary: Compensating XP/coin ledger adjustment (§19.3). Never overwrites history.
+      parameters: [ { $ref: "#/components/parameters/IdempotencyKey" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RewardAdjustment" }
+      responses:
+        "201": { description: Adjustment ledgered }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /admin/content/questions:
+    post:
+      tags: [admin-content]
+      operationId: adminCreateQuestion
+      security: [ { adminSession: [] } ]
+      summary: Create a draft question version (validated vs question-schema.json §17)
+      responses:
+        "201": { description: Draft created }
+  /admin/content/reviews:
+    post:
+      tags: [admin-content]
+      operationId: adminSubmitReview
+      security: [ { adminSession: [] } ]
+      summary: Question or independent set expert review decision (§18)
+      responses:
+        "201": { description: Review recorded }
+  /admin/content/publish:
+    post:
+      tags: [admin-content]
+      operationId: adminPublishContent
+      security: [ { adminSession: [] } ]
+      summary: Gateway-authorized immutable publication (§18). AI direct-publish prohibited.
+      parameters: [ { $ref: "#/components/parameters/IdempotencyKey" } ]
+      responses:
+        "201": { description: Published immutable version }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /admin/config/grades:
+    put:
+      tags: [admin-config]
+      operationId: adminUpdateGrades
+      security: [ { adminSession: [] } ]
+      summary: Grade catalog/config (Super-Admin, §29). Prospective activation (§30).
+      parameters: [ { $ref: "#/components/parameters/IfMatch" } ]
+      responses:
+        "200": { description: New config version published }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/config/flags:
+    post:
+      tags: [admin-config]
+      operationId: adminSetGlobalFlags
+      security: [ { adminSession: [] } ]
+      summary: Emergency global controls (Super-Admin, §28). Applies immediately.
+      responses:
+        "200": { description: Flags updated }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /admin/announcements:
+    post:
+      tags: [admin-comms]
+      operationId: adminCreateAnnouncement
+      security: [ { adminSession: [] } ]
+      summary: Create/edit announcement; publish carousel (§26.1)
+      responses:
+        "201": { description: Created }
+  /admin/push/campaigns:
+    post:
+      tags: [admin-comms]
+      operationId: adminRequestPush
+      security: [ { adminSession: [] } ]
+      summary: Request a push campaign (Admin requests; Super-Admin approves §26.1)
+      responses:
+        "201": { description: Requested }
+  /admin/push/campaigns/{id}/approval:
+    post:
+      tags: [admin-comms]
+      operationId: adminApprovePush
+      security: [ { adminSession: [] } ]
+      summary: Approve/reject push campaign (Super-Admin only, §23)
+      parameters: [ { name: id, in: path, required: true, schema: { type: string, format: uuid } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties: { decision: { type: string, enum: [approved, rejected] }, reason: { type: string } }
+      responses:
+        "200": { description: Decision recorded }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /admin/health:
+    get:
+      tags: [admin-health]
+      operationId: adminHealth
+      security: [ { adminSession: [] } ]
+      summary: Aggregated product-health console (§27.1, §27.3). No telemetry => Unknown.
+      responses:
+        "200":
+          description: Health rollup
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthRollup" }
+  /admin/incidents:
+    post:
+      tags: [admin-health]
+      operationId: adminCreateIncident
+      security: [ { adminSession: [] } ]
+      summary: Open/update incident record (§28)
+      responses:
+        "201": { description: Incident recorded }
+
+  /admin/audit:
+    get:
+      tags: [admin-audit]
+      operationId: adminAudit
+      security: [ { adminSession: [] } ]
+      summary: Own-scope audit by default; global requires audit.read.global (§25)
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: scope, in: query, schema: { type: string, enum: [self, global], default: self } }
+      responses:
+        "200":
+          description: Audit page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditPage" }
+        "403": { description: global scope without permission, $ref: "#/components/responses/Error" }
+
+  /admin/accounts:
+    post:
+      tags: [admin-accounts]
+      operationId: adminCreateAdmin
+      security: [ { adminSession: [] } ]
+      summary: Provision Admin with temp password (Super-Admin, §22.2)
+      responses:
+        "201": { description: Admin created; temp password shown once }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/accounts/{id}:
+    patch:
+      tags: [admin-accounts]
+      operationId: adminUpdateAdmin
+      security: [ { adminSession: [] } ]
+      summary: Enable/disable, set permissions (Super-Admin, §28.1). Protects last SA (§28.2).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IfMatch" }
+      responses:
+        "200": { description: Updated }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+components:
+
+  securitySchemes:
+    studentSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Student application session token, bound to the sole enrolled device (§5.4).
+    adminSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Admin identity token (email/password + mandatory MFA, §22.1). Permissions loaded server-side.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, maxLength: 200 }
+      description: Required on sensitive mutations (§13, §32.1). Retries with the same key return the original result.
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string }
+      description: Expected version/ETag for mutable Admin resources (§22.4). Missing/stale => 409.
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+      description: Bounded cursor pagination (§32.1).
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    SessionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Error:
+      description: Structured error envelope (§32.1)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Optimistic-concurrency conflict with comparison (§22.4)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ConflictError" }
+    RateLimited:
+      description: Rate limited (§36.4). Fails closed.
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ChallengeStarted:
+      description: OTP challenge created
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              challenge_id: { type: string, format: uuid }
+              expires_at: { type: string, format: date-time }
+    TokenPair:
+      description: Access + refresh tokens
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [access_token, refresh_token, expires_in]
+            properties:
+              access_token: { type: string }
+              refresh_token: { type: string }
+              expires_in: { type: integer }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, description: Machine code, e.g. ACTIVE_SESSION_EXISTS }
+            message: { type: string }
+            request_id: { type: string }
+            details: { type: object, additionalProperties: true }
+    ConflictError:
+      allOf:
+        - { $ref: "#/components/schemas/Error" }
+        - type: object
+          properties:
+            your_version: { type: integer }
+            current_version: { type: integer }
+            current: { type: object, additionalProperties: true, description: Current server representation for the diff UI }
+
+    ContactChannel: { type: string, enum: [email, sms] }
+    Mode: { type: string, enum: [practice, exam] }
+    TimerType: { type: string, enum: [untimed, timed] }
+
+    StudentRegistration:
+      type: object
+      required: [registration_grant, display_name, username, grade_id, birth_month, birth_year, pin]
+      properties:
+        registration_grant: { type: string }
+        display_name: { type: string }
+        username: { type: string }
+        grade_id: { type: string, format: uuid }
+        birth_month: { type: integer, minimum: 1, maximum: 12 }
+        birth_year: { type: integer }
+        pin: { type: string, pattern: "^[0-9]{4}$" }
+
+    StudentProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        username: { type: string }
+        grade_id: { type: string, format: uuid }
+        age_years: { type: integer, description: Computed by Gateway from birth month/year (§4.2) }
+        status: { $ref: "#/components/schemas/StudentStatus" }
+        active_avatar_stage_id: { type: [string, "null"], format: uuid }
+        active_theme_id: { type: [string, "null"], format: uuid }
+
+    StudentStatus: { type: string, enum: [active, suspended, banned, pending_deletion, purged] }
+
+    Grade:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        grade_number: { type: integer }
+        name: { type: string }
+        display_order: { type: integer }
+        registration_enabled: { type: boolean }
+        practice_enabled: { type: boolean }
+
+    CatalogPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogCategory" }
+        next_cursor: { type: [string, "null"] }
+    CatalogCategory:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        name: { type: string }
+        subcategories:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              sets:
+                type: array
+                items: { $ref: "#/components/schemas/SetSummary" }
+    SetSummary:
+      type: object
+      properties:
+        set_version_id: { type: string, format: uuid }
+        name: { type: string }
+        difficulty: { type: string }
+        question_count: { type: integer }
+        allowed_modes: { type: array, items: { $ref: "#/components/schemas/Mode" } }
+    SetDetail:
+      allOf:
+        - { $ref: "#/components/schemas/SetSummary" }
+        - type: object
+          properties:
+            allowed_timers:
+              type: array
+              items:
+                type: object
+                properties:
+                  type: { $ref: "#/components/schemas/TimerType" }
+                  seconds: { type: [integer, "null"] }
+            previous_best: { type: [object, "null"], additionalProperties: true }
+            actions:
+              type: array
+              items: { type: string, enum: [start, resume, redo] }
+              description: No download action exists (§8.4)
+
+    Device:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        platform: { type: string }
+        status: { type: string, enum: [pending, active, revoked] }
+        enrolled_at: { type: [string, "null"], format: date-time }
+        last_seen_at: { type: [string, "null"], format: date-time }
+
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        set_version_id: { type: string, format: uuid }
+        mode: { $ref: "#/components/schemas/Mode" }
+        timer_type: { $ref: "#/components/schemas/TimerType" }
+        duration_seconds: { type: [integer, "null"] }
+        state: { $ref: "#/components/schemas/SessionState" }
+        session_version: { type: integer }
+        started_at: { type: string, format: date-time }
+        deadline_at: { type: [string, "null"], format: date-time }
+    SessionState:
+      type: string
+      enum: [IN_PROGRESS, SUBMITTED, AUTO_SUBMITTED, ABANDONED, ABANDONED_BY_INACTIVITY, INVALIDATED, CANCELLED]
+    SessionWithQuestions:
+      allOf:
+        - { $ref: "#/components/schemas/Session" }
+        - type: object
+          properties:
+            questions:
+              type: array
+              description: Server-shuffled question payloads. Exam payloads omit explanations/correct refs (§10.2).
+              items: { type: object, additionalProperties: true }
+
+    AnswerWrite:
+      type: object
+      required: [question_version_id, selected_option_ids, answer_version]
+      properties:
+        question_version_id: { type: string, format: uuid }
+        selected_option_ids: { type: array, items: { type: string } }
+        answer_version: { type: integer, description: Monotonic; stale writes rejected (§12.2) }
+    AnswerAck:
+      type: object
+      properties:
+        question_version_id: { type: string, format: uuid }
+        accepted_version: { type: integer }
+
+    SessionResult:
+      type: object
+      properties:
+        session_id: { type: string, format: uuid }
+        terminal_state: { $ref: "#/components/schemas/SessionState" }
+        score_correct: { type: integer }
+        score_total: { type: integer }
+        xp_awarded: { type: integer }
+        coins_awarded: { type: integer }
+        achievements_unlocked:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    Bookmark:
+      type: object
+      properties:
+        logical_question_id: { type: string, format: uuid }
+        note: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+
+    RewardsSummary:
+      type: object
+      properties:
+        xp_total: { type: integer }
+        coin_balance: { type: integer }
+    Readiness:
+      type: object
+      properties:
+        readiness_pct: { type: [number, "null"] }
+        insufficient_data: { type: boolean, description: True instead of 0% when activity below threshold (§16.3) }
+        band: { type: [string, "null"] }
+    Progress:
+      type: object
+      properties:
+        progress_pct: { type: number }
+        completed_count: { type: integer }
+        eligible_count: { type: integer }
+        learning_plan_version_id: { type: string, format: uuid }
+        category_breakdown: { type: object, additionalProperties: true }
+
+    AdminStudentPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              display_name: { type: string }
+              username: { type: string }
+              grade_number: { type: integer }
+              age_years: { type: integer, description: Computed column (§4.2) }
+              status: { $ref: "#/components/schemas/StudentStatus" }
+              guardian_email: { type: [string, "null"], description: Raw if directory permission (§24) }
+              guardian_phone: { type: [string, "null"] }
+        next_cursor: { type: [string, "null"] }
+    StudentStatusChange:
+      type: object
+      required: [to_status, reason_code]
+      properties:
+        to_status: { $ref: "#/components/schemas/StudentStatus" }
+        reason_code: { type: string }
+        reason_text: { type: string }
+        expires_at: { type: [string, "null"], format: date-time }
+        reference: { type: string }
+    BreakGlassRequest:
+      type: object
+      required: [reason, verification_method, support_reference, new_device_hash]
+      properties:
+        reason: { type: string }
+        verification_method: { type: string }
+        support_reference: { type: string }
+        new_device_hash: { type: string }
+    RewardAdjustment:
+      type: object
+      required: [student_id, kind, delta, reason, reference]
+      properties:
+        student_id: { type: string, format: uuid }
+        kind: { type: string, enum: [xp, coins] }
+        delta: { type: integer, description: May be negative; compensating entry (§19.3) }
+        reason: { type: string }
+        reference: { type: string }
+
+    HealthRollup:
+      type: object
+      properties:
+        overall: { $ref: "#/components/schemas/HealthState" }
+        indicators:
+          type: array
+          items:
+            type: object
+            properties:
+              indicator: { type: string }
+              state: { $ref: "#/components/schemas/HealthState" }
+              value: { type: [number, "null"] }
+              observed_at: { type: string, format: date-time }
+    HealthState: { type: string, enum: [Healthy, Degraded, "Major Incident", Maintenance, Unknown] }
+
+    AuditPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              actor_admin_id: { type: [string, "null"], format: uuid }
+              event_type: { type: string }
+              target_kind: { type: [string, "null"] }
+              target_id: { type: [string, "null"], format: uuid }
+              reason: { type: [string, "null"] }
+              created_at: { type: string, format: date-time }
+        next_cursor: { type: [string, "null"] }

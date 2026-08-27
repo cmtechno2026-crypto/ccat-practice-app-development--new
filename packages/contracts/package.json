@@ -1,0 +1,1 @@
+{ "name": "@ccat/contracts", "version": "0.1.0", "private": true, "description": "CCAT DB migrations, OpenAPI, and DB negative-access tests." }

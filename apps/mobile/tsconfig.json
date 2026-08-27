@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "moduleResolution": "Bundler",
+    "types": ["react"]
+  },
+  "include": ["App.tsx", "index.ts", "src/**/*.ts", "src/**/*.tsx"]
+}

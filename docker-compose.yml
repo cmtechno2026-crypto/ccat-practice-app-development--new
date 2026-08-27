@@ -1,0 +1,28 @@
+# Local Postgres for the CCAT stack. `docker compose up -d` then run migrate + seed.
+services:
+  db:
+    image: postgres:17
+    container_name: ccat-postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ccat
+      # Explicit auth method. The official image writes `host all all all <method>` into
+      # pg_hba.conf on FIRST init only. Pinning it here guarantees the Gateway (which reaches
+      # the container from the Docker bridge, e.g. 172.18.0.1) is accepted. If you ever see
+      # "no pg_hba.conf entry for host ...", the data volume was initialized by an older/foreign
+      # run — recreate it: `docker compose down -v && docker compose up -d` (this wipes local
+      # demo data; `pnpm migrate && pnpm seed` recreates it).
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./packages/contracts/docker/init-roles.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
+      - ccat_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ccat"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  ccat_pgdata:

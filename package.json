@@ -1,0 +1,26 @@
+{
+  "name": "ccat-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Concept Mastery CCAT Practice App \u2014 monorepo (Phase 1). Blueprint v10.0.",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "migrate": "pnpm --filter @ccat/gateway migrate",
+    "seed": "pnpm --filter @ccat/gateway seed",
+    "seed:students": "pnpm --filter @ccat/gateway seed:students",
+    "gateway": "pnpm --filter @ccat/gateway dev",
+    "gateway:test": "pnpm --filter @ccat/gateway test",
+    "admin": "pnpm --filter @ccat/admin dev",
+    "admin:build": "pnpm --filter @ccat/admin build",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:admin": "node scripts/admin-smoke.mjs",
+    "seed:content": "pnpm --filter @ccat/gateway seed:content",
+    "web": "pnpm --filter @ccat/web dev",
+    "web:build": "pnpm --filter @ccat/web build",
+    "web:preview": "pnpm --filter @ccat/web preview",
+    "seed:preview": "pnpm --filter @ccat/gateway seed:preview"
+  }
+}

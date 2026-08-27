@@ -1,0 +1,10 @@
+{
+  "name": "@ccat/client-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-agnostic, platform-agnostic domain logic shared by ALL clients (apps/web + apps/mobile): session state-machine glue, XP/level math, formatting, app-config reader. No React, no DOM, no RN.",
+  "main": "src/index.ts",
+  "dependencies": { "@ccat/api-client": "workspace:*" },
+  "devDependencies": { "typescript": "^5.7.2" }
+}

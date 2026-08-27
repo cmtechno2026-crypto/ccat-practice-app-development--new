@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log
+apps/admin
+apps/web
+apps/mobile
+.git
