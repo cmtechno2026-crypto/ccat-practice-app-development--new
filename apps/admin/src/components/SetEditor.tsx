@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from './ui';
 import { BulkImport } from './BulkImport';
-import { FileImport } from './FileImport';
 
 // One shared, Google-Forms-style question editor for BOTH practice sets and exam-paper batteries.
 // Opens as a full-height drawer over the Content page. Collects ONE or MANY question cards and saves
@@ -35,7 +34,6 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bulk, setBulk] = useState(false);
-  const [fileImport, setFileImport] = useState(false);
 
   const isExam = !!set?.allowed_exam;
   const scopeCat = scopeCategoryId;
@@ -186,7 +184,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
           <div className="edsub muted">{set && (<>{isExam ? 'Exam battery' : 'Practice set'} · Grade {set.grade_number} · {set.category}{set.subcategory ? ` / ${set.subcategory}` : ''} · <b>{set.state}</b> · {cards.length} card{cards.length === 1 ? '' : 's'} ({activeCount} publish-ready)</>)}</div>
         </div>
         <div className="edactions">
-          <button className="btn ghost sm" disabled={busy || !set || loading || preview} onClick={() => setFileImport(true)}>⤒ Import</button>
+          <button className="btn ghost sm" disabled={busy || !set || loading || preview} onClick={() => setBulk(true)}>⤓ Bulk add from CSV</button>
           <button className="btn ghost sm" onClick={() => setPreview(p => !p)}>{preview ? 'Edit' : 'Preview'}</button>
           <button className="btn sm" disabled={busy || !set} onClick={() => save()}>{busy ? 'Saving…' : 'Save draft'}</button>
           {set?.state !== 'published' && <button className="btn green sm" disabled={busy || !set} onClick={publish}>Publish</button>}
@@ -239,17 +237,13 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
             })}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 4 }}>
               <button className="btn addcard" onClick={addCard}>+ Add question</button>
-              <button className="btn ghost" onClick={() => setBulk(true)}>⤓ Bulk add from CSV</button>
             </div>
           </>
         )}
       </div>
 
-      {bulk && <BulkImport title="Bulk add questions from CSV" onClose={() => setBulk(false)}
-        onImport={(imported) => { injectCards(imported); setBulk(false); toast(`Added ${imported.length} question${imported.length === 1 ? '' : 's'} — review, then Save`); }} />}
-
-      {fileImport && <FileImport onClose={() => setFileImport(false)}
-        onImport={(imported) => { injectCards(imported); setFileImport(false); toast(`Imported ${imported.length} question${imported.length === 1 ? '' : 's'} — review, then Save draft`); }} />}
+      {bulk && <BulkImport title="Bulk add from CSV" onClose={() => setBulk(false)}
+        onImport={(imported) => { injectCards(imported); setBulk(false); toast(`Imported ${imported.length} question${imported.length === 1 ? '' : 's'} — review and Save draft`); }} />}
     </div>
   );
 }
