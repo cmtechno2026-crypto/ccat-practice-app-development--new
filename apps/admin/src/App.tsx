@@ -29,9 +29,15 @@ const DEMO = [
 ];
 
 function Login() {
-  const { login } = useAuth();
-  const [email, setEmail] = useState('super@cm.ca');
-  const [password, setPassword] = useState('Passw0rd!');
+  const { login, changePassword } = useAuth();
+  const [email, setEmail] = useState(import.meta.env.DEV ? 'super@cm.ca' : '');
+  const [password, setPassword] = useState(import.meta.env.DEV ? 'Passw0rd!' : '');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaMode, setMfaMode] = useState<'none' | 'challenge' | 'enroll'>('none');
+  const [enrollment, setEnrollment] = useState<{ qr_code: string; secret: string } | null>(null);
+  const [changeToken, setChangeToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [fails, setFails] = useState(0);
@@ -42,9 +48,29 @@ function Login() {
     if (locked) return;
     setErr(''); setBusy(true);
     try {
-      await login(email.trim(), password);
+      if (changeToken) {
+        if (newPassword !== confirmPassword) throw new Error('New passwords do not match.');
+        await changePassword(changeToken, newPassword);
+      } else {
+        await login(email.trim(), password, mfaCode || undefined);
+      }
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) {
+      if (e instanceof ApiError && e.code === 'MFA_REQUIRED') {
+        setMfaMode('challenge');
+        setErr('Enter the 6-digit code from your authenticator app.');
+      } else if (e instanceof ApiError && e.code === 'MFA_ENROLLMENT_REQUIRED') {
+        setMfaMode('enroll');
+        setEnrollment(e.details as { qr_code: string; secret: string });
+        setErr('Scan the QR code, then enter the 6-digit code to finish setup.');
+      } else if (e instanceof ApiError && e.code === 'MFA_INVALID') {
+        setErr('That authenticator code is invalid or expired.');
+      } else if (e instanceof ApiError && e.code === 'PASSWORD_CHANGE_REQUIRED') {
+        setChangeToken(String(e.details?.change_token ?? ''));
+        setMfaMode('none');
+        setEnrollment(null);
+        setMfaCode('');
+        setErr('Choose a new password before continuing.');
+      } else if (e instanceof ApiError && e.status === 401) {
         setFails(f => f + 1);
         setErr('Invalid email or password.');
       } else {
@@ -53,7 +79,7 @@ function Login() {
     } finally { setBusy(false); }
   };
 
-  const fill = (em: string) => { setEmail(em); setPassword('Passw0rd!'); setErr(''); };
+  const fill = (em: string) => { setEmail(em); setPassword('Passw0rd!'); setMfaCode(''); setMfaMode('none'); setErr(''); };
 
   return (
     <div className="login2">
@@ -73,17 +99,46 @@ function Login() {
           <h3>Welcome back</h3>
           <p className="sub">Admins sign in with their work email and password. Five failed attempts locks the account.</p>
 
-          <label>Work email</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" placeholder="you@conceptmastery.com" disabled={locked} />
-          <label>Password</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" disabled={locked} />
+          {!changeToken && <>
+            <label>Work email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" placeholder="you@conceptmastery.com" disabled={locked} />
+            <label>Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" disabled={locked} />
+          </>}
+
+          {changeToken && <>
+            <label>New password</label>
+            <input type="password" minLength={12} maxLength={128} value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="new-password" autoFocus />
+            <label>Confirm new password</label>
+            <input type="password" minLength={12} maxLength={128} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" />
+          </>}
+
+          {mfaMode === 'enroll' && enrollment && <div className="mfa-enrollment">
+            <img src={enrollment.qr_code} alt="QR code for CCAT Admin authenticator setup" />
+            <p>Cannot scan it? Enter this setup key:</p>
+            <code>{enrollment.secret}</code>
+          </div>}
+          {mfaMode !== 'none' && <>
+            <label>Authenticator code</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              value={mfaCode}
+              onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              autoComplete="one-time-code"
+              autoFocus
+              disabled={locked}
+            />
+          </>}
 
           <button className="btn" style={{ width: '100%', marginTop: 18, justifyContent: 'center' }} disabled={busy || locked}>
-            {locked ? 'Account locked' : busy ? 'Signing in…' : 'Continue'}
+            {locked ? 'Account locked' : busy ? 'Signing in…' : changeToken ? 'Change password and sign in' : mfaMode === 'none' ? 'Continue' : 'Verify and sign in'}
           </button>
           <div className="err">{err}</div>
 
-          <div className="demo">
+          {import.meta.env.DEV && !changeToken && <div className="demo">
             <div className="dl">Demo accounts — tap to fill</div>
             {DEMO.map(d => (
               <button type="button" key={d.email} className="demorow" onClick={() => fill(d.email)}>
@@ -98,7 +153,7 @@ function Login() {
             {locked
               ? <div className="locknote">This account is locked — too many attempts. Contact a Super-Admin.</div>
               : fails > 0 && <div className="locknote">{fails} of 5 failed attempts</div>}
-          </div>
+          </div>}
         </form>
       </div>
     </div>

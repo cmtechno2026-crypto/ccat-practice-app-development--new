@@ -189,6 +189,7 @@ p { line-height: 1.5; }
 
 /* ---- Practice feedback loop ---- */
 .options-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.content-block-image { display: block; width: auto; max-width: min(100%, 720px); max-height: 420px; object-fit: contain; margin: 12px auto; border-radius: 12px; }
 .feedback { border-radius: var(--radius-md); padding: 12px 14px; font-weight: 700; }
 .feedback[data-tone="ok"] { background: #f0fbf6; border: 2px solid var(--teal); color: var(--green); }
 .feedback[data-tone="retry"] { background: #fff6e9; border: 2px solid #f4d98a; color: #b7891b; }

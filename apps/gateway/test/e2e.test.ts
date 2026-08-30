@@ -103,6 +103,24 @@ describe('registration + identity', () => {
     const bad = await json('POST', '/v1/auth/login', { body: { username: 'kid_pin', pin: '9999', device_hash: 'device-P' } });
     expect(bad.status).toBe(401);
   });
+
+  it('rotates refresh tokens and rejects replay of the old token', async () => {
+    const { tokens } = await registerAndLogin('kid_refresh', 'device-R');
+    const rotated = await json('POST', '/v1/auth/refresh', {
+      body: { refresh_token: tokens.refresh_token },
+    });
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.refresh_token).not.toBe(tokens.refresh_token);
+
+    const profile = await json('GET', '/v1/profile', { token: rotated.body.access_token });
+    expect(profile.status).toBe(200);
+    expect(profile.body.username).toBe('kid_refresh');
+
+    const replay = await json('POST', '/v1/auth/refresh', {
+      body: { refresh_token: tokens.refresh_token },
+    });
+    expect(replay.status).toBe(401);
+  });
 });
 
 describe('sessions: one-active + exactly-once', () => {

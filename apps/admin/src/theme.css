@@ -189,6 +189,10 @@ tbody tr:hover td{background:var(--card-2)}
 .login2 .demorow .ml{font-size:12px;color:var(--muted)}
 .login2 .demorow .rl{margin-left:auto;font-weight:800;font-size:11px;border-radius:999px;padding:3px 9px}
 .login2 .locknote{background:var(--coral-bg);color:var(--coral);border-radius:11px;padding:9px;text-align:center;font-weight:800;font-size:12.5px;margin-top:8px;width:100%}
+.login2 .mfa-enrollment{margin:18px 0;padding:16px;border:1px solid var(--line);border-radius:14px;text-align:center;background:var(--card-2)}
+.login2 .mfa-enrollment img{display:block;width:180px;height:180px;margin:0 auto 10px}
+.login2 .mfa-enrollment p{margin:0 0 6px;color:var(--muted);font-size:12px}
+.login2 .mfa-enrollment code{display:block;overflow-wrap:anywhere;font-size:12px;color:var(--ink)}
 @media (max-width:820px){ .login2{grid-template-columns:1fr} .login2 .brandside{padding:40px} .login2 .brandside h2{font-size:32px;margin-top:24px} }
 
 /* ============ Students directory (v2) ============ */

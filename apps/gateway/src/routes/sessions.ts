@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
+import { signContentBlocks } from '../lib/assets.js';
 import { checkIdempotency, saveIdempotency } from '../lib/idempotency.js';
 import { finalizeSession } from '../lib/finalize.js';
 import { seededShuffle } from '../lib/shuffle.js';
@@ -51,14 +52,17 @@ function seedFrom(...parts: string[]): number {
   return (h >>> 0);
 }
 
-export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config) {
+export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // POST /v1/sessions/start — one active session per student (§9.1, §9.2)
   app.post('/v1/sessions/start', { preHandler: [app.authenticateStudent] }, async (req, reply) => {
     const body = startSchema.parse(req.body);
     const { studentId, deviceId } = req.student!;
 
     const sv = await db.query(
-      `select sv.id, sv.allowed_practice, sv.allowed_exam, sv.state, sv.ruleset_version_id, qs.grade_id
+      `select sv.id, sv.allowed_practice, sv.allowed_exam, sv.state, sv.ruleset_version_id, sv.question_count, qs.grade_id,
+              (select count(*)::int from ccat.set_version_questions svq
+                join ccat.question_versions qv on qv.id=svq.question_version_id
+               where svq.set_version_id=sv.id and svq.active=true and qv.state='published') served_question_count
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id = sv.question_set_id
         where sv.id = $1`,
@@ -73,6 +77,8 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
     const gs = await db.query(`select grade_id from ccat.students where id = $1`, [studentId]);
     if (gs.rows.length === 0 || gs.rows[0]!.grade_id !== set.grade_id) throw Errors.notFound('Set version not found');
     if (set.state !== 'published') throw Errors.validation('Set version is not published', { code: 'SET_NOT_PUBLISHED' });
+    if (Number(set.question_count) < 1 || Number(set.served_question_count) !== Number(set.question_count))
+      throw Errors.validation('Published set content is incomplete', { code: 'SET_CONTENT_INVALID' });
     // Grade-level practice switch (Admin → Practice control). When practice is disabled for the
     // student's grade, the server refuses to start a practice session regardless of client state —
     // the toggle is authoritative, not merely a UI hint.
@@ -168,7 +174,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
               qcat.key as category_key, qcat.name as category_name,
               sa.selected_option_ids, sa.answer_version
          from ccat.set_version_questions svq
-         join ccat.question_versions qv on qv.id = svq.question_version_id
+         join ccat.question_versions qv on qv.id = svq.question_version_id and qv.state='published'
          join ccat.logical_questions lq on lq.id = qv.logical_question_id
          join ccat.categories qcat on qcat.id = lq.category_id
          left join ccat.session_answers sa on sa.session_id = $1 and sa.question_version_id = qv.id
@@ -189,10 +195,12 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
         multi: r.multi === true, // "pick all correct" — count only, never which options
         category_key: r.category_key, // battery grouping for exam (Verbal/Non-verbal/Quantitative)
         category_name: r.category_name,
-        prompt_blocks: r.prompt_blocks,
+        prompt_blocks: signContentBlocks(r.prompt_blocks, cfg.publicUrl, cfg.hmacSecret),
         // Options shuffled per-question with a seed derived from the session option seed + index.
         option_blocks: seededShuffle(
-          Array.isArray(r.option_blocks) ? r.option_blocks : [],
+          Array.isArray(r.option_blocks)
+            ? r.option_blocks.map((o: any) => ({ ...o, content: signContentBlocks(o.content, cfg.publicUrl, cfg.hmacSecret) }))
+            : [],
           (Number(sess.option_order_seed) ^ ((i + 1) * 0x9e3779b1)) >>> 0,
         ),
         selected_option_ids: r.selected_option_ids ?? [],

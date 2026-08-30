@@ -193,7 +193,7 @@ function StageEditor({ ctx, onClose, onSaved }: { ctx: { family: any; stage_numb
           {assetId ? <img src={api.assetUrl(assetId)} alt="stage art" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="muted" style={{ fontSize: 22 }}>🖼️</span>}
         </div>
         <div className="rowactions">
-          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
           <button className="btn ghost sm" disabled={uploading} onClick={() => fileRef.current?.click()}>{uploading ? 'Uploading…' : 'Upload image'}</button>
           {assetId && <button className="btn ghost sm" onClick={() => setAssetId(null)}>Remove</button>}
         </div>

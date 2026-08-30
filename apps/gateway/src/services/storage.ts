@@ -3,10 +3,8 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 // Storage service abstraction (Blueprint §36 asset storage). The Gateway depends only on this
-// interface; the driver is chosen by config so moving from local disk to S3 / Supabase Storage /
-// GCS at global-deploy time is a config change, not a code change. Content-addressed keys keep it
-// CDN-friendly. Only the local-disk driver is implemented now; cloud drivers throw a clear
-// "not configured" error until wired, leaving the seam ready.
+// interface; the driver is chosen by config. Supabase Storage is the production implementation;
+// its secret key remains inside the Gateway. Local disk is retained only for local development.
 
 export interface StoredObject { key: string; url: string }
 export interface FetchedObject { bytes: Buffer; contentType: string }
@@ -57,15 +55,75 @@ class UnconfiguredCloudStorage implements StorageService {
   urlFor(assetId: string): string { return `/v1/admin/content/assets/${assetId}`; }
 }
 
-export function createStorage(opts: { driver: string; uploadsDir: string }): StorageService {
+class SupabaseStorage implements StorageService {
+  readonly driver = 'supabase';
+  constructor(
+    private readonly baseUrl: string,
+    private readonly secretKey: string,
+    private readonly bucket: string,
+    private readonly fetchImpl: typeof fetch,
+  ) {}
+
+  private objectUrl(key: string) {
+    const path = key.split('/').map(encodeURIComponent).join('/');
+    return `${this.baseUrl}/storage/v1/object/${encodeURIComponent(this.bucket)}/${path}`;
+  }
+
+  private headers(contentType?: string): Record<string, string> {
+    return {
+      apikey: this.secretKey,
+      authorization: `Bearer ${this.secretKey}`,
+      ...(contentType ? { 'content-type': contentType, 'cache-control': '3600', 'x-upsert': 'false' } : {}),
+    };
+  }
+
+  async put(key: string, bytes: Buffer, contentType: string): Promise<void> {
+    const res = await this.fetchImpl(this.objectUrl(key), {
+      method: 'POST',
+      headers: this.headers(contentType),
+      body: bytes,
+    });
+    if (!res.ok) throw new Error(`Supabase Storage upload failed (${res.status})`);
+  }
+
+  async get(key: string): Promise<FetchedObject | null> {
+    const res = await this.fetchImpl(this.objectUrl(key), { headers: this.headers() });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Supabase Storage download failed (${res.status})`);
+    return {
+      bytes: Buffer.from(await res.arrayBuffer()),
+      contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+    };
+  }
+
+  urlFor(assetId: string): string { return `/v1/content/assets/${assetId}`; }
+}
+
+export function createStorage(opts: {
+  driver: string;
+  uploadsDir: string;
+  supabaseUrl?: string;
+  supabaseSecretKey?: string;
+  supabaseStorageBucket?: string;
+  fetchImpl?: typeof fetch;
+}): StorageService {
   switch (opts.driver) {
     case 'local':
       return new LocalDiskStorage(resolve(opts.uploadsDir));
-    case 's3':
     case 'supabase':
+      if (!opts.supabaseUrl || !opts.supabaseSecretKey) {
+        throw new Error('Supabase Storage requires SUPABASE_URL and SUPABASE_SECRET_KEY');
+      }
+      return new SupabaseStorage(
+        opts.supabaseUrl.replace(/\/$/, ''),
+        opts.supabaseSecretKey,
+        opts.supabaseStorageBucket ?? 'ccat-content',
+        opts.fetchImpl ?? fetch,
+      );
+    case 's3':
     case 'gcs':
       return new UnconfiguredCloudStorage(opts.driver);
     default:
-      return new LocalDiskStorage(resolve(opts.uploadsDir));
+      throw new Error(`Unknown storage driver "${opts.driver}"`);
   }
 }

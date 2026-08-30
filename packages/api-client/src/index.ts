@@ -44,6 +44,7 @@ export class CcatClient {
   readonly baseUrl: string;
   readonly tokens: TokenStore;
   private readonly f: typeof fetch;
+  private refreshInFlight: Promise<boolean> | null = null;
 
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
@@ -51,7 +52,7 @@ export class CcatClient {
     this.f = opts.fetchImpl ?? fetch;
   }
 
-  private async request<T>(method: string, path: string, opts: { body?: unknown; auth?: boolean; headers?: Record<string, string> } = {}): Promise<T> {
+  private async request<T>(method: string, path: string, opts: { body?: unknown; auth?: boolean; headers?: Record<string, string> } = {}, retried = false): Promise<T> {
     // Only send a JSON content-type when there is actually a body (bodyless GET/DELETE).
     const headers: Record<string, string> = { ...(opts.headers ?? {}) };
     if (opts.body !== undefined) headers['content-type'] = 'application/json';
@@ -64,6 +65,10 @@ export class CcatClient {
       headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     });
+    if (res.status === 401 && opts.auth && !retried) {
+      const refreshed = await this.tryRefresh();
+      if (refreshed) return this.request<T>(method, path, opts, true);
+    }
     const text = await res.text();
     const json = text ? JSON.parse(text) : null;
     if (!res.ok) {
@@ -71,6 +76,24 @@ export class CcatClient {
       throw new ApiError(res.status, e?.code ?? 'UNKNOWN', e?.message ?? res.statusText, e?.request_id);
     }
     return json as T;
+  }
+
+  private async tryRefresh(): Promise<boolean> {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    this.refreshInFlight = (async () => {
+      const refreshToken = await this.tokens.getRefresh();
+      if (!refreshToken) return false;
+      try {
+        const t = await this.request<TokenPair>('POST', '/v1/auth/refresh', { body: { refresh_token: refreshToken } }, true);
+        await this.tokens.set(t);
+        return true;
+      } catch {
+        await this.tokens.clear();
+        return false;
+      }
+    })();
+    try { return await this.refreshInFlight; }
+    finally { this.refreshInFlight = null; }
   }
 
   // ---- catalog / health -----------------------------------------------------
@@ -99,6 +122,13 @@ export class CcatClient {
   // ---- auth (§4.4, §5) ------------------------------------------------------
   async login(username: string, pin: string, deviceHash: string): Promise<TokenPair> {
     const t = await this.request<TokenPair>('POST', '/v1/auth/login', { body: { username, pin, device_hash: deviceHash } });
+    await this.tokens.set(t);
+    return t;
+  }
+  async refreshTokens(): Promise<TokenPair> {
+    const refreshToken = await this.tokens.getRefresh();
+    if (!refreshToken) throw new ApiError(401, 'UNAUTHORIZED', 'No refresh token');
+    const t = await this.request<TokenPair>('POST', '/v1/auth/refresh', { body: { refresh_token: refreshToken } }, true);
     await this.tokens.set(t);
     return t;
   }

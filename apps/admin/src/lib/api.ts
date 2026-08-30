@@ -1,5 +1,6 @@
 // Typed client for the CCAT Gateway admin API. Token kept in memory + sessionStorage.
-const GATEWAY: string = (window as any).__CCAT_GATEWAY__ || 'http://localhost:8080';
+const configuredGateway = window.__CCAT_GATEWAY__ || import.meta.env.VITE_GATEWAY_URL;
+const GATEWAY: string = (configuredGateway || 'http://localhost:8080').replace(/\/$/, '');
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: any) {
@@ -28,7 +29,8 @@ async function req<T>(method: string, path: string, body?: unknown, headers?: Re
 export const api = {
   gateway: GATEWAY,
   // auth
-  login: (email: string, password: string) => req<{ access_token: string; admin: any }>('POST', '/v1/admin/auth/login', { email, password }),
+  login: (email: string, password: string, mfa_code?: string) => req<{ access_token: string; admin: any }>('POST', '/v1/admin/auth/login', { email, password, ...(mfa_code ? { mfa_code } : {}) }),
+  changePassword: (change_token: string, new_password: string) => req<{ access_token: string; admin: any }>('POST', '/v1/admin/auth/change-password', { change_token, new_password }),
   me: () => req<any>('GET', '/v1/admin/me'),
   // dashboard + health
   dashboard: (window = 7) => req<any>('GET', `/v1/admin/dashboard?window=${window}`),
@@ -50,6 +52,7 @@ export const api = {
   },
   studentStats: () => req<{ total: number; active: number; suspended: number; banned: number; pending_deletion: number; practised_today: number }>('GET', '/v1/admin/students/stats'),
   studentDetail: (id: string) => req<any>('GET', `/v1/admin/students/${id}/detail`),
+  revealGuardian: (id: string) => req<{ guardians: any[] }>('GET', `/v1/admin/students/${id}/guardian-contact`),
   studentStatus: (id: string, version: number, to_status: string, reason_code: string, reason_text?: string) =>
     req<any>('POST', `/v1/admin/students/${id}/status`, { to_status, reason_code, reason_text }, { 'if-match': String(version) }),
   revokeDevice: (id: string, reason: string) => req<any>('POST', `/v1/admin/students/${id}/device/revoke`, { reason }),
@@ -62,13 +65,15 @@ export const api = {
     req<any>('POST', '/v1/admin/rewards/adjust', { student_id, kind, delta, reason, reference }),
   // content
   taxonomy: () => req<any>('GET', '/v1/admin/content/taxonomy'),
-  questions: (q: { state?: string; grade_id?: string; category_id?: string } = {}) => {
+  questions: (q: { state?: string; grade_id?: string; category_id?: string; search?: string; cursor?: string; limit?: number } = {}) => {
     const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as any).toString();
     return req<{ items: any[] }>('GET', `/v1/admin/content/questions${p ? '?' + p : ''}`);
   },
   question: (id: string) => req<any>('GET', `/v1/admin/content/questions/${id}`),
   createQuestion: (b: any) => req<any>('POST', '/v1/admin/content/questions', b),
   editQuestion: (id: string, b: any) => req<any>('PATCH', `/v1/admin/content/questions/${id}`, b),
+  reviseQuestion: (id: string) => req<{ id: string; state: string }>('POST', `/v1/admin/content/questions/${id}/revise`),
+  deleteQuestion: (id: string) => req<{ deleted: boolean }>('DELETE', `/v1/admin/content/questions/${id}`),
   questionVersions: (id: string) => req<{ items: any[] }>('GET', `/v1/admin/content/questions/${id}/versions`),
   reviewQuestion: (id: string, decision: string, feedback?: string) => req<any>('POST', `/v1/admin/content/questions/${id}/review`, { decision, feedback }),
   publishQuestion: (id: string) => req<any>('POST', `/v1/admin/content/questions/${id}/publish`),

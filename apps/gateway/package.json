@@ -10,10 +10,13 @@
     "migrate": "tsx src/lib/migrate.ts",
     "seed": "tsx src/lib/seed.ts",
     "test": "vitest run",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
     "typecheck": "tsc --noEmit",
     "seed:students": "tsx src/lib/seed-students.ts",
     "seed:content": "tsx src/lib/seed-content.ts",
-    "seed:preview": "tsx src/lib/seed-preview.ts"
+    "seed:preview": "tsx src/lib/seed-preview.ts",
+    "verify:core": "node --import tsx scripts/verify-core.ts",
+    "provision:admin-auth": "node --import tsx scripts/provision-admin-auth.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

@@ -82,8 +82,8 @@ pnpm --filter @ccat/gateway dev
 - **Announcements & Book Store** (§21, §26): `GET /v1/announcements`; `GET /v1/books`,
   `POST /v1/books/:id/adult-challenge` (arithmetic adult gate, no OTP), `POST /v1/books/:id/retailer-handoff`
   (validates the gate, returns an allowlisted HTTPS destination).
-- **Admin** (§22–§25, local dev auth): `POST /v1/admin/auth/login` (email/password; production →
-  Supabase Auth + MFA), `GET /v1/admin/me`, `GET /v1/admin/students` (computed Age + guardian
+- **Admin** (§22–§25): `POST /v1/admin/auth/login` (local/dev credentials; staging/production use
+  Supabase Auth password + mandatory TOTP/AAL2), `GET /v1/admin/me`, `GET /v1/admin/students` (computed Age + guardian
   PII), `POST /v1/admin/students/:id/status` (suspend/ban with permission checks, reason, audit,
   session revocation, `If-Match`/ETag optimistic concurrency), `GET /v1/admin/audit` (self /
   global scope). RBAC loads DB-backed permissions per request; `super_admin` implicit-all.
@@ -93,11 +93,6 @@ pnpm --filter @ccat/gateway dev
 Tests added (`test/learning-core.test.ts`): autosave + stale rejection + correct scoring/XP,
 incorrect → 0 XP, timed auto-submit via deadline guard and via the worker, device replacement
 old/new token + login behavior, PIN recovery revokes sessions + old/new PIN.
-
-## Deliberately NOT yet built (remainder of Phase 1–4)
-Admin auth (Supabase Auth) + MFA + RBAC + all admin domains; content authoring/review/publish;
-achievements/avatars/themes; announcements/push; Book Store; server-side option/question shuffle
-by seed (currently stored order); Admin Web; Expo mobile app.
 
 ## Notes on prod
 - In production the pool authenticates as the least-privilege `ccat_gateway` role, and Admin

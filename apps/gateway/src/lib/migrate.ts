@@ -81,8 +81,8 @@ export async function runMigrations(databaseUrl: string): Promise<MigrateResult>
 // never ran on Windows and migrations appeared to succeed while doing nothing.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   loadEnv();
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL required');
+  const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!url) throw new Error('MIGRATION_DATABASE_URL or DATABASE_URL required');
   runMigrations(url)
     .then((r) => {
       if (r.backfilled) console.log(`Database already migrated — recorded ${r.skipped.length} existing migrations, nothing to apply.`);

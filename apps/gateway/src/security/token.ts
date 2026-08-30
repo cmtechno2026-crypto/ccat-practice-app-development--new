@@ -65,6 +65,26 @@ export function verifyAdminToken(token: string, secret: string): AdminTokenPaylo
   } catch { return null; }
 }
 
+export interface AdminPasswordChangeToken { sub: string; purpose: 'password_change'; exp: number; }
+export function signAdminPasswordChangeToken(payload: AdminPasswordChangeToken, secret: string): string {
+  const body = b64url(Buffer.from(JSON.stringify(payload)));
+  const sig = b64url(createHmac('sha256', secret + ':admin-password-change').update(body).digest());
+  return `${body}.${sig}`;
+}
+export function verifyAdminPasswordChangeToken(token: string, secret: string): AdminPasswordChangeToken | null {
+  const dot = token.indexOf('.');
+  if (dot < 0) return null;
+  const body = token.slice(0, dot); const sig = token.slice(dot + 1);
+  const expected = b64url(createHmac('sha256', secret + ':admin-password-change').update(body).digest());
+  const a = Buffer.from(sig); const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString()) as AdminPasswordChangeToken;
+    if (payload.purpose !== 'password_change' || typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now()) return null;
+    return payload;
+  } catch { return null; }
+}
+
 // Short-lived signed grant/ticket that carries the guardian + consent state between the stateless
 // registration steps (Blueprint §4). ONE guardian_contact holds name + email + phone. Contacts are
 // VALIDATED server-side (email format + E.164 phone), NOT verified by OTP — `validated` is set once

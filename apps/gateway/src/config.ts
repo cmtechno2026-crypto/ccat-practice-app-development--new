@@ -16,6 +16,11 @@ export interface Config {
   // Service abstractions (Blueprint §36). Drivers are pluggable; local is the dev default.
   storageDriver: string;      // local | s3 | supabase | gcs
   uploadsDir: string;         // local-disk asset root
+  publicUrl: string;          // externally reachable Gateway origin used in signed asset URLs
+  supabaseUrl?: string;
+  supabasePublishableKey?: string; // Gateway uses this for ordinary Supabase Auth requests
+  supabaseSecretKey?: string; // Gateway-only; never exposed to either SPA
+  supabaseStorageBucket: string;
 }
 
 function required(name: string, fallback?: string): string {
@@ -32,13 +37,24 @@ const WEAK_SECRETS = new Set(['dev-pepper', 'change-me', 'change-me-in-prod', 'c
 export function loadConfig(): Config {
   const env = (process.env.NODE_ENV as Config['env']) ?? 'local';
   const isProd = env === 'production';
+  const usesSupabaseAuth = env === 'production' || env === 'staging';
   const hmacSecret = required('GATEWAY_HMAC_SECRET');
   // In production the pepper is MANDATORY (no silent 'dev-pepper' fallback) and both secrets must be
   // strong. Local/dev/test keep the convenient defaults so the vitest suite and smoke scripts run.
   const pinPepper = isProd ? required('PIN_PEPPER') : (process.env.PIN_PEPPER ?? 'dev-pepper');
+  const storageDriver = process.env.STORAGE_DRIVER ?? (isProd ? 'supabase' : 'local');
+  const publicUrl = isProd ? required('GATEWAY_PUBLIC_URL') : (process.env.GATEWAY_PUBLIC_URL ?? `http://localhost:${Number(process.env.PORT ?? 8080)}`);
+  if (usesSupabaseAuth) {
+    required('SUPABASE_URL');
+    required('SUPABASE_PUBLISHABLE_KEY');
+    required('SUPABASE_SECRET_KEY');
+  }
   if (isProd) {
     if (WEAK_SECRETS.has(pinPepper)) throw new Error('PIN_PEPPER must be a strong production value, not a dev placeholder');
     if (WEAK_SECRETS.has(hmacSecret) || hmacSecret.length < 32) throw new Error('GATEWAY_HMAC_SECRET must be a strong production value (>=32 chars, not a placeholder)');
+    if (storageDriver !== 'supabase') throw new Error('Production STORAGE_DRIVER must be supabase');
+    const parsedPublicUrl = new URL(publicUrl);
+    if (parsedPublicUrl.protocol !== 'https:') throw new Error('GATEWAY_PUBLIC_URL must use HTTPS in production');
   }
   return {
     port: Number(process.env.PORT ?? 8080),
@@ -51,7 +67,12 @@ export function loadConfig(): Config {
     accessTokenTtlSeconds: Number(process.env.ACCESS_TTL_SECONDS ?? 900),
     refreshTokenTtlSeconds: Number(process.env.REFRESH_TTL_SECONDS ?? 60 * 60 * 24 * 30),
     untimedPracticeInactivityHours: Number(process.env.UNTIMED_INACTIVITY_HOURS ?? 24),
-    storageDriver: process.env.STORAGE_DRIVER ?? 'local',
+    storageDriver,
     uploadsDir: process.env.UPLOADS_DIR ?? '.uploads',
+    publicUrl: publicUrl.replace(/\/$/, ''),
+    supabaseUrl: process.env.SUPABASE_URL?.replace(/\/$/, ''),
+    supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
+    supabaseSecretKey: process.env.SUPABASE_SECRET_KEY,
+    supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? 'ccat-content',
   };
 }
