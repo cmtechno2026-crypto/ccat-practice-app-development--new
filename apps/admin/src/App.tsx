@@ -26,6 +26,7 @@ function Login() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [fails, setFails] = useState(0);
@@ -68,7 +69,13 @@ function Login() {
           <label>Work email</label>
           <input type="email" name="ccat-admin-email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="off" placeholder="you@conceptmastery.com" disabled={locked} />
           <label>Password</label>
-          <input type="password" name="ccat-admin-password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" placeholder="••••••••" disabled={locked} />
+          <div style={{ position: 'relative' }}>
+            <input type={showPw ? 'text' : 'password'} name="ccat-admin-password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" placeholder="••••••••" disabled={locked} style={{ paddingRight: 44 }} />
+            <button type="button" onClick={() => setShowPw(s => !s)} aria-label={showPw ? 'Hide password' : 'Show password'} aria-pressed={showPw} title={showPw ? 'Hide password' : 'Show password'} disabled={locked}
+              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: locked ? 'default' : 'pointer', fontSize: 18, lineHeight: 1, padding: 4 }}>
+              {showPw ? '🙈' : '👁️'}
+            </button>
+          </div>
 
           <button className="btn" style={{ width: '100%', marginTop: 18, justifyContent: 'center' }} disabled={busy || locked}>
             {locked ? 'Account locked' : busy ? 'Signing in…' : 'Continue'}

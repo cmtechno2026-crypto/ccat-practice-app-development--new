@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from './ui';
 import { BulkImport } from './BulkImport';
+import { FileImport } from './FileImport';
 
 // One shared, Google-Forms-style question editor for BOTH practice sets and exam-paper batteries.
 // Opens as a full-height drawer over the Content page. Collects ONE or MANY question cards and saves
@@ -34,10 +35,26 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bulk, setBulk] = useState(false);
+  const [fileImport, setFileImport] = useState(false);
 
   const isExam = !!set?.allowed_exam;
   const scopeCat = scopeCategoryId;
   const subForCat = useMemo(() => subs.filter((s: any) => s.category_id === (scopeCat || set?.category_id)), [subs, scopeCat, set]);
+  // The per-question TYPE field was removed from the card UI (it is redundant — every question inherits
+  // the SET's battery/subcategory/difficulty/grade shown in the header). The gateway still REQUIRES a
+  // non-empty question_type on the author payload, so we keep it on the model and default it to the
+  // set's subcategory rather than dropping it from the request (contract safety).
+  const slug = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const defaultType = (): string => {
+    const sub = subForCat.find((s: any) => s.id === (subId || set?.subcategory_id));
+    return (sub?.key && slug(sub.key)) || (set?.subcategory ? slug(set.subcategory) : '') || 'verbal_analogy';
+  };
+  // Append imported/parsed cards to the editor (shared by CSV bulk-add and file Import). Cards arrive in
+  // the same shape rowToCard produces; we stamp a fresh key and default the (hidden) type.
+  const injectCards = (imported: any[]) => {
+    setCards(cs => [...cs, ...imported.map((c: any) => ({ ...c, key: newKey(), type: c.type || defaultType() }))]);
+    mark();
+  };
 
   const load = async () => {
     setLoading(true);
@@ -76,7 +93,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
   const rmOpt = (key: string, i: number) => { setCards(cs => cs.map(c => c.key === key && c.opts.length > 2 ? { ...c, opts: c.opts.filter((_, j) => j !== i).map((o, j) => ({ ...o, option_id: OPTION_IDS[j] })) } : c)); mark(); };
   // New cards inherit the previous card's type (a convenience); type is then set per-card. There is no
   // panel-level default type anymore — question type lives on each card (CHANGE 3).
-  const addCard = () => { setCards(cs => [...cs, blankCard(cs[cs.length - 1]?.type || 'verbal_analogy')]); mark(); };
+  const addCard = () => { setCards(cs => [...cs, blankCard(cs[cs.length - 1]?.type || defaultType())]); mark(); };
   const dupCard = (key: string) => { setCards(cs => { const i = cs.findIndex(c => c.key === key); if (i < 0) return cs; const copy = { ...cs[i], key: newKey(), id: undefined, opts: cs[i].opts.map(o => ({ ...o })) }; return [...cs.slice(0, i + 1), copy, ...cs.slice(i + 1)]; }); mark(); };
   // Delete a question. Confirms first. If it was already saved (has an id), persist the removal
   // immediately (rewrite membership via authorSet) so it is gone on reopen without needing Save; an
@@ -121,7 +138,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
     if (!prompt_blocks.length) prompt_blocks.push({ type: 'text', value: '' });
     return {
       id: c.id, category_id: scopeCat || set.category_id, subcategory_id: subId || set.subcategory_id,
-      grade_id: set.grade_id, difficulty_id: diffId(), question_type: c.type || 'verbal_analogy',
+      grade_id: set.grade_id, difficulty_id: diffId(), question_type: c.type || defaultType(),
       prompt_blocks,
       option_blocks: filled.map(o => ({ option_id: o.option_id, content: [{ type: 'text', value: o.text.trim() }] })),
       correct_option_ids: filled.filter(o => o.correct).map(o => o.option_id),
@@ -169,6 +186,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
           <div className="edsub muted">{set && (<>{isExam ? 'Exam battery' : 'Practice set'} · Grade {set.grade_number} · {set.category}{set.subcategory ? ` / ${set.subcategory}` : ''} · <b>{set.state}</b> · {cards.length} card{cards.length === 1 ? '' : 's'} ({activeCount} publish-ready)</>)}</div>
         </div>
         <div className="edactions">
+          <button className="btn ghost sm" disabled={busy || !set || loading || preview} onClick={() => setFileImport(true)}>⤒ Import</button>
           <button className="btn ghost sm" onClick={() => setPreview(p => !p)}>{preview ? 'Edit' : 'Preview'}</button>
           <button className="btn sm" disabled={busy || !set} onClick={() => save()}>{busy ? 'Saving…' : 'Save draft'}</button>
           {set?.state !== 'published' && <button className="btn green sm" disabled={busy || !set} onClick={publish}>Publish</button>}
@@ -192,7 +210,6 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
                 <div className={`qcard ${issue ? 'qcard-bad' : ''}`} key={c.key}>
                   <div className="qcardhead">
                     <span className="qnum">Q{i + 1}</span>
-                    <input className="qtype" value={c.type} onChange={e => patchCard(c.key, { type: e.target.value })} aria-label="Question type" />
                     <span className="grow" />
                     {issue && <span className="qissue">{issue}</span>}
                     <button className="iconbtn" title="Move up" onClick={() => move(c.key, -1)} disabled={i === 0}>↑</button>
@@ -229,7 +246,10 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
       </div>
 
       {bulk && <BulkImport title="Bulk add questions from CSV" onClose={() => setBulk(false)}
-        onImport={(imported) => { setCards(cs => [...cs, ...imported.map(c => ({ ...c, key: newKey() }))]); mark(); setBulk(false); toast(`Added ${imported.length} question${imported.length === 1 ? '' : 's'} — review, then Save`); }} />}
+        onImport={(imported) => { injectCards(imported); setBulk(false); toast(`Added ${imported.length} question${imported.length === 1 ? '' : 's'} — review, then Save`); }} />}
+
+      {fileImport && <FileImport onClose={() => setFileImport(false)}
+        onImport={(imported) => { injectCards(imported); setFileImport(false); toast(`Imported ${imported.length} question${imported.length === 1 ? '' : 's'} — review, then Save draft`); }} />}
     </div>
   );
 }
