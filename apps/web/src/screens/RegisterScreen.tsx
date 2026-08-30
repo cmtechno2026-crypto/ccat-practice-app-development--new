@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '@ccat/api-client';
 import { parsePhone, type CountryCode } from '../lib/phone';
@@ -60,8 +60,25 @@ export function RegisterScreen() {
   const [birthYear, setBirthYear] = useState(2016);
   const [gradeId, setGradeId] = useState('');
   const [gradeList, setGradeList] = useState<{ id: string; grade_number: number; name: string }[]>([]);
-  const gradesP = useMemo(() => client.grades().catch(() => []), []);
-  useMemo(() => { gradesP.then((g: any) => { setGradeList(g); if (g[0]) setGradeId(g[0].id); }); }, [gradesP]);
+  const [gradesLoading, setGradesLoading] = useState(true);
+  // Load grades once, after mount, in a real effect (NOT useMemo — a memo is a render-phase perf hint
+  // React may discard/re-run, so firing an async fetch + setState from it left the list intermittently
+  // empty → the native <select> opened with zero options and "wouldn't scroll"). The ignore flag drops
+  // a late resolution if the component unmounts first.
+  useEffect(() => {
+    let ignore = false;
+    setGradesLoading(true);
+    client.grades()
+      .then((g: any) => {
+        if (ignore) return;
+        const list = Array.isArray(g) ? g : [];
+        setGradeList(list);
+        if (list[0]) setGradeId((cur) => cur || list[0].id);
+      })
+      .catch(() => { if (!ignore) setGradeList([]); })
+      .finally(() => { if (!ignore) setGradesLoading(false); });
+    return () => { ignore = true; };
+  }, []);
 
   // guardian
   const [guardianName, setGuardianName] = useState('');
@@ -77,7 +94,6 @@ export function RegisterScreen() {
   const [pin2, setPin2] = useState('');
 
   const age = ageFrom(birthYear, birthMonth, birthDay);
-  const ageValid = age >= 3 && age <= 18;
   const usernameValid = /^[a-z][a-z0-9_]{2,19}$/.test(username);
 
   // Phone: validate the national number against the selected country → E.164 (isomorphic with the server).
@@ -87,7 +103,7 @@ export function RegisterScreen() {
   }, [phoneNational, phoneCountry]);
   const phoneE164 = phoneObj?.number ?? '';
   const emailOk = emailValid(guardianEmail);
-  const detailsValid = displayName.trim().length > 0 && !!gradeId && ageValid && guardianName.trim().length > 0 && emailOk && !!phoneObj;
+  const detailsValid = displayName.trim().length > 0 && !!gradeId && guardianName.trim().length > 0 && emailOk && !!phoneObj;
 
   async function guard<T>(fn: () => Promise<T>) {
     setBusy(true); setErr(null);
@@ -149,7 +165,8 @@ export function RegisterScreen() {
               <div className="eyebrow">About the learner</div>
               <Field label="Child's first name"><input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="e.g. Aisha" /></Field>
               <Field label="Grade">
-                <select className="input" value={gradeId} onChange={(e) => setGradeId(e.target.value)}>
+                <select className="input" value={gradeId} onChange={(e) => setGradeId(e.target.value)} disabled={gradesLoading || gradeList.length === 0}>
+                  {gradeList.length === 0 && <option value="">{gradesLoading ? 'Loading grades…' : 'No grades available'}</option>}
                   {gradeList.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </Field>
@@ -162,13 +179,11 @@ export function RegisterScreen() {
                     {monthNames.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
                   </select>
                   <select className="input" aria-label="Birth year" value={birthYear} onChange={(e) => setBirthYear(+e.target.value)}>
-                    {Array.from({ length: 16 }, (_, i) => new Date().getFullYear() - 3 - i).map((y) => <option key={y} value={y}>{y}</option>)}
+                    {Array.from({ length: 101 }, (_, i) => new Date().getFullYear() - i).map((y) => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
               </Field>
-              {ageValid
-                ? <div className="pill" style={{ background: 'var(--tint-green)', color: 'var(--green)' }}>🎂 {age} years old</div>
-                : <div className="hint bad">Age must be between 3 and 18.</div>}
+              <div className="pill" style={{ background: 'var(--tint-green)', color: 'var(--green)' }}>🎂 {Math.max(0, age)} years old</div>
 
               <div className="eyebrow" style={{ marginTop: 8 }}>Parent / guardian</div>
               <Field label="Guardian name"><input className="input" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="Parent / guardian full name" /></Field>
