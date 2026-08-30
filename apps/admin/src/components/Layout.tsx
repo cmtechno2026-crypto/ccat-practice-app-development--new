@@ -87,8 +87,6 @@ export function Layout() {
             <span className="title">{title}</span>
           </span>
           <div className="who">
-            <span className="name">{me?.display_name}</span>
-            <span className="role">{me?.role === 'super_admin' ? 'Super-Admin' : 'Admin'}</span>
             <button className="iconbtn" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">◐</button>
             <button className="btn ghost sm" onClick={logout}>Sign out</button>
           </div>

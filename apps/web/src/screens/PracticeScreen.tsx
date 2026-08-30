@@ -46,14 +46,13 @@ export function PracticeScreen() {
   const [starting, setStarting] = useState(false);
 
   const initial = loadPrefs();
-  const [difficulty, setDifficulty] = useState<string>(initial.difficulty);
   const [timerMin, setTimerMin] = useState<number | null>(initial.timerMin);
   const [customOpen, setCustomOpen] = useState(false);
   const [customMins, setCustomMins] = useState<number>(initial.customMins ?? 20);
 
   useEffect(() => {
-    try { localStorage.setItem('cmPracticePrefs', JSON.stringify({ difficulty, timerMin, customMins })); } catch { /* */ }
-  }, [difficulty, timerMin, customMins]);
+    try { localStorage.setItem('cmPracticePrefs', JSON.stringify({ timerMin, customMins })); } catch { /* */ }
+  }, [timerMin, customMins]);
 
   const practice = useMemo(() => (data ?? []).filter((c) => c.allowed_modes.includes('practice')), [data]);
 
@@ -200,27 +199,17 @@ export function PracticeScreen() {
 
   // ---- SETS view (battery + category selected) ----
   if (battery && category) {
-    const setsAll = grouped[battery]?.[category] ?? [];
-    const sets = setsAll.filter((s) => difficulty === 'all' || (s.difficulty ?? '').toLowerCase() === difficulty.toLowerCase());
+    // Difficulty filter removed for now — all published sets in the category are shown (each set still
+    // displays its admin-assigned difficulty badge). The filter will be reintroduced later.
+    const sets = grouped[battery]?.[category] ?? [];
     return (
       <>
         <AppBar title={category} sub={`${batteryMeta(battery).name} · pick a set`} back />
         <div className="content stack">
           {crumb}
-          {/* Difficulty filter (per-set attribute) */}
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Difficulty</div>
-            <div className="row" style={{ flexWrap: 'wrap' }} role="group" aria-label="Difficulty filter">
-              <button className={`btn small ${difficulty === 'all' ? '' : 'secondary'}`} aria-pressed={difficulty === 'all'} onClick={() => setDifficulty('all')}>All</button>
-              {(['Easy', 'Medium', 'Hard'] as const).map((d) => {
-                const m = DIFF_META[d.toLowerCase()]!; const on = difficulty.toLowerCase() === d.toLowerCase();
-                return <button key={d} className={`btn small ${on ? '' : 'secondary'}`} aria-pressed={on} style={on ? { background: m.color } : { color: m.color }} onClick={() => setDifficulty(d)}>{m.icon} {d}</button>;
-              })}
-            </div>
-          </div>
           {loading && <Loader />}
           {error && <ErrorNote error={error} onRetry={reload} />}
-          {sets.length === 0 && <div className="empty">No {difficulty !== 'all' ? `${difficulty} ` : ''}sets in {category} yet.<br />Try another difficulty, or check back after your teacher publishes more.</div>}
+          {sets.length === 0 && <div className="empty">No sets in {category} yet.<br />Check back after your teacher publishes more.</div>}
           {sets.map((s) => {
             const st = s.progress?.status ?? 'not_started';
             const dm = DIFF_META[(s.difficulty ?? '').toLowerCase()];

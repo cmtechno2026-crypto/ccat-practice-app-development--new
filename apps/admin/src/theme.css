@@ -137,7 +137,8 @@ tbody tr:hover td{background:var(--card-2)}
 .rail .brandhdr{display:flex;align-items:center;gap:11px;padding:2px 4px 12px;min-width:206px}
 .rail .brandhdr .logo{width:42px;height:42px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .rail .brandhdr .logo .cm{font-family:'Baloo 2';font-weight:800;color:var(--brand-ink);font-size:15px}
-.rail .brandhdr .bt{min-width:0}
+.rail .brandhdr .bt{min-width:0;opacity:0;max-width:0;overflow:hidden;transition:opacity .14s ease,max-width .18s ease}
+.rail:hover .brandhdr .bt,.rail:focus-within .brandhdr .bt{opacity:1;max-width:150px}
 .rail .brandhdr .bt b{font-family:'Baloo 2';font-size:15px;font-weight:700;color:#fff;display:block;line-height:1.1}
 .rail .brandhdr .bt span{font-size:10.5px;color:#8ea2c4;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
 .railitem{position:relative;display:flex;align-items:center;gap:13px;height:46px;padding:0 12px;border-radius:12px;
@@ -157,7 +158,7 @@ tbody tr:hover td{background:var(--card-2)}
 .rail:hover .railfoot .who2,.rail:focus-within .railfoot .who2{opacity:1;max-width:150px}
 .rail .railfoot .who2 .n{font-weight:800;font-size:13.5px;color:#fff;white-space:nowrap}
 .rail .railfoot .who2 .r{font-size:10.5px;color:#8ea2c4;font-weight:800;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
-@media (prefers-reduced-motion:reduce){.rail,.railitem .rlabel,.rail .railfoot .who2{transition:none}}
+@media (prefers-reduced-motion:reduce){.rail,.railitem .rlabel,.rail .railfoot .who2,.rail .brandhdr .bt{transition:none}}
 
 /* --- section tab strip under the topbar --- */
 .sectiontabs{display:flex;gap:4px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:60px;z-index:4;overflow-x:auto}

@@ -182,20 +182,56 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     await audit(db, req, 'content.set.copied', 'set_version', newId, `from ${id}`);
     return { id: newId, state: 'draft' };
   });
-  // Delete a DRAFT set version (published sets are retired, never deleted, for audit integrity).
+  // Permanently delete a set version — draft, published, OR retired (hard delete, distinct from Retire).
+  //
+  //   Retire  → keeps the row; flips state to 'retired'. The record and any student play-history stay
+  //             intact; the catalog (which filters state='published') simply stops showing it.
+  //   Delete  → removes the row outright. No retire step is required first.
+  //
+  // Scoped strictly to the one :id. We delete ONLY records directly owned by this set and required by a
+  // foreign key: its membership rows (set_version_questions), the set-version row itself, and — only if
+  // this was the set's last version — the parent question_set plus its learning-plan eligibility rows
+  // (learning_plan_sets). We NEVER delete questions, taxonomy, grades, students, or any unrelated set;
+  // member question_versions stay in the pool. There is no bulk/purge path.
+  //
+  // Hard delete is allowed only when NO student has ever played the set. ccat.sessions.set_version_id is
+  // a RESTRICT foreign key (0003), and sessions + their results/submissions/events are append-only
+  // (tg_forbid_mutation) — so a played set cannot be removed without destroying authoritative student
+  // score/audit history, which we must never do. A played set is refused (SET_HAS_ACTIVITY) and must be
+  // retired instead. (The published-immutability trigger is BEFORE UPDATE only, so it does not fire on
+  // DELETE; no trigger bypass is needed.)
+  //
+  // Effect on the student website is immediate and leaves no stale reference: /v1/catalog is a live join
+  // on the row's existence + state='published', and session-start 404s when the set_version row is gone.
   app.delete('/v1/admin/content/sets/:id', guard, async (req) => {
     requirePermission(req, 'content.create');
     const id = (req.params as any).id;
     const cur = await db.query('select state, question_set_id from ccat.question_set_versions where id=$1', [id]);
     if (cur.rows.length === 0) throw Errors.notFound('Set not found');
-    if (cur.rows[0]!.state !== 'draft') throw Errors.conflict('BAD_STATE', 'Only a draft set can be deleted; published sets are retired');
+    const questionSetId = cur.rows[0]!.question_set_id as string;
+
+    // Refuse hard-delete when the set carries student attempt history (append-only; permanent removal
+    // would destroy student sessions/results). The admin retires such a set instead.
+    const played = await db.query('select 1 from ccat.sessions where set_version_id=$1 limit 1', [id]);
+    if (played.rows.length > 0)
+      throw Errors.conflict('SET_HAS_ACTIVITY',
+        'This set has student attempt history and cannot be permanently deleted. Retire it instead to remove it from the student catalog.');
+
     await withTransaction(db, async (c) => {
+      // Membership of THIS version only (FK: set_version_questions.set_version_id).
       await c.query('delete from ccat.set_version_questions where set_version_id=$1', [id]);
+      // The version row itself. DELETE does not fire the BEFORE UPDATE immutability trigger.
       await c.query('delete from ccat.question_set_versions where id=$1', [id]);
-      const left = await c.query('select count(*)::int n from ccat.question_set_versions where question_set_id=$1', [cur.rows[0]!.question_set_id]);
-      if (left.rows[0]!.n === 0) await c.query('delete from ccat.question_sets where id=$1', [cur.rows[0]!.question_set_id]);
+      // Drop the parent logical set only when no versions remain, clearing its plan-eligibility rows
+      // first (FK: learning_plan_sets.question_set_id). No set_completions can reference it here — every
+      // completion requires a session, and a set with any session was already refused above.
+      const left = await c.query('select count(*)::int n from ccat.question_set_versions where question_set_id=$1', [questionSetId]);
+      if (left.rows[0]!.n === 0) {
+        await c.query('delete from ccat.learning_plan_sets where question_set_id=$1', [questionSetId]);
+        await c.query('delete from ccat.question_sets where id=$1', [questionSetId]);
+      }
     });
-    await audit(db, req, 'content.set.deleted', 'set_version', id, null);
+    await audit(db, req, 'content.set.deleted', 'set_version', id, cur.rows[0]!.state);
     return { deleted: true };
   });
   app.post('/v1/admin/content/sets/:id/publish', guard, async (req) => {

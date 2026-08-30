@@ -11,9 +11,10 @@ const NAV: NavItem[] = [
   { label: 'Home', icon: '🏠', to: '/home', match: (l) => l.pathname === '/home' },
   { label: 'Practice', icon: '✏️', to: '/practice', match: (l) => (l.pathname === '/practice' && !isExam(l)) || l.pathname.startsWith('/session') || l.pathname.startsWith('/result') },
   { label: 'Exam', icon: '📝', to: '/practice?mode=exam', match: (l) => l.pathname === '/practice' && isExam(l) },
+  { label: 'Customize', icon: '🎨', to: '/customize', match: (l) => l.pathname === '/customize' },
   { label: 'Rewards', icon: '🏅', to: '/rewards', match: (l) => l.pathname === '/rewards' || l.pathname === '/progress' },
   { label: 'Bookmark', icon: '🔖', to: '/bookmarks', match: (l) => l.pathname === '/bookmarks' },
-  { label: 'Profile', icon: '👤', to: '/profile', match: (l) => l.pathname === '/profile' || l.pathname === '/customize' },
+  { label: 'Profile', icon: '👤', to: '/profile', match: (l) => l.pathname === '/profile' },
 ];
 
 export function Sidebar() {

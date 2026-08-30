@@ -61,14 +61,14 @@ function Login() {
       </div>
 
       <div className="formside">
-        <form className="formcard" onSubmit={submit}>
+        <form className="formcard" onSubmit={submit} autoComplete="off">
           <h3>Welcome back</h3>
           <p className="sub">Admins sign in with their work email and password. Five failed attempts locks the account.</p>
 
           <label>Work email</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" placeholder="you@conceptmastery.com" disabled={locked} />
+          <input type="email" name="ccat-admin-email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="off" placeholder="you@conceptmastery.com" disabled={locked} />
           <label>Password</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" disabled={locked} />
+          <input type="password" name="ccat-admin-password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" placeholder="••••••••" disabled={locked} />
 
           <button className="btn" style={{ width: '100%', marginTop: 18, justifyContent: 'center' }} disabled={busy || locked}>
             {locked ? 'Account locked' : busy ? 'Signing in…' : 'Continue'}

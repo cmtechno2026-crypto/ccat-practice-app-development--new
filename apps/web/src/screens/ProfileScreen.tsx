@@ -51,7 +51,8 @@ function GuardianEditor({ account, onSaved }: { account: AccountInfo; onSaved: (
     if (!email.trim() && !phone.trim()) { flash('A guardian needs an email or a phone.'); return; }
     setBusy(true);
     try {
-      const r = await client.updateGuardian({ email: email.trim() || undefined, phone: phone.trim() || undefined, relationship: relationship.trim() || undefined });
+      // Guardian email is not editable here (recovery/OTP anchor) — send only phone + relationship.
+      const r = await client.updateGuardian({ phone: phone.trim() || undefined, relationship: relationship.trim() || undefined });
       onSaved(r); flash('Guardian updated'); setEditing(false);
     } catch (e) { flash((e as Error).message); } finally { setBusy(false); }
   }
@@ -70,7 +71,8 @@ function GuardianEditor({ account, onSaved }: { account: AccountInfo; onSaved: (
     <Card>
       <div className="eyebrow">👪 Edit guardian</div>
       <label className="field" style={{ marginTop: 8 }}><span>Email</span>
-        <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="guardian@example.com" /></label>
+        <input className="input" type="email" value={email} readOnly disabled /></label>
+      <div className="hint" style={{ marginTop: 6 }}>Guardian email can't be changed here — it secures recovery. Contact support to change it.</div>
       <label className="field" style={{ marginTop: 10 }}><span>Phone</span>
         <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 000 0000" /></label>
       <label className="field" style={{ marginTop: 10 }}><span>Relationship</span>
@@ -79,7 +81,6 @@ function GuardianEditor({ account, onSaved }: { account: AccountInfo; onSaved: (
           <option value="mother">Mother</option><option value="father">Father</option>
           <option value="guardian">Guardian</option><option value="grandparent">Grandparent</option><option value="other">Other</option>
         </select></label>
-      <div className="hint" style={{ marginTop: 8 }}>Changing the email marks it unverified until it's confirmed again.</div>
       <div className="row" style={{ marginTop: 10, justifyContent: 'flex-end', gap: 8 }}>
         <button className="btn small secondary" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
         <button className="btn small" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
@@ -168,7 +169,6 @@ export function ProfileScreen() {
         <div className="eyebrow">Security</div>
         <Card onClick={() => nav('/recovery')}><div className="between"><div><h3>Change / recover PIN</h3><div className="muted">Verify by guardian OTP</div></div><span className="pill">›</span></div></Card>
         <Card onClick={() => nav('/device')}><div className="between"><div><h3>Move to a new device</h3><div className="muted">Re-enroll this browser</div></div><span className="pill">›</span></div></Card>
-        <Card onClick={() => nav('/customize')}><div className="between"><div><h3>Avatars & themes</h3></div><span className="pill">›</span></div></Card>
         <Card onClick={() => nav('/referrals')}><div className="between"><div><h3>Invite friends</h3><div className="muted">Share your code, earn coins</div></div><span className="pill">›</span></div></Card>
         <Card onClick={() => nav('/help')}><div className="between"><div><h3>Help & support</h3><div className="muted">FAQ & report a problem</div></div><span className="pill">›</span></div></Card>
 
