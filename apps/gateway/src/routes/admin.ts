@@ -43,7 +43,7 @@ function permForStatus(to: string, from: string): string {
 export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
 
-  // POST /v1/admin/auth/login — email/password (+ MFA). DEV uses admin_local_credentials;
+  // POST /v1/admin/auth/login — email/password only (MFA removed). DEV uses admin_local_credentials;
   // production swaps this for Supabase Auth token verification (§22.1, §22.2).
   app.post('/v1/admin/auth/login', async (req) => {
     const body = loginSchema.parse(req.body);
@@ -78,10 +78,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     if (Number(a.failed_attempts ?? 0) > 0 || a.locked_until) {
       await db.query('update ccat.admin_local_credentials set failed_attempts=0, locked_until=null where admin_id=$1', [a.id]);
     }
-    // MFA: production verifies a TOTP here. In local/dev it is not enforced (documented).
-    if (cfg.env !== 'local' && cfg.env !== 'development' && !a.mfa_enrolled) {
-      throw Errors.forbidden('MFA_REQUIRED', 'MFA enrollment required');
-    }
+    // MFA enrollment is not required to sign in (removed by owner decision). Admins authenticate with
+    // work email + password only; account lockout after 5 failed attempts remains the brute-force guard.
     const token = signAdminToken({ sub: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds }, cfg.hmacSecret);
     const permissions = await loadAdminPermissions(db, a.id, a.security_role);
     return {

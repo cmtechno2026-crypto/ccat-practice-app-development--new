@@ -5,7 +5,7 @@ import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
-import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
+import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../plugins/adminAuth.js';
 import { hashSecret } from '../security/crypto.js';
 import { PERMISSION_BUNDLES } from '../lib/permissionBundles.js';
 
@@ -53,9 +53,9 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
     return { items: rows.rows };
   });
 
-  // Unlock a locked admin: clear the brute-force counters and issue a fresh one-time password.
+  // Unlock a locked admin: clear the brute-force counters and issue a fresh permanent password.
   app.post('/v1/admin/accounts/:id/unlock', guard, async (req) => {
-    requirePermission(req, 'admin.manage');
+    requireSuperAdmin(req);
     const id = (req.params as any).id;
     const tempPassword = randomBytes(9).toString('base64url');
     const hash = await hashSecret(tempPassword, cfg.pinPepper);
@@ -63,17 +63,18 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
       const cur = await c.query('select 1 from ccat.admin_profiles where id=$1', [id]);
       if (cur.rows.length === 0) throw Errors.notFound('Admin not found');
       await c.query('update ccat.admin_local_credentials set failed_attempts=0, locked_until=null, password_hash=$2 where admin_id=$1', [id, hash]);
-      await c.query('update ccat.admin_profiles set must_change_password=true where id=$1', [id]);
+      await c.query('update ccat.admin_profiles set must_change_password=false where id=$1', [id]);
       await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','admin.unlocked','admin',$2)`, [req.admin!.adminId, id]);
       return true;
     });
-    return { unlocked: done, temp_password: tempPassword, note: 'Account unlocked. Temporary password shown once — the admin must change it on next login.' };
+    return { unlocked: done, temp_password: tempPassword, note: 'Account unlocked. New permanent password shown once — the admin signs in with it.' };
   });
 
   app.post('/v1/admin/accounts', guard, async (req) => {
-    requirePermission(req, 'admin.manage');
+    requireSuperAdmin(req); // only a Super-Admin may create an admin and set its password
     const b = createSchema.parse(req.body);
-    // The admin may set the temporary password, or one is generated. Shown once either way (§22.2).
+    // The Super-Admin sets the password (or one is generated). It is PERMANENT — shown once here, and
+    // the new admin signs in with it (no forced first-login change; see must_change_password=false).
     const tempPassword = b.temp_password ?? randomBytes(9).toString('base64url');
     const generated = !b.temp_password;
     const hash = await hashSecret(tempPassword, cfg.pinPepper);
@@ -81,7 +82,7 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
       const dupe = await c.query('select 1 from ccat.admin_profiles where email=$1', [b.email]);
       if (dupe.rows.length > 0) throw Errors.conflict('EMAIL_TAKEN', 'An admin with that email exists');
       const p = await c.query(`insert into ccat.admin_profiles(id,email,display_name,security_role,status,mfa_enrolled,must_change_password,created_by)
-          values (gen_random_uuid(),$1,$2,$3,'active',false,true,$4) returning id`,
+          values (gen_random_uuid(),$1,$2,$3,'active',true,false,$4) returning id`,
         [b.email, b.display_name, b.role, req.admin!.adminId]);
       const pid = p.rows[0]!.id;
       await c.query('insert into ccat.admin_local_credentials(admin_id,password_hash) values ($1,$2)', [pid, hash]);
@@ -93,7 +94,7 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
         [req.admin!.adminId, pid, JSON.stringify({ role: b.role, permissions: b.permissions ?? [], recovery_channel: b.recovery_channel ?? 'email', password: generated ? 'generated' : 'set-by-admin' })]);
       return pid;
     });
-    return { id, temp_password: tempPassword, generated, note: 'Temporary password — shown once. The admin must change it and enrol MFA on first login.' };
+    return { id, temp_password: tempPassword, generated, note: 'Password — shown once. This is the admin\'s permanent password; they sign in with it (no first-login change, no MFA).' };
   });
 
   app.patch('/v1/admin/accounts/:id', guard, async (req) => {
@@ -162,11 +163,11 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
     return { deleted: true, status: 'deleted' };
   });
 
-  // Reset an admin's password → issue a new one-time temporary password, force change + MFA re-check
-  // on next login (§22.2). Admin auth is stateless (short-lived HMAC tokens), so there is no server
-  // session to revoke here; the old password simply stops working.
+  // Reset an admin's password → issue a new PERMANENT password (Super-Admin only). Admin auth is
+  // stateless (short-lived HMAC tokens), so there is no server session to revoke here; the old
+  // password simply stops working. The admin signs in with the new password (no forced change, no MFA).
   app.post('/v1/admin/accounts/:id/reset-password', guard, async (req) => {
-    requirePermission(req, 'admin.manage');
+    requireSuperAdmin(req);
     const id = (req.params as any).id;
     const exists = await db.query('select 1 from ccat.admin_profiles where id=$1', [id]);
     if (exists.rows.length === 0) throw Errors.notFound('Admin not found');
@@ -175,9 +176,9 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
     await withTransaction(db, async (c) => {
       await c.query(`insert into ccat.admin_local_credentials(admin_id,password_hash) values ($1,$2)
           on conflict (admin_id) do update set password_hash=excluded.password_hash`, [id, hash]);
-      await c.query('update ccat.admin_profiles set must_change_password=true where id=$1', [id]);
+      await c.query('update ccat.admin_profiles set must_change_password=false where id=$1', [id]);
       await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','admin.password.reset','admin',$2)`, [req.admin!.adminId, id]);
     });
-    return { temp_password: tempPassword, note: 'Temporary password — shown once. The admin must change it and re-verify MFA on next login.' };
+    return { temp_password: tempPassword, note: 'New password — shown once. This is the admin\'s permanent password; they sign in with it.' };
   });
 }

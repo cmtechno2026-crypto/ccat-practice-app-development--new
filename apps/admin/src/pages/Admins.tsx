@@ -28,17 +28,16 @@ export function Admins() {
   return (
     <>
       <h2>Admin Accounts</h2>
-      <p className="lead">Provision admins with a one-time temporary password (§22.2). Grant access with permission bundles, then fine-tune. The last active Super-Admin is protected (§28.2).</p>
+      <p className="lead">Provision admins with a permanent password you set (§22.2). Grant access with permission bundles, then fine-tune. The last active Super-Admin is protected (§28.2).</p>
       <Panel right={<button className="btn sm" onClick={() => setEditing('new')}>+ New admin</button>}>
         {loading ? <Loading /> : error ? <ErrorBox e={error} /> : (
           <div className="tablewrap"><table>
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Permissions</th><th>MFA</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
             <tbody>{data!.items.map((a: any) => (
               <tr key={a.id}>
                 <td style={{ fontWeight: 700 }}>{a.display_name}</td><td className="muted">{a.email}</td>
                 <td>{a.security_role === 'super_admin' ? <span className="pill s-active">Super-Admin</span> : 'Admin'}</td>
                 <td className="tabnum">{a.security_role === 'super_admin' ? 'all' : (a.permissions?.length || 0)}</td>
-                <td>{a.mfa_enrolled ? '✓' : <span className="muted">no</span>}</td>
                 <td><StatusPill status={a.status} />{a.locked && <span className="tag" style={{ marginLeft: 6, background: '#FDECE6', color: '#C2321C' }}>🔒 Locked</span>}</td>
                 <td><div className="rowactions">
                   {a.locked && <button className="btn sm" onClick={() => unlock(a)}>Unlock</button>}
@@ -60,8 +59,8 @@ export function Admins() {
         onSaved={() => { setEditing(null); reload(); }} />}
 
       {temp && (
-        <Modal title="Temporary password" onClose={() => setTemp(null)} footer={<button className="btn grow" onClick={() => setTemp(null)}>Done</button>}>
-          <p>Share this one-time password with <b>{temp.email}</b>. It won't be shown again. They must change it and enrol MFA on first login.</p>
+        <Modal title="Password" onClose={() => setTemp(null)} footer={<button className="btn grow" onClick={() => setTemp(null)}>Done</button>}>
+          <p>Share this password with <b>{temp.email}</b> securely. It won't be shown again — it is their permanent password and they sign in with it.</p>
           <div className="panel" style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: 18, margin: 0 }}>{temp.password}</div>
         </Modal>
       )}
@@ -123,7 +122,7 @@ function AdminEditor({ mode, admin, allPerms, bundles, onClose, onCreated, onSav
   const save = async () => {
     if (mode === 'new' && (!email.trim() || !name.trim())) { setErr('Email and name required'); return; }
     if (mode === 'new' && !verified) { setErr('Confirm you have verified this person should have access to student data'); return; }
-    if (mode === 'new' && tempPw && tempPw.length < 10) { setErr('Temporary password must be at least 10 characters (or leave blank to auto-generate)'); return; }
+    if (mode === 'new' && tempPw && tempPw.length < 10) { setErr('Password must be at least 10 characters (or leave blank to auto-generate)'); return; }
     setBusy(true); setErr('');
     try {
       if (mode === 'new') {
@@ -141,7 +140,7 @@ function AdminEditor({ mode, admin, allPerms, bundles, onClose, onCreated, onSav
       footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={busy} onClick={save}>{mode === 'new' ? 'Create' : 'Save'}</button></>}>
       {mode === 'new' && (
         <>
-          <div className="infobox">The temporary password is shown once, here — they set their own after signing in. Five failed attempts locks the account, and only a Super-Admin can unlock it.</div>
+          <div className="infobox">The password you set is shown once, here — it is the admin's permanent password (no first-login change, no MFA). Five failed attempts locks the account, and only a Super-Admin can unlock it.</div>
           <label className="pickrow" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}>
             <input type="checkbox" checked={verified} onChange={e => setVerified(e.target.checked)} /> I have verified this person should have access to student data.
           </label>
@@ -150,9 +149,9 @@ function AdminEditor({ mode, admin, allPerms, bundles, onClose, onCreated, onSav
             <div className="grow"><label>Admin ID (work email)</label><input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@conceptmastery.com" /><div className="muted" style={{ fontSize: 12 }}>Must be on the company domain</div></div>
           </div>
           <div className="row">
-            <div className="grow"><label>Temporary password</label>
+            <div className="grow"><label>Password</label>
               <div style={{ display: 'flex', gap: 6 }}><input value={tempPw} onChange={e => setTempPw(e.target.value)} placeholder="At least 10 characters (or Generate)" /><button type="button" className="btn ghost sm" onClick={genPw}>Generate</button></div>
-              <div className="muted" style={{ fontSize: 12 }}>Shown once; they set their own after signing in. Blank = auto-generate.</div>
+              <div className="muted" style={{ fontSize: 12 }}>Shown once. This becomes the admin's permanent password. Blank = auto-generate a strong one.</div>
             </div>
             <div className="grow"><label>Unlock code channel</label>
               <div className="filterchips" style={{ margin: 0 }}>
