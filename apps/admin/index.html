@@ -7,10 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script src="/config.js"></script>
     <script>
-      // Runtime-configurable Gateway URL (override without a rebuild):
-      //   ?gateway=http://host:8080  or  window.__CCAT_GATEWAY__
-      window.__CCAT_GATEWAY__ = new URLSearchParams(location.search).get('gateway') || window.__CCAT_GATEWAY__ || 'http://localhost:8080';
       // Theme: the mockup is light-only, so default to LIGHT regardless of OS preference.
       // Only an explicit toggle (persisted here) switches to dark. Set before paint to avoid a flash.
       try { document.documentElement.setAttribute('data-theme', localStorage.getItem('ccat_admin_theme') || 'light'); }

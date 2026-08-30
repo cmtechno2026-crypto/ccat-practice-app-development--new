@@ -42,6 +42,19 @@ const annWorker = setInterval(() => {
 }, 30_000);
 annWorker.unref();
 
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  app.log.warn({ signal }, 'Gateway shutting down');
+  clearInterval(worker);
+  clearInterval(streakWorker);
+  clearInterval(annWorker);
+  await Promise.allSettled([app.close(), workerPool.end()]);
+}
+process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.once('SIGINT', () => { void shutdown('SIGINT'); });
+
 app
   .listen({ port: cfg.port, host: cfg.host })
   .then((addr) => app.log.warn(`CCAT Gateway listening on ${addr} (env=${cfg.env})`))

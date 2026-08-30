@@ -10,6 +10,8 @@ on:
       - 'packages/contracts/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
+      - 'render.yaml'
+      - 'deploy/**'
       - '.github/workflows/core-ci.yml'
   push:
     branches: [master]
@@ -38,6 +40,7 @@ jobs:
       GATEWAY_HMAC_SECRET: ci-only-gateway-secret
       PIN_PEPPER: dev-pepper
       NODE_ENV: local
+      VITE_GATEWAY_URL: https://gateway.example.invalid
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -53,5 +56,7 @@ jobs:
       - run: pnpm --filter @ccat/api-client typecheck
       - run: pnpm --filter @ccat/gateway typecheck
       - run: pnpm --filter @ccat/gateway test
+      - name: Build production Gateway container
+        run: docker build -f apps/gateway/Dockerfile -t ccat-gateway-ci .
       - run: pnpm --filter @ccat/admin build
       - run: pnpm --filter @ccat/web build

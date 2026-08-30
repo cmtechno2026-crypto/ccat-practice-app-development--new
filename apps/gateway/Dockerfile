@@ -10,7 +10,7 @@ COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/api-client/package.json packages/api-client/package.json
 COPY packages/shared/package.json packages/shared/package.json
 # Only the gateway subgraph is needed at runtime.
-RUN pnpm install --filter @ccat/gateway... --prod=false --no-frozen-lockfile
+RUN pnpm install --filter @ccat/gateway... --prod=false --frozen-lockfile
 
 FROM node:22-slim AS run
 RUN corepack enable

@@ -8,6 +8,8 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/admin/package.json apps/admin/package.json
 RUN pnpm install --filter @ccat/admin... --no-frozen-lockfile
 COPY apps/admin ./apps/admin
+ARG VITE_GATEWAY_URL=https://gateway.invalid
+ENV VITE_GATEWAY_URL=$VITE_GATEWAY_URL
 RUN pnpm --filter @ccat/admin build
 
 FROM nginx:1.27-alpine AS run

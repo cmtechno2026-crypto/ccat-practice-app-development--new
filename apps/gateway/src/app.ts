@@ -58,6 +58,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
 
   const db = existingPool ?? createPool(cfg.databaseUrl);
   app.decorate('db', db);
+  if (!existingPool) app.addHook('onClose', async () => { await db.end(); });
   app.decorate('authenticateStudent', makeAuthenticateStudent(db, cfg.hmacSecret));
 
   // Security headers (Blueprint §33, §36.2). Minimal set; a full CSP lands with Admin Web.
