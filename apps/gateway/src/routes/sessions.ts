@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
+import { signContentBlocks } from '../lib/assets.js';
 import { checkIdempotency, saveIdempotency } from '../lib/idempotency.js';
 import { finalizeSession } from '../lib/finalize.js';
 import { seededShuffle } from '../lib/shuffle.js';
@@ -51,7 +52,7 @@ function seedFrom(...parts: string[]): number {
   return (h >>> 0);
 }
 
-export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config) {
+export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // POST /v1/sessions/start — one active session per student (§9.1, §9.2)
   app.post('/v1/sessions/start', { preHandler: [app.authenticateStudent] }, async (req, reply) => {
     const body = startSchema.parse(req.body);
@@ -194,10 +195,12 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
         multi: r.multi === true, // "pick all correct" — count only, never which options
         category_key: r.category_key, // battery grouping for exam (Verbal/Non-verbal/Quantitative)
         category_name: r.category_name,
-        prompt_blocks: r.prompt_blocks,
+        prompt_blocks: signContentBlocks(r.prompt_blocks, cfg.publicUrl, cfg.hmacSecret),
         // Options shuffled per-question with a seed derived from the session option seed + index.
         option_blocks: seededShuffle(
-          Array.isArray(r.option_blocks) ? r.option_blocks : [],
+          Array.isArray(r.option_blocks)
+            ? r.option_blocks.map((o: any) => ({ ...o, content: signContentBlocks(o.content, cfg.publicUrl, cfg.hmacSecret) }))
+            : [],
           (Number(sess.option_order_seed) ^ ((i + 1) * 0x9e3779b1)) >>> 0,
         ),
         selected_option_ids: r.selected_option_ids ?? [],

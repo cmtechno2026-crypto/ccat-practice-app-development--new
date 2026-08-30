@@ -60,6 +60,24 @@ const newSet = async (over: any = {}) => {
 };
 
 describe('CONTENT editor — batch author + publish', () => {
+  it('serves uploaded images only through valid, expiring Gateway URLs', async () => {
+    const uploaded = await j('POST', '/v1/admin/content/assets', {
+      token: su,
+      body: { mime_type: 'image/png', data_base64: Buffer.from([1, 2, 3, 4]).toString('base64'), alt_text: 'test image' },
+    });
+    expect(uploaded.status).toBe(200);
+    const assetUrl = new URL(uploaded.body.url);
+    expect(assetUrl.pathname).toMatch(/^\/v1\/content\/assets\//);
+    expect(assetUrl.searchParams.get('signature')).toBeTruthy();
+
+    const fetched = await j('GET', assetUrl.pathname + assetUrl.search);
+    expect(fetched.status).toBe(200);
+
+    assetUrl.searchParams.set('signature', 'tampered');
+    const tampered = await j('GET', assetUrl.pathname + assetUrl.search);
+    expect(tampered.status).toBe(401);
+  });
+
   it('keeps a published version immutable and permits deleting only its unreferenced revision draft', async () => {
     const created = await j('POST', '/v1/admin/content/questions', { token: su, body: card(900) });
     expect(created.status).toBe(200);

@@ -32,6 +32,7 @@ import { registerAdminCommsRoutes } from './routes/admin-comms.js';
 import { registerAdminAccountsRoutes } from './routes/admin-accounts.js';
 import { registerAdminStudentDetailRoutes } from './routes/admin-students.js';
 import { registerAdminOpsRoutes } from './routes/admin-ops.js';
+import { registerAssetRoutes } from './routes/assets.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -127,6 +128,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
 
   // Routes
   registerHealthRoutes(app, db);
+  registerAssetRoutes(app, db, cfg);
   registerCatalogRoutes(app, db);
   registerRegistrationRoutes(app, db, cfg);
   registerAuthRoutes(app, db, cfg);

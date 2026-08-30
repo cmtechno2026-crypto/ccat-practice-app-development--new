@@ -7,13 +7,14 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
 import { createStorage } from '../services/storage.js';
+import { signedAssetUrl } from '../lib/assets.js';
 
 // Content authoring extensions (Blueprint §17–§19): image assets, draft editing, version history,
 // question-set authoring (create + membership + exam papers) and image asset upload. These
 // complete the console's Content section on top of the existing question lifecycle routes.
 
 const EXT: Record<string, string> = {
-  'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg',
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif',
 };
 
 async function audit(db: DB, req: any, event: string, kind: string, id: string | null, reason: string | null) {
@@ -24,7 +25,13 @@ async function audit(db: DB, req: any, event: string, kind: string, id: string |
 export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
   const guard = { preHandler: [authenticateAdmin] };
-  const storage = createStorage({ driver: cfg.storageDriver, uploadsDir: cfg.uploadsDir });
+  const storage = createStorage({
+    driver: cfg.storageDriver,
+    uploadsDir: cfg.uploadsDir,
+    supabaseUrl: cfg.supabaseUrl,
+    supabaseSecretKey: cfg.supabaseSecretKey,
+    supabaseStorageBucket: cfg.supabaseStorageBucket,
+  });
 
   // ---- image assets ----------------------------------------------------------------------------
   const assetSchema = z.object({
@@ -41,7 +48,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
   app.post('/v1/admin/content/assets', guard, async (req) => {
     requireAssetAccess(req);
     const b = assetSchema.parse(req.body);
-    if (!EXT[b.mime_type]) throw Errors.validation('Unsupported image type (png, jpg, webp, gif, svg)');
+    if (!EXT[b.mime_type]) throw Errors.validation('Unsupported image type (png, jpg, webp, gif)');
     const bytes = Buffer.from(b.data_base64, 'base64');
     if (bytes.length === 0) throw Errors.validation('Empty image');
     if (bytes.length > 5 * 1024 * 1024) throw Errors.validation('Image exceeds 5 MB');
@@ -55,7 +62,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
       [id, key, b.mime_type, bytes.length, checksum, b.alt_text ?? null, req.admin!.adminId],
     );
     await audit(db, req, 'content.asset.created', 'content_asset', id, null);
-    return { id, url: storage.urlFor(id), mime_type: b.mime_type, byte_size: bytes.length };
+    return { id, url: signedAssetUrl(id, cfg.publicUrl, cfg.hmacSecret), mime_type: b.mime_type, byte_size: bytes.length };
   });
 
   app.get('/v1/admin/content/assets/:id', guard, async (req, reply) => {

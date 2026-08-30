@@ -5,6 +5,7 @@ import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
+import { signContentBlocks } from '../lib/assets.js';
 
 // Content management (Blueprint §17, §18): questions + review + publish, sets, learning plans.
 // Enforces the content state machine and the content.publish permission.
@@ -83,7 +84,15 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     const reviews = await db.query(`select review_stage, decision, feedback, created_at,
         (select display_name from ccat.admin_profiles ap where ap.id=cr.reviewer_id) reviewer
         from ccat.content_reviews cr where target_kind='question_version' and target_id=$1 order by created_at`, [id]);
-    return { ...r.rows[0], reviews: reviews.rows };
+    return {
+      ...r.rows[0],
+      prompt_blocks: signContentBlocks(r.rows[0]!.prompt_blocks, cfg.publicUrl, cfg.hmacSecret),
+      option_blocks: Array.isArray(r.rows[0]!.option_blocks)
+        ? r.rows[0]!.option_blocks.map((o: any) => ({ ...o, content: signContentBlocks(o.content, cfg.publicUrl, cfg.hmacSecret) }))
+        : r.rows[0]!.option_blocks,
+      explanation_blocks: signContentBlocks(r.rows[0]!.explanation_blocks, cfg.publicUrl, cfg.hmacSecret),
+      reviews: reviews.rows,
+    };
   });
 
   // Create a draft question (human-authored)
@@ -123,7 +132,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         `insert into ccat.question_versions(logical_question_id,version_number,grade_id,difficulty_id,question_type,prompt_blocks,option_blocks,correct_option_ids,explanation_blocks,accessibility,state,provenance,created_by)
          select logical_question_id,$2,grade_id,difficulty_id,question_type,prompt_blocks,option_blocks,correct_option_ids,explanation_blocks,accessibility,'draft',
                 coalesce(provenance,'{}'::jsonb) || jsonb_build_object('revised_from',$1::text,'origin','human'),$3
-           from ccat.question_versions where id=$1 returning id`,
+           from ccat.question_versions where id=$1::uuid returning id`,
         [sourceId, next.rows[0]!.n, req.admin!.adminId],
       );
       return r.rows[0]!.id as string;

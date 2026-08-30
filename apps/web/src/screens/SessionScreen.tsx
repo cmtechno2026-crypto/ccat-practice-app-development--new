@@ -6,8 +6,9 @@ import { AnswerBuffer, blocksToText, mmss, remainingSeconds } from '@ccat/client
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AppBar, Loader, ErrorNote, Card } from '../components/ui';
+import { ContentBlocks } from '../components/ContentBlocks';
 
-const KEYS = ['A', 'B', 'C', 'D', 'E'];
+const KEYS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 // Per-question PRACTICE feedback state (exam leaves this empty and stays silent).
 interface PQ {
@@ -283,7 +284,7 @@ export function SessionScreen() {
                 style={{ filter: bookmarked[q.logical_question_id] ? 'none' : 'grayscale(1) opacity(.6)' }}>🔖 {bookmarked[q.logical_question_id] ? 'Bookmarked' : 'Bookmark'}</button>
             </div>
           </div>
-          <h2 style={{ margin: '8px 0 4px' }}>{blocksToText(q.prompt_blocks)}</h2>
+          <h2 style={{ margin: '8px 0 4px' }}><ContentBlocks blocks={q.prompt_blocks} /></h2>
           {isMulti && <div className="muted">✔ Pick all correct answers, then Check.</div>}
         </div>
 
@@ -315,7 +316,7 @@ export function SessionScreen() {
               <button key={oid} className={cls} disabled={disabled}
                 role={isExam ? 'radio' : undefined} aria-checked={isExam ? examChosen.includes(oid) : undefined} onClick={onClick}>
                 <span className="key">{KEYS[oi]}</span>
-                <span>{blocksToText(opt.content)}</span>
+                <span><ContentBlocks blocks={opt.content} /></span>
                 {revealedCorrect && <span style={{ marginLeft: 'auto' }}>✅</span>}
                 {!isExam && p?.picks.includes(oid) && !revealedCorrect && <span style={{ marginLeft: 'auto' }}>❌</span>}
               </button>

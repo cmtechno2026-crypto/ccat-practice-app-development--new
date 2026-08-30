@@ -11,6 +11,11 @@ the gateway connects as a least-privilege role; service_role/DB creds live ONLY 
 - `PIN_PEPPER` — must match the pepper the admin password/PIN verifiers were created with.
   **Mandatory in production** (no silent `dev-pepper` fallback); the gateway fails to start if unset/weak.
 - `NODE_ENV=production`.
+- `GATEWAY_PUBLIC_URL=https://<api-domain>` — canonical Gateway origin used for expiring asset URLs.
+- `STORAGE_DRIVER=supabase` — production assets use the private Supabase Storage bucket.
+- `SUPABASE_URL=https://<project-ref>.supabase.co` — Gateway only.
+- `SUPABASE_SECRET_KEY` — Supabase secret/service key, Gateway only; never use a publishable key here.
+- `SUPABASE_STORAGE_BUCKET=ccat-content` — private bucket, 5 MB limit, PNG/JPEG/WebP/GIF allowlist (SVG is rejected).
 - **CORS — set BOTH if both browser clients call the gateway from their own origins:**
   - `ADMIN_WEB_ORIGIN=https://<admin-domain>` — Admin Console origin(s).
   - `WEB_APP_ORIGIN=https://<web-app-domain>` — student Web app origin(s).

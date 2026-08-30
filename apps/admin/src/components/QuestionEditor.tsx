@@ -133,7 +133,7 @@ export function QuestionEditor({ taxonomy, editing, onClose, onSaved }: Props) {
 
         <label>Question image (optional)</label>
         <div className="dropz" onClick={() => fileRef.current?.click()}>
-          {img ? <><div>Image attached · click to replace</div><img src={api.assetUrl(img.asset_id)} alt="" /></> : 'Click to upload a PNG or JPG (shown above the question).'}
+          {img ? <><div>Image attached · click to replace</div><img src={img.url} alt={img.alt ?? ''} /></> : 'Click to upload a PNG or JPG (shown above the question).'}
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) pickImage(f); }} />
         </div>
 
