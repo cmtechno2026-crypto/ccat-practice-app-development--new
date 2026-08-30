@@ -60,6 +60,38 @@ const newSet = async (over: any = {}) => {
 };
 
 describe('CONTENT editor — batch author + publish', () => {
+  it('keeps a published version immutable and permits deleting only its unreferenced revision draft', async () => {
+    const created = await j('POST', '/v1/admin/content/questions', { token: su, body: card(900) });
+    expect(created.status).toBe(200);
+
+    const approved = await j('POST', `/v1/admin/content/questions/${created.body.id}/review`, {
+      token: su,
+      body: { decision: 'approved', feedback: 'Regression fixture' },
+    });
+    expect(approved.status).toBe(200);
+    const published = await j('POST', `/v1/admin/content/questions/${created.body.id}/publish`, { token: su });
+    expect(published.status).toBe(200);
+
+    const cannotDeletePublished = await j('DELETE', `/v1/admin/content/questions/${created.body.id}`, { token: su });
+    expect(cannotDeletePublished.status).toBe(409);
+
+    const revised = await j('POST', `/v1/admin/content/questions/${created.body.id}/revise`, { token: su });
+    expect(revised.status).toBe(200);
+    expect(revised.body.id).not.toBe(created.body.id);
+
+    const original = await j('GET', `/v1/admin/content/questions/${created.body.id}`, { token: su });
+    const draft = await j('GET', `/v1/admin/content/questions/${revised.body.id}`, { token: su });
+    expect(original.body.state).toBe('published');
+    expect(original.body.version_number).toBe(1);
+    expect(draft.body.state).toBe('draft');
+    expect(draft.body.version_number).toBe(2);
+    expect(draft.body.provenance.revised_from).toBe(created.body.id);
+
+    const deleted = await j('DELETE', `/v1/admin/content/questions/${revised.body.id}`, { token: su });
+    expect(deleted.status).toBe(200);
+    expect((await j('GET', `/v1/admin/content/questions/${revised.body.id}`, { token: su })).status).toBe(404);
+  });
+
   it('adds MANY questions in one pass, then publishes (auto-approving the questions)', async () => {
     const id = await newSet();
     // Support (no content perms) is denied the author endpoint.
