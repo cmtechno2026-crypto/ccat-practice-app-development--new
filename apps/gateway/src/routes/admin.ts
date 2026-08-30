@@ -3,12 +3,13 @@ import { z } from 'zod';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
-import { Errors } from '../errors.js';
-import { verifySecret } from '../security/crypto.js';
-import { signAdminToken } from '../security/token.js';
+import { AppError, Errors } from '../errors.js';
+import { hashSecret, verifySecret } from '../security/crypto.js';
+import { signAdminPasswordChangeToken, signAdminToken, verifyAdminPasswordChangeToken } from '../security/token.js';
 import { makeAuthenticateAdmin, loadAdminPermissions, requirePermission } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { maskEmail, maskPhone } from '../lib/pii.js';
+import { SupabaseAdminAuth, SupabaseAdminDirectory } from '../services/adminAuth.js';
 
 // Audit event categories (mockup: Content / Student accounts / Economy / Governance). Each maps to
 // a set of event_type prefixes; used for the category filter chips and the colored row grouping.
@@ -26,6 +27,7 @@ function categorize(eventType: string): string {
 }
 
 const loginSchema = z.object({ email: z.string().email(), password: z.string(), mfa_code: z.string().optional() });
+const passwordChangeSchema = z.object({ change_token: z.string().min(1), new_password: z.string().min(12).max(128) });
 const statusSchema = z.object({
   to_status: z.enum(['active', 'suspended', 'banned']),
   reason_code: z.string().min(1),
@@ -43,11 +45,42 @@ function permForStatus(to: string, from: string): string {
 
 export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
+  const usesSupabaseAuth = cfg.env === 'production' || cfg.env === 'staging';
+  const supabaseAuth = usesSupabaseAuth ? new SupabaseAdminAuth(cfg) : null;
+  const authDirectory = usesSupabaseAuth ? new SupabaseAdminDirectory(cfg) : null;
 
-  // POST /v1/admin/auth/login — email/password (+ MFA). DEV uses admin_local_credentials;
-  // production swaps this for Supabase Auth token verification (§22.1, §22.2).
+  const loginResponse = async (a: { id: string; security_role: string; must_change_password: boolean }) => {
+    if (a.must_change_password) {
+      const changeToken = signAdminPasswordChangeToken({
+        sub: a.id,
+        purpose: 'password_change',
+        exp: Math.floor(Date.now() / 1000) + 10 * 60,
+      }, cfg.hmacSecret);
+      throw new AppError(403, 'PASSWORD_CHANGE_REQUIRED', 'Change the temporary password to continue', { change_token: changeToken });
+    }
+    const token = signAdminToken({ sub: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds }, cfg.hmacSecret);
+    const permissions = await loadAdminPermissions(db, a.id, a.security_role);
+    return { access_token: token, admin: { id: a.id, role: a.security_role, must_change_password: false, permissions: [...permissions] } };
+  };
+
+  // POST /v1/admin/auth/login — local/dev uses the isolated credential table. Staging and
+  // production authenticate with Supabase Auth and require a verified TOTP/AAL2 session.
   app.post('/v1/admin/auth/login', async (req) => {
     const body = loginSchema.parse(req.body);
+    if (supabaseAuth) {
+      const identity = await supabaseAuth.authenticate(body.email, body.password, body.mfa_code);
+      const { rows } = await db.query(
+        `select id, security_role, status, mfa_enrolled, must_change_password
+           from ccat.admin_profiles where id=$1 and email=$2`,
+        [identity.id, identity.email],
+      );
+      if (rows.length === 0) throw Errors.forbidden('ADMIN_NOT_PROVISIONED', 'Admin access has not been provisioned');
+      const a = rows[0]!;
+      if (a.status !== 'active') throw Errors.forbidden('ADMIN_DISABLED', 'Admin account is disabled');
+      if (!a.mfa_enrolled) await db.query('update ccat.admin_profiles set mfa_enrolled=true where id=$1', [a.id]);
+      return loginResponse(a);
+    }
+
     const { rows } = await db.query(
       `select p.id, p.security_role, p.status, p.mfa_enrolled, p.must_change_password,
               c.password_hash, c.failed_attempts, c.locked_until
@@ -79,16 +112,33 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     if (Number(a.failed_attempts ?? 0) > 0 || a.locked_until) {
       await db.query('update ccat.admin_local_credentials set failed_attempts=0, locked_until=null where admin_id=$1', [a.id]);
     }
-    // MFA: production verifies a TOTP here. In local/dev it is not enforced (documented).
-    if (cfg.env !== 'local' && cfg.env !== 'development' && !a.mfa_enrolled) {
-      throw Errors.forbidden('MFA_REQUIRED', 'MFA enrollment required');
-    }
-    const token = signAdminToken({ sub: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds }, cfg.hmacSecret);
-    const permissions = await loadAdminPermissions(db, a.id, a.security_role);
-    return {
-      access_token: token,
-      admin: { id: a.id, role: a.security_role, must_change_password: a.must_change_password, permissions: [...permissions] },
-    };
+    return loginResponse(a);
+  });
+
+  app.post('/v1/admin/auth/change-password', async (req) => {
+    const body = passwordChangeSchema.parse(req.body);
+    const payload = verifyAdminPasswordChangeToken(body.change_token, cfg.hmacSecret);
+    if (!payload) throw Errors.unauthorized('Invalid or expired password-change token');
+    const { rows } = await db.query(
+      `select id, security_role, status, must_change_password from ccat.admin_profiles where id=$1`,
+      [payload.sub],
+    );
+    if (rows.length === 0) throw Errors.unauthorized('Admin not found');
+    const a = rows[0]!;
+    if (a.status !== 'active') throw Errors.forbidden('ADMIN_DISABLED', 'Admin account is disabled');
+    if (!a.must_change_password) throw Errors.conflict('PASSWORD_ALREADY_CHANGED', 'Temporary password was already changed');
+    const hash = authDirectory ? null : await hashSecret(body.new_password, cfg.pinPepper);
+    await withTransaction(db, async (client) => {
+      if (authDirectory) await authDirectory.setPassword(a.id, body.new_password);
+      else await client.query('update ccat.admin_local_credentials set password_hash=$2, failed_attempts=0, locked_until=null where admin_id=$1', [a.id, hash]);
+      await client.query('update ccat.admin_profiles set must_change_password=false where id=$1', [a.id]);
+      await client.query(
+        `insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id)
+         values ($1,'admin','admin.password.changed','admin',$1)`,
+        [a.id],
+      );
+    });
+    return loginResponse({ ...a, must_change_password: false });
   });
 
   // GET /v1/admin/me — current admin + permissions

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
@@ -8,6 +8,7 @@ import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
 import { hashSecret } from '../security/crypto.js';
 import { PERMISSION_BUNDLES } from '../lib/permissionBundles.js';
+import { SupabaseAdminDirectory } from '../services/adminAuth.js';
 
 // Admin lifecycle & permissions (Blueprint §22, §23, §28.1, §28.2). Super-Admin domain.
 const createSchema = z.object({
@@ -26,6 +27,8 @@ const patchSchema = z.object({
 export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
   const guard = { preHandler: [authenticateAdmin] };
+  const usesSupabaseAuth = cfg.env === 'production' || cfg.env === 'staging';
+  const authDirectory = usesSupabaseAuth ? new SupabaseAdminDirectory(cfg) : null;
 
   app.get('/v1/admin/permissions', guard, async () => {
     const rows = await db.query('select key, description, super_admin_only from ccat.permissions order by key');
@@ -58,7 +61,16 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
     requirePermission(req, 'admin.manage');
     const id = (req.params as any).id;
     const tempPassword = randomBytes(9).toString('base64url');
-    const hash = await hashSecret(tempPassword, cfg.pinPepper);
+    const hash = authDirectory ? null : await hashSecret(tempPassword, cfg.pinPepper);
+    if (authDirectory) {
+      const cur = await db.query('select 1 from ccat.admin_profiles where id=$1', [id]);
+      if (cur.rows.length === 0) throw Errors.notFound('Admin not found');
+      // Set the DB guard first. If the provider call fails, the account remains safely restricted.
+      await db.query('update ccat.admin_profiles set must_change_password=true where id=$1', [id]);
+      await authDirectory.setPassword(id, tempPassword);
+      await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','admin.unlocked','admin',$2)`, [req.admin!.adminId, id]);
+      return { unlocked: true, temp_password: tempPassword, note: 'Account unlocked. Temporary password shown once — the admin must change it on next login.' };
+    }
     const done = await withTransaction(db, async (c) => {
       const cur = await c.query('select 1 from ccat.admin_profiles where id=$1', [id]);
       if (cur.rows.length === 0) throw Errors.notFound('Admin not found');
@@ -76,23 +88,29 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
     // The admin may set the temporary password, or one is generated. Shown once either way (§22.2).
     const tempPassword = b.temp_password ?? randomBytes(9).toString('base64url');
     const generated = !b.temp_password;
-    const hash = await hashSecret(tempPassword, cfg.pinPepper);
-    const id = await withTransaction(db, async (c) => {
-      const dupe = await c.query('select 1 from ccat.admin_profiles where email=$1', [b.email]);
-      if (dupe.rows.length > 0) throw Errors.conflict('EMAIL_TAKEN', 'An admin with that email exists');
-      const p = await c.query(`insert into ccat.admin_profiles(id,email,display_name,security_role,status,mfa_enrolled,must_change_password,created_by)
-          values (gen_random_uuid(),$1,$2,$3,'active',false,true,$4) returning id`,
-        [b.email, b.display_name, b.role, req.admin!.adminId]);
-      const pid = p.rows[0]!.id;
-      await c.query('insert into ccat.admin_local_credentials(admin_id,password_hash) values ($1,$2)', [pid, hash]);
-      for (const key of b.permissions ?? []) {
-        await c.query('insert into ccat.admin_permissions(admin_id,permission_key,granted_by) values ($1,$2,$3) on conflict do nothing', [pid, key, req.admin!.adminId]);
-      }
-      // Record the granted set + recovery channel in the audit diff (truthful: it is logged, not just claimed).
-      await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','admin.created','admin',$2,$3)`,
-        [req.admin!.adminId, pid, JSON.stringify({ role: b.role, permissions: b.permissions ?? [], recovery_channel: b.recovery_channel ?? 'email', password: generated ? 'generated' : 'set-by-admin' })]);
-      return pid;
-    });
+    const hash = authDirectory ? null : await hashSecret(tempPassword, cfg.pinPepper);
+    const id = randomUUID();
+    const dupe = await db.query('select 1 from ccat.admin_profiles where email=$1', [b.email]);
+    if (dupe.rows.length > 0) throw Errors.conflict('EMAIL_TAKEN', 'An admin with that email exists');
+    if (authDirectory) await authDirectory.createUser(id, b.email, tempPassword);
+    try {
+      await withTransaction(db, async (c) => {
+        const p = await c.query(`insert into ccat.admin_profiles(id,email,display_name,security_role,status,mfa_enrolled,must_change_password,created_by)
+            values ($1,$2,$3,$4,'active',false,true,$5) returning id`,
+          [id, b.email, b.display_name, b.role, req.admin!.adminId]);
+        const pid = p.rows[0]!.id;
+        if (!authDirectory) await c.query('insert into ccat.admin_local_credentials(admin_id,password_hash) values ($1,$2)', [pid, hash]);
+        for (const key of b.permissions ?? []) {
+          await c.query('insert into ccat.admin_permissions(admin_id,permission_key,granted_by) values ($1,$2,$3) on conflict do nothing', [pid, key, req.admin!.adminId]);
+        }
+        // Record the granted set + recovery channel in the audit diff (truthful: it is logged, not just claimed).
+        await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','admin.created','admin',$2,$3)`,
+          [req.admin!.adminId, pid, JSON.stringify({ role: b.role, permissions: b.permissions ?? [], recovery_channel: b.recovery_channel ?? 'email', password: generated ? 'generated' : 'set-by-admin' })]);
+      });
+    } catch (error) {
+      if (authDirectory) await authDirectory.deleteUser(id).catch(() => undefined);
+      throw error;
+    }
     return { id, temp_password: tempPassword, generated, note: 'Temporary password — shown once. The admin must change it and enrol MFA on first login.' };
   });
 
@@ -110,6 +128,7 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
         if (others.rows[0]!.n < 1) throw Errors.conflict('LAST_SUPER_ADMIN', 'Cannot remove the last active Super-Admin (§28.2)');
       }
       if (b.status !== undefined) {
+        if (authDirectory) await authDirectory.setDisabled(id, b.status === 'disabled');
         await c.query('update ccat.admin_profiles set status=$2 where id=$1', [id, b.status]);
         if (b.status === 'disabled') await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','admin.disabled','admin',$2)`, [req.admin!.adminId, id]);
       }
@@ -144,6 +163,8 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
       if (cur.rows[0]!.security_role === 'super_admin' && cur.rows[0]!.status === 'active')
         throw Errors.conflict('ACTIVE_SUPER_ADMIN', 'Disable or demote this Super-Admin before deletion (§28.2)');
 
+      if (authDirectory) await authDirectory.deleteUser(id);
+
       // Anonymize + tombstone. Email tombstone stays unique (id-derived); the row itself is retained.
       await c.query(`update ccat.admin_profiles set
           email=('deleted+'||id||'@invalid.local')::citext,
@@ -171,7 +192,15 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
     const exists = await db.query('select 1 from ccat.admin_profiles where id=$1', [id]);
     if (exists.rows.length === 0) throw Errors.notFound('Admin not found');
     const tempPassword = randomBytes(9).toString('base64url');
-    const hash = await hashSecret(tempPassword, cfg.pinPepper);
+    const hash = authDirectory ? null : await hashSecret(tempPassword, cfg.pinPepper);
+    if (authDirectory) {
+      // Set the DB guard first. A provider outage cannot accidentally leave a reset password with
+      // unrestricted access.
+      await db.query('update ccat.admin_profiles set must_change_password=true where id=$1', [id]);
+      await authDirectory.setPassword(id, tempPassword);
+      await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','admin.password.reset','admin',$2)`, [req.admin!.adminId, id]);
+      return { temp_password: tempPassword, note: 'Temporary password — shown once. The admin must change it and re-verify MFA on next login.' };
+    }
     await withTransaction(db, async (c) => {
       await c.query(`insert into ccat.admin_local_credentials(admin_id,password_hash) values ($1,$2)
           on conflict (admin_id) do update set password_hash=excluded.password_hash`, [id, hash]);

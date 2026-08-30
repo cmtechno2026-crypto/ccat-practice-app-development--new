@@ -28,7 +28,8 @@ async function req<T>(method: string, path: string, body?: unknown, headers?: Re
 export const api = {
   gateway: GATEWAY,
   // auth
-  login: (email: string, password: string) => req<{ access_token: string; admin: any }>('POST', '/v1/admin/auth/login', { email, password }),
+  login: (email: string, password: string, mfa_code?: string) => req<{ access_token: string; admin: any }>('POST', '/v1/admin/auth/login', { email, password, ...(mfa_code ? { mfa_code } : {}) }),
+  changePassword: (change_token: string, new_password: string) => req<{ access_token: string; admin: any }>('POST', '/v1/admin/auth/change-password', { change_token, new_password }),
   me: () => req<any>('GET', '/v1/admin/me'),
   // dashboard + health
   dashboard: (window = 7) => req<any>('GET', `/v1/admin/dashboard?window=${window}`),

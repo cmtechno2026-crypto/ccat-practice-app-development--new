@@ -18,6 +18,7 @@ export interface Config {
   uploadsDir: string;         // local-disk asset root
   publicUrl: string;          // externally reachable Gateway origin used in signed asset URLs
   supabaseUrl?: string;
+  supabasePublishableKey?: string; // Gateway uses this for ordinary Supabase Auth requests
   supabaseSecretKey?: string; // Gateway-only; never exposed to either SPA
   supabaseStorageBucket: string;
 }
@@ -36,18 +37,22 @@ const WEAK_SECRETS = new Set(['dev-pepper', 'change-me', 'change-me-in-prod', 'c
 export function loadConfig(): Config {
   const env = (process.env.NODE_ENV as Config['env']) ?? 'local';
   const isProd = env === 'production';
+  const usesSupabaseAuth = env === 'production' || env === 'staging';
   const hmacSecret = required('GATEWAY_HMAC_SECRET');
   // In production the pepper is MANDATORY (no silent 'dev-pepper' fallback) and both secrets must be
   // strong. Local/dev/test keep the convenient defaults so the vitest suite and smoke scripts run.
   const pinPepper = isProd ? required('PIN_PEPPER') : (process.env.PIN_PEPPER ?? 'dev-pepper');
   const storageDriver = process.env.STORAGE_DRIVER ?? (isProd ? 'supabase' : 'local');
   const publicUrl = isProd ? required('GATEWAY_PUBLIC_URL') : (process.env.GATEWAY_PUBLIC_URL ?? `http://localhost:${Number(process.env.PORT ?? 8080)}`);
+  if (usesSupabaseAuth) {
+    required('SUPABASE_URL');
+    required('SUPABASE_PUBLISHABLE_KEY');
+    required('SUPABASE_SECRET_KEY');
+  }
   if (isProd) {
     if (WEAK_SECRETS.has(pinPepper)) throw new Error('PIN_PEPPER must be a strong production value, not a dev placeholder');
     if (WEAK_SECRETS.has(hmacSecret) || hmacSecret.length < 32) throw new Error('GATEWAY_HMAC_SECRET must be a strong production value (>=32 chars, not a placeholder)');
     if (storageDriver !== 'supabase') throw new Error('Production STORAGE_DRIVER must be supabase');
-    required('SUPABASE_URL');
-    required('SUPABASE_SECRET_KEY');
     const parsedPublicUrl = new URL(publicUrl);
     if (parsedPublicUrl.protocol !== 'https:') throw new Error('GATEWAY_PUBLIC_URL must use HTTPS in production');
   }
@@ -66,6 +71,7 @@ export function loadConfig(): Config {
     uploadsDir: process.env.UPLOADS_DIR ?? '.uploads',
     publicUrl: publicUrl.replace(/\/$/, ''),
     supabaseUrl: process.env.SUPABASE_URL?.replace(/\/$/, ''),
+    supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
     supabaseSecretKey: process.env.SUPABASE_SECRET_KEY,
     supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? 'ccat-content',
   };

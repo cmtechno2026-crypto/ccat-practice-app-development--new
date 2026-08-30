@@ -14,7 +14,10 @@ the gateway connects as a least-privilege role; service_role/DB creds live ONLY 
 - `GATEWAY_PUBLIC_URL=https://<api-domain>` — canonical Gateway origin used for expiring asset URLs.
 - `STORAGE_DRIVER=supabase` — production assets use the private Supabase Storage bucket.
 - `SUPABASE_URL=https://<project-ref>.supabase.co` — Gateway only.
-- `SUPABASE_SECRET_KEY` — Supabase secret/service key, Gateway only; never use a publishable key here.
+- `SUPABASE_PUBLISHABLE_KEY` — used by the Gateway for ordinary password/TOTP Auth requests. It is
+  not placed in either SPA even though Supabase classifies it as publishable.
+- `SUPABASE_SECRET_KEY` — Supabase secret/service key, Gateway only; used for private Storage and
+  Admin Auth identity lifecycle. Never expose it to either browser bundle.
 - `SUPABASE_STORAGE_BUCKET=ccat-content` — private bucket, 5 MB limit, PNG/JPEG/WebP/GIF allowlist (SVG is rejected).
 - **CORS — set BOTH if both browser clients call the gateway from their own origins:**
   - `ADMIN_WEB_ORIGIN=https://<admin-domain>` — Admin Console origin(s).
@@ -24,6 +27,15 @@ the gateway connects as a least-privilege role; service_role/DB creds live ONLY 
   `ADMIN_WEB_ORIGIN`; the gateway now allowlists both).
 Admin build/runtime: `CCAT_GATEWAY_URL=https://<api-domain>` (injected into `/config.js` at container start).
   → add `<script src="/config.js"></script>` to `apps/admin/index.html` <head> before the app bundle.
+
+Production Admin login is password + mandatory TOTP. `admin_profiles.id` must equal the corresponding
+Supabase Auth user ID. Creating/resetting/disabling/deleting admins through Admin Web keeps both stores
+in sync; `admin_local_credentials` is local/development-only. Existing database-only seed admins must
+be provisioned one at a time before the first production login:
+`pnpm --filter @ccat/gateway provision:admin-auth -- --email=<admin-email>`.
+The command generates a one-time password, preserves the profile UUID, and forces both TOTP enrollment
+and password replacement. Run it only in an approved operator terminal and transmit the output through
+an approved secure channel.
 
 ## Migrations are applied OUT-OF-BAND, not on boot
 All migrations are additive (`add column/table if not exists`, idempotent), so old and new gateway
