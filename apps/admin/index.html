@@ -10,7 +10,7 @@
     <script>
       // Runtime-configurable Gateway URL (override without a rebuild):
       //   ?gateway=http://host:8080  or  window.__CCAT_GATEWAY__
-      window.__CCAT_GATEWAY__ = new URLSearchParams(location.search).get('gateway') || window.__CCAT_GATEWAY__ || 'http://localhost:8080';
+      window.__CCAT_GATEWAY__ = new URLSearchParams(location.search).get('gateway') || window.__CCAT_GATEWAY__ || undefined;
       // Theme: the mockup is light-only, so default to LIGHT regardless of OS preference.
       // Only an explicit toggle (persisted here) switches to dark. Set before paint to avoid a flash.
       try { document.documentElement.setAttribute('data-theme', localStorage.getItem('ccat_admin_theme') || 'light'); }

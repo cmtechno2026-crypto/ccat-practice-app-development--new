@@ -1,5 +1,5 @@
 // Typed client for the CCAT Gateway admin API. Token kept in memory + sessionStorage.
-const GATEWAY: string = (window as any).__CCAT_GATEWAY__ || 'http://localhost:8080';
+const GATEWAY: string = (window as any).__CCAT_GATEWAY__ || (import.meta as any).env?.VITE_GATEWAY_URL || 'http://localhost:8080';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: any) {
