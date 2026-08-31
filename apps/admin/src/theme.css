@@ -137,7 +137,7 @@ tbody tr:hover td{background:var(--card-2)}
 .rail .brandhdr{display:flex;align-items:center;gap:11px;padding:2px 4px 12px;min-width:206px}
 .rail .brandhdr .logo{width:42px;height:42px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .rail .brandhdr .logo .cm{font-family:'Baloo 2';font-weight:800;color:var(--brand-ink);font-size:15px}
-.rail .brandhdr .bt{min-width:0;opacity:0;max-width:0;overflow:hidden;transition:opacity .14s ease,max-width .18s ease}
+.rail .brandhdr .bt{min-width:0;opacity:0;max-width:0;overflow:hidden;white-space:nowrap;transition:opacity .14s ease,max-width .18s ease}
 .rail:hover .brandhdr .bt,.rail:focus-within .brandhdr .bt{opacity:1;max-width:150px}
 .rail .brandhdr .bt b{font-family:'Baloo 2';font-size:15px;font-weight:700;color:#fff;display:block;line-height:1.1}
 .rail .brandhdr .bt span{font-size:10.5px;color:#8ea2c4;font-weight:700;text-transform:uppercase;letter-spacing:.04em}

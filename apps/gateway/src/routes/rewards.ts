@@ -54,15 +54,92 @@ export function registerRewardsRoutes(app: FastifyInstance, db: DB) {
   // convenience; here we sum the ledger so the number is always correct.
   app.get('/v1/rewards/summary', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
-    const xp = await db.query(`select coalesce(sum(delta),0)::bigint as v from ccat.xp_transactions where student_id=$1`, [sid]);
+    const xpRow = await db.query(`select coalesce(sum(delta),0)::bigint as v from ccat.xp_transactions where student_id=$1`, [sid]);
     const coin = await db.query(`select coalesce(sum(delta),0)::bigint as v from ccat.coin_transactions where student_id=$1`, [sid]);
+    const xp = Number(xpRow.rows[0]!.v);
+
     // Daily streak (§19, Option A): effective current is 0 once a full day is missed; longest is all-time.
     const stk = await db.query(
       `select case when last_active_day >= (now() at time zone s.timezone)::date - 1 then ss.current_streak else 0 end as current,
               ss.longest_streak as longest
          from ccat.student_streaks ss join ccat.students s on s.id = ss.student_id where ss.student_id=$1`, [sid]);
-    const streak = stk.rows[0] ? { current: Number(stk.rows[0].current), longest: Number(stk.rows[0].longest) } : { current: 0, longest: 0 };
-    return { xp_total: Number(xp.rows[0]!.v), coin_balance: Number(coin.rows[0]!.v), streak };
+    const streakCore = stk.rows[0] ? { current: Number(stk.rows[0].current), longest: Number(stk.rows[0].longest) } : { current: 0, longest: 0 };
+
+    // Last 7 local days (oldest→newest, ending today): a day is "active" if the student FINALIZED a
+    // session that day (terminal_at set) — the same signal the streak is bumped from. New accounts →
+    // every day inactive (no crash, empty row). Uses the student's own timezone, mirroring the streak.
+    const last7q = await db.query(
+      `with tz as (select timezone from ccat.students where id=$1)
+       select to_char(gs::date,'YYYY-MM-DD') as date,
+              exists(
+                select 1 from ccat.sessions s
+                 where s.student_id=$1 and s.terminal_at is not null
+                   and (s.terminal_at at time zone (select timezone from tz))::date = gs::date
+              ) as active
+         from generate_series(
+                ((now() at time zone (select timezone from tz))::date - 6),
+                ((now() at time zone (select timezone from tz))::date),
+                interval '1 day') gs
+        order by gs`, [sid]);
+    const last7 = last7q.rows.map((r) => ({ date: String(r.date), active: r.active === true }));
+
+    // Level model — the step is server-owned (economy config, default 500 XP/level). No client math.
+    const cfg = await loadEconomyConfig(db);
+    const step = cfg.level_step_xp > 0 ? cfg.level_step_xp : 500;
+    const level = Math.floor(xp / step) + 1;
+    const floorXp = (level - 1) * step;
+    const nextLevelXpTotal = level * step;
+    const levelInfo = {
+      level,
+      xp_into_level: xp - floorXp,
+      xp_for_level: step,
+      xp_to_next: Math.max(0, nextLevelXpTotal - xp),
+      next_level_xp_total: nextLevelXpTotal,
+    };
+
+    // Next reward — the nearest XP-gated unlock the student hasn't reached/owned yet, from the SAME
+    // sources the customization endpoints read (avatar_stages.required_xp and theme xp_total unlock
+    // rules). Null once everything XP-gated is unlocked. No thresholds hardcoded here.
+    const nr = await db.query(
+      `with cand as (
+         select st.name as label, 'avatar' as kind, st.required_xp::bigint as target
+           from ccat.avatar_stages st
+           join ccat.avatar_families f on f.id = st.family_id and f.active = true
+          where st.active = true and st.required_xp is not null and st.required_xp > $2
+            and not exists (select 1 from ccat.student_avatar_grants g where g.student_id=$1 and g.avatar_stage_id=st.id)
+         union all
+         select t.name as label, 'theme' as kind, (r.rule_expr->>'threshold')::bigint as target
+           from ccat.themes t
+           join lateral (
+             select rule_expr from ccat.theme_unlock_rules r
+              where r.theme_id = t.id and r.active = true
+              order by version_number desc limit 1
+           ) r on true
+          where t.active = true and r.rule_expr->>'type' = 'xp_total'
+            and (r.rule_expr->>'threshold')::bigint > $2
+            and not exists (select 1 from ccat.student_theme_grants g where g.student_id=$1 and g.theme_id=t.id)
+       )
+       select label, kind, target from cand where target is not null order by target asc limit 1`,
+      [sid, xp]);
+    let next_reward: { label: string; kind: string; target_xp: number; xp_needed: number; progress_pct: number } | null = null;
+    if (nr.rows[0]) {
+      const target = Number(nr.rows[0].target);
+      next_reward = {
+        label: String(nr.rows[0].label),
+        kind: String(nr.rows[0].kind),
+        target_xp: target,
+        xp_needed: Math.max(0, target - xp),
+        progress_pct: target > 0 ? Math.max(0, Math.min(100, Math.round((100 * xp) / target))) : 0,
+      };
+    }
+
+    return {
+      xp_total: xp,
+      coin_balance: Number(coin.rows[0]!.v),
+      streak: { ...streakCore, last7 },
+      level: levelInfo,
+      next_reward,
+    };
   });
 
   // GET /v1/rewards/coins — coin balance + recent ledger history + the streak-milestone ladder.

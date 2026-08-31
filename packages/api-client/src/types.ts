@@ -134,7 +134,28 @@ export interface CatalogItem {
   progress?: CatalogSetProgress;
 }
 
-export interface RewardsSummary { xp_total: number; coin_balance: number; streak?: { current: number; longest: number }; }
+export interface StreakDay { date: string; active: boolean; }
+export interface LevelInfo {
+  level: number;
+  xp_into_level: number;       // XP accumulated inside the current level
+  xp_for_level: number;        // XP span of one level (the config step)
+  xp_to_next: number;          // XP remaining to reach the next level
+  next_level_xp_total: number; // total XP at which the next level begins
+}
+export interface NextReward {
+  label: string;               // name of the next XP-gated unlock
+  kind: string;                // 'avatar' | 'theme'
+  target_xp: number;           // XP total that unlocks it
+  xp_needed: number;           // target_xp - current xp (>= 0)
+  progress_pct: number;        // 0–100 toward target_xp
+}
+export interface RewardsSummary {
+  xp_total: number;
+  coin_balance: number;
+  streak?: { current: number; longest: number; last7?: StreakDay[] };
+  level?: LevelInfo;               // server-computed level + next-level threshold
+  next_reward?: NextReward | null; // nearest XP unlock, or null when all XP rewards are unlocked
+}
 
 export interface CoinHistoryItem { delta: number; label: string; source_kind: string; created_at: string; }
 export interface CoinLadderRung { day: number; coins: number; reached: boolean; }

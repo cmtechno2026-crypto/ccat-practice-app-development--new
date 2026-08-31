@@ -38,7 +38,10 @@ body {
   margin: 0;
   font-family: Nunito, system-ui, -apple-system, sans-serif;
   color: var(--ink);
-  background: radial-gradient(1200px 600px at 50% -10%, var(--bg-grad-top) 0%, var(--bg) 55%);
+  /* A theme may set --app-bg to a solid colour OR a full CSS gradient (applied via `background`, so
+     gradients render); themes that don't set it keep the original radial default unchanged. */
+  background: var(--app-bg, radial-gradient(1200px 600px at 50% -10%, var(--bg-grad-top) 0%, var(--bg) 55%));
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }
 a { color: var(--primary); text-decoration: none; }
@@ -124,7 +127,7 @@ p { line-height: 1.5; }
 /* inputs */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label, .field > span { font-weight: 800; font-size: 13px; color: var(--ink-soft); }
-.input { width: 100%; padding: 13px 14px; border: 2px solid var(--line); border-radius: var(--radius-md); font: inherit; font-weight: 700; background: #fff; color: var(--ink); }
+.input { width: 100%; padding: 13px 14px; border: 2px solid var(--line); border-radius: var(--radius-md); font: inherit; font-weight: 700; background: var(--card); color: var(--ink); }
 .input:focus { outline: none; border-color: var(--primary); }
 .input.ok { border-color: var(--teal); }
 .input.bad { border-color: var(--coral); }
@@ -135,19 +138,22 @@ p { line-height: 1.5; }
 
 /* PIN pad */
 .pin-boxes { display: flex; gap: 10px; justify-content: center; }
-.pin-box { width: 46px; height: 54px; border-radius: 14px; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; font-family: 'Baloo 2'; font-weight: 800; font-size: 24px; background: #fff; }
+.pin-box { width: 46px; height: 54px; border-radius: 14px; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; font-family: 'Baloo 2'; font-weight: 800; font-size: 24px; background: var(--card); }
 .pin-box.filled { border-color: var(--primary); }
 .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 300px; margin: 0 auto; }
-.key { padding: 15px; border: none; border-radius: 14px; background: #fff; font-family: 'Baloo 2'; font-weight: 800; font-size: 22px; cursor: pointer; box-shadow: 0 2px 6px rgba(42,46,67,.06); }
+.key { padding: 15px; border: none; border-radius: 14px; background: var(--card); font-family: 'Baloo 2'; font-weight: 800; font-size: 22px; cursor: pointer; box-shadow: 0 2px 6px rgba(42,46,67,.06); }
 .key.del { background: var(--tint-blue); }
 
 /* options (question player) */
-.option { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: #fff; border: 2px solid var(--line); border-radius: var(--radius-md); padding: 13px 14px; cursor: pointer; font: inherit; font-weight: 700; color: var(--ink); }
+.option { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--card); border: 2px solid var(--line); border-radius: var(--radius-md); padding: 13px 14px; cursor: pointer; font: inherit; font-weight: 700; color: var(--ink); }
 .option .key { all: unset; width: 30px; height: 30px; border-radius: 9px; background: var(--bg); color: var(--muted); display: flex; align-items: center; justify-content: center; font-family: 'Baloo 2'; font-weight: 800; }
 .option.chosen { border-color: var(--primary); background: var(--tint-blue); }
 .option.chosen .key { background: var(--primary); color: #fff; }
 .option.correct { border-color: var(--teal); background: #f0fbf6; }
 .option.wrong { border-color: var(--coral); background: var(--coral-tint); }
+/* Selected/answered states always use fixed LIGHT tint backgrounds, so pin their text dark — keeps them
+   readable on dark themes (where --ink is light). Light themes are unaffected (their --ink is already dark). */
+.option.chosen, .option.correct, .option.wrong { color: #1f2937; }
 .option:disabled { cursor: default; }
 
 /* progress bar */
@@ -390,3 +396,73 @@ p { line-height: 1.5; }
 .coin-row:last-child { border-bottom: none; }
 .theme-cell.active { border-color: var(--primary); background: var(--tint-blue); }
 .theme-cell.locked { filter: grayscale(.6) opacity(.7); cursor: default; }
+
+/* ============================ HOME — Option A (two-column) ============================ */
+/* Wider cap than the default 720 so the two columns FILL the space instead of a thin strip. */
+.home-a { width: 100%; max-width: 1240px; margin: 0 auto; padding: 18px 16px 44px; }
+
+/* Header band (purple gradient) */
+.home-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  background: linear-gradient(150deg, #9a6cf8, var(--purple) 55%, #6a3fd0);
+  color: #fff; border-radius: var(--radius-lg); padding: 20px 22px; box-shadow: var(--shadow-card);
+}
+.home-hero h1 { color: #fff; font-size: 24px; }
+.home-hero .hh-streak { color: rgba(255,255,255,.92); font-weight: 700; font-size: 13.5px; margin-top: 4px; }
+.home-hero .hh-actions { display: flex; align-items: center; gap: 12px; }
+.hh-continue {
+  all: unset; cursor: pointer; font-family: 'Baloo 2'; font-weight: 800; font-size: 14px;
+  background: #fff; color: var(--purple); padding: 10px 16px; border-radius: var(--radius-pill);
+  box-shadow: 0 6px 16px -8px rgba(0,0,0,.4); white-space: nowrap;
+}
+.hh-continue:hover { transform: translateY(-1px); }
+.hh-continue:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+
+/* Two-column grid: main + ~300px rail; stacks on narrow screens. */
+.home-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; margin-top: 16px; }
+.home-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.home-rail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+@media (max-width: 980px) { .home-grid { grid-template-columns: 1fr; } }
+
+/* Stat tiles */
+.stat-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stile { display: flex; flex-direction: column; align-items: center; gap: 3px; background: var(--card); border-radius: var(--radius-md); padding: 14px 8px; box-shadow: var(--shadow-card); }
+.stile .st-ic { font-size: 24px; }
+.stile .st-n { font-family: 'Baloo 2'; font-weight: 800; font-size: 20px; color: var(--ink); }
+.stile .st-l { font-size: 11px; font-weight: 800; color: var(--muted); text-align: center; }
+.stile-coin { background: linear-gradient(180deg, var(--amber-tint), var(--card) 70%); }
+.stile-xp { background: linear-gradient(180deg, var(--tint-blue), var(--card) 70%); }
+.stile-level { background: linear-gradient(180deg, var(--tint-lilac), var(--card) 70%); }
+.lvl-ring {
+  width: 62px; height: 62px; border-radius: 50%;
+  background: conic-gradient(var(--purple) var(--pct, 0%), var(--line) 0);
+  display: flex; align-items: center; justify-content: center;
+}
+.lvl-ring span {
+  width: 48px; height: 48px; border-radius: 50%; background: var(--card);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Baloo 2'; font-weight: 800; font-size: 13px; color: var(--purple);
+}
+
+/* Rail cards */
+.rail-card { background: var(--card); border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow-card); }
+.mascot-card { text-align: center; background: linear-gradient(180deg, var(--tint-lilac), var(--card) 70%); }
+.mascot-card .mascot-emoji { font-size: 46px; line-height: 1; }
+.mascot-card .mascot-line { font-family: 'Baloo 2'; font-weight: 800; font-size: 14.5px; color: var(--ink); margin-top: 6px; }
+
+/* 7-day streak row */
+.week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 10px; }
+.wk-day { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.wk-day .wk-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--line); display: flex; align-items: center; justify-content: center; font-size: 15px; }
+.wk-day.on .wk-dot { background: var(--amber-tint); box-shadow: inset 0 0 0 2px var(--amber); }
+.wk-day .wk-lbl { font-size: 10px; font-weight: 800; color: var(--muted); }
+.wk-day.on .wk-lbl { color: var(--amber); }
+
+/* Next reward */
+.nr-line { font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+.nr-line strong { color: var(--purple); }
+
+/* Recent badges */
+.badge-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.badge { aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; font-size: 22px; border-radius: var(--radius-md); background: var(--bg); border: 2px solid var(--line); }
+.badge.on { background: var(--amber-tint); border-color: var(--amber); }
