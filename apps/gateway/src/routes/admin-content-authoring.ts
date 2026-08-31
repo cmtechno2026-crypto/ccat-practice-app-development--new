@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
@@ -11,10 +10,6 @@ import { createStorage } from '../services/storage.js';
 // Content authoring extensions (Blueprint §17–§19): image assets, draft editing, version history,
 // question-set authoring (create + membership + exam papers) and image asset upload. These
 // complete the console's Content section on top of the existing question lifecycle routes.
-
-const EXT: Record<string, string> = {
-  'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg',
-};
 
 async function audit(db: DB, req: any, event: string, kind: string, id: string | null, reason: string | null) {
   await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,reason,request_id)
@@ -27,36 +22,15 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
   const storage = createStorage({ driver: cfg.storageDriver, uploadsDir: cfg.uploadsDir });
 
   // ---- image assets ----------------------------------------------------------------------------
-  const assetSchema = z.object({
-    mime_type: z.string().min(3),
-    data_base64: z.string().min(1),
-    alt_text: z.string().max(500).optional(),
-  });
   // Assets back both content images and avatar/theme art, so either content.create or avatar.manage
-  // may create/read them (a super-admin holds all).
+  // may READ them (a super-admin holds all). The asset WRITE route (POST /v1/admin/content/assets)
+  // is defined ONCE, in admin-content.ts (the canonical implementation: public_url + avatar_512
+  // validation). It must NOT be duplicated here — a second declaration makes Fastify throw
+  // FST_ERR_DUPLICATED_ROUTE at startup, which crashes the gateway before it can bind a port.
   const requireAssetAccess = (req: any) => {
     if (req.admin!.role === 'super_admin' || req.admin!.permissions.has('content.create') || req.admin!.permissions.has('avatar.manage')) return;
     throw Errors.forbidden('FORBIDDEN', 'Requires content.create or avatar.manage');
   };
-  app.post('/v1/admin/content/assets', guard, async (req) => {
-    requireAssetAccess(req);
-    const b = assetSchema.parse(req.body);
-    if (!EXT[b.mime_type]) throw Errors.validation('Unsupported image type (png, jpg, webp, gif, svg)');
-    const bytes = Buffer.from(b.data_base64, 'base64');
-    if (bytes.length === 0) throw Errors.validation('Empty image');
-    if (bytes.length > 5 * 1024 * 1024) throw Errors.validation('Image exceeds 5 MB');
-    const id = randomUUID();
-    const key = `assets/${id}.${EXT[b.mime_type]}`;
-    const checksum = createHash('sha256').update(bytes).digest('hex');
-    await storage.put(key, bytes, b.mime_type);
-    await db.query(
-      `insert into ccat.content_assets(id, storage_key, mime_type, byte_size, checksum_sha256, alt_text, created_by)
-       values ($1,$2,$3,$4,$5,$6,$7)`,
-      [id, key, b.mime_type, bytes.length, checksum, b.alt_text ?? null, req.admin!.adminId],
-    );
-    await audit(db, req, 'content.asset.created', 'content_asset', id, null);
-    return { id, url: storage.urlFor(id), mime_type: b.mime_type, byte_size: bytes.length };
-  });
 
   app.get('/v1/admin/content/assets/:id', guard, async (req, reply) => {
     requireAssetAccess(req);
