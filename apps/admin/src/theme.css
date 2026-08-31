@@ -160,10 +160,13 @@ tbody tr:hover td{background:var(--card-2)}
   transition:width .22s ease .06s;box-shadow:0 0 0 0 rgba(0,0,0,0)}
 .rail:hover,.rail:focus-within{width:232px;overflow-y:auto;overflow-x:hidden;box-shadow:8px 0 28px rgba(0,0,0,.28);
   transition:width .22s ease .12s}
-.rail .brandhdr{display:flex;align-items:center;gap:11px;padding:2px 4px 12px;min-width:206px}
+/* Fixed height + overflow:hidden so the header block is the SAME height collapsed and expanded — the
+   brand text only reveals horizontally and never changes the block height (which would shove the nav
+   list, and every icon, up/down). */
+.rail .brandhdr{display:flex;align-items:center;gap:11px;padding:2px 4px 12px;min-width:206px;height:56px;box-sizing:border-box;overflow:hidden;flex:0 0 auto}
 .rail .brandhdr .logo{width:42px;height:42px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .rail .brandhdr .logo .cm{font-family:'Baloo 2';font-weight:800;color:var(--brand-ink);font-size:15px}
-.rail .brandhdr .bt{min-width:0;opacity:0;max-width:0;overflow:hidden;transition:opacity .14s ease,max-width .18s ease}
+.rail .brandhdr .bt{min-width:0;opacity:0;max-width:0;overflow:hidden;white-space:nowrap;transition:opacity .14s ease,max-width .18s ease}
 .rail:hover .brandhdr .bt,.rail:focus-within .brandhdr .bt{opacity:1;max-width:150px}
 .rail .brandhdr .bt b{font-family:'Baloo 2';font-size:15px;font-weight:700;color:#fff;display:block;line-height:1.1}
 .rail .brandhdr .bt span{font-size:10.5px;color:#8ea2c4;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
@@ -178,9 +181,11 @@ tbody tr:hover td{background:var(--card-2)}
 .railitem.active::before{content:"";position:absolute;left:-13px;top:50%;transform:translateY(-50%);width:4px;height:22px;border-radius:0 3px 3px 0;background:var(--brand-accent)}
 .railitem .badge-n{position:absolute;top:5px;left:30px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--brand-accent);color:var(--brand-ink);font-family:'Baloo 2';font-weight:800;font-size:10.5px;display:flex;align-items:center;justify-content:center;border:2px solid var(--brand-ink)}
 .rail .spacer{flex:1;min-height:8px}
-.rail .railfoot{display:flex;align-items:center;gap:11px;padding:10px 8px 2px;border-top:1px solid rgba(255,255,255,.09);margin-top:6px;min-width:206px}
+/* Same fixed-height treatment as the header: the footer avatar keeps its y whether the name/role text
+   is shown (expanded) or hidden (collapsed). */
+.rail .railfoot{display:flex;align-items:center;gap:11px;padding:10px 8px 2px;border-top:1px solid rgba(255,255,255,.09);margin-top:6px;min-width:206px;height:56px;box-sizing:border-box;overflow:hidden;flex:0 0 auto}
 .rail .railfoot .me{width:38px;height:38px;border-radius:50%;background:#22406e;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-weight:800;font-size:14px;flex:0 0 auto}
-.rail .railfoot .who2{min-width:0;opacity:0;max-width:0;overflow:hidden;transition:opacity .14s ease,max-width .18s ease}
+.rail .railfoot .who2{min-width:0;opacity:0;max-width:0;overflow:hidden;white-space:nowrap;transition:opacity .14s ease,max-width .18s ease}
 .rail:hover .railfoot .who2,.rail:focus-within .railfoot .who2{opacity:1;max-width:150px}
 .rail .railfoot .who2 .n{font-weight:800;font-size:13.5px;color:#fff;white-space:nowrap}
 .rail .railfoot .who2 .r{font-size:10.5px;color:#8ea2c4;font-weight:800;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
