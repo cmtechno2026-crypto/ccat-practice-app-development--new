@@ -160,17 +160,33 @@ function StageEditor({ ctx, onClose, onSaved }: { ctx: { family: any; stage_numb
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const fileRef = React.useRef<HTMLInputElement>(null);
 
+  // Load the file into an <img> to read its true pixel size (client-side friendly check; the gateway
+  // re-validates authoritatively).
+  const imageSize = (file: File) => new Promise<{ w: number; h: number }>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve({ w: img.naturalWidth, h: img.naturalHeight }); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read the image file')); };
+    img.src = url;
+  });
+
   const onFile = async (file: File) => {
     setUploading(true); setErr('');
     try {
+      // Canonical avatar art: PNG, exactly 512×512. Check up front so the admin gets an instant, clear
+      // message instead of a round-trip rejection.
+      if (file.type !== 'image/png') throw new Error('Avatar art must be a PNG file.');
+      if (file.size > 3 * 1024 * 1024) throw new Error('Avatar image is too large (max 3 MB).');
+      const { w, h } = await imageSize(file);
+      if (w !== 512 || h !== 512) throw new Error(`Avatar art must be exactly 512×512 px (this file is ${w}×${h}).`);
       const buf = await file.arrayBuffer();
       let bin = ''; const bytes = new Uint8Array(buf);
       for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
       const b64 = btoa(bin);
-      const r = await api.uploadAsset(file.type, b64, `${ctx.family.family_name} stage ${ctx.stage_number}`);
+      const r = await api.uploadAsset(file.type, b64, `${ctx.family.family_name} stage ${ctx.stage_number}`, 'avatar_512');
       setAssetId(r.id);
       toast('Art uploaded');
-    } catch (e) { setErr((e as Error).message); } finally { setUploading(false); }
+    } catch (e) { setErr((e as Error).message); } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
   const save = async () => {
     if (!name.trim()) { setErr('Name required'); return; }
@@ -193,11 +209,12 @@ function StageEditor({ ctx, onClose, onSaved }: { ctx: { family: any; stage_numb
           {assetId ? <img src={api.assetUrl(assetId)} alt="stage art" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="muted" style={{ fontSize: 22 }}>🖼️</span>}
         </div>
         <div className="rowactions">
-          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
-          <button className="btn ghost sm" disabled={uploading} onClick={() => fileRef.current?.click()}>{uploading ? 'Uploading…' : 'Upload image'}</button>
+          <input ref={fileRef} type="file" accept="image/png" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
+          <button className="btn ghost sm" disabled={uploading} onClick={() => fileRef.current?.click()}>{uploading ? 'Uploading…' : (assetId ? 'Replace image' : 'Upload image')}</button>
           {assetId && <button className="btn ghost sm" onClick={() => setAssetId(null)}>Remove</button>}
         </div>
       </div>
+      <p className="lead" style={{ marginTop: 6, fontSize: 12 }}>PNG, exactly 512×512 px.</p>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
         <button className={`toggle ${active ? 'on' : ''}`} onClick={() => setActive(a => !a)} aria-label="Toggle active" />

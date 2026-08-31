@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
+import { createStorage } from '../services/storage.js';
 import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
 
 // Content management (Blueprint §17, §18): questions + review + publish, sets, learning plans.
@@ -23,9 +25,113 @@ const createQuestionSchema = z.object({
 });
 const reviewSchema = z.object({ decision: z.enum(['approved', 'rejected', 'changes_requested']), feedback: z.string().optional() });
 
+// Canonical avatar image spec (§20). Avatar art must be a SQUARE PNG at exactly 512×512 so it renders
+// crisply at every avatar size on the student website without distortion. Enforced server-side (below);
+// the admin UI applies the same rule client-side for a friendly message.
+const AVATAR_PX = 512;
+const AVATAR_MAX_BYTES = 3 * 1024 * 1024; // 3 MB — generous for a 512² PNG, blocks accidental huge uploads
+const ASSET_MAX_BYTES = 8 * 1024 * 1024;  // generic image cap (question art etc.)
+
+// PNG signature + IHDR width/height. Returns null when the bytes are not a valid PNG.
+function pngDimensions(bytes: Buffer): { width: number; height: number } | null {
+  const SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (bytes.length < 24) return null;
+  for (let i = 0; i < 8; i++) if (bytes[i] !== SIG[i]) return null;
+  // First chunk must be IHDR ('IHDR' = 49 48 44 52 at offset 12).
+  if (bytes[12] !== 0x49 || bytes[13] !== 0x48 || bytes[14] !== 0x44 || bytes[15] !== 0x52) return null;
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+}
+
 export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
   const guard = { preHandler: [authenticateAdmin] };
+  // Asset storage driver (local disk for dev; Supabase Storage in prod so uploads survive Render's
+  // ephemeral disk). Selected by cfg.storageDriver; see services/storage.ts.
+  const storage = createStorage({
+    driver: cfg.storageDriver,
+    uploadsDir: cfg.uploadsDir,
+    supabaseUrl: cfg.supabaseUrl,
+    supabaseServiceKey: cfg.supabaseServiceKey,
+    storageBucket: cfg.storageBucket,
+  });
+
+  // Upload a content asset (avatar art, question images). Body: base64 payload + mime. When
+  // constraint='avatar_512' the image is held to the canonical avatar spec (PNG, square 512×512).
+  // The object is written to persistent storage and a content_asset row is created carrying a stable
+  // public URL (absolute for Supabase; the Gateway's own /v1/assets/:id route for local disk).
+  const assetSchema = z.object({
+    mime_type: z.string().min(1),
+    data_base64: z.string().min(1),
+    alt_text: z.string().max(500).optional(),
+    constraint: z.enum(['avatar_512']).optional(),
+  });
+  app.post('/v1/admin/content/assets', guard, async (req) => {
+    const b = assetSchema.parse(req.body);
+    const isAvatar = b.constraint === 'avatar_512';
+    // Avatar art is managed under avatar.manage; other content images under content.create.
+    requirePermission(req, isAvatar ? 'avatar.manage' : 'content.create');
+
+    // Decode (tolerate an accidental data: URL prefix from a client).
+    const raw = b.data_base64.includes(',') ? b.data_base64.slice(b.data_base64.indexOf(',') + 1) : b.data_base64;
+    let bytes: Buffer;
+    try { bytes = Buffer.from(raw, 'base64'); } catch { throw Errors.validation('Image data is not valid base64'); }
+    if (bytes.length === 0) throw Errors.validation('Image data is empty');
+
+    let width: number | null = null;
+    let height: number | null = null;
+    if (isAvatar) {
+      if (b.mime_type !== 'image/png') throw Errors.validation('Avatar art must be a PNG image');
+      if (bytes.length > AVATAR_MAX_BYTES) throw Errors.validation('Avatar image is too large (max 3 MB)');
+      const dim = pngDimensions(bytes);
+      if (!dim) throw Errors.validation('Avatar art must be a valid PNG file');
+      if (dim.width !== AVATAR_PX || dim.height !== AVATAR_PX)
+        throw Errors.validation(`Avatar art must be exactly ${AVATAR_PX}×${AVATAR_PX} px (got ${dim.width}×${dim.height})`);
+      width = dim.width; height = dim.height;
+    } else {
+      if (!b.mime_type.startsWith('image/')) throw Errors.validation('Only image assets are supported');
+      if (bytes.length > ASSET_MAX_BYTES) throw Errors.validation('Image is too large (max 8 MB)');
+      const dim = pngDimensions(bytes); // best-effort; non-PNG returns null and leaves dims empty
+      if (dim) { width = dim.width; height = dim.height; }
+    }
+
+    const checksum = createHash('sha256').update(bytes).digest('hex');
+    const ext = b.mime_type === 'image/png' ? 'png' : (b.mime_type.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '');
+    const key = `${isAvatar ? 'avatars' : 'content'}/${randomUUID()}.${ext}`;
+
+    // Persist the bytes first; only record the row if the object actually landed.
+    await storage.put(key, bytes, b.mime_type);
+
+    const ins = await db.query(
+      `insert into ccat.content_assets(storage_key,mime_type,byte_size,checksum_sha256,width,height,alt_text,created_by)
+       values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+      [key, b.mime_type, bytes.length, checksum, width, height, b.alt_text ?? null, req.admin!.adminId],
+    );
+    const id = ins.rows[0]!.id as string;
+    // Public URL: absolute for Supabase (bucket is public-read); the Gateway asset route for local disk.
+    const url = storage.publicUrl(key) ?? `/v1/assets/${id}`;
+    await db.query('update ccat.content_assets set public_url=$2 where id=$1', [id, url]);
+    await audit(db, req, 'content.asset.uploaded', 'content_asset', id, b.constraint ?? b.mime_type);
+    return { id, url };
+  });
+
+  // PUBLIC asset serve (no auth — <img> tags can't send a bearer token). Redirects to the absolute
+  // public URL when the object lives in cloud storage (Supabase); otherwise streams the bytes from the
+  // local-disk driver. Safe to expose: assets are non-secret art/images referenced by public URL anyway.
+  app.get('/v1/assets/:id', async (req, reply) => {
+    const id = (req.params as any).id as string;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw Errors.notFound('Asset not found');
+    const r = await db.query('select storage_key, mime_type, public_url from ccat.content_assets where id=$1', [id]);
+    if (r.rows.length === 0) throw Errors.notFound('Asset not found');
+    const row = r.rows[0]!;
+    // If a stored absolute URL points elsewhere (cloud storage), redirect the browser straight to it.
+    if (typeof row.public_url === 'string' && /^https?:\/\//i.test(row.public_url))
+      return reply.redirect(row.public_url, 302);
+    const obj = await storage.get(row.storage_key);
+    if (!obj) throw Errors.notFound('Asset not found');
+    reply.header('content-type', obj.contentType || row.mime_type || 'application/octet-stream');
+    reply.header('cache-control', 'public, max-age=31536000, immutable');
+    return reply.send(obj.bytes);
+  });
 
   // Taxonomy (for pickers)
   app.get('/v1/admin/content/taxonomy', guard, async () => {

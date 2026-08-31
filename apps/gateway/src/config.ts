@@ -16,6 +16,11 @@ export interface Config {
   // Service abstractions (Blueprint §36). Drivers are pluggable; local is the dev default.
   storageDriver: string;      // local | s3 | supabase | gcs
   uploadsDir: string;         // local-disk asset root
+  // Supabase Storage (used only when STORAGE_DRIVER=supabase). Service-role key is SERVER-ONLY and never
+  // reaches a browser bundle. Read from env; empty in local/dev where the local-disk driver is used.
+  supabaseUrl: string;
+  supabaseServiceKey: string;
+  storageBucket: string;      // Supabase Storage bucket name (default 'assets')
 }
 
 function required(name: string, fallback?: string): string {
@@ -53,5 +58,8 @@ export function loadConfig(): Config {
     untimedPracticeInactivityHours: Number(process.env.UNTIMED_INACTIVITY_HOURS ?? 24),
     storageDriver: process.env.STORAGE_DRIVER ?? 'local',
     uploadsDir: process.env.UPLOADS_DIR ?? '.uploads',
+    supabaseUrl: (process.env.SUPABASE_URL ?? '').replace(/\/$/, ''),
+    supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
+    storageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? 'assets',
   };
 }

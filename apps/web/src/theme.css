@@ -56,25 +56,29 @@ p { line-height: 1.5; }
 .app-shell { min-height: 100%; display: flex; flex-direction: column; }
 .content { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 18px 16px 48px; flex: 1; }
 
-/* ---- Hover-expand left sidebar (the app menu): 72px icon rail ↔ 248px labelled, on hover/focus.
-   The sidebar is a FIXED overlay and .main reserves the 72px rail width, so expanding never reflows
-   the content. One layout for desktop + tablet. ---- */
+/* ---- Left sidebar (app menu): PUSH model. Collapsed 64px icon rail ↔ expanded 220px labelled panel.
+   The panel is fixed at the left and the content area (.main) reserves the rail width; on expand the
+   panel widens AND .main's left margin animates by the SAME amount, so the whole page slides right and
+   content is NEVER covered. Icons keep a fixed x/y (constant left padding + fixed-width icon slot);
+   expanding only fades the labels in. Below 768px the panel becomes an off-canvas drawer + scrim. ---- */
 .layout { display: block; min-height: 100vh; }
-:root { --rail-w: 72px; --rail-open: 248px; }
+:root { --rail-w: 64px; --rail-open: 220px; --nav-ease: cubic-bezier(.4, 0, .2, 1); --nav-dur: .22s; }
 .sidebar {
   position: fixed; left: 0; top: 0; z-index: 40;
   width: var(--rail-w); height: 100vh; overflow: hidden;
   background: var(--card); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 6px; padding: 16px 12px;
-  transition: width .18s ease; box-shadow: none;
+  transition: width var(--nav-dur) var(--nav-ease); box-shadow: none;
 }
-.sidebar:hover, .sidebar:focus-within { width: var(--rail-open); box-shadow: var(--shadow-lift); overflow-y: auto; }
-.sidebar .brand { display: flex; align-items: center; gap: 10px; padding: 8px 6px 14px; }
+.sidebar.expanded { width: var(--rail-open); overflow-y: auto; box-shadow: var(--shadow-lift); }
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; }
+.sidebar .brand { display: flex; align-items: center; gap: 10px; padding: 8px 6px 14px; min-width: 0; }
 .sidebar .brand-logo { font-size: 26px; flex: none; width: 40px; text-align: center; }
-.sidebar .brandtext { display: flex; flex-direction: column; line-height: 1.15; white-space: nowrap; opacity: 0; transition: opacity .15s ease; }
-.sidebar:hover .brandtext, .sidebar:focus-within .brandtext { opacity: 1; }
+.sidebar .brandtext { display: flex; flex-direction: column; line-height: 1.15; white-space: nowrap; opacity: 0; transition: opacity var(--nav-dur) var(--nav-ease); }
+.sidebar.expanded .brandtext { opacity: 1; }
 .sidebar .brandtext strong { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 15px; color: var(--ink); }
 .sidebar .brandtext small { font-weight: 800; font-size: 11px; color: var(--muted); }
+.sidebar-close { display: none; } /* mobile drawer only */
 .snav-list { display: flex; flex-direction: column; gap: 4px; }
 .snav {
   display: flex; align-items: center; gap: 12px; width: 100%;
@@ -85,13 +89,21 @@ p { line-height: 1.5; }
 }
 .snav:hover { background: var(--subtle); color: var(--ink-soft); }
 .snav.active { color: var(--primary); background: var(--tint-blue); }
-.snav .ico { font-size: 20px; flex: none; width: 28px; text-align: center; }
-.snav .label { flex: 1; white-space: nowrap; opacity: 0; transition: opacity .15s ease; }
-.sidebar:hover .snav .label, .sidebar:focus-within .snav .label { opacity: 1; }
+.snav .ico { font-size: 20px; flex: none; width: 28px; text-align: center; } /* fixed width → icon x never shifts */
+.snav .label { flex: 1; white-space: nowrap; opacity: 0; transition: opacity var(--nav-dur) var(--nav-ease); }
+.sidebar.expanded .snav .label { opacity: 1; }
 .sidebar-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px; }
-.main { margin-left: var(--rail-w); min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
+
+/* Content reserves the rail and slides right by the SAME amount the panel widens (the push). */
+.main { margin-left: var(--rail-w); min-width: 0; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left var(--nav-dur) var(--nav-ease); }
+.layout.nav-expanded .main { margin-left: var(--rail-open); }
+
+/* Mobile-only controls — hidden on desktop. */
+.nav-hamburger { display: none; }
+.scrim { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar .snav .label, .sidebar .brandtext { transition: none; }
+  .sidebar, .sidebar .snav .label, .sidebar .brandtext, .main, .scrim { transition: none; }
 }
 .center-narrow { max-width: 440px; margin: 0 auto; }
 .stack { display: flex; flex-direction: column; gap: 14px; }
@@ -174,20 +186,36 @@ p { line-height: 1.5; }
 .stat .n { font-family: 'Baloo 2'; font-weight: 800; font-size: 20px; }
 .stat .l { font-size: 11px; font-weight: 800; color: var(--muted); }
 
-/* Desktop + tablet share the hover-expand rail (above). Very narrow (mobile-web, deferred polish):
-   the rail becomes a horizontal top strip so nothing breaks; content flows below it. */
-@media (max-width: 560px) {
-  .sidebar {
-    position: sticky; width: 100%; height: auto; flex-direction: row;
-    align-items: center; overflow-x: auto; overflow-y: hidden; gap: 2px; padding: 6px 8px;
-    border-right: none; border-bottom: 1px solid var(--line); z-index: 30;
+/* Desktop + tablet-wide use the push rail (above). Below 768px pushing content is impractical, so the
+   same panel becomes an off-canvas DRAWER that slides over the page with a dim scrim; the scrim (or the
+   ✕) closes it, and so does tapping any nav item (route change closes the drawer). */
+@media (max-width: 768px) {
+  .sidebar, .sidebar.expanded {
+    width: 264px; overflow-y: auto; transform: translateX(-100%);
+    transition: transform var(--nav-dur) var(--nav-ease); z-index: 60; box-shadow: none;
   }
-  .sidebar:hover, .sidebar:focus-within { width: 100%; box-shadow: none; }
-  .sidebar .brand { display: none; }
-  .snav-list { flex-direction: row; gap: 2px; }
-  .snav .label { display: none; }
-  .sidebar-foot { margin-top: 0; border-top: none; padding-top: 0; }
+  .layout.drawer-open .sidebar { transform: none; box-shadow: var(--shadow-lift); }
+  /* The drawer always shows brand + labels + close. */
+  .sidebar .brandtext, .sidebar .snav .label { opacity: 1; }
+  .sidebar-close {
+    display: inline-flex; align-items: center; justify-content: center; flex: none;
+    width: 34px; height: 34px; border-radius: 10px; border: none;
+    background: var(--subtle); color: var(--ink); font-size: 15px; cursor: pointer;
+  }
   .main { margin-left: 0; min-height: auto; }
+  .layout.nav-expanded .main { margin-left: 0; } /* never push on a narrow screen */
+
+  .nav-hamburger {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: fixed; top: 10px; left: 10px; z-index: 45; width: 40px; height: 40px;
+    border-radius: 12px; border: none; background: var(--card); color: var(--ink);
+    font-size: 18px; box-shadow: var(--shadow-card); cursor: pointer;
+  }
+  .scrim {
+    display: block; position: fixed; inset: 0; z-index: 55; background: rgba(20, 22, 38, .45);
+    opacity: 0; pointer-events: none; transition: opacity var(--nav-dur) var(--nav-ease);
+  }
+  .layout.drawer-open .scrim { opacity: 1; pointer-events: auto; }
 }
 
 /* Preview-mode ribbon (synthetic "cheat" demo accounts) */

@@ -73,8 +73,10 @@ export const api = {
   reviewQuestion: (id: string, decision: string, feedback?: string) => req<any>('POST', `/v1/admin/content/questions/${id}/review`, { decision, feedback }),
   publishQuestion: (id: string) => req<any>('POST', `/v1/admin/content/questions/${id}/publish`),
   retireQuestion: (id: string) => req<any>('POST', `/v1/admin/content/questions/${id}/retire`),
-  uploadAsset: (mime_type: string, data_base64: string, alt_text?: string) => req<{ id: string; url: string }>('POST', '/v1/admin/content/assets', { mime_type, data_base64, alt_text }),
-  assetUrl: (id: string) => `${GATEWAY}/v1/admin/content/assets/${id}`,
+  uploadAsset: (mime_type: string, data_base64: string, alt_text?: string, constraint?: 'avatar_512') => req<{ id: string; url: string }>('POST', '/v1/admin/content/assets', { mime_type, data_base64, alt_text, constraint }),
+  // Public, unauthenticated serve route (redirects to cloud storage or streams local bytes). Used as an
+  // <img src> — must NOT require a bearer token, so it points at /v1/assets/:id, not the admin route.
+  assetUrl: (id: string) => `${GATEWAY}/v1/assets/${id}`,
   // sets + exam papers
   sets: () => req<{ items: any[] }>('GET', '/v1/admin/content/sets'),
   set: (id: string) => req<any>('GET', `/v1/admin/content/sets/${id}`),

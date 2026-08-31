@@ -4,6 +4,7 @@ import type { AccountInfo } from '@ccat/api-client';
 import { useApp } from '../lib/store';
 import { client } from '../lib/api';
 import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
+import { Avatar } from '../components/Avatar';
 
 function NameEditor({ current, onSaved }: { current: string; onSaved: (n: string) => void }) {
   const { flash, refreshProfile } = useApp();
@@ -147,7 +148,7 @@ export function ProfileScreen() {
       <div className="content stack">
         <Card>
           <div className="row">
-            <div className="avatar-chip" style={{ width: 56, height: 56, fontSize: 28 }}>🦊</div>
+            <div className="avatar-chip" style={{ width: 56, height: 56 }}><Avatar size={40} /></div>
             <div style={{ flex: 1 }}>
               <h2>{shownName || profile?.display_name}</h2>
               <div className="muted">@{profile?.username} · Age {profile?.age_years}</div>

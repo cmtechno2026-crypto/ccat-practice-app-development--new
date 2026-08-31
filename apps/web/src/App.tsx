@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { channelEnabled } from '@ccat/client-core';
 import { useApp } from './lib/store';
@@ -57,6 +58,21 @@ const RoutesTree = ({ profile }: { profile: unknown }) => (
 export function App() {
   const { ready, appConfig, profile } = useApp();
   const loc = useLocation();
+
+  // Sidebar layout state (owned here so BOTH the sidebar width and the content offset move together —
+  // the "push" model). `navExpanded` is the desktop rail hover-expand; `drawerOpen` is the mobile drawer.
+  const [navExpanded, setNavExpanded] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Any route change closes the mobile drawer (tapping a nav item navigates → drawer slides away).
+  useEffect(() => { setDrawerOpen(false); }, [loc.pathname, loc.search]);
+  // Esc closes the drawer.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawerOpen]);
+
   if (!ready) return <div className="app-root"><Loader /></div>;
   if (!channelEnabled(appConfig, 'web')) return <UnavailableScreen />;
 
@@ -71,8 +87,18 @@ export function App() {
         </div>
       )}
       {showSidebar ? (
-        <div className="layout">
-          <Sidebar />
+        <div className={`layout${navExpanded ? ' nav-expanded' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
+          {/* Mobile-only trigger (CSS-hidden on desktop) */}
+          <button type="button" className="nav-hamburger" aria-label="Open menu" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>☰</button>
+          <Sidebar
+            expanded={navExpanded}
+            onExpand={() => setNavExpanded(true)}
+            onCollapse={() => setNavExpanded(false)}
+            drawerOpen={drawerOpen}
+            onCloseDrawer={() => setDrawerOpen(false)}
+          />
+          {/* Scrim: only visible on mobile while the drawer is open; tap-outside closes. */}
+          <div className="scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />
           <main className="main"><RoutesTree profile={profile} /></main>
         </div>
       ) : (

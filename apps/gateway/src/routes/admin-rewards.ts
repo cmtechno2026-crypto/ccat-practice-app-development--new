@@ -54,14 +54,16 @@ export function registerAdminRewardsRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.get('/v1/admin/rewards/avatars', guard, async () => {
     const rows = await db.query(`select f.id family_id, f.key family_key, f.name family_name, f.active,
         coalesce(json_agg(json_build_object('id',s.id,'stage_number',s.stage_number,'name',s.name,
-            'required_xp',s.required_xp,'active',s.active,'asset_id',s.asset_id,
+            'required_xp',s.required_xp,'active',s.active,'asset_id',s.asset_id,'image_url',ca.public_url,
             'owner_count',(select count(*) from ccat.student_avatar_grants g where g.avatar_stage_id=s.id))
           order by s.stage_number) filter (where s.id is not null),'[]') stages,
         count(*) filter (where s.active)::int active_stages,
         count(s.*)::int stage_count,
         (count(*) filter (where s.active) = 7) live,
         (select count(*) from ccat.student_avatar_grants g join ccat.avatar_stages s2 on s2.id=g.avatar_stage_id where s2.family_id=f.id)::int owner_total
-        from ccat.avatar_families f left join ccat.avatar_stages s on s.family_id=f.id
+        from ccat.avatar_families f
+        left join ccat.avatar_stages s on s.family_id=f.id
+        left join ccat.content_assets ca on ca.id=s.asset_id
         group by f.id order by f.display_order`);
     return { items: rows.rows };
   });

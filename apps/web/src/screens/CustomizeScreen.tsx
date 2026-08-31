@@ -3,6 +3,7 @@ import { ApiError } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
+import { StageFace, emojiFor } from '../components/Avatar';
 
 export function CustomizeScreen() {
   const { flash, refreshProfile } = useApp();
@@ -46,7 +47,9 @@ export function CustomizeScreen() {
                   {fam.stages.map((st) => (
                     <button key={st.stage_id} className="option" style={{ flexDirection: 'column', textAlign: 'center', filter: st.owned ? 'none' : 'grayscale(.5)', borderColor: st.active ? 'var(--primary)' : 'var(--line)' }}
                       disabled={busy === st.stage_id} onClick={() => equipAvatar(st.stage_id, st.owned, st.required_xp)}>
-                      <span style={{ fontSize: 26 }}>{st.owned ? '🦊' : '🔒'}</span>
+                      {st.owned
+                        ? <StageFace imageUrl={st.image_url} emoji={emojiFor(fam.key, st.stage_number)} size={26} />
+                        : <span style={{ fontSize: 26 }}>🔒</span>}
                       <strong style={{ fontSize: 12 }}>{st.name}</strong>
                       <span className="hint">{st.active ? '✓ Active' : st.owned ? 'Tap to use' : `${st.required_xp ?? 0} XP`}</span>
                     </button>

@@ -21,10 +21,20 @@ export interface ChallengeStarted { challenge_id: string | null; expires_at: str
 // Registration — the unified guardian contact is VALIDATED (email format + E.164 phone), not OTP-verified.
 export interface ContactValidated { registration_grant: string; guardian_email: string; guardian_phone: string; }
 
+// The student's currently-equipped avatar stage, resolved to a renderable image + label. Single
+// source of truth for the avatar shown across the app (from GET /v1/profile).
+export interface CurrentAvatar {
+  stage_id: string;
+  name: string | null;
+  family_key: string | null;  // drives the emoji fallback when image_url is absent
+  stage_number: number | null;
+  image_url: string | null;   // absolute or gateway-relative; null → fallback to family/stage emoji
+}
 export interface StudentProfile {
   id: string; display_name: string; username: string; grade_id: string;
   age_years: number; status: string;
   active_avatar_stage_id: string | null; active_theme_id: string | null;
+  current_avatar?: CurrentAvatar | null;  // resolved equipped avatar for consistent rendering everywhere
   is_preview?: boolean;   // synthetic preview/"cheat" account — clients show a Preview-mode banner
 }
 
@@ -111,7 +121,7 @@ export interface Book { id: string; title: string; author: string | null; descri
 export interface AdultChallenge { challenge_token: string; prompt: string; }
 export interface RetailerHandoff { destination_url: string; }
 
-export interface AvatarStage { stage_id: string; stage_number: number; name: string; required_xp: number | null; owned: boolean; active: boolean; }
+export interface AvatarStage { stage_id: string; stage_number: number; name: string; required_xp: number | null; owned: boolean; active: boolean; image_url?: string | null; }
 export interface AvatarFamily { family_id: string; key: string; name: string; stages: AvatarStage[]; }
 export interface AvatarsResponse { xp_total: number; families: AvatarFamily[]; }
 export interface Theme { id: string; key: string; name: string; owned: boolean; active: boolean; requirement: string; palette?: Record<string, string>; }

@@ -4,28 +4,15 @@ import type { AvatarsResponse, Theme } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { applyPalette, storePalette } from '../lib/theme-apply';
+import { Avatar, StageFace, emojiFor } from './Avatar';
 
-// Emoji per avatar family × stage — mirrors the app mockup's FAM map so the equipped avatar renders
-// as a real creature (the gateway stores stage names, not emoji). Falls back to 🦊.
-const FAM_EMOJI: Record<string, string[]> = {
-  animals: ['🥚', '🐣', '🐥', '🐰', '🦊', '🐺', '🦁'], fox: ['🥚', '🐣', '🐥', '🐰', '🦊', '🐺', '🦁'],
-  bird: ['🥚', '🐣', '🐤', '🐦', '🕊️', '🦅', '🦉'],
-  aquatic: ['🥚', '🐚', '🐟', '🐠', '🐬', '🦈', '🐋'],
-  space: ['🔩', '🤖', '🛰️', '🚀', '🛸', '🌠', '🌌'],
-  mythic: ['🥚', '🦎', '🐍', '🐲', '🦄', '🐉', '🔥'],
-};
-const emojiFor = (key: string, stageNumber: number) => FAM_EMOJI[key?.toLowerCase()]?.[stageNumber - 1] ?? '🦊';
-
-function activeEmoji(a: AvatarsResponse | null): string | null {
-  if (!a) return null;
-  for (const fam of a.families) for (const st of fam.stages) if (st.active) return emojiFor(fam.key, st.stage_number);
-  return null;
-}
-
-// Top-right avatar CONTROL: click opens an Avatar + Theme management panel (equip/apply, XP-gated),
-// wired to the existing gateway avatars/themes endpoints. Persists + reflects live; Esc / outside-click closes.
+// Top-right avatar CONTROL: the chip renders the CURRENT equipped avatar via the shared <Avatar/>
+// (single source = the profile store), so it always matches the sidebar/mascot/profile. Clicking it
+// opens the Avatar + Theme picker; the picker cells use the shared StageFace so each stage's face and
+// its fallback are rendered by the exact same rules. Equipping calls refreshProfile() → the store's
+// current_avatar updates → every <Avatar/> on the page flips at once.
 export function AvatarControl() {
-  const { profile, flash, refreshProfile } = useApp();
+  const { flash, refreshProfile } = useApp();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'avatar' | 'theme'>('avatar');
   const [avatars, setAvatars] = useState<AvatarsResponse | null>(null);
@@ -75,12 +62,12 @@ export function AvatarControl() {
     finally { setBusy(null); }
   }
 
-  const face = profile?.is_preview ? '👀' : (activeEmoji(avatars) ?? '🦊');
-
   return (
     <div className="avatar-control" ref={wrapRef}>
       <button className="avatar-chip" aria-haspopup="dialog" aria-expanded={open} title="Avatar & theme"
-        onClick={() => setOpen((o) => !o)}>{face}</button>
+        onClick={() => setOpen((o) => !o)}>
+        <Avatar size={34} />
+      </button>
       {open && (
         <div className="avatar-panel" role="dialog" aria-label="Avatar and theme">
           <div className="between" style={{ marginBottom: 10 }}>
@@ -105,7 +92,9 @@ export function AvatarControl() {
                         <button key={st.stage_id} className={`avatar-cell ${st.active ? 'active' : ''} ${st.owned ? '' : 'locked'}`}
                           disabled={busy === st.stage_id || !st.owned} title={st.owned ? st.name : `Locked · ${st.required_xp ?? 0} XP`}
                           onClick={() => equipAvatar(st.stage_id, st.required_xp)}>
-                          <span className="face">{st.owned ? emojiFor(fam.key, st.stage_number) : '🔒'}</span>
+                          {st.owned
+                            ? <StageFace className="face" imageUrl={st.image_url} emoji={emojiFor(fam.key, st.stage_number)} />
+                            : <span className="face">🔒</span>}
                           <span className="cap">{st.active ? '✓' : st.owned ? st.name : `${st.required_xp ?? 0}xp`}</span>
                         </button>
                       ))}

@@ -26,9 +26,11 @@ export function registerCustomizationRoutes(app: FastifyInstance, db: DB) {
     const { rows } = await db.query(
       `select f.id as family_id, f.key as family_key, f.name as family_name, f.display_order,
               s.id as stage_id, s.stage_number, s.name as stage_name, s.required_xp,
+              ca.public_url as image_url,
               (g.student_id is not null) as granted
          from ccat.avatar_families f
          join ccat.avatar_stages s on s.family_id = f.id and s.active = true
+         left join ccat.content_assets ca on ca.id = s.asset_id
          left join ccat.student_avatar_grants g on g.avatar_stage_id = s.id and g.student_id = $1
         where f.active = true
         order by f.display_order, s.stage_number`,
@@ -41,6 +43,7 @@ export function registerCustomizationRoutes(app: FastifyInstance, db: DB) {
       families[r.family_id].stages.push({
         stage_id: r.stage_id, stage_number: r.stage_number, name: r.stage_name,
         required_xp: r.required_xp == null ? null : Number(r.required_xp),
+        image_url: r.image_url ?? null,
         owned, active: r.stage_id === activeStage,
       });
     }

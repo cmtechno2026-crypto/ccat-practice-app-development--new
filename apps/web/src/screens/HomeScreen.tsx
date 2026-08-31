@@ -5,6 +5,7 @@ import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { Card, Loader, ErrorNote, useAsync } from '../components/ui';
 import { AvatarControl } from '../components/AvatarControl';
+import { Avatar } from '../components/Avatar';
 
 // HOME — "Option A": a two-column dashboard for kids (grade 3–6). Purple header band (greeting,
 // streak, Continue, avatar) → LEFT column (stat tiles, progress card, hero Practice/Exam, announcements)
@@ -179,7 +180,7 @@ export function HomeScreen() {
             <aside className="home-rail" aria-label="Your progress">
               {/* Mascot */}
               <div className="rail-card mascot-card">
-                <div className="mascot-emoji" aria-hidden>🦊</div>
+                <div className="mascot-emoji"><Avatar size={46} /></div>
                 <div className="mascot-line">{mascotLine(streak, completion)}</div>
               </div>
 

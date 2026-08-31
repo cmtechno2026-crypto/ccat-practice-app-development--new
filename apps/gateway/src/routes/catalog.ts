@@ -77,16 +77,33 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
     });
   });
 
-  // GET /v1/profile — computed age (§4.2)
+  // GET /v1/profile — computed age (§4.2). Also resolves the CURRENTLY EQUIPPED avatar (image URL +
+  // label) so every client surface renders one identical avatar from the profile, not per-component
+  // hardcoded art. Resolution mirrors GET /v1/avatars: avatar_stages.asset_id → content_assets.public_url.
   app.get('/v1/profile', { preHandler: [app.authenticateStudent] }, async (req) => {
     const { rows } = await db.query(
-      `select id, display_name, username_normalized as username, grade_id, birth_month, birth_year,
-              status, active_avatar_stage_id, active_theme_id, is_preview
-         from ccat.students where id = $1`,
+      `select s.id, s.display_name, s.username_normalized as username, s.grade_id, s.birth_month, s.birth_year,
+              s.status, s.active_avatar_stage_id, s.active_theme_id, s.is_preview,
+              ast.stage_number as av_stage_number, ast.name as av_name,
+              fam.key as av_family_key, ca.public_url as av_image_url
+         from ccat.students s
+         left join ccat.avatar_stages ast on ast.id = s.active_avatar_stage_id
+         left join ccat.avatar_families fam on fam.id = ast.family_id
+         left join ccat.content_assets ca on ca.id = ast.asset_id
+        where s.id = $1`,
       [req.student!.studentId],
     );
     if (rows.length === 0) throw Errors.notFound('Profile not found');
     const s = rows[0]!;
+    const current_avatar = s.active_avatar_stage_id
+      ? {
+          stage_id: s.active_avatar_stage_id as string,
+          name: (s.av_name ?? null) as string | null,
+          family_key: (s.av_family_key ?? null) as string | null,
+          stage_number: s.av_stage_number == null ? null : Number(s.av_stage_number),
+          image_url: (s.av_image_url ?? null) as string | null,
+        }
+      : null;
     return {
       id: s.id,
       display_name: s.display_name,
@@ -97,6 +114,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
       active_avatar_stage_id: s.active_avatar_stage_id,
       active_theme_id: s.active_theme_id,
       is_preview: s.is_preview === true,
+      current_avatar,
     };
   });
 

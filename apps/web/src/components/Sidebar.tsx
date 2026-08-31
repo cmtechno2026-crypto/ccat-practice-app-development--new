@@ -1,9 +1,13 @@
+import { useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/store';
+import { Avatar } from './Avatar';
 
-// Primary navigation — persistent LEFT sidebar (desktop + tablet, one layout). Replaces the old
-// bottom tab bar. Items + icons are the app's real destinations, in the app's order; active item
-// uses the mockup's nav colors (#3E7BEE active / #B4BBCF idle).
+// Primary navigation — persistent LEFT sidebar (desktop + tablet). PUSH model: this panel sits in the
+// layout flow; expanding widens it AND shifts the content area right (the offset lives on `.main`,
+// driven by the `nav-expanded` class the parent puts on `.layout`) so content is never covered. Icons
+// keep a FIXED x/y in both states — expanding only fades in the labels to their right and widens the
+// panel. Below the mobile breakpoint the same panel becomes an off-canvas drawer (see theme.css).
 interface NavItem { label: string; icon: string; to: string; match: (loc: { pathname: string; search: string }) => boolean }
 
 const isExam = (l: { search: string }) => /mode=exam/.test(l.search);
@@ -17,17 +21,54 @@ const NAV: NavItem[] = [
   { label: 'Profile', icon: '👤', to: '/profile', match: (l) => l.pathname === '/profile' },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  expanded: boolean;
+  onExpand: () => void;
+  onCollapse: () => void;
+  drawerOpen: boolean;
+  onCloseDrawer: () => void;
+}
+
+// Small open/close delays so a quick mouse pass doesn't flicker the reflow (Case-3 mitigation).
+const OPEN_DELAY_MS = 120;
+const CLOSE_DELAY_MS = 200;
+
+export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDrawer }: SidebarProps) {
   const loc = useLocation();
   const nav = useNavigate();
   const { profile, signOut } = useApp();
+  const openT = useRef<number | undefined>(undefined);
+  const closeT = useRef<number | undefined>(undefined);
+
+  const clearTimers = () => { window.clearTimeout(openT.current); window.clearTimeout(closeT.current); };
+  const scheduleOpen = useCallback(() => {
+    window.clearTimeout(closeT.current);
+    openT.current = window.setTimeout(onExpand, OPEN_DELAY_MS);
+  }, [onExpand]);
+  const scheduleClose = useCallback(() => {
+    window.clearTimeout(openT.current);
+    closeT.current = window.setTimeout(onCollapse, CLOSE_DELAY_MS);
+  }, [onCollapse]);
+
   async function logout() { await signOut(); nav('/login', { replace: true }); }
+
   return (
-    <aside className="sidebar" aria-label="Primary">
-      <Link to="/home" className="brand">
-        <span className="brand-logo">🦊</span>
-        <span className="brandtext"><strong>Concept Mastery</strong><small>CCAT Practice</small></span>
-      </Link>
+    <aside
+      className={`sidebar${expanded ? ' expanded' : ''}${drawerOpen ? ' drawer-open' : ''}`}
+      aria-label="Primary"
+      onMouseEnter={scheduleOpen}
+      onMouseLeave={scheduleClose}
+      onFocusCapture={() => { clearTimers(); onExpand(); }}
+      onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) scheduleClose(); }}
+    >
+      <div className="sidebar-head">
+        <Link to="/home" className="brand">
+          <span className="brand-logo">🦊</span>
+          <span className="brandtext"><strong>Concept Mastery</strong><small>CCAT Practice</small></span>
+        </Link>
+        {/* Mobile drawer close (CSS-hidden on desktop) */}
+        <button type="button" className="sidebar-close" aria-label="Close menu" onClick={onCloseDrawer}>✕</button>
+      </div>
       <nav className="snav-list">
         {NAV.map((it) => {
           const active = it.match(loc);
@@ -41,7 +82,7 @@ export function Sidebar() {
       </nav>
       <div className="sidebar-foot">
         <button className="snav" onClick={() => nav('/profile')} title={profile?.display_name ?? 'You'}>
-          <span className="ico" aria-hidden>{profile?.is_preview ? '👀' : '🙂'}</span>
+          <span className="ico"><Avatar size={22} /></span>
           <span className="label">{profile?.display_name ?? 'You'}</span>
         </button>
         <button className="snav snav-logout" onClick={logout} title="Log out">
