@@ -14,6 +14,8 @@ export function Admins() {
   const [editing, setEditing] = useState<any | 'new' | null>(null);
   const [temp, setTemp] = useState<{ email: string; password: string } | null>(null);
   const [del, setDel] = useState<any | null>(null);
+  const [reset, setReset] = useState<any | null>(null);
+  const isSuper = me?.role === 'super_admin';
 
   const allPerms = (perms.data?.items || []).filter((p: any) => !p.super_admin_only);
   const allBundles: Bundle[] = bundles.data?.bundles || [];
@@ -22,7 +24,6 @@ export function Admins() {
   const canDelete = (a: any) => a.id !== me?.id && !(a.security_role === 'super_admin' && a.status === 'active');
 
   const toggleStatus = async (a: any) => { try { await api.patchAccount(a.id, { status: a.status === 'active' ? 'disabled' : 'active' }); toast('Updated'); reload(); } catch (e) { toast((e as Error).message); } };
-  const resetPw = async (a: any) => { try { const r = await api.resetAccountPassword(a.id); setTemp({ email: a.email, password: r.temp_password }); reload(); } catch (e) { toast((e as Error).message); } };
   const unlock = async (a: any) => { try { const r = await api.unlockAccount(a.id); setTemp({ email: a.email, password: r.temp_password }); toast('Account unlocked'); reload(); } catch (e) { toast((e as Error).message); } };
 
   return (
@@ -42,7 +43,7 @@ export function Admins() {
                 <td><div className="rowactions">
                   {a.locked && <button className="btn sm" onClick={() => unlock(a)}>Unlock</button>}
                   {a.security_role !== 'super_admin' && <button className="btn ghost sm" onClick={() => setEditing(a)}>Edit access</button>}
-                  <button className="btn ghost sm" onClick={() => resetPw(a)}>Reset password</button>
+                  {isSuper && <button className="btn ghost sm" onClick={() => setReset(a)}>Reset password</button>}
                   <button className="btn ghost sm" onClick={() => toggleStatus(a)}>{a.status === 'active' ? 'Disable' : 'Enable'}</button>
                   {canDelete(a) && <button className="btn danger sm" onClick={() => setDel(a)}>Delete</button>}
                 </div></td>
@@ -65,8 +66,99 @@ export function Admins() {
         </Modal>
       )}
 
+      {reset && <ResetPassword admin={reset} onClose={() => setReset(null)} onDone={(msg) => { setReset(null); toast(msg); reload(); }} />}
+
       {del && <DeleteAdmin admin={del} onClose={() => setDel(null)} onDeleted={() => { setDel(null); toast('Admin deleted — PII erased; audit history retained.'); reload(); }} />}
     </>
+  );
+}
+
+// Super-Admin password reset for an admin account — GENERATE a strong one-time password, or SET one by
+// typing New + Confirm (no old password required). Server enforces super_admin RBAC + strength; this is
+// the convenience layer. The plaintext lives only in the form/generated field and is never persisted.
+const MIN_LEN = 10;
+function ResetPassword({ admin, onClose, onDone }: { admin: any; onClose: () => void; onDone: (msg: string) => void }) {
+  const [mode, setMode] = useState<'choose' | 'generate' | 'set'>('choose');
+  const [newPw, setNewPw] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [requireChange, setRequireChange] = useState(false);
+  const [generated, setGenerated] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const email = admin.email as string;
+  const setValid = newPw.length >= MIN_LEN && newPw === confirm && newPw.trim().toLowerCase() !== String(email).trim().toLowerCase();
+
+  const doGenerate = async () => {
+    setBusy(true); setErr('');
+    try {
+      const r = await api.resetAccountPassword(admin.id, {});
+      if (r.mode === 'generated') setGenerated(r.password);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const doSet = async () => {
+    if (!setValid) return;
+    setBusy(true); setErr('');
+    try { await api.resetAccountPassword(admin.id, { new_password: newPw, require_change: requireChange }); onDone(`Password updated for ${email}.`); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const copy = async () => { try { await navigator.clipboard.writeText(generated!); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ } };
+
+  const warning = <div className="infobox">Reset the password for <b>{email}</b>? Their current password stops working immediately (any signed-in session expires shortly).</div>;
+
+  // Result screen after GENERATE — show once, copyable.
+  if (generated) {
+    return (
+      <Modal title="New password" onClose={onClose} footer={<button className="btn grow" onClick={() => onDone(`Password reset for ${email}.`)}>Done</button>}>
+        <p>Share this one-time password with <b>{email}</b> securely — it won't be shown again. They must change it on next login.</p>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input readOnly value={generated} style={{ fontFamily: 'ui-monospace,monospace', fontSize: 15 }} onFocus={e => e.currentTarget.select()} />
+          <button className="btn ghost sm" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</button>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={`Reset password — ${admin.display_name}`} onClose={onClose}
+      footer={mode === 'choose'
+        ? <button className="btn ghost grow" onClick={onClose}>Cancel</button>
+        : <>
+            <button className="btn ghost grow" onClick={() => { setMode('choose'); setErr(''); }}>Back</button>
+            {mode === 'generate'
+              ? <button className="btn grow" disabled={busy} onClick={doGenerate}>{busy ? 'Resetting…' : 'Generate & reset'}</button>
+              : <button className="btn grow" disabled={busy || !setValid} onClick={doSet}>{busy ? 'Saving…' : 'Reset password'}</button>}
+          </>}>
+      {warning}
+      {mode === 'choose' && (
+        <div className="row" style={{ marginTop: 10 }}>
+          <button className="btn ghost grow" onClick={() => { setMode('generate'); setErr(''); }}>Generate new password</button>
+          <button className="btn ghost grow" onClick={() => { setMode('set'); setErr(''); }}>Set a new password</button>
+        </div>
+      )}
+      {mode === 'generate' && (
+        <p className="muted" style={{ fontSize: 12.5 }}>A strong one-time password is generated and shown once. The admin must change it on next login.</p>
+      )}
+      {mode === 'set' && (
+        <>
+          <label>New password</label>
+          <input type="password" value={newPw} autoComplete="new-password" onChange={e => setNewPw(e.target.value)} placeholder={`At least ${MIN_LEN} characters`} />
+          <label>Confirm password</label>
+          <input type="password" value={confirm} autoComplete="new-password" onChange={e => setConfirm(e.target.value)} placeholder="Re-enter the password" />
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            {newPw && newPw.length < MIN_LEN ? `Too short — at least ${MIN_LEN} characters.`
+              : newPw && confirm && newPw !== confirm ? 'Passwords do not match.'
+              : newPw && newPw.trim().toLowerCase() === String(email).trim().toLowerCase() ? 'Password must not be the email.'
+              : 'This becomes the admin\'s password immediately.'}
+          </div>
+          <label className="pickrow" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 0' }}>
+            <input type="checkbox" checked={requireChange} onChange={e => setRequireChange(e.target.checked)} /> Require this admin to change it on next login
+          </label>
+        </>
+      )}
+      {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
+    </Modal>
   );
 }
 

@@ -4,10 +4,28 @@ import { randomBytes } from 'node:crypto';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
-import { Errors } from '../errors.js';
+import { Errors, AppError } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../plugins/adminAuth.js';
 import { hashSecret } from '../security/crypto.js';
 import { PERMISSION_BUNDLES } from '../lib/permissionBundles.js';
+
+// Server-side strength gate for a Super-Admin-SUPPLIED admin password (a generated one is always strong).
+// Placeholder/common values to reject outright; the length + email checks live in passwordProblem().
+const WEAK_PASSWORDS = new Set([
+  'password', 'password1', 'password12', 'password123', 'passw0rd!', 'changeme', 'change-me',
+  'letmein123', '1234567890', '123456789', '12345678', 'qwertyuiop', 'admin12345', 'welcome123',
+  'iloveyou12', 'conceptmastery', 'concept@admin',
+]);
+function passwordProblem(pw: string, email: string): string | null {
+  if (pw.length < 10) return 'Password must be at least 10 characters.';
+  if (WEAK_PASSWORDS.has(pw.toLowerCase())) return 'That password is too common — choose a stronger one.';
+  if (pw.trim().toLowerCase() === String(email).trim().toLowerCase()) return 'Password must not be the same as the account email.';
+  return null;
+}
+const resetPasswordSchema = z.object({
+  new_password: z.string().optional(),
+  require_change: z.boolean().optional(),
+});
 
 // Admin lifecycle & permissions (Blueprint §22, §23, §28.1, §28.2). Super-Admin domain.
 const createSchema = z.object({
@@ -163,22 +181,42 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
     return { deleted: true, status: 'deleted' };
   });
 
-  // Reset an admin's password → issue a new PERMANENT password (Super-Admin only). Admin auth is
-  // stateless (short-lived HMAC tokens), so there is no server session to revoke here; the old
-  // password simply stops working. The admin signs in with the new password (no forced change, no MFA).
+  // Reset ANY admin's password (Super-Admin only; no old password required — authorized reset). Two modes:
+  //   • SET   — body.new_password supplied → validated server-side, hashed, stored; must_change_password =
+  //             (require_change ?? false). Returns { mode:'set' } — never echoes the password.
+  //   • GENERATE — no body.new_password → a strong password is generated, stored, must_change_password=true,
+  //             and returned ONCE as { mode:'generated', password }.
+  // Either mode clears the lockout counters and audits 'admin.password.reset' with the mode. Admin auth is
+  // stateless (short-lived HMAC tokens) so there is no server session to revoke; the old password stops
+  // working immediately and any live token expires shortly. The plaintext is never logged.
   app.post('/v1/admin/accounts/:id/reset-password', guard, async (req) => {
     requireSuperAdmin(req);
     const id = (req.params as any).id;
-    const exists = await db.query('select 1 from ccat.admin_profiles where id=$1', [id]);
-    if (exists.rows.length === 0) throw Errors.notFound('Admin not found');
-    const tempPassword = randomBytes(9).toString('base64url');
-    const hash = await hashSecret(tempPassword, cfg.pinPepper);
+    const b = resetPasswordSchema.parse(req.body ?? {});
+    const acct = await db.query('select email::text as email from ccat.admin_profiles where id=$1', [id]);
+    if (acct.rows.length === 0) throw Errors.notFound('Admin not found');
+    const email = acct.rows[0]!.email as string;
+
+    const setMode = typeof b.new_password === 'string';
+    let password: string;
+    let mustChange: boolean;
+    if (setMode) {
+      const problem = passwordProblem(b.new_password!, email);
+      if (problem) throw new AppError(400, 'WEAK_PASSWORD', problem);
+      password = b.new_password!;
+      mustChange = b.require_change ?? false;
+    } else {
+      password = randomBytes(9).toString('base64url');
+      mustChange = true;
+    }
+    const hash = await hashSecret(password, cfg.pinPepper);
     await withTransaction(db, async (c) => {
-      await c.query(`insert into ccat.admin_local_credentials(admin_id,password_hash) values ($1,$2)
-          on conflict (admin_id) do update set password_hash=excluded.password_hash`, [id, hash]);
-      await c.query('update ccat.admin_profiles set must_change_password=false where id=$1', [id]);
-      await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','admin.password.reset','admin',$2)`, [req.admin!.adminId, id]);
+      await c.query(`insert into ccat.admin_local_credentials(admin_id,password_hash,failed_attempts,locked_until) values ($1,$2,0,null)
+          on conflict (admin_id) do update set password_hash=excluded.password_hash, failed_attempts=0, locked_until=null`, [id, hash]);
+      await c.query('update ccat.admin_profiles set must_change_password=$2 where id=$1', [id, mustChange]);
+      await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','admin.password.reset','admin',$2,$3)`,
+        [req.admin!.adminId, id, JSON.stringify({ mode: setMode ? 'set' : 'generated', require_change: mustChange })]);
     });
-    return { temp_password: tempPassword, note: 'New password — shown once. This is the admin\'s permanent password; they sign in with it.' };
+    return setMode ? { mode: 'set' as const } : { mode: 'generated' as const, password };
   });
 }

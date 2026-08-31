@@ -146,7 +146,10 @@ export const api = {
   createAccount: (b: { email: string; display_name: string; role: string; permissions: string[]; temp_password?: string; recovery_channel?: 'email' | 'phone' }) => req<{ id: string; temp_password: string; generated: boolean }>('POST', '/v1/admin/accounts', b),
   patchAccount: (id: string, b: { status?: string; role?: string; permissions?: string[] }) => req<any>('PATCH', `/v1/admin/accounts/${id}`, b),
   deleteAccount: (id: string, reference?: string) => req<{ deleted: boolean; status: string }>('DELETE', `/v1/admin/accounts/${id}`, { reference }),
-  resetAccountPassword: (id: string) => req<{ temp_password: string }>('POST', `/v1/admin/accounts/${id}/reset-password`),
+  // Reset an admin's password (Super-Admin only, enforced server-side). Omit new_password to GENERATE a
+  // strong one (returned once); supply new_password to SET it (validated server-side, not echoed back).
+  resetAccountPassword: (id: string, body: { new_password?: string; require_change?: boolean } = {}) =>
+    req<{ mode: 'generated'; password: string } | { mode: 'set' }>('POST', `/v1/admin/accounts/${id}/reset-password`, body),
   unlockAccount: (id: string) => req<{ unlocked: boolean; temp_password: string }>('POST', `/v1/admin/accounts/${id}/unlock`),
   permissions: () => req<{ items: any[] }>('GET', '/v1/admin/permissions'),
   permissionBundles: () => req<{ bundles: { key: string; label: string; description: string; permissions: string[] }[] }>('GET', '/v1/admin/permissions/bundles'),
