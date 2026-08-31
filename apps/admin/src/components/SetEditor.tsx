@@ -184,7 +184,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
           <div className="edsub muted">{set && (<>{isExam ? 'Exam battery' : 'Practice set'} · Grade {set.grade_number} · {set.category}{set.subcategory ? ` / ${set.subcategory}` : ''} · <b>{set.state}</b> · {cards.length} card{cards.length === 1 ? '' : 's'} ({activeCount} publish-ready)</>)}</div>
         </div>
         <div className="edactions">
-          <button className="btn ghost sm" disabled={busy || !set || loading || preview} onClick={() => setBulk(true)}>⤓ Bulk add from CSV</button>
+          <button className="btn ghost sm" disabled={busy || !set || loading || preview} onClick={() => setBulk(true)}>⤓ Bulk add from file</button>
           <button className="btn ghost sm" onClick={() => setPreview(p => !p)}>{preview ? 'Edit' : 'Preview'}</button>
           <button className="btn sm" disabled={busy || !set} onClick={() => save()}>{busy ? 'Saving…' : 'Save draft'}</button>
           {set?.state !== 'published' && <button className="btn green sm" disabled={busy || !set} onClick={publish}>Publish</button>}
@@ -242,7 +242,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
         )}
       </div>
 
-      {bulk && <BulkImport title="Bulk add from CSV" onClose={() => setBulk(false)}
+      {bulk && <BulkImport title="Bulk add from file" onClose={() => setBulk(false)}
         onImport={(imported) => { injectCards(imported); setBulk(false); toast(`Imported ${imported.length} question${imported.length === 1 ? '' : 's'} — review and Save draft`); }} />}
     </div>
   );

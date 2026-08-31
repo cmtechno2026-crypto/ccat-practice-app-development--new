@@ -1,20 +1,20 @@
-// Deterministic file-import parser for the set editor's "Import" feature. Parses the predefined
-// question BLOCK format (see the downloadable sample) out of plain text extracted from .md / .txt /
-// .pdf / .docx and produces the SAME editable card objects the CSV importer yields (see csv.ts →
-// rowToCard), so imported questions flow through the existing editor + Save-draft path. NOTHING here
-// is generated or scored — it is strict, deterministic text parsing. All-or-nothing: any deviation
-// rejects the whole file with line/block-numbered errors.
+// Deterministic parser for the set editor's "Bulk add from file" importer. This is the ONE universal
+// question format for every subcategory and set — it carries NO taxonomy (type / subcategory / category
+// / grade / difficulty come from the SET being edited). It parses the block format below out of plain
+// text (.md / .txt, or a .csv that actually contains this text) and produces the editable card objects
+// the editor appends, so imported questions flow through the existing Save-draft / Publish path. Nothing
+// is generated or scored — strict, deterministic parsing. All-or-nothing: any deviation rejects the
+// whole file with block/line-numbered errors.
 //
-// FORMAT (per block, blank line between blocks):
-//   Q: <question text>          (required; may span multiple lines until the first option)
-//   A) <option text>            (labels A) B) C) … ; "A)" or "A." ; 2–6 options)
+// FORMAT:
+//   #  …                         comment line — ignored anywhere in the file
+//   Q: <question text>           begins a block; text may span several lines until the first option
+//   A) <option text>             options labelled A) B) C) … (a dot works: "A."); 2–6 options
 //   B) <option text>
-//   Answer: <letter>            (required; must match a present option label)
-//   Explanation: <text>         (optional; single line)
-// Lines starting with '#' are comments and are ignored (lets the sample header stay in the file).
-//
-// ROBUSTNESS: a new "Q:" line always starts a new block, so the parser still works when PDF/DOCX text
-// extraction drops the blank-line separators.
+//   Answer: <letter>             the single correct option letter; must match a present option
+//   Explanation: <text>          optional; one line
+// Blocks are separated by blank line(s); additionally, a new "Q:" line always starts a new block, so the
+// format works whether or not the author leaves blank lines between questions.
 
 export type ImportCard = {
   stem: string;
@@ -52,8 +52,9 @@ export function parseImportText(raw: string): ImportResult {
   const text = (raw ?? '').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ');
   const lines = text.split('\n');
   const errors: ImportError[] = [];
+  // Block-scoped errors read "Block N: …"; pre-block errors read "Line N: …"; global errors read plain.
   const err = (block: number, line: number, message: string) =>
-    errors.push({ block, line, message, display: block ? `Block ${block} (line ${line}): ${message}` : message });
+    errors.push({ block, line, message, display: block ? `Block ${block}: ${message}` : line ? `Line ${line}: ${message}` : message });
 
   const blocks: Block[] = [];
   let cur: Block | null = null;
@@ -75,7 +76,10 @@ export function parseImportText(raw: string): ImportResult {
 
     if (!cur) {
       // Before the first Q: — allow only blanks/comments; anything else is a format error.
-      if (!isBlank) err(0, lineNo, `unexpected text before the first "Q:" — "${trunc(line)}"`);
+      if (!isBlank) {
+        const kind = RE_OPTION.test(line) ? 'options found' : RE_ANSWER.test(line) ? '"Answer:" found' : 'text found';
+        err(0, lineNo, `${kind} before any "Q:" line`);
+      }
       continue;
     }
 
@@ -93,7 +97,7 @@ export function parseImportText(raw: string): ImportResult {
       cur.phase = 'options';
       continue;
     }
-    // Unmatched line: part of a multi-line stem if we're still before options; otherwise stray.
+    // Unmatched line: part of a multi-line stem while still before options; otherwise a stray line.
     if (cur.phase === 'stem') cur.stemParts.push(line.trim());
     else cur.stray.push({ line: lineNo, text: line.trim() });
   }
@@ -107,17 +111,18 @@ export function parseImportText(raw: string): ImportResult {
   const cards: ImportCard[] = [];
   for (const b of blocks) {
     const stem = b.stemParts.join(' ').trim();
-    if (!stem) err(b.n, b.qLine, 'missing question text after "Q:"');
+    const present = b.options.length > 1
+      ? `${b.options[0].label}–${b.options[b.options.length - 1].label}`
+      : b.options.length === 1 ? b.options[0].label : 'none';
+    if (!stem) err(b.n, b.qLine, 'no question text after "Q:"');
     if (b.options.length < 2) err(b.n, b.startLine, `only ${b.options.length} option${b.options.length === 1 ? '' : 's'} found; need at least 2`);
     if (b.options.length > 6) err(b.n, b.startLine, `${b.options.length} options found; a question may have at most 6`);
     for (const dl of dedupe(b.dupLabels)) err(b.n, b.startLine, `duplicate option label "${dl})"`);
     if (b.dupAnswer) err(b.n, b.dupAnswer, 'more than one "Answer:" line');
-    if (!b.answer) err(b.n, b.startLine, 'missing "Answer:" line');
-    else if (!b.options.some(o => o.label === b.answer!.letter)) {
-      const present = b.options.map(o => o.label).join(', ') || 'none';
+    if (!b.answer) err(b.n, b.startLine, 'no "Answer:" line');
+    else if (!b.options.some(o => o.label === b.answer!.letter))
       err(b.n, b.answer.line, `Answer "${b.answer.letter}" does not match any option (${present} present)`);
-    }
-    for (const s of b.stray) err(b.n, s.line, `unexpected line — "${trunc(s.text)}" (expected an option, "Answer:", "Explanation:", or a blank line)`);
+    for (const s of b.stray) err(b.n, s.line, `unexpected line "${trunc(s.text)}" (expected an option, "Answer:", "Explanation:", or a blank line)`);
 
     if (b.options.length >= 2 && b.options.length <= 6 && b.answer && stem && b.options.some(o => o.label === b.answer!.letter)) {
       cards.push({

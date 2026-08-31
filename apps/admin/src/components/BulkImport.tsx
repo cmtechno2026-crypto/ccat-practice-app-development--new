@@ -1,34 +1,69 @@
 import React, { useRef, useState } from 'react';
 import { Modal } from './ui';
-import { parseQuestionsCsv, SAMPLE_CSV, ImportCard, CsvError } from '../lib/csv';
+import { parseImportText, ImportCard, ImportError } from '../lib/importParse';
 
-// Bulk add questions from a CSV in the simplified format (question, options, correct, explanation).
-// STRICT all-or-nothing: a valid file appends fully-filled, editable cards to the CURRENT set; a
-// malformed file is rejected with row-numbered errors and imports nothing. Grade / battery /
-// subcategory / difficulty / type come from the set, not the file. Nothing is saved here — the admin
-// reviews, edits, adds more, then uses the existing Save draft / Publish flow.
+// "Bulk add from file" — the single, universal question importer for the set editor. The admin uploads
+// (or pastes) ONE .md / .txt file in the block format (Q:/A)/Answer:/Explanation:, "#" comments), we
+// parse + validate it CLIENT-SIDE, and APPEND the parsed questions as fully-filled, editable cards to the
+// CURRENT set. Strict all-or-nothing: any format error rejects the whole file with block/line-numbered
+// reasons. Grade / battery / subcategory / difficulty / type come from the set, never the file. Nothing
+// is saved here — the admin reviews, edits, adds more, then uses the existing Save draft / Publish flow.
+
+// The downloadable sample — EXACTLY the canonical format guide + three example questions.
+const SAMPLE = `# CCAT question import — format guide
+#
+# HOW THIS FILE IS READ
+#  - The file is a list of question BLOCKS. Separate each block with a BLANK LINE.
+#  - Each block starts with a "Q:" line, then the question text (it may span several lines).
+#  - Options are labelled  A)  B)  C)  D)  ...  (a dot also works: "A.").  Minimum 2 options.
+#  - "Answer:" gives the SINGLE correct option letter — it must match one of the options.
+#  - "Explanation:" is optional (one line).
+#  - Lines that start with "#" are comments and are ignored (you can delete this whole header).
+#
+# Fill in your own questions below in the same shape, then Import this file.
+Q: Cat is to Kitten as Dog is to ?
+A) Puppy
+B) Cub
+C) Foal
+D) Calf
+Answer: A
+Explanation: A young dog is called a puppy.
+Q: Which number comes next in the series: 2, 4, 8, 16, ?
+A) 32
+B) 24
+C) 20
+D) 18
+Answer: A
+Explanation: Each term is double the one before it.
+Q: Choose the word that best completes the sentence: The careful scientist recorded every ___ in her notebook.
+A) observation
+B) observatory
+C) observant
+D) observe
+Answer: A`;
 
 const MAX_SHOWN = 10;
 
-export function BulkImport({ title = 'Bulk add from CSV', onClose, onImport }: {
+export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: {
   title?: string; onClose: () => void; onImport: (cards: ImportCard[]) => void | Promise<void>;
 }) {
   const [text, setText] = useState('');
   const [cards, setCards] = useState<ImportCard[] | null>(null);
-  const [errors, setErrors] = useState<CsvError[] | null>(null);
+  const [errors, setErrors] = useState<ImportError[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showSample, setShowSample] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parse = (src: string) => {
-    const res = parseQuestionsCsv(src);
+    const res = parseImportText(src);
     if (res.ok) { setCards(res.cards); setErrors(null); }
     else { setErrors(res.errors); setCards(null); }
   };
   const onFile = async (f: File) => { const t = await f.text(); setText(t); parse(t); };
   const downloadSample = () => {
-    const blob = new Blob([SAMPLE_CSV], { type: 'text/csv' });
+    const blob = new Blob([SAMPLE + '\n'], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'ccat-questions-sample.csv';
+    const a = document.createElement('a'); a.href = url; a.download = 'ccat-question-import-sample.md';
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   };
   const doImport = async () => {
@@ -49,22 +84,28 @@ export function BulkImport({ title = 'Bulk add from CSV', onClose, onImport }: {
         </button>
       </>}>
       <p className="lead">
-        Upload or paste a <b>.csv</b> with columns <code>question, option_a…option_f, correct, explanation</code>.
-        Each row becomes a filled question card in this set — grade, battery, subcategory and difficulty come from the set, not the file.
+        Upload or paste a <b>.md</b> / <b>.txt</b> file in the block format — <code>Q:</code> then options
+        <code> A) B) C)…</code>, an <code>Answer:</code> letter, and an optional <code>Explanation:</code>.
+        Each block becomes a filled question card in this set (grade, battery, subcategory and difficulty come from the set).
         Nothing is saved until you use <b>Save draft</b>.
       </p>
 
       <div className="rowactions" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
-        <button className="btn ghost sm" onClick={downloadSample}>⤓ Download sample CSV</button>
-        <input ref={fileRef} type="file" accept=".csv,text/csv" hidden
+        <button className="btn ghost sm" onClick={downloadSample}>⤓ Download sample</button>
+        <button className="btn ghost sm" onClick={() => setShowSample(s => !s)}>{showSample ? 'Hide format' : 'View format'}</button>
+        <input ref={fileRef} type="file" accept=".md,.txt,.csv,text/markdown,text/plain,text/csv" hidden
           onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); if (fileRef.current) fileRef.current.value = ''; }} />
-        <button className="btn ghost sm" onClick={() => fileRef.current?.click()}>Choose CSV file</button>
+        <button className="btn ghost sm" onClick={() => fileRef.current?.click()}>Choose file…</button>
         <button className="btn sm" onClick={() => parse(text)} disabled={!text.trim()}>Parse &amp; check</button>
       </div>
 
+      {showSample && (
+        <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{SAMPLE}</pre>
+      )}
+
       <textarea rows={5} value={text}
         onChange={e => { setText(e.target.value); setCards(null); setErrors(null); }}
-        placeholder={'question,option_a,option_b,option_c,option_d,correct,explanation\n"Which one is the odd one out?",Circle,Square,Triangle,Dog,D,"Dog is not a shape."'}
+        placeholder={'Q: Which one is the odd one out?\nA) Circle\nB) Square\nC) Triangle\nD) Dog\nAnswer: D\nExplanation: Dog is not a shape.'}
         style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12.5 }} />
 
       {errors && errors.length > 0 && (
