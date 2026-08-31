@@ -43,7 +43,7 @@ label{display:block;font-weight:700;color:var(--ink);font-size:13px;margin:12px 
 .btn.warn{background:var(--amber);color:#fff} .btn.danger{background:var(--coral);color:#fff} .btn.green{background:var(--green);color:#fff}
 
 /* layout */
-.shell{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
+.shell{display:block;min-height:100vh}
 .sidebar{background:var(--sidebar);border-right:1px solid var(--line);padding:16px 12px;position:sticky;top:0;height:100vh;overflow-y:auto}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 16px}
 .badge{width:38px;height:38px;border-radius:11px;background:linear-gradient(150deg,var(--primary),#5b8ef2);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-weight:700;font-size:15px}
@@ -54,7 +54,9 @@ label{display:block;font-weight:700;color:var(--ink);font-size:13px;margin:12px 
 .navitem:hover{background:var(--card-2)}
 .navitem.active{background:var(--tint);color:var(--primary-ink)}
 .navitem .ic{width:18px;text-align:center}
-.content{display:flex;flex-direction:column;min-width:0}
+/* Content reserves the rail's collapsed width and shifts right when the rail expands, so the rail
+   never covers the page. The margin animates in lock-step with the rail width (see the v2 block). */
+.content{display:flex;flex-direction:column;min-width:0;margin-left:74px;transition:margin-left .22s ease .06s}
 .topbar{height:60px;border-bottom:1px solid var(--line);background:var(--card);display:flex;align-items:center;justify-content:space-between;padding:0 22px;position:sticky;top:0;z-index:5}
 .topbar .title{font-family:'Baloo 2';font-weight:600;font-size:19px;color:var(--ink)}
 .infobox{background:var(--tint);border:1px solid var(--line-strong);color:var(--primary-ink);border-radius:10px;padding:11px 13px;font-size:13px;line-height:1.45}
@@ -117,7 +119,26 @@ tbody tr:hover td{background:var(--card-2)}
 .demo-hint{background:var(--tint);border-radius:12px;padding:10px 12px;font-size:12.5px;color:var(--ink-soft);margin-top:16px;line-height:1.5}
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .grow{flex:1;min-width:160px}
-@media (max-width:860px){ .shell{grid-template-columns:1fr} .sidebar{position:fixed;z-index:20;transform:translateX(-100%);transition:.2s;width:236px} .sidebar.open{transform:none} }
+/* Hamburger (mobile only) + drawer scrim — hidden on desktop; the media query below reveals them. */
+.hamburger{display:none;margin-right:12px;font-size:18px}
+.scrim{display:none;position:fixed;inset:0;background:rgba(10,18,32,.42);z-index:25;border:none;padding:0;cursor:pointer}
+.railclose{display:none}
+
+@media (max-width:860px){
+  /* Narrow screens: the rail becomes an off-canvas DRAWER that slides OVER the page with a dim scrim.
+     Content is NOT pushed (margin stays 0); it closes on tap-outside (scrim) or the ✕ button. */
+  .content{margin-left:0}
+  .rail:hover ~ .content,.rail:focus-within ~ .content{margin-left:0}
+  .rail{transform:translateX(-100%);width:236px;box-shadow:none;transition:transform .22s ease}
+  .rail:hover,.rail:focus-within{width:236px;box-shadow:none}            /* no hover-expand on touch */
+  .rail.open{transform:none;overflow-y:auto;box-shadow:10px 0 34px rgba(0,0,0,.4)}
+  /* In the open drawer every label is shown (not gated on hover). */
+  .rail.open .rlabel,.rail.open .brandhdr .bt,.rail.open .railfoot .who2{opacity:1;max-width:160px}
+  .rail.open .railclose{display:flex;position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:8px;
+    border:none;background:rgba(255,255,255,.14);color:#fff;font-size:15px;cursor:pointer;align-items:center;justify-content:center;z-index:2}
+  .hamburger{display:inline-flex}
+  .scrim{display:block}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ============================================================
@@ -126,18 +147,24 @@ tbody tr:hover td{background:var(--card-2)}
    ============================================================ */
 :root{ --brand-ink:#12233a; --brand-ink-2:#1b3358; --brand-accent:#f6a623; }
 
-/* --- shell: hover-expand icon rail (TASK-002) ---
-   Collapsed 74px reserves the grid column; the rail overlays to 232px on hover so main
-   content never reflows. Labels fade in; brand subtitle + user footer appear when expanded. */
-.shell{grid-template-columns:74px 1fr}
-.rail{background:var(--brand-ink);color:#fff;position:sticky;top:0;height:100vh;width:74px;
+/* --- shell: hover-expand icon rail ---
+   The rail is FIXED at the left edge; the content area carries a matching left margin so the page
+   always reserves the rail's width — nothing is ever hidden behind it. Collapsed = 74px slim icon
+   rail. On hover/focus the rail widens to 232px AND the content margin grows by the same amount, in
+   one synced ~220ms transition, so the page just gets less room (it is never covered). Icons stay put
+   (fixed left padding); labels reveal to their right. A short open delay (120ms) + close delay (60ms)
+   stop a quick mouse pass from flickering the rail open. */
+.rail{background:var(--brand-ink);color:#fff;position:fixed;left:0;top:0;height:100vh;width:74px;
   display:flex;flex-direction:column;padding:14px 13px;gap:4px;overflow:hidden;z-index:30;
-  transition:width .18s ease;box-shadow:0 0 0 0 rgba(0,0,0,0)}
-.rail:hover,.rail:focus-within{width:232px;overflow-y:auto;overflow-x:hidden;box-shadow:8px 0 28px rgba(0,0,0,.28)}
+  transition:width .22s ease .06s;box-shadow:0 0 0 0 rgba(0,0,0,0)}
+.rail:hover,.rail:focus-within{width:232px;overflow-y:auto;overflow-x:hidden;box-shadow:8px 0 28px rgba(0,0,0,.28);
+  transition:width .22s ease .12s}
+/* Content offset expands together with the rail (sibling selector — .content follows .rail in the DOM). */
+.rail:hover ~ .content,.rail:focus-within ~ .content{margin-left:232px;transition:margin-left .22s ease .12s}
 .rail .brandhdr{display:flex;align-items:center;gap:11px;padding:2px 4px 12px;min-width:206px}
 .rail .brandhdr .logo{width:42px;height:42px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .rail .brandhdr .logo .cm{font-family:'Baloo 2';font-weight:800;color:var(--brand-ink);font-size:15px}
-.rail .brandhdr .bt{min-width:0;opacity:0;max-width:0;overflow:hidden;white-space:nowrap;transition:opacity .14s ease,max-width .18s ease}
+.rail .brandhdr .bt{min-width:0;opacity:0;max-width:0;overflow:hidden;transition:opacity .14s ease,max-width .18s ease}
 .rail:hover .brandhdr .bt,.rail:focus-within .brandhdr .bt{opacity:1;max-width:150px}
 .rail .brandhdr .bt b{font-family:'Baloo 2';font-size:15px;font-weight:700;color:#fff;display:block;line-height:1.1}
 .rail .brandhdr .bt span{font-size:10.5px;color:#8ea2c4;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
