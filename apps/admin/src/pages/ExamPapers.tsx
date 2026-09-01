@@ -204,7 +204,7 @@ function SectionPicker({ gradeNumber, categoryKey, current, onClose, onAdd }: { 
   return (
     <Modal wide title={`Add ${SECTION_LABEL[categoryKey]} questions`} onClose={onClose}
       footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={sel.size === 0} onClick={() => onAdd([...sel])}>Add ({sel.size})</button></>}>
-      {pool === null ? <div className="empty">Loading…</div> : pool.length === 0 ? <div className="empty">No eligible {SECTION_LABEL[categoryKey]} questions for Grade {gradeNumber} — approve or publish some in the Question pool first.</div> : (
+      {pool === null ? <div className="empty">Loading…</div> : pool.length === 0 ? <div className="empty">No eligible {SECTION_LABEL[categoryKey]} questions for Grade {gradeNumber} — add or publish some questions for this grade first.</div> : (
         <div style={{ maxHeight: 320, overflow: 'auto' }}>{pool.map(q => (
           <label key={q.id} className={`pickrow ${sel.has(q.id) ? 'sel' : ''}`}>
             <input type="checkbox" checked={sel.has(q.id)} onChange={() => toggle(q.id)} />

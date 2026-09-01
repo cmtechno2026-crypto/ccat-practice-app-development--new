@@ -118,7 +118,6 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
           <p className="lead" style={{ marginBottom: 0 }}>Practice sets power the Practice tab; exam papers are full three-section CCAT forms.</p>
         </div>
         <div className="row" style={{ margin: 0, gap: 8 }}>
-          {can('content.create') && <Link className="btn ghost" to="/content/questions">Question pool</Link>}
           {can('content.create') && <button className="btn ghost" onClick={() => setNewQ(true)}>+ New question</button>}
           {!isExam && can('content.create') && <button className="btn ghost" onClick={() => { if (!sub) { toast('Pick a subcategory on the left first'); return; } setBulkSets(true); }}>⤓ Bulk add sets</button>}
           {can('content.create') && <button className="btn" onClick={() => setNewSet(true)}>+ New {isExam ? 'exam set' : 'set'}</button>}

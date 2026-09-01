@@ -7,7 +7,6 @@ import { Dashboard } from './pages/Dashboard';
 import { Health } from './pages/Health';
 import { Students } from './pages/Students';
 import { StudentDetail } from './pages/StudentDetail';
-import { Questions } from './pages/Questions';
 import { ImportQuestions } from './pages/ImportQuestions';
 import { Content } from './pages/Content';
 import { ExamPapers } from './pages/ExamPapers';
@@ -22,11 +21,16 @@ import { Flags } from './pages/Flags';
 import { Admins } from './pages/Admins';
 import { Audit } from './pages/Audit';
 
+const DEMO = [
+  { email: 'super@cm.ca', name: 'Ayesha Khan', role: 'Super-Admin', tag: 'SUPER', av: '#fbe6c4', avink: '#b5791b' },
+  { email: 'content@cm.ca', name: 'Sam Mehta · Content editor', role: 'ADMIN', tag: 'ADMIN', av: '#dbe7ff', avink: '#2f5fc0' },
+  { email: 'support@cm.ca', name: 'Priya Rao · Student support', role: 'SUPPORT', tag: 'SUPPORT', av: '#e7dcff', avink: '#6c4bd6' },
+];
+
 function Login() {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPw, setShowPw] = useState(false);
+  const [email, setEmail] = useState('super@cm.ca');
+  const [password, setPassword] = useState('Passw0rd!');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [fails, setFails] = useState(0);
@@ -48,6 +52,8 @@ function Login() {
     } finally { setBusy(false); }
   };
 
+  const fill = (em: string) => { setEmail(em); setPassword('Passw0rd!'); setErr(''); };
+
   return (
     <div className="login2">
       <div className="brandside">
@@ -62,29 +68,36 @@ function Login() {
       </div>
 
       <div className="formside">
-        <form className="formcard" onSubmit={submit} autoComplete="off">
+        <form className="formcard" onSubmit={submit}>
           <h3>Welcome back</h3>
           <p className="sub">Admins sign in with their work email and password. Five failed attempts locks the account.</p>
 
           <label>Work email</label>
-          <input type="email" name="ccat-admin-email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="off" placeholder="you@conceptmastery.com" disabled={locked} />
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" placeholder="you@conceptmastery.com" disabled={locked} />
           <label>Password</label>
-          <div style={{ position: 'relative' }}>
-            <input type={showPw ? 'text' : 'password'} name="ccat-admin-password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" placeholder="••••••••" disabled={locked} style={{ paddingRight: 44 }} />
-            <button type="button" onClick={() => setShowPw(s => !s)} aria-label={showPw ? 'Hide password' : 'Show password'} aria-pressed={showPw} title={showPw ? 'Hide password' : 'Show password'} disabled={locked}
-              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: locked ? 'default' : 'pointer', fontSize: 18, lineHeight: 1, padding: 4 }}>
-              {showPw ? '🙈' : '👁️'}
-            </button>
-          </div>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" disabled={locked} />
 
           <button className="btn" style={{ width: '100%', marginTop: 18, justifyContent: 'center' }} disabled={busy || locked}>
             {locked ? 'Account locked' : busy ? 'Signing in…' : 'Continue'}
           </button>
           <div className="err">{err}</div>
 
-          {locked
-            ? <div className="locknote">This account is locked — too many attempts. Contact a Super-Admin.</div>
-            : fails > 0 && <div className="locknote">{fails} of 5 failed attempts</div>}
+          <div className="demo">
+            <div className="dl">Demo accounts — tap to fill</div>
+            {DEMO.map(d => (
+              <button type="button" key={d.email} className="demorow" onClick={() => fill(d.email)}>
+                <span className="av" style={{ background: d.av, color: d.avink }}>{d.name.split(' ').map(s => s[0]).slice(0, 2).join('')}</span>
+                <span>
+                  <span className="nm">{d.email}</span><br />
+                  <span className="ml">{d.name}</span>
+                </span>
+                <span className="rl" style={{ background: d.av, color: d.avink }}>{d.tag}</span>
+              </button>
+            ))}
+            {locked
+              ? <div className="locknote">This account is locked — too many attempts. Contact a Super-Admin.</div>
+              : fails > 0 && <div className="locknote">{fails} of 5 failed attempts</div>}
+          </div>
         </form>
       </div>
     </div>
@@ -104,7 +117,8 @@ export function App() {
         {/* Content: set browser (category tree + difficulty tabs) is the home; exam papers 2nd tab. */}
         <Route path="/content" element={<Content />} />
         <Route path="/content/exams" element={<ExamPapers />} />
-        <Route path="/content/questions" element={<Questions />} />
+        {/* Question pool removed from the UI — redirect any old link back to Content. */}
+        <Route path="/content/questions" element={<Navigate to="/content" replace />} />
         <Route path="/content/import" element={<ImportQuestions />} />
         <Route path="/content/sets" element={<Navigate to="/content" replace />} />
         <Route path="/content/plans" element={<LearningPlans />} />

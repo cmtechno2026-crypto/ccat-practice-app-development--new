@@ -51,6 +51,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   const [cards, setCards] = useState<ImportCard[] | null>(null);
   const [errors, setErrors] = useState<ImportError[] | null>(null);
   const [showSample, setShowSample] = useState(false);
+  const [showInstruction, setShowInstruction] = useState(false);
   const [copied, setCopied] = useState(false);
   const [step, setStep] = useState<'input' | 'preview' | 'created'>('input');
   const [busy, setBusy] = useState(false);
@@ -183,12 +184,26 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
             <div className="rowactions" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
               <button className="btn ghost sm" onClick={downloadSample}>⤓ Download sample</button>
               <button className="btn ghost sm" onClick={copyFormat}>{copied ? '✓ Copied!' : '⧉ Copy format'}</button>
+              <button className="btn ghost sm" onClick={() => setShowInstruction(s => !s)}>{showInstruction ? 'Hide instruction' : '❔ Instruction'}</button>
               <button className="btn ghost sm" onClick={() => setShowSample(s => !s)}>{showSample ? 'Hide format' : 'View format'}</button>
               <input ref={fileRef} type="file" accept=".md,.txt,.csv,text/markdown,text/plain,text/csv" hidden
                 onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); if (fileRef.current) fileRef.current.value = ''; }} />
               <button className="btn ghost sm" onClick={() => fileRef.current?.click()}>Choose file…</button>
               <button className="btn sm" onClick={() => parse(text)} disabled={!text.trim()}>Parse &amp; check</button>
             </div>
+
+            {showInstruction && (
+              <div className="infobox" style={{ marginBottom: 8 }}>
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>How to bulk add sets (for beginners):</div>
+                <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 13 }}>
+                  <li>Click <b>Download sample</b> — or <b>Copy format</b> — to get the exact question format.</li>
+                  <li>Paste that sample + all your questions into ChatGPT or Claude and ask: <i>"Rewrite my questions in exactly this format."</i></li>
+                  <li>Copy the AI's result and paste it in the box below (or save as a .md/.txt file and use <b>Choose file…</b>).</li>
+                  <li>Click <b>Parse &amp; check</b>, fix any lines it flags, then <b>Preview split</b>.</li>
+                  <li>Your questions are split into sets of {MAX_QUESTIONS_PER_SET} (Set A, Set B, …). Top up the last set if needed, then create and publish.</li>
+                </ol>
+              </div>
+            )}
 
             {showSample && (
               <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{SAMPLE}</pre>
