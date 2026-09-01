@@ -18,6 +18,13 @@ const newKey = () => `c${++seq}`;
 const textFromBlocks = (blocks: any): string => Array.isArray(blocks)
   ? blocks.map((b: any) => (b?.type === 'text' || b?.type === 'rich_text' || b?.type === 'math' ? String(b.value ?? '') : '')).join(' ').trim() : '';
 const imageBlock = (blocks: any) => Array.isArray(blocks) ? (blocks.find((x: any) => x?.type === 'image') ?? null) : null;
+// A broken image (e.g. the object 404s because it was on ephemeral disk) hides the <img> and reveals a
+// following "not loading" note, so a missing figure never silently looks like a text-only question.
+const onImgError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+  e.currentTarget.style.display = 'none';
+  const note = e.currentTarget.nextElementSibling as HTMLElement | null;
+  if (note && note.hasAttribute('hidden')) note.removeAttribute('hidden');
+};
 const blankCard = (type: string): Card => ({ key: newKey(), stem: '', type, active: true, explanation: '', img: null,
   opts: [{ option_id: 'a', text: '', correct: true }, { option_id: 'b', text: '', correct: false }, { option_id: 'c', text: '', correct: false }, { option_id: 'd', text: '', correct: false }] });
 
@@ -261,7 +268,22 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
                     <button className="iconbtn danger" title="Delete" onClick={() => delCard(c.key)} disabled={cards.length <= 1}>✕</button>
                   </div>
                   <textarea className="qstem" rows={2} placeholder="Question text…" value={c.stem} onChange={e => patchCard(c.key, { stem: e.target.value })} />
-                  {c.img && <div className="qimg"><img src={api.assetUrl(c.img.asset_id)} alt="" /><button className="iconbtn danger" onClick={() => patchCard(c.key, { img: null })}>Remove image</button></div>}
+                  {/* QUESTION FIGURE — its own control right under the question text (thumbnail + replace/remove). */}
+                  <div className="qfigrow" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '2px 0 6px' }}>
+                    <label className="btn ghost sm" style={{ cursor: 'pointer' }}>
+                      {imgBusy === c.key ? 'Uploading…' : (c.img ? '🖼 Replace figure' : '🖼 Add image / figure')}
+                      <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadImg(c.key, f); if (e.currentTarget) e.currentTarget.value = ''; }} />
+                    </label>
+                    <span className="muted" style={{ fontSize: 12 }}>Figure for the question (optional)</span>
+                    {c.img && (
+                      <div className="qimg" style={{ flexBasis: '100%', marginTop: 2 }}>
+                        <img src={api.assetUrl(c.img.asset_id)} alt="" style={{ maxHeight: 90, borderRadius: 8 }}
+                          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; (e.currentTarget.nextElementSibling as HTMLElement | null)?.removeAttribute('hidden'); }} />
+                        <span hidden className="muted" style={{ fontSize: 12 }}>⚠ Image not loading (check storage).</span>
+                        <button className="iconbtn danger" onClick={() => patchCard(c.key, { img: null })}>Remove</button>
+                      </div>
+                    )}
+                  </div>
                   <div className="qopts">
                     {c.opts.map((o, j) => (
                       <div className="qopt" key={o.option_id} style={{ flexWrap: 'wrap' }}>
@@ -285,7 +307,6 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
                   <div className="qmeta">
                     <input className="qexpl" placeholder="Explanation (shown after answering, optional)" value={c.explanation} onChange={e => patchCard(c.key, { explanation: e.target.value })} />
                     <label className="edcheck"><input type="checkbox" checked={c.active} onChange={e => patchCard(c.key, { active: e.target.checked })} /> Active</label>
-                    <label className="btn ghost sm" style={{ cursor: 'pointer' }}>{imgBusy === c.key ? 'Uploading…' : (c.img ? '🖼 Replace figure' : '🖼 Add image / figure')}<input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadImg(c.key, f); if (e.currentTarget) e.currentTarget.value = ''; }} /></label>
                   </div>
                 </div>
               );
@@ -316,14 +337,14 @@ function StudentPreview({ cards }: { cards: Card[] }) {
       {cards.map((c, i) => (
         <div className="pvcard" key={c.key}>
           <div className="pvstem"><b>{i + 1}.</b> {c.stem || <span className="muted">[image question]</span>}</div>
-          {c.img && <img className="pvimg" src={api.assetUrl(c.img.asset_id)} alt="" />}
+          {c.img && <><img className="pvimg" src={api.assetUrl(c.img.asset_id)} alt="" onError={onImgError} /><span hidden className="muted" style={{ fontSize: 12 }}>⚠ Question image not loading.</span></>}
           <div className="pvopts">
             {c.opts.filter(o => o.text.trim() || o.img).map(o => (
               <div className="pvopt" key={o.option_id}>
                 <span className="pvbul">{o.option_id.toUpperCase()}</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {o.text && <span>{o.text}</span>}
-                  {o.img && <img src={api.assetUrl(o.img.asset_id)} alt="" style={{ maxHeight: 56, borderRadius: 6, display: 'block' }} />}
+                  {o.img && <img src={api.assetUrl(o.img.asset_id)} alt="" style={{ maxHeight: 56, borderRadius: 6, display: 'block' }} onError={onImgError} />}
                 </span>
               </div>
             ))}

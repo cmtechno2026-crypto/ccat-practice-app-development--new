@@ -2,7 +2,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Modal, useToast } from './ui';
 import { SetEditor } from './SetEditor';
-import { parseImportText, ImportCard, ImportError } from '../lib/importParse';
+import { parseImportText, referencedImages, ImportCard, ImportError } from '../lib/importParse';
+import { readBulkInput, matchImages, uploadImages, attachImages, BulkImage, MatchResult } from '../lib/bulkFile';
 import { SAMPLE } from './BulkImport';
 
 // "Bulk add sets" — takes ONE file/paste of MANY questions and splits it into SEVERAL draft practice
@@ -50,6 +51,9 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   const [text, setText] = useState('');
   const [cards, setCards] = useState<ImportCard[] | null>(null);
   const [errors, setErrors] = useState<ImportError[] | null>(null);
+  const [images, setImages] = useState<Map<string, BulkImage>>(new Map());
+  const [match, setMatch] = useState<MatchResult | null>(null);
+  const [fileErr, setFileErr] = useState('');
   const [showSample, setShowSample] = useState(false);
   const [showInstruction, setShowInstruction] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -83,12 +87,20 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
     return { chunks, labels, usedDouble, total: cards.length };
   }, [cards, usedLetters]);
 
-  const parse = (src: string) => {
+  const runParse = (src: string, imgs: Map<string, BulkImage>) => {
     const res = parseImportText(src);
-    if (res.ok) { setCards(res.cards); setErrors(null); }
-    else { setErrors(res.errors); setCards(null); }
+    if (res.ok) {
+      setCards(res.cards); setErrors(null);
+      const refs = referencedImages(res.cards);
+      setMatch(refs.length || imgs.size ? matchImages(refs, imgs) : null);
+    } else { setErrors(res.errors); setCards(null); setMatch(null); }
   };
-  const onFile = async (f: File) => { const t = await f.text(); setText(t); parse(t); };
+  const parse = (src: string) => runParse(src, images);
+  const onFile = async (f: File) => {
+    setFileErr('');
+    try { const inp = await readBulkInput(f); setImages(inp.images); setText(inp.text); runParse(inp.text, inp.images); }
+    catch (e) { setFileErr((e as Error).message); }
+  };
   const downloadSample = () => {
     const blob = new Blob([SAMPLE_FILE], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -100,12 +112,21 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   };
 
   const cardToPayload = (c: ImportCard) => {
-    const filled = c.opts.filter(o => o.text.trim());
-    const prompt_blocks = c.stem.trim() ? [{ type: 'text', value: c.stem.trim() }] : [{ type: 'text', value: '' }];
+    const filled = c.opts.filter(o => o.text.trim() || o.img);
+    const prompt_blocks: any[] = [];
+    if (c.stem.trim()) prompt_blocks.push({ type: 'text', value: c.stem.trim() });
+    if (c.img) prompt_blocks.push({ type: 'image', asset_id: c.img.asset_id, url: c.img.url, alt: c.img.alt ?? '' });
+    if (!prompt_blocks.length) prompt_blocks.push({ type: 'text', value: '' });
     return {
       category_id: ctx.catId, subcategory_id: ctx.subId, grade_id: ctx.gradeId, difficulty_id: ctx.diffId,
       question_type: ctx.qType, prompt_blocks,
-      option_blocks: filled.map(o => ({ option_id: o.option_id, content: [{ type: 'text', value: o.text.trim() }] })),
+      option_blocks: filled.map(o => ({
+        option_id: o.option_id,
+        content: [
+          ...(o.text.trim() ? [{ type: 'text', value: o.text.trim() }] : []),
+          ...(o.img ? [{ type: 'image', asset_id: o.img.asset_id, url: o.img.url, alt: o.img.alt ?? '' }] : []),
+        ],
+      })),
       correct_option_ids: filled.filter(o => o.correct).map(o => o.option_id),
       explanation_blocks: c.explanation.trim() ? [{ type: 'text', value: c.explanation.trim() }] : null,
       active: true,
@@ -115,16 +136,28 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   // Create one draft set per chunk (reusing createSet + authorSet). Sequential so a failure stops before
   // creating the rest; already-created drafts are reported and left for the admin (they can delete/edit).
   const confirmCreate = async () => {
-    if (!plan) return;
-    setBusy(true); setErrors(null);
+    if (!plan || !cards) return;
+    if (match && match.missing.length) { setFileErr(`${match.missing.length} referenced image(s) are missing from the ZIP — fix before creating.`); return; }
+    setBusy(true); setErrors(null); setFileErr('');
     const done: Created[] = [];
     try {
-      for (let i = 0; i < plan.chunks.length; i++) {
+      // Upload every referenced figure ONCE, attach to the cards, then re-chunk in the same order so
+      // figures ride along on their questions across the split.
+      let resolved = cards;
+      const refs = referencedImages(cards);
+      if (refs.length) {
+        setProgress(`Uploading ${refs.length} image${refs.length === 1 ? '' : 's'}…`);
+        const uploaded = await uploadImages(refs, images, (m, b, a) => api.uploadAsset(m, b, a));
+        resolved = attachImages(cards, uploaded);
+      }
+      const chunks: ImportCard[][] = [];
+      for (let i = 0; i < resolved.length; i += MAX_QUESTIONS_PER_SET) chunks.push(resolved.slice(i, i + MAX_QUESTIONS_PER_SET));
+      for (let i = 0; i < chunks.length; i++) {
         const name = `Set ${plan.labels[i]}`;
-        setProgress(`Creating ${name} (${i + 1}/${plan.chunks.length})…`);
+        setProgress(`Creating ${name} (${i + 1}/${chunks.length})…`);
         const r = await api.createSet({ name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
-        await api.authorSet(r.set_version_id, plan.chunks[i].map(cardToPayload));
-        done.push({ name, id: r.set_version_id, count: plan.chunks[i].length, full: plan.chunks[i].length >= MAX_QUESTIONS_PER_SET });
+        await api.authorSet(r.set_version_id, chunks[i].map(cardToPayload));
+        done.push({ name, id: r.set_version_id, count: chunks[i].length, full: chunks[i].length >= MAX_QUESTIONS_PER_SET });
       }
       setCreated(done);
       setStep('created');
@@ -167,7 +200,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
           : undefined}
         footer={step === 'input' ? (
           <><button className="btn ghost grow" onClick={onClose}>Cancel</button>
-            <button className="btn grow" disabled={!cards || !cards.length} onClick={() => setStep('preview')}>Preview split{cards && cards.length ? ` (${cards.length} questions)` : ''}</button></>
+            <button className="btn grow" disabled={!cards || !cards.length || !!(match && match.missing.length)} onClick={() => setStep('preview')}>Preview split{cards && cards.length ? ` (${cards.length} questions)` : ''}</button></>
         ) : step === 'preview' ? (
           <><button className="btn ghost grow" onClick={() => setStep('input')} disabled={busy}>← Back</button>
             <button className="btn grow" disabled={busy || !plan} onClick={confirmCreate}>{busy ? (progress || 'Creating…') : `Create ${plan?.chunks.length ?? 0} draft set${(plan?.chunks.length ?? 0) === 1 ? '' : 's'}`}</button></>
@@ -188,9 +221,9 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
               <button className="btn ghost sm" onClick={downloadSample}>⤓ Download sample</button>
               <button className="btn ghost sm" onClick={copyFormat}>{copied ? '✓ Copied!' : '⧉ Copy format'}</button>
               <button className="btn ghost sm" onClick={() => setShowSample(s => !s)}>{showSample ? 'Hide format' : 'View format'}</button>
-              <input ref={fileRef} type="file" accept=".md,.txt,.csv,text/markdown,text/plain,text/csv" hidden
+              <input ref={fileRef} type="file" accept=".md,.txt,.zip,text/markdown,text/plain,application/zip" hidden
                 onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); if (fileRef.current) fileRef.current.value = ''; }} />
-              <button className="btn ghost sm" onClick={() => fileRef.current?.click()}>Choose file…</button>
+              <button className="btn ghost sm" onClick={() => fileRef.current?.click()}>Choose file… (.md/.txt/.zip)</button>
               <button className="btn sm" onClick={() => parse(text)} disabled={!text.trim()}>Parse &amp; check</button>
             </div>
 
@@ -201,7 +234,8 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
                   <li>Click <b>Download sample</b> — or <b>Copy format</b> — to get the exact question format.</li>
                   <li>Paste that sample + all your questions into ChatGPT or Claude and ask: <i>"Rewrite my questions in exactly this format."</i></li>
                   <li>Copy the AI's result and paste it in the box below (or save as a .md/.txt file and use <b>Choose file…</b>).</li>
-                  <li>Click <b>Parse &amp; check</b>, fix any lines it flags, then <b>Preview split</b>.</li>
+                  <li><b>Figures (optional):</b> add <code>Q-Image: file.png</code> / <code>A-Image: file.png</code> lines, put the .md/.txt + those images in ONE <b>.zip</b>, and choose the ZIP. PNG/JPG/WEBP, ≤2 MB each.</li>
+                  <li>Click <b>Parse &amp; check</b> (it lists any missing images), fix flags, then <b>Preview split</b>.</li>
                   <li>Your questions are split into sets of {MAX_QUESTIONS_PER_SET} (Set A, Set B, …). Top up the last set if needed, then create and publish.</li>
                 </ol>
               </div>
@@ -211,11 +245,28 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
               <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{SAMPLE}</pre>
             )}
 
-            <label style={{ marginTop: 4 }}>✍️ Paste ALL your questions here — they'll be split into sets of {MAX_QUESTIONS_PER_SET}</label>
+            <label style={{ marginTop: 4 }}>✍️ Paste ALL your questions here — they'll be split into sets of {MAX_QUESTIONS_PER_SET} (a .zip for figures)</label>
             <textarea rows={7} value={text}
-              onChange={e => { setText(e.target.value); setCards(null); setErrors(null); }}
+              onChange={e => { setText(e.target.value); setCards(null); setErrors(null); setMatch(null); }}
               placeholder={'Paste the AI-formatted questions here…\n\nQ: Which one is the odd one out?\nA) Circle\nB) Square\nC) Triangle\nD) Dog\nAnswer: D\nExplanation: Dog is not a shape.'}
               style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12.5 }} />
+
+            {fileErr && <div className="err" style={{ marginTop: 8 }}>{fileErr}</div>}
+
+            {match && (match.referenced.length > 0 || images.size > 0) && (
+              <div className="infobox" style={{ marginTop: 8 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                  Figures: {match.matched.length}/{match.referenced.length} matched{images.size ? ` · ${images.size} image${images.size === 1 ? '' : 's'} in ZIP` : ''}
+                </div>
+                {match.referenced.map(r => (
+                  <div key={r} style={{ fontSize: 12.5, fontFamily: 'ui-monospace,monospace' }}>
+                    {match.missing.includes(r) ? '✗ ' : '✓ '}{r}{match.missing.includes(r) && <b style={{ color: 'var(--coral)' }}> — MISSING</b>}
+                  </div>
+                ))}
+                {match.missing.length > 0 && <div className="err" style={{ marginTop: 4 }}>Add the missing image(s) to the ZIP (or remove the reference) before creating.</div>}
+                {match.unused.length > 0 && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Not referenced (ignored): {match.unused.join(', ')}</div>}
+              </div>
+            )}
 
             {errors && errors.length > 0 && (
               <div className="err" style={{ marginTop: 8 }}>
