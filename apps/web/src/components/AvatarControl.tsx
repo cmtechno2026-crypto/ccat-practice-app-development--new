@@ -64,10 +64,13 @@ export function AvatarControl() {
 
   return (
     <div className="avatar-control" ref={wrapRef}>
-      <button className="avatar-chip" aria-haspopup="dialog" aria-expanded={open} title="Avatar & theme"
-        onClick={() => setOpen((o) => !o)}>
+      {/* Customize/Avatar picker hidden — fixed avatar for now; re-enable later. The chip is now a
+          NON-INTERACTIVE display: it no longer opens the avatar/theme picker. The picker panel below is
+          kept in the repo but is unreachable (`open` never becomes true). To re-enable, restore the
+          button trigger (onClick={() => setOpen(o => !o)}). */}
+      <span className="avatar-chip" title="Avatar" aria-hidden>
         <Avatar size={34} />
-      </button>
+      </span>
       {open && (
         <div className="avatar-panel" role="dialog" aria-label="Avatar and theme">
           <div className="between" style={{ marginBottom: 10 }}>

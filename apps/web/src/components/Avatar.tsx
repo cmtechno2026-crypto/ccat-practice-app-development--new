@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { CurrentAvatar } from '@ccat/api-client';
 import { gatewayUrl } from '../lib/api';
-import { useApp } from '../lib/store';
 
 // SINGLE SOURCE for rendering a user avatar. Every place that shows the signed-in child's avatar
 // (header, sidebar, Home mascot, Profile) renders <Avatar/>, which reads the CURRENT equipped stage
@@ -41,27 +40,18 @@ export function StageFace({ imageUrl, emoji, className, size = 28 }: { imageUrl:
   return <span className={className} style={{ fontSize: Math.round(size * 0.82), lineHeight: 1 }}>{emoji}</span>;
 }
 
-// The CURRENT equipped avatar. Reads the profile store by default; pass `avatar`/`preview` to override
-// (e.g. rendering someone else's, or a specific value). Preview/"cheat" accounts show 👀 everywhere so
-// that stays consistent too. Cold-start (no profile yet) → neutral default emoji, never the wrong art.
+// FIXED UNIVERSAL AVATAR — every student shows the SAME fox everywhere (header, sidebar footer, Home
+// mascot, Profile). We intentionally do NOT read the per-user equipped stage (profile.current_avatar)
+// anymore; the avatar is frozen to one fox while the Customize/Avatar picker is hidden. Props are kept
+// for call-site compatibility but ignored. To re-enable per-user avatars later, restore the store-driven
+// StageFace body (git history) and re-expose the picker.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function Avatar({ size = 32, className, avatar, preview }: {
   size?: number; className?: string;
-  avatar?: CurrentAvatar | null;      // override the store value
-  preview?: boolean;                  // override is_preview
+  avatar?: CurrentAvatar | null;      // ignored (fixed avatar)
+  preview?: boolean;                  // ignored (fixed avatar)
 }) {
-  const { profile } = useApp();
-  const cur = avatar !== undefined ? avatar : (profile?.current_avatar ?? null);
-  const isPreview = preview !== undefined ? preview : !!profile?.is_preview;
-
-  if (isPreview) {
-    return <span className={className} style={{ fontSize: Math.round(size * 0.82), lineHeight: 1 }} aria-hidden>👀</span>;
-  }
   return (
-    <StageFace
-      className={className}
-      size={size}
-      imageUrl={cur?.image_url}
-      emoji={emojiFor(cur?.family_key, cur?.stage_number)}
-    />
+    <span className={className} style={{ fontSize: Math.round(size * 0.82), lineHeight: 1 }} aria-hidden>🦊</span>
   );
 }

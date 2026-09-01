@@ -611,3 +611,16 @@ p { line-height: 1.5; }
 
 /* --- Sidebar brand logo (replaces the fox emoji + wordmark) --- */
 .sidebar .brand-img { width: 52px; height: 52px; object-fit: contain; flex: none; display: block; border-radius: 8px; }
+
+/* --- Brand mark "CM-1" (markup, DPI-crisp): two-tone wordmark + solid CM tile --- */
+.sidebar .brand.cm1 { display: flex; align-items: center; gap: 14px; padding: 10px 8px 14px; min-width: 0; }
+.cm-wordmark { display: flex; flex-direction: column; line-height: 1.02; white-space: nowrap; }
+.cm-name { display: flex; flex-direction: column; }
+.cm-name .cm-c { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #152a54; }
+.cm-name .cm-m { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #1a5eab; }
+.cm-tag { margin-top: 2px; text-transform: uppercase; letter-spacing: 0.16em; font-size: 9px; font-weight: 800; color: #1a5eab; }
+.cm-tile { flex: none; width: 48px; height: 48px; border-radius: 14px; background: #1a5eab; color: #fff; font-family: 'Baloo 2', sans-serif; font-weight: 900; font-size: 20px; display: flex; align-items: center; justify-content: center; }
+/* Collapsed rail: show only the CM tile (the emblem); the wordmark appears when the rail expands. */
+.sidebar .cm-wordmark { display: none; }
+.sidebar.expanded .cm-wordmark { display: flex; }
+@media (max-width: 768px) { .sidebar .cm-wordmark { display: flex; } }

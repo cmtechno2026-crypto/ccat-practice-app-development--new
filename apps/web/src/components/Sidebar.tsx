@@ -2,7 +2,6 @@ import { useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/store';
 import { Avatar } from './Avatar';
-import logoUrl from '../assets/cm-logo.jpg';
 
 // Primary navigation — persistent LEFT sidebar (desktop + tablet). PUSH model: this panel sits in the
 // layout flow; expanding widens it AND shifts the content area right (the offset lives on `.main`,
@@ -65,11 +64,16 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
       onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) scheduleClose(); }}
     >
       <div className="sidebar-head">
-        {/* Brand logo — the image carries the "Concept Mastery" wordmark, so no separate text label.
-            A small "CCAT Practice" product sub-label sits beside it (fades in when the rail expands). */}
-        <Link to="/home" className="brand" aria-label="Concept Mastery — home">
-          <img className="brand-img" src={logoUrl} alt="Concept Mastery" />
-          <span className="brandtext"><small>CCAT Practice</small></span>
+        {/* Brand mark "CM-1" — rendered as MARKUP (not a raster) so it stays crisp at any DPI and uses the
+            app font: two-tone "Concept / Mastery" wordmark + "QUALITY EDUCATION" tagline on the left, and a
+            solid CM-blue "CM" tile on the right. Collapsed rail shows only the tile (the emblem); the
+            wordmark fades in when the rail expands. */}
+        <Link to="/home" className="brand cm1" aria-label="Concept Mastery — home">
+          <span className="cm-wordmark">
+            <span className="cm-name"><span className="cm-c">Concept</span><span className="cm-m">Mastery</span></span>
+            <span className="cm-tag">Quality Education</span>
+          </span>
+          <span className="cm-tile" aria-hidden>CM</span>
         </Link>
         {/* Mobile drawer close (CSS-hidden on desktop) */}
         <button type="button" className="sidebar-close" aria-label="Close menu" onClick={onCloseDrawer}>✕</button>
