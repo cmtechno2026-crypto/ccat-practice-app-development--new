@@ -141,6 +141,9 @@ export interface CatalogSetProgress {
 export interface CatalogItem {
   set_version_id: string; name: string; category_key: string; category_name?: string; subcategory: string;
   difficulty: string | null; question_count: number; duration_minutes?: number | null; allowed_modes: Mode[];
+  // A set this student played that has since been RETIRED — kept visible for their history, shown greyed
+  // at the bottom of the list and not startable.
+  retired?: boolean;
   progress?: CatalogSetProgress;
 }
 

@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/store';
 import { Avatar } from './Avatar';
+import logoUrl from '../assets/cm-logo.jpg';
 
 // Primary navigation — persistent LEFT sidebar (desktop + tablet). PUSH model: this panel sits in the
 // layout flow; expanding widens it AND shifts the content area right (the offset lives on `.main`,
@@ -64,9 +65,11 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
       onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) scheduleClose(); }}
     >
       <div className="sidebar-head">
-        <Link to="/home" className="brand">
-          <span className="brand-logo">🦊</span>
-          <span className="brandtext"><strong>Concept Mastery</strong><small>CCAT Practice</small></span>
+        {/* Brand logo — the image carries the "Concept Mastery" wordmark, so no separate text label.
+            A small "CCAT Practice" product sub-label sits beside it (fades in when the rail expands). */}
+        <Link to="/home" className="brand" aria-label="Concept Mastery — home">
+          <img className="brand-img" src={logoUrl} alt="Concept Mastery" />
+          <span className="brandtext"><small>CCAT Practice</small></span>
         </Link>
         {/* Mobile drawer close (CSS-hidden on desktop) */}
         <button type="button" className="sidebar-close" aria-label="Close menu" onClick={onCloseDrawer}>✕</button>

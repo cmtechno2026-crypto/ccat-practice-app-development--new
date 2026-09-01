@@ -22,7 +22,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
     const sid = req.student!.studentId;
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name, cat.key as category_key, cat.name as category_name, sub.name as subcategory,
-              cat.display_order as cat_order, sub.display_order as sub_order,
+              cat.display_order as cat_order, sub.display_order as sub_order, sv.state as set_state,
               d.key as difficulty, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.duration_minutes,
               g.practice_enabled as grade_practice_enabled,
               p.session_id, p.state as session_state, p.mode as session_mode,
@@ -32,8 +32,15 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
          join ccat.question_sets qs on qs.grade_id = st.grade_id
          join ccat.categories cat on cat.id = qs.category_id
          join ccat.subcategories sub on sub.id = qs.subcategory_id
-         join ccat.question_set_versions sv on sv.question_set_id = qs.id and sv.state = 'published'
-          and exists (select 1 from ccat.set_version_questions svq where svq.set_version_id = sv.id and svq.active = true)
+         join ccat.question_set_versions sv on sv.question_set_id = qs.id and (
+              -- Live, playable sets…
+              (sv.state = 'published'
+                 and exists (select 1 from ccat.set_version_questions svq where svq.set_version_id = sv.id and svq.active = true))
+              -- …plus sets this student already played that were later RETIRED, so their history stays
+              -- visible (shown greyed at the bottom, not startable). Other students never see these.
+              or (sv.state = 'retired'
+                 and exists (select 1 from ccat.sessions sr where sr.student_id = st.id and sr.set_version_id = sv.id))
+           )
          left join ccat.difficulties d on d.id = sv.difficulty_id
          left join lateral (
             select ss.id as session_id, ss.state, ss.mode,
@@ -47,16 +54,18 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
              limit 1
          ) p on true
         where st.id = $1
-        order by cat.display_order, sub.display_order, qs.name`,
+        order by (sv.state = 'retired'), cat.display_order, sub.display_order, qs.name`,
       [sid],
     );
     return rows.map((r) => {
       const isTerminal = r.session_state && r.session_state !== 'IN_PROGRESS';
       const inProgress = r.session_state === 'IN_PROGRESS';
+      const retired = r.set_state === 'retired';
       const status = inProgress ? 'in_progress' : isTerminal ? 'completed' : 'not_started';
       return {
         set_version_id: r.set_version_id,
         name: r.name,
+        retired,
         category_key: r.category_key,
         category_name: r.category_name,   // battery display name (e.g. "Verbal Reasoning")
         subcategory: r.subcategory,
@@ -77,33 +86,16 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
     });
   });
 
-  // GET /v1/profile — computed age (§4.2). Also resolves the CURRENTLY EQUIPPED avatar (image URL +
-  // label) so every client surface renders one identical avatar from the profile, not per-component
-  // hardcoded art. Resolution mirrors GET /v1/avatars: avatar_stages.asset_id → content_assets.public_url.
+  // GET /v1/profile — computed age (§4.2)
   app.get('/v1/profile', { preHandler: [app.authenticateStudent] }, async (req) => {
     const { rows } = await db.query(
-      `select s.id, s.display_name, s.username_normalized as username, s.grade_id, s.birth_month, s.birth_year,
-              s.status, s.active_avatar_stage_id, s.active_theme_id, s.is_preview,
-              ast.stage_number as av_stage_number, ast.name as av_name,
-              fam.key as av_family_key, ca.public_url as av_image_url
-         from ccat.students s
-         left join ccat.avatar_stages ast on ast.id = s.active_avatar_stage_id
-         left join ccat.avatar_families fam on fam.id = ast.family_id
-         left join ccat.content_assets ca on ca.id = ast.asset_id
-        where s.id = $1`,
+      `select id, display_name, username_normalized as username, grade_id, birth_month, birth_year,
+              status, active_avatar_stage_id, active_theme_id, is_preview
+         from ccat.students where id = $1`,
       [req.student!.studentId],
     );
     if (rows.length === 0) throw Errors.notFound('Profile not found');
     const s = rows[0]!;
-    const current_avatar = s.active_avatar_stage_id
-      ? {
-          stage_id: s.active_avatar_stage_id as string,
-          name: (s.av_name ?? null) as string | null,
-          family_key: (s.av_family_key ?? null) as string | null,
-          stage_number: s.av_stage_number == null ? null : Number(s.av_stage_number),
-          image_url: (s.av_image_url ?? null) as string | null,
-        }
-      : null;
     return {
       id: s.id,
       display_name: s.display_name,
@@ -114,7 +106,6 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
       active_avatar_stage_id: s.active_avatar_stage_id,
       active_theme_id: s.active_theme_id,
       is_preview: s.is_preview === true,
-      current_avatar,
     };
   });
 

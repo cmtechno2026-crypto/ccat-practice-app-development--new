@@ -116,7 +116,8 @@ export function PracticeScreen() {
 
   // ============================ EXAM (unchanged flat paper list) ============================
   if (mode === 'exam') {
-    const papers = (data ?? []).filter((c) => c.allowed_modes.includes('exam'));
+    const papers = (data ?? []).filter((c) => c.allowed_modes.includes('exam'))
+      .slice().sort((a, b) => (a.retired ? 1 : 0) - (b.retired ? 1 : 0)); // retired (already taken) sink to bottom
     return (
       <>
         <AppBar title="CCAT Exam" sub="Timed mock exams" back />
@@ -131,7 +132,7 @@ export function PracticeScreen() {
             const st = s.progress?.status ?? 'not_started';
             const cta = st === 'completed' ? 'Retake' : st === 'in_progress' ? 'Resume' : 'Start';
             return (
-              <Card key={s.set_version_id}>
+              <Card key={s.set_version_id} className={s.retired ? 'retired' : undefined}>
                 <div className="row" style={{ alignItems: 'flex-start' }}>
                   <div className="ic" style={{ background: 'var(--tint-lilac)' }}>📝</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -139,8 +140,10 @@ export function PracticeScreen() {
                     <div className="muted">3 batteries · {s.question_count} questions{s.duration_minutes ? ` · ⏱ ${s.duration_minutes} min` : ''}
                       {st === 'completed' && s.progress?.score_total != null && <> · ✅ {s.progress.score_correct}/{s.progress.score_total}</>}</div>
                   </div>
-                  <button className={`btn small ${st === 'completed' ? 'secondary' : ''}`} disabled={starting}
-                    onClick={() => startSet(s, st === 'in_progress' ? s.progress?.session_id : null)}>{cta}</button>
+                  {s.retired
+                    ? <span className="pill" style={{ background: 'var(--tint)', color: 'var(--muted)' }}>Retired</span>
+                    : <button className={`btn small ${st === 'completed' ? 'secondary' : ''}`} disabled={starting}
+                        onClick={() => startSet(s, st === 'in_progress' ? s.progress?.session_id : null)}>{cta}</button>}
                 </div>
               </Card>
             );
@@ -222,7 +225,8 @@ export function PracticeScreen() {
   if (battery && category) {
     // Difficulty filter removed for now — all published sets in the category are shown (each set still
     // displays its admin-assigned difficulty badge). The filter will be reintroduced later.
-    const sets = grouped[battery]?.[category] ?? [];
+    // Retired sets the student already played sink to the bottom (order otherwise preserved). Stable.
+    const sets = (grouped[battery]?.[category] ?? []).slice().sort((a, b) => (a.retired ? 1 : 0) - (b.retired ? 1 : 0));
     return (
       <>
         <AppBar title={category} sub={`${batteryMeta(battery).name} · pick a set`} back />
@@ -236,6 +240,21 @@ export function PracticeScreen() {
             const dm = DIFF_META[(s.difficulty ?? '').toLowerCase()];
             const pct = st === 'in_progress' && s.question_count ? Math.round((100 * (s.progress!.answered_count)) / s.question_count) : 0;
             const cta = st === 'completed' ? 'Redo' : st === 'in_progress' ? 'Resume' : 'Start';
+            // A retired set is a read-only history card — greyed, no navigation, no start/redo.
+            if (s.retired) {
+              return (
+                <div key={s.set_version_id} className="practice-set retired">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong>{s.name}</strong>
+                    <div className="muted">
+                      {dm ? `${dm.icon} ` : ''}{s.difficulty ?? '—'} · {s.question_count} questions
+                      {s.progress?.score_total != null && <> · ✅ {s.progress.score_correct}/{s.progress.score_total}</>}
+                    </div>
+                  </div>
+                  <span className="pill" style={{ background: 'var(--tint)', color: 'var(--muted)' }}>Retired</span>
+                </div>
+              );
+            }
             return (
               <div key={s.set_version_id} className="practice-set tap" role="button" tabIndex={0}
                 onClick={() => go({ set: s.set_version_id })}

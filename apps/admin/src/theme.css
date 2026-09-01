@@ -98,6 +98,8 @@ tbody tr:hover td{background:var(--card-2)}
 .st-suspended,.s-draft,.s-requested,.s-Degraded,.s-monitoring,.s-pending_deletion,.s-stopped{background:var(--amber-bg);color:var(--amber)}
 .s-scheduled{background:var(--tint);color:var(--primary)}
 .st-banned,.s-retired,.s-rejected,.s-\Major\ Incident,.s-disabled,.s-open{background:var(--coral-bg);color:var(--coral)}
+/* Retired set rows read as inactive: tinted + dimmed (the set name stays legible for reference). */
+tr.row-retired>td{background:var(--coral-bg);opacity:.72}
 .s-Unknown,.s-automated_checks,.s-expert_review,.s-archived{background:var(--tint);color:var(--primary-ink)}
 .muted{color:var(--muted)} .right{text-align:right} .center{text-align:center}
 .empty{padding:26px;text-align:center;color:var(--muted)}

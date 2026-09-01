@@ -169,7 +169,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
                   const target = MAX_QUESTIONS_PER_SET; const pct = Math.min(100, Math.round((s.question_count / target) * 100));
                   const barc = s.question_count >= target ? 'var(--green)' : s.question_count >= 5 ? 'var(--amber)' : 'var(--coral)';
                   return (
-                    <tr key={s.id}>
+                    <tr key={s.id} className={s.state === 'retired' ? 'row-retired' : ''}>
                       <td><button className="linklike" style={{ fontWeight: 700 }} onClick={() => setEditSet({ id: s.id })}>{s.name}</button>
                         <div className="muted" style={{ fontSize: 12 }}>{cap(s.difficulty_key || 'medium')} · v{s.version_number} · {[s.allowed_practice && 'practice', s.allowed_exam && 'exam'].filter(Boolean).join(' + ') || 'practice'}</div></td>
                       <td style={{ minWidth: 130 }}>

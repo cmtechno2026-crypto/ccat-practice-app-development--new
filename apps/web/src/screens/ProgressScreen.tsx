@@ -110,7 +110,7 @@ export function ProgressScreen() {
   return (
     <>
       <AppBar title="Progress & Analytics" sub="Your real practice data" back />
-      <div className="content">
+      <div className="content content-wide">
         {/* FILTER — date range only */}
         <div className="prog-filters" role="group" aria-label="Filters">
           <label className="pf-field">
