@@ -4,10 +4,20 @@ import type {
   SessionResult, ExamHistoryItem, RewardsSummary, CoinsPanel, Readiness, Progress, CatalogItem, Bookmark, BookmarkReview, Achievement,
   AvatarsResponse, Theme, Announcement, Book, AdultChallenge, RetailerHandoff, PracticeAttemptResult,
   SupportCase, SupportCaseCreated, AccountInfo, AccountGuardian, DeletionResult, ReferralInfo,
-  ContactValidated,
+  ContactValidated, ProgressSummary, ProgressActivityEvent, ProgressQuery,
 } from './types.js';
 
 export * from './types.js';
+
+// Build a `?a=b&c=d` query string from the progress filters, skipping empty values.
+function progressQs(q: ProgressQuery & { limit?: number }): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(q as Record<string, unknown>)) {
+    if (v === undefined || v === null || v === '') continue;
+    parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+  }
+  return parts.length ? `?${parts.join('&')}` : '';
+}
 
 // Thrown on any non-2xx response, carrying the Gateway's structured error envelope (§32.1).
 export class ApiError extends Error {
@@ -128,6 +138,15 @@ export class CcatClient {
   readiness() { return this.request<Readiness>('GET', '/v1/readiness', { auth: true }); }
   progress() { return this.request<Progress>('GET', '/v1/progress', { auth: true }); }
   achievements() { return this.request<Achievement[]>('GET', '/v1/achievements', { auth: true }); }
+
+  // ---- progress & analytics (real practice data) ----------------------------
+  // Both endpoints read the authenticated student's own data and accept ?from=&to=&category=&mode=.
+  progressSummary(q: ProgressQuery = {}) {
+    return this.request<ProgressSummary>('GET', `/v1/progress/summary${progressQs(q)}`, { auth: true });
+  }
+  progressActivity(q: ProgressQuery & { limit?: number } = {}) {
+    return this.request<ProgressActivityEvent[]>('GET', `/v1/progress/activity${progressQs(q)}`, { auth: true });
+  }
 
   // ---- help & support (Gate 4A) ---------------------------------------------
   reportProblem(message: string, category?: string) {

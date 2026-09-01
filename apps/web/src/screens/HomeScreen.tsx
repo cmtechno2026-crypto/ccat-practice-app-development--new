@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { firstName } from '@ccat/client-core';
-import type { Achievement } from '@ccat/api-client';
+import type { Achievement, ProgressSummary } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { Card, Loader, ErrorNote, useAsync } from '../components/ui';
@@ -14,21 +14,29 @@ import { Avatar } from '../components/Avatar';
 // badges, no streak, no active session, no announcements) renders cleanly with no errors.
 
 // ---- small pure helpers (presentation only; no business logic / thresholds live here) ----
-const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-function dayLetter(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  if (!y || !m || !d) return '·';
-  return DOW[new Date(y, m - 1, d).getDay()] ?? '·';
+// This Week is rendered in FIXED Monday→Sunday columns. The columns never move; only the per-day fill
+// changes. We build the seven weekdays of the LOCAL week containing today (week starts Monday) and map
+// the server's activity dates onto those fixed slots.
+const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function isoDate(dt: Date): string {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
-function last7Days(): { date: string; active: boolean }[] {
-  const out: { date: string; active: boolean }[] = [];
+function mondayWeek(activeByDate: Map<string, boolean>): { date: string; active: boolean; label: string }[] {
   const t = new Date();
-  for (let i = 6; i >= 0; i--) {
-    const dt = new Date(t.getFullYear(), t.getMonth(), t.getDate() - i);
-    const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-    out.push({ date: iso, active: false });
-  }
-  return out;
+  const mondayOffset = (t.getDay() + 6) % 7; // getDay: 0=Sun..6=Sat → days since Monday (Mon=0 … Sun=6)
+  const monday = new Date(t.getFullYear(), t.getMonth(), t.getDate() - mondayOffset);
+  return WEEK_LABELS.map((label, i) => {
+    const dt = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    const iso = isoDate(dt);
+    return { date: iso, active: activeByDate.get(iso) === true, label };
+  });
+}
+// Kid-friendly minutes → "24m" / "1h 20m". null / 0 → "—" (honest empty state, never a fake estimate).
+function fmtMinutes(mins: number | null | undefined): string {
+  if (mins == null || mins <= 0) return '—';
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 function mascotLine(streak: number, completion: number | null): string {
   if (streak >= 7) return "You're unstoppable — what a streak! 🔥";
@@ -42,11 +50,12 @@ export function HomeScreen() {
   const nav = useNavigate();
   const { profile } = useApp();
   const { loading, error, data, reload } = useAsync(async () => {
-    const [summary, readiness, progress, announcements, active, achievements] = await Promise.all([
+    const [summary, readiness, progress, announcements, active, achievements, analytics] = await Promise.all([
       client.rewardsSummary(), client.readiness(), client.progress(), client.announcements(),
       client.activeSession(), client.achievements().catch(() => [] as Achievement[]),
+      client.progressSummary().catch(() => null as ProgressSummary | null),
     ]);
-    return { summary, readiness, progress, announcements, active, achievements };
+    return { summary, readiness, progress, announcements, active, achievements, analytics };
   });
 
   const name = firstName(profile?.display_name);
@@ -93,8 +102,9 @@ export function HomeScreen() {
         const locked = ach.filter((a) => !a.earned);
         const badgeSlots = [...earned, ...locked].slice(0, 6);
 
-        const raw7 = summary.streak?.last7;
-        const week = (raw7 && raw7.length === 7) ? raw7 : last7Days();
+        // Map the server's activity dates → active flags, then render fixed Mon–Sun columns for this week.
+        const activeByDate = new Map((summary.streak?.last7 ?? []).map((d) => [d.date, d.active]));
+        const week = mondayWeek(activeByDate);
 
         const nextReward = summary.next_reward ?? null;
         const completion = data.progress.progress_pct ?? null;
@@ -128,23 +138,38 @@ export function HomeScreen() {
                 </div>
               </div>
 
-              {/* Progress & analytics */}
-              <Card onClick={() => nav('/progress')} className="home-progress">
-                <div className="row" style={{ alignItems: 'center' }}>
-                  <div className="ring" style={{ ['--pct' as any]: `${completion ?? 0}%` }}>
-                    <span>{completion == null ? '—' : `${completion}%`}</span>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div className="eyebrow">📊 Progress &amp; analytics</div>
-                    <h3 style={{ marginTop: 2 }}>Completion · accuracy · timing</h3>
-                    <div className="muted" style={{ marginTop: 4 }}>
-                      {data.readiness.insufficient_data ? 'Readiness building…' : `${data.readiness.readiness_pct}% readiness`}
-                      {' · '}Course completion {completion == null ? '—' : `${completion}%`}
-                      {data.progress.eligible_count > 0 ? ` · ${data.progress.completed_count}/${data.progress.eligible_count} sets` : ''}
-                    </div>
-                  </div>
-                  <span className="pill">Details ›</span>
+              {/* Progress & analytics — header row + three tappable mini-tiles (A4). Every value is real;
+                  honest empty states ("—"/"0") when nothing has been tracked yet. */}
+              <Card className="home-progress">
+                <div className="hp-head">
+                  <div className="eyebrow">📊 Progress &amp; Analytics</div>
+                  <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>
                 </div>
+                {(() => {
+                  const an = data.analytics;
+                  const accuracy = an?.avgAccuracy ?? null;
+                  const sets = an?.setsCompleted ?? 0;
+                  const time = an?.timeSpentMinutes ?? null;
+                  return (
+                    <div className="hp-tiles">
+                      <button className="hp-tile hp-acc" onClick={() => nav('/progress')}>
+                        <span className="hpt-ic">🎯</span>
+                        <span className="hpt-n">{accuracy == null ? '—' : `${accuracy}%`}</span>
+                        <span className="hpt-l">Accuracy</span>
+                      </button>
+                      <button className="hp-tile hp-sets" onClick={() => nav('/progress')}>
+                        <span className="hpt-ic">✅</span>
+                        <span className="hpt-n">{sets}</span>
+                        <span className="hpt-l">Sets done</span>
+                      </button>
+                      <button className="hp-tile hp-time" onClick={() => nav('/progress')}>
+                        <span className="hpt-ic">⏱️</span>
+                        <span className="hpt-n">{fmtMinutes(time)}</span>
+                        <span className="hpt-l">Time spent</span>
+                      </button>
+                    </div>
+                  );
+                })()}
               </Card>
 
               {/* Hero entry cards — CCAT Practice + CCAT Exam */}
@@ -191,7 +216,7 @@ export function HomeScreen() {
                   {week.map((d) => (
                     <div key={d.date} role="listitem" className={`wk-day ${d.active ? 'on' : ''}`} title={d.date}>
                       <span className="wk-dot" aria-hidden>{d.active ? '🔥' : ''}</span>
-                      <span className="wk-lbl">{dayLetter(d.date)}</span>
+                      <span className="wk-lbl">{d.label}</span>
                     </div>
                   ))}
                 </div>

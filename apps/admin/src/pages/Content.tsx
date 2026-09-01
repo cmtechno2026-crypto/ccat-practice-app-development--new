@@ -45,7 +45,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
   const [sub, setSub] = useState<string>('');
   const [newSet, setNewSet] = useState(false);
   const [newQ, setNewQ] = useState(false);
-  const [editSet, setEditSet] = useState<string | null>(null);
+  const [editSet, setEditSet] = useState<{ id: string; blank?: boolean; bulk?: boolean } | null>(null);
   const isExam = mode === 'exam';
 
   const load = () => { setError(null); api.sets().then(r => setSets(r.items)).catch(setError); };
@@ -160,7 +160,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
                   const barc = s.question_count >= target ? 'var(--green)' : s.question_count >= 5 ? 'var(--amber)' : 'var(--coral)';
                   return (
                     <tr key={s.id}>
-                      <td><button className="linklike" style={{ fontWeight: 700 }} onClick={() => setEditSet(s.id)}>{s.name}</button>
+                      <td><button className="linklike" style={{ fontWeight: 700 }} onClick={() => setEditSet({ id: s.id })}>{s.name}</button>
                         <div className="muted" style={{ fontSize: 12 }}>{cap(s.difficulty_key || 'medium')} · v{s.version_number} · {[s.allowed_practice && 'practice', s.allowed_exam && 'exam'].filter(Boolean).join(' + ') || 'practice'}</div></td>
                       <td style={{ minWidth: 130 }}>
                         <div className="tabnum" style={{ fontWeight: 700, color: barc }}>{s.question_count} / {target}</div>
@@ -169,7 +169,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
                       <td><span className={`pill s-${s.state}`} style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '.03em' }}>{s.state}</span></td>
                       <td className="muted tabnum" style={{ fontSize: 12.5 }}>{fmtDate(s.updated_at)}</td>
                       <td><div className="rowactions" style={{ justifyContent: 'flex-end' }}>
-                        {can('content.create') && <button className="btn ghost sm" onClick={() => setEditSet(s.id)}>Edit</button>}
+                        {can('content.create') && <button className="btn ghost sm" onClick={() => setEditSet({ id: s.id })}>Edit</button>}
                         {s.state === 'draft' && can('content.publish') && <button className="btn sm" onClick={() => act(api.publishSet(s.id), 'Published')}>Publish</button>}
                         {s.state === 'published' && can('content.retire') && <button className="btn amber sm" onClick={() => act(api.retireSet(s.id), 'Retired — removed from the student catalog')}>Retire</button>}
                         {can('content.create') && <button className="btn ghost sm" onClick={() => act(api.copySet(s.id), 'Copied to a new draft')}>Copy</button>}
@@ -200,14 +200,14 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
             diffId: tax.difficulties?.find((d: any) => d.key === diff)?.id,
           }}
           onClose={() => setNewSet(false)}
-          onDone={(id: string) => { setNewSet(false); load(); setEditSet(id); }}
+          onDone={(id: string, opts?: { blank?: boolean; bulk?: boolean }) => { setNewSet(false); load(); setEditSet({ id, blank: opts?.blank, bulk: opts?.bulk }); }}
         />
       )}
       {newQ && tax && (
         <QuestionEditor taxonomy={tax} editing={null} onClose={() => setNewQ(false)} onSaved={() => { setNewQ(false); load(); }} />
       )}
       {editSet && tax && (
-        <SetEditor taxonomy={tax} setId={editSet} onClose={() => setEditSet(null)} onSaved={load} />
+        <SetEditor taxonomy={tax} setId={editSet.id} startBlank={editSet.blank} openBulk={editSet.bulk} onClose={() => setEditSet(null)} onSaved={load} />
       )}
     </div>
   );

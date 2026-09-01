@@ -15,10 +15,12 @@ const NAV: NavItem[] = [
   { label: 'Home', icon: '🏠', to: '/home', match: (l) => l.pathname === '/home' },
   { label: 'Practice', icon: '✏️', to: '/practice', match: (l) => (l.pathname === '/practice' && !isExam(l)) || l.pathname.startsWith('/session') || l.pathname.startsWith('/result') },
   { label: 'Exam', icon: '📝', to: '/practice?mode=exam', match: (l) => l.pathname === '/practice' && isExam(l) },
-  { label: 'Customize', icon: '🎨', to: '/customize', match: (l) => l.pathname === '/customize' },
+  // Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
+  // { label: 'Customize', icon: '🎨', to: '/customize', match: (l) => l.pathname === '/customize' },
   { label: 'Rewards', icon: '🏅', to: '/rewards', match: (l) => l.pathname === '/rewards' || l.pathname === '/progress' },
   { label: 'Bookmark', icon: '🔖', to: '/bookmarks', match: (l) => l.pathname === '/bookmarks' },
-  { label: 'Profile', icon: '👤', to: '/profile', match: (l) => l.pathname === '/profile' },
+  // Profile removed from the nav list — it's now reached via the user's NAME row in the sidebar footer (below).
+  // { label: 'Profile', icon: '👤', to: '/profile', match: (l) => l.pathname === '/profile' },
 ];
 
 interface SidebarProps {
@@ -81,7 +83,9 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
         })}
       </nav>
       <div className="sidebar-foot">
-        <button className="snav" onClick={() => nav('/profile')} title={profile?.display_name ?? 'You'}>
+        {/* The user's NAME row is the entry point to Profile (Profile nav item removed above). */}
+        <button className="snav snav-profile" onClick={() => nav('/profile')} aria-label="Open your profile"
+          title={`${profile?.display_name ?? 'You'} — open profile`}>
           <span className="ico"><Avatar size={22} /></span>
           <span className="label">{profile?.display_name ?? 'You'}</span>
         </button>

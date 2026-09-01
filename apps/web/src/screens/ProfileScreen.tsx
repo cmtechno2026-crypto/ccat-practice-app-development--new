@@ -167,10 +167,15 @@ export function ProfileScreen() {
           </>
         )}
 
-        <div className="eyebrow">Security</div>
+        {/* Security options temporarily hidden from users — re-enable later. The cards and their
+            /recovery, /device, /referrals routes/handlers are kept in code (commented just below);
+            only Help & Support renders. To re-enable, uncomment and restore the "Security" heading. */}
+        <div className="eyebrow">Support</div>
+        {/*
         <Card onClick={() => nav('/recovery')}><div className="between"><div><h3>Change / recover PIN</h3><div className="muted">Verify by guardian OTP</div></div><span className="pill">›</span></div></Card>
         <Card onClick={() => nav('/device')}><div className="between"><div><h3>Move to a new device</h3><div className="muted">Re-enroll this browser</div></div><span className="pill">›</span></div></Card>
         <Card onClick={() => nav('/referrals')}><div className="between"><div><h3>Invite friends</h3><div className="muted">Share your code, earn coins</div></div><span className="pill">›</span></div></Card>
+        */}
         <Card onClick={() => nav('/help')}><div className="between"><div><h3>Help & support</h3><div className="muted">FAQ & report a problem</div></div><span className="pill">›</span></div></Card>
 
         <div className="eyebrow">Danger zone</div>

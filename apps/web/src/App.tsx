@@ -17,7 +17,9 @@ import { ResultScreen } from './screens/ResultScreen';
 import { RewardsScreen } from './screens/RewardsScreen';
 import { ProgressScreen } from './screens/ProgressScreen';
 import { BookmarksScreen } from './screens/BookmarksScreen';
-import { CustomizeScreen } from './screens/CustomizeScreen';
+// Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
+// CustomizeScreen.tsx is kept intact; its import + route are just removed so it's unreachable from the UI.
+// To re-enable: re-add `import { CustomizeScreen } from './screens/CustomizeScreen';` and restore the route below.
 import { ProfileScreen } from './screens/ProfileScreen';
 import { UnavailableScreen } from './screens/UnavailableScreen';
 import { HelpScreen } from './screens/HelpScreen';
@@ -47,7 +49,9 @@ const RoutesTree = ({ profile }: { profile: unknown }) => (
     <Route path="/rewards" element={<Protected><RewardsScreen /></Protected>} />
     <Route path="/progress" element={<Protected><ProgressScreen /></Protected>} />
     <Route path="/bookmarks" element={<Protected><BookmarksScreen /></Protected>} />
-    <Route path="/customize" element={<Protected><CustomizeScreen /></Protected>} />
+    {/* Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
+        Route guarded to redirect home; restore <Protected><CustomizeScreen/></Protected> to re-enable. */}
+    <Route path="/customize" element={<Navigate to="/home" replace />} />
     <Route path="/profile" element={<Protected><ProfileScreen /></Protected>} />
     <Route path="/help" element={<Protected><HelpScreen /></Protected>} />
     <Route path="/referrals" element={<Protected><ReferralScreen /></Protected>} />

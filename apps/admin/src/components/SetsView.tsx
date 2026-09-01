@@ -2,13 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Modal, useToast } from './ui';
 
-// CreateSet — the "New set / New exam paper" dialog used by the canonical Content flow (pages/Content
-// + pages/ExamPapers). The old standalone SetsView / SetDetail browser (routed at /content/sets) was a
-// duplicate of the Content set-browser + shared SetEditor and has been removed; this file now exports
-// only the create dialog. A set may start empty (the shared editor authors questions inline) or be
-// seeded from approved/published pool questions here.
+// CreateSet — the "New set / New exam paper" dialog used by the canonical Content flow (pages/Content).
+// A new set is created EMPTY; the shared editor authors questions inline (Google-Forms flow). At create
+// time the admin chooses how the editor should open: with one blank question card ready to fill, or with
+// the "Bulk add from file" importer already open to seed many questions at once. Both hand off to the
+// existing SetEditor — no question is persisted here.
 
-export function CreateSet({ mode, taxonomy, onClose, onDone, prefill }: { mode: 'practice' | 'exam'; taxonomy: any; onClose: () => void; onDone: (id: string) => void; prefill?: { gradeId?: string; catId?: string; subId?: string; diffId?: string } }) {
+export function CreateSet({ mode, taxonomy, onClose, onDone, prefill }: {
+  mode: 'practice' | 'exam'; taxonomy: any; onClose: () => void;
+  onDone: (id: string, opts?: { blank?: boolean; bulk?: boolean }) => void;
+  prefill?: { gradeId?: string; catId?: string; subId?: string; diffId?: string };
+}) {
   const toast = useToast();
   const cats = taxonomy.categories ?? []; const subs = taxonomy.subcategories ?? []; const grades = taxonomy.grades ?? []; const diffs = taxonomy.difficulties ?? [];
   const [name, setName] = useState('');
@@ -16,42 +20,28 @@ export function CreateSet({ mode, taxonomy, onClose, onDone, prefill }: { mode: 
   const [catId, setCatId] = useState(prefill?.catId ?? cats[0]?.id ?? '');
   const [subId, setSubId] = useState(prefill?.subId ?? '');
   const [diffId, setDiffId] = useState(prefill?.diffId ?? diffs[0]?.id ?? '');
+  // How the new (empty) set opens in the editor. Default: neither — start empty (matches prior default).
+  const [startBlank, setStartBlank] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
-  const [pool, setPool] = useState<any[]>([]); const [poolLoading, setPoolLoading] = useState(false);
-  const [sel, setSel] = useState<Set<string>>(new Set());
   const subFor = subs.filter((s: any) => s.category_id === catId);
-  const gradeNumber = grades.find((g: any) => g.id === gradeId)?.grade_number;
   // Reset subcategory when the category changes, unless the current sub already belongs to it (prefill).
   useEffect(() => { setSubId(cur => subFor.some((s: any) => s.id === cur) ? cur : (subFor[0]?.id ?? '')); }, [catId]); // eslint-disable-line
 
-  // eligible questions = approved + published for the chosen grade
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setPoolLoading(true);
-      const [a, p] = await Promise.all([api.questions({ state: 'approved' }), api.questions({ state: 'published' })]);
-      if (!alive) return;
-      setPool([...a.items, ...p.items].filter((q: any) => q.grade_number === gradeNumber));
-      setSel(new Set()); setPoolLoading(false);
-    })();
-    return () => { alive = false; };
-  }, [gradeNumber]);
-
-  const toggle = (qid: string) => setSel(s => { const n = new Set(s); n.has(qid) ? n.delete(qid) : n.add(qid); return n; });
-  const save = async () => {
+  // Create the empty set, then hand off to the editor. `bulk` opens the Bulk-add-from-file panel on the
+  // new set immediately (imported questions win — no stray blank card is forced in front of them).
+  const create = async (bulk: boolean) => {
     if (!name.trim()) { setErr('Name required'); return; }
-    // Empty draft is allowed — the shared editor then authors questions inline (Google-Forms flow).
-    // If the picker was used, keep the 5–20 bound; publishing enforces the ≥5 minimum regardless.
-    if (sel.size > 0 && (sel.size < 5 || sel.size > 20)) { setErr('Either start empty and add questions in the editor, or pick between 5 and 20 existing questions'); return; }
     setBusy(true); setErr('');
     try {
-      const r = await api.createSet({ name: name.trim(), grade_id: gradeId, category_id: catId, subcategory_id: subId, difficulty_id: diffId, allowed_practice: mode === 'practice', allowed_exam: mode === 'exam', allowed_timers: mode === 'exam' ? ['timed'] : ['untimed'], question_version_ids: [...sel] });
-      toast('Set created'); onDone(r.set_version_id);
+      const r = await api.createSet({ name: name.trim(), grade_id: gradeId, category_id: catId, subcategory_id: subId, difficulty_id: diffId, allowed_practice: mode === 'practice', allowed_exam: mode === 'exam', allowed_timers: mode === 'exam' ? ['timed'] : ['untimed'], question_version_ids: [] });
+      toast('Set created');
+      onDone(r.set_version_id, { blank: bulk ? false : startBlank, bulk });
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
+
   return (
     <Modal wide title={`New ${mode === 'exam' ? 'exam paper' : 'practice set'}`} onClose={onClose}
-      footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={busy} onClick={save}>Create ({sel.size})</button></>}>
+      footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={busy} onClick={() => create(false)}>Create</button></>}>
       <label>Name</label><input value={name} onChange={e => setName(e.target.value)} placeholder={mode === 'exam' ? 'Grade 5 Full Form A' : 'Verbal Analogies · Medium'} />
       <div className="editor"><div className="grid2">
         <div><label>Grade</label><select value={gradeId} onChange={e => setGradeId(e.target.value)}>{grades.map((g: any) => <option key={g.id} value={g.id}>Grade {g.grade_number}</option>)}</select></div>
@@ -59,16 +49,19 @@ export function CreateSet({ mode, taxonomy, onClose, onDone, prefill }: { mode: 
         <div><label>Subcategory</label><select value={subId} onChange={e => setSubId(e.target.value)}>{subFor.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
         <div><label>Difficulty</label><select value={diffId} onChange={e => setDiffId(e.target.value)}>{diffs.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
       </div></div>
-      <label>Questions — optional: pick 5 to 20 existing (approved or published, Grade {gradeNumber}), or start empty and author in the editor</label>
-      <div className="aihint" style={{ background: 'var(--tint)', color: 'var(--primary-ink)' }}>Selected: <b>{sel.size}</b> — leave at 0 to start empty.</div>
-      <div style={{ maxHeight: 260, overflow: 'auto', marginTop: 8 }}>
-        {poolLoading ? <div className="empty">Loading…</div> : pool.length === 0 ? <div className="empty">No eligible pool questions for this grade — you can start empty and add questions in the editor.</div> : pool.map(q => (
-          <label className={`pickrow ${sel.has(q.id) ? 'sel' : ''}`} key={q.id}>
-            <input type="checkbox" checked={sel.has(q.id)} onChange={() => toggle(q.id)} />
-            <div className="grow"><div className="qrow-prev">{q.preview || '(no text)'}</div><div className="muted" style={{ fontSize: 12 }}>{q.category} · {q.difficulty} · {q.state}</div></div>
-          </label>
-        ))}
+
+      <label style={{ marginTop: 14 }}>How do you want to start?</label>
+      <label className="edcheck" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input type="checkbox" checked={startBlank} onChange={e => setStartBlank(e.target.checked)} />
+        Start with one empty question <span className="muted">(otherwise the set starts empty)</span>
+      </label>
+      <div className="rowactions" style={{ marginTop: 10 }}>
+        <button className="btn ghost sm" disabled={busy} onClick={() => create(true)} title="Create the set and open the Bulk add from file importer">
+          ⤓ Bulk add from file…
+        </button>
+        <span className="muted" style={{ fontSize: 12 }}>Import many questions from a .md/.txt file right away.</span>
       </div>
+
       <div className="err">{err}</div>
     </Modal>
   );

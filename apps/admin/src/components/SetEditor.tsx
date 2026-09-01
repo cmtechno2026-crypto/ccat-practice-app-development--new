@@ -20,8 +20,15 @@ const imageBlock = (blocks: any) => Array.isArray(blocks) ? (blocks.find((x: any
 const blankCard = (type: string): Card => ({ key: newKey(), stem: '', type, active: true, explanation: '', img: null,
   opts: [{ option_id: 'a', text: '', correct: true }, { option_id: 'b', text: '', correct: false }, { option_id: 'c', text: '', correct: false }, { option_id: 'd', text: '', correct: false }] });
 
-export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClose, onSaved }: {
-  taxonomy: any; setId: string; scopeCategoryId?: string; scopeLabel?: string; onClose: () => void; onSaved?: () => void;
+export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startBlank, openBulk, onClose, onSaved }: {
+  taxonomy: any; setId: string; scopeCategoryId?: string; scopeLabel?: string;
+  // Create-flow hints (only meaningful for a brand-new empty set):
+  //  startBlank — open with one blank question card (checked) vs completely empty (unchecked).
+  //  openBulk   — open the Bulk-add-from-file panel immediately (imported questions seed the set).
+  // Both are undefined for the normal "edit existing set" entry points, which keep the prior behavior
+  // (an empty set opens with one blank card as a convenience).
+  startBlank?: boolean; openBulk?: boolean;
+  onClose: () => void; onSaved?: () => void;
 }) {
   const toast = useToast();
   const subs = taxonomy?.subcategories ?? [];
@@ -33,7 +40,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
   const [err, setErr] = useState('');
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [bulk, setBulk] = useState(false);
+  const [bulk, setBulk] = useState(!!openBulk);
 
   const isExam = !!set?.allowed_exam;
   const scopeCat = scopeCategoryId;
@@ -70,7 +77,11 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, onClos
           explanation: textFromBlocks(full.explanation_blocks), active: q.active !== false, img: imageBlock(full.prompt_blocks),
           opts: (full.option_blocks || []).map((o: any) => ({ option_id: o.option_id, text: textFromBlocks(o.content), correct: correct.has(o.option_id) })) });
       }
-      setCards(loaded.length ? loaded : [blankCard('verbal_analogy')]);
+      // Empty set: seed the opening cards per the create-flow hints. Opening the bulk importer, or an
+      // explicit "start empty" (startBlank===false), begins with NO cards so imported questions aren't
+      // preceded by a stray blank. Every other entry point keeps the one-blank-card convenience.
+      const emptyStart = (openBulk || startBlank === false) ? [] : [blankCard('verbal_analogy')];
+      setCards(loaded.length ? loaded : emptyStart);
     } catch (e) { setErr((e as Error).message); } finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [setId, scopeCategoryId]);

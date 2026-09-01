@@ -52,6 +52,7 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
   const [errors, setErrors] = useState<ImportError[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSample, setShowSample] = useState(false);
+  const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parse = (src: string) => {
@@ -60,11 +61,20 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
     else { setErrors(res.errors); setCards(null); }
   };
   const onFile = async (f: File) => { const t = await f.text(); setText(t); parse(t); };
+  // Single source of truth for the format guide — the SAME text is downloaded as a file and copied to
+  // the clipboard, so an AI conversion always gets the real spec.
+  const SAMPLE_FILE = SAMPLE + '\n';
   const downloadSample = () => {
-    const blob = new Blob([SAMPLE + '\n'], { type: 'text/markdown' });
+    const blob = new Blob([SAMPLE_FILE], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'ccat-question-import-sample.md';
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+  const copyFormat = async () => {
+    try {
+      await navigator.clipboard.writeText(SAMPLE_FILE);
+      setCopied(true); setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked — the admin can still use Download sample */ }
   };
   const doImport = async () => {
     if (!cards || !cards.length) return;
@@ -83,15 +93,20 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
           {busy ? 'Importing…' : cards && cards.length ? `Import ${cards.length} question${cards.length === 1 ? '' : 's'}` : 'Import'}
         </button>
       </>}>
-      <p className="lead">
-        Upload or paste a <b>.md</b> / <b>.txt</b> file in the block format — <code>Q:</code> then options
-        <code> A) B) C)…</code>, an <code>Answer:</code> letter, and an optional <code>Explanation:</code>.
-        Each block becomes a filled question card in this set (grade, battery, subcategory and difficulty come from the set).
-        Nothing is saved until you use <b>Save draft</b>.
-      </p>
+      <div className="infobox" style={{ marginBottom: 10 }}>
+        <div style={{ fontWeight: 800, marginBottom: 4 }}>How to bulk add (for beginners):</div>
+        <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 13 }}>
+          <li>Click <b>Download sample</b> — or <b>Copy format</b> — to get the exact format.</li>
+          <li>Paste that sample + your own questions into ChatGPT or Claude and ask: <i>"Rewrite my questions in exactly this format."</i></li>
+          <li>Copy the AI's result and paste it in the box below (or save it as a .md/.txt file and use <b>Choose file…</b>).</li>
+          <li>Click <b>Parse &amp; check</b>, fix any lines it flags, then <b>Import</b>.</li>
+        </ol>
+        <div style={{ marginTop: 6, fontSize: 12.5 }}>Nothing is saved until you press <b>Save draft</b>. Grade / category / subcategory / difficulty come from the set.</div>
+      </div>
 
       <div className="rowactions" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
         <button className="btn ghost sm" onClick={downloadSample}>⤓ Download sample</button>
+        <button className="btn ghost sm" onClick={copyFormat}>{copied ? '✓ Copied!' : '⧉ Copy format'}</button>
         <button className="btn ghost sm" onClick={() => setShowSample(s => !s)}>{showSample ? 'Hide format' : 'View format'}</button>
         <input ref={fileRef} type="file" accept=".md,.txt,.csv,text/markdown,text/plain,text/csv" hidden
           onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); if (fileRef.current) fileRef.current.value = ''; }} />
@@ -103,9 +118,10 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
         <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{SAMPLE}</pre>
       )}
 
+      <label style={{ marginTop: 4 }}>✍️ Paste your questions here — or use “Choose file…” above</label>
       <textarea rows={5} value={text}
         onChange={e => { setText(e.target.value); setCards(null); setErrors(null); }}
-        placeholder={'Q: Which one is the odd one out?\nA) Circle\nB) Square\nC) Triangle\nD) Dog\nAnswer: D\nExplanation: Dog is not a shape.'}
+        placeholder={'Paste the AI-formatted questions here…\n\nQ: Which one is the odd one out?\nA) Circle\nB) Square\nC) Triangle\nD) Dog\nAnswer: D\nExplanation: Dog is not a shape.'}
         style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12.5 }} />
 
       {errors && errors.length > 0 && (

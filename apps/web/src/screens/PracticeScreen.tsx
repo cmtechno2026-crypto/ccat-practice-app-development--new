@@ -93,6 +93,27 @@ export function PracticeScreen() {
     } finally { setStarting(false); }
   }
 
+  // REDO = start a fresh attempt from question 1. If the set has a mid-progress session, abandon it first
+  // (POST /v1/sessions/:id/abandon → terminal ABANDONED). Abandon ends the in-progress attempt but does NOT
+  // delete completion history (set_completions / session_results are separate records), so this is a new
+  // attempt, not a data wipe. Then start a clean session and open it at question 1.
+  async function redoSet(item: CatalogItem) {
+    setStarting(true);
+    try {
+      const sid = item.progress?.status === 'in_progress' ? item.progress.session_id : null;
+      if (sid) { try { await client.abandon(sid, true); } catch { /* already terminal — ignore */ } }
+      const min = timerMin;
+      const timerType = min == null ? 'untimed' : 'timed';
+      const durationSeconds = min == null ? undefined : Math.max(60, min * 60);
+      const session = await client.sessionStart(item.set_version_id, 'practice', timerType, durationSeconds);
+      nav(`/session/${session.id}`);
+    } catch (e) {
+      flash(e instanceof ApiError
+        ? (e.code === 'ACTIVE_SESSION_EXISTS' ? 'You already have a session in progress — resume it from Home.' : e.message)
+        : (e as Error).message);
+    } finally { setStarting(false); }
+  }
+
   // ============================ EXAM (unchanged flat paper list) ============================
   if (mode === 'exam') {
     const papers = (data ?? []).filter((c) => c.allowed_modes.includes('exam'));
@@ -228,7 +249,17 @@ export function PracticeScreen() {
                   </div>
                   {st === 'in_progress' && <div className="progress-track" style={{ marginTop: 6 }}><div className="progress-fill" style={{ width: `${pct}%`, background: 'var(--amber)' }} /></div>}
                 </div>
-                <span className="pill" style={{ background: st === 'in_progress' ? 'var(--amber-tint)' : 'var(--tint-blue)', color: st === 'in_progress' ? 'var(--amber)' : 'var(--primary)' }}>{cta} ›</span>
+                {st === 'in_progress' ? (
+                  // Mid-progress: offer BOTH Resume (continue saved position) and Redo (fresh attempt from Q1),
+                  // regardless of whether the set was exited via Back or Save & Leave. stopPropagation so the
+                  // buttons act instead of the card's open-start-screen click.
+                  <div className="row set-actions" style={{ gap: 8 }} onClick={(e) => e.stopPropagation()}>
+                    <button className="btn small" disabled={starting} onClick={() => startSet(s, s.progress?.session_id)}>Resume ›</button>
+                    <button className="btn small secondary" disabled={starting} onClick={() => redoSet(s)}>↻ Redo</button>
+                  </div>
+                ) : (
+                  <span className="pill" style={{ background: 'var(--tint-blue)', color: 'var(--primary)' }}>{cta} ›</span>
+                )}
               </div>
             );
           })}

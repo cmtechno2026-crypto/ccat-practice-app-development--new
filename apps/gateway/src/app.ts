@@ -12,6 +12,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerCatalogRoutes, registerHealthRoutes } from './routes/catalog.js';
 import { registerRewardsRoutes } from './routes/rewards.js';
+import { registerProgressRoutes } from './routes/progress.js';
 import { registerDeviceRoutes } from './routes/devices.js';
 import { registerRecoveryRoutes } from './routes/recovery.js';
 import { registerBookmarkRoutes } from './routes/bookmarks.js';
@@ -134,6 +135,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerDeviceRoutes(app, db, cfg);
   registerSessionRoutes(app, db, cfg);
   registerRewardsRoutes(app, db);
+  registerProgressRoutes(app, db);
   registerBookmarkRoutes(app, db);
   registerCustomizationRoutes(app, db);
   registerContentRoutes(app, db, cfg);

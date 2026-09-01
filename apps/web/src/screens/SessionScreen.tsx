@@ -162,7 +162,10 @@ export function SessionScreen() {
     }
   }
   async function quit() {
-    try { await client.abandon(id, true); } catch { /* ignore */ }
+    // Save & Leave leaves the session IN_PROGRESS (resumable) instead of abandoning it, so the set card
+    // offers BOTH Resume and Redo afterwards — identical to exiting via the Back control. Practice answers
+    // are already committed server-side per attempt, so nothing is lost by leaving without abandon. (Redo
+    // from the set card is what abandons the old in-progress session before starting a fresh attempt.)
     flash('Progress saved.');
     nav('/home', { replace: true });
   }
@@ -335,17 +338,20 @@ export function SessionScreen() {
           </div>
         )}
 
-        <div className="between">
-          <button className="btn secondary small" disabled={idx === 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>‹ Prev</button>
+        {/* Kid-friendly nav: Previous + Next are equally emphasised (both primary-filled, large tap targets).
+            On the last practice question the Next-position button becomes "Submit". */}
+        <div className="between qnav-row">
+          <button className="btn qnav" disabled={idx === 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>‹ Previous</button>
           <span className="muted">{activeQuestions.filter((qq) => (isExam ? examSel[qq.question_version_id]?.length : pq[qq.question_version_id]?.locked)).length}/{total} {isExam ? 'answered' : 'done'}</span>
           {idx < total - 1
-            ? <button className="btn small" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))}>Next ›</button>
+            ? <button className="btn qnav" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))}>Next ›</button>
             : isExamMode
-              ? <button className="btn small" onClick={() => { if (examBattery) setBatteryDone((d) => ({ ...d, [examBattery]: true })); setExamBattery(null); setIdx(0); }}>End this battery ✅</button>
-              : <button className="btn small" disabled={submitting} onClick={submit}>{submitting ? '…' : 'Finish ✅'}</button>}
+              ? <button className="btn qnav" onClick={() => { if (examBattery) setBatteryDone((d) => ({ ...d, [examBattery]: true })); setExamBattery(null); setIdx(0); }}>End this battery ✅</button>
+              : <button className="btn qnav" disabled={submitting} onClick={submit}>{submitting ? '…' : 'Submit ✅'}</button>}
         </div>
 
-        <button className="btn ghost small" onClick={() => (isExamMode ? (setExamBattery(null), setIdx(0)) : setQuitConfirm(true))}>{isExamMode ? '‹ Back to batteries' : 'Save & leave'}</button>
+        {/* Save & Leave is styled distinctly (outline, not a filled nav button) so it doesn't read as navigation. */}
+        <button className="btn qnav-leave" onClick={() => (isExamMode ? (setExamBattery(null), setIdx(0)) : setQuitConfirm(true))}>{isExamMode ? '‹ Back to batteries' : '⏸ Save & leave'}</button>
       </div>
 
       {quitConfirm && (

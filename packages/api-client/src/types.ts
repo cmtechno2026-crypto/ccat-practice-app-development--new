@@ -176,3 +176,41 @@ export interface CoinsPanel {
 }
 export interface Readiness { readiness_pct: number | null; insufficient_data: boolean; band: string | null; window_questions: number; }
 export interface Progress { progress_pct: number | null; completed_count: number; eligible_count: number; learning_plan_version_id: string | null; }
+
+// ---- Progress & Analytics (GET /v1/progress/summary, /v1/progress/activity) ----
+// Every field is real, driven by the student's own practice data. Metrics that are not tracked are
+// null (never faked). See the gateway PROGRESS report for the exact table/column behind each field.
+export type ProgressCategory = 'verbal' | 'non_verbal' | 'quantitative';
+export interface ProgressCategoryStat {
+  category: ProgressCategory | string;
+  answered: number;
+  accuracyPct: number | null;   // null when 0 answered in this category
+}
+export interface ProgressExamReadiness {
+  label: string;                // e.g. 'Ready', 'Building…' — reuses readiness band
+  pct: number | null;           // null while insufficient data
+}
+export interface ProgressSummary {
+  questionsAnswered: number;
+  setsCompleted: number;
+  avgAccuracy: number | null;       // %, null when 0 answered
+  timeSpentMinutes: number | null;  // real session wall-clock; null when not tracked
+  mockExamsTaken: number;
+  courseCompletionPct: number | null; // null when no learning-plan sets
+  examReadiness: ProgressExamReadiness;
+  streakDays: number;
+  byCategory: ProgressCategoryStat[];
+}
+export interface ProgressActivityEvent {
+  id: string;
+  type: 'set' | 'exam' | 'badge';
+  title: string;
+  category: string | null;
+  accuracyPct: number | null;   // green≥80 / amber 50–79 / red<50 in the UI; null for badges & ungraded
+  questions: number | null;
+  timeMinutes: number | null;
+  dayLabel: string;             // DATE-ONLY: 'Today' | 'Yesterday' | 'Aug 22' — never a clock time
+  sortDate: string;             // ISO timestamp, newest-first ordering
+}
+// Query filters for both progress endpoints. Only filters reported LIVE by the gateway have effect.
+export interface ProgressQuery { from?: string; to?: string; category?: string; mode?: Mode; }
