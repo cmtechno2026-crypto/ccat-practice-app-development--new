@@ -19,11 +19,13 @@ export function StatusPill({ status }: { status: string }) {
 }
 export function Empty({ children }: { children: React.ReactNode }) { return <div className="empty">{children}</div>; }
 
-export function Modal({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean }) {
+export function Modal({ title, onClose, children, footer, wide, headerRight }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean; headerRight?: React.ReactNode }) {
   return (
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
-        <h3>{title}</h3>
+        {headerRight
+          ? <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}><h3 style={{ margin: 0 }}>{title}</h3>{headerRight}</div>
+          : <h3>{title}</h3>}
         {children}
         {footer && <div className="row" style={{ marginTop: 16 }}>{footer}</div>}
       </div>

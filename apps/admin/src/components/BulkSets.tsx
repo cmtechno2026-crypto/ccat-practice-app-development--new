@@ -162,6 +162,9 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   return (
     <>
       <Modal wide title="Bulk add sets" onClose={onClose}
+        headerRight={step === 'input'
+          ? <button className="btn ghost sm" onClick={() => setShowInstruction(s => !s)}>{showInstruction ? 'Hide instruction' : '❔ Instruction'}</button>
+          : undefined}
         footer={step === 'input' ? (
           <><button className="btn ghost grow" onClick={onClose}>Cancel</button>
             <button className="btn grow" disabled={!cards || !cards.length} onClick={() => setStep('preview')}>Preview split{cards && cards.length ? ` (${cards.length} questions)` : ''}</button></>
@@ -184,7 +187,6 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
             <div className="rowactions" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
               <button className="btn ghost sm" onClick={downloadSample}>⤓ Download sample</button>
               <button className="btn ghost sm" onClick={copyFormat}>{copied ? '✓ Copied!' : '⧉ Copy format'}</button>
-              <button className="btn ghost sm" onClick={() => setShowInstruction(s => !s)}>{showInstruction ? 'Hide instruction' : '❔ Instruction'}</button>
               <button className="btn ghost sm" onClick={() => setShowSample(s => !s)}>{showSample ? 'Hide format' : 'View format'}</button>
               <input ref={fileRef} type="file" accept=".md,.txt,.csv,text/markdown,text/plain,text/csv" hidden
                 onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); if (fileRef.current) fileRef.current.value = ''; }} />

@@ -53,6 +53,7 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
   const [errors, setErrors] = useState<ImportError[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSample, setShowSample] = useState(false);
+  const [showInstruction, setShowInstruction] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -88,22 +89,25 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
 
   return (
     <Modal wide title={title} onClose={onClose}
+      headerRight={<button className="btn ghost sm" onClick={() => setShowInstruction(s => !s)}>{showInstruction ? 'Hide instruction' : '❔ Instruction'}</button>}
       footer={<>
         <button className="btn ghost grow" onClick={onClose}>Cancel</button>
         <button className="btn grow" disabled={busy || !cards || !cards.length} onClick={doImport}>
           {busy ? 'Importing…' : cards && cards.length ? `Import ${cards.length} question${cards.length === 1 ? '' : 's'}` : 'Import'}
         </button>
       </>}>
-      <div className="infobox" style={{ marginBottom: 10 }}>
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>How to bulk add (for beginners):</div>
-        <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 13 }}>
-          <li>Click <b>Download sample</b> — or <b>Copy format</b> — to get the exact format.</li>
-          <li>Paste that sample + your own questions into ChatGPT or Claude and ask: <i>"Rewrite my questions in exactly this format."</i></li>
-          <li>Copy the AI's result and paste it in the box below (or save it as a .md/.txt file and use <b>Choose file…</b>).</li>
-          <li>Click <b>Parse &amp; check</b>, fix any lines it flags, then <b>Import</b>.</li>
-        </ol>
-        <div style={{ marginTop: 6, fontSize: 12.5 }}>Nothing is saved until you press <b>Save draft</b>. Grade / category / subcategory / difficulty come from the set.</div>
-      </div>
+      {showInstruction && (
+        <div className="infobox" style={{ marginBottom: 10 }}>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>How to bulk add (for beginners):</div>
+          <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 13 }}>
+            <li>Click <b>Download sample</b> — or <b>Copy format</b> — to get the exact format.</li>
+            <li>Paste that sample + your own questions into ChatGPT or Claude and ask: <i>"Rewrite my questions in exactly this format."</i></li>
+            <li>Copy the AI's result and paste it in the box below (or save it as a .md/.txt file and use <b>Choose file…</b>).</li>
+            <li>Click <b>Parse &amp; check</b>, fix any lines it flags, then <b>Import</b>.</li>
+          </ol>
+          <div style={{ marginTop: 6, fontSize: 12.5 }}>Nothing is saved until you press <b>Save draft</b>. Grade / category / subcategory / difficulty come from the set.</div>
+        </div>
+      )}
 
       <div className="rowactions" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
         <button className="btn ghost sm" onClick={downloadSample}>⤓ Download sample</button>
