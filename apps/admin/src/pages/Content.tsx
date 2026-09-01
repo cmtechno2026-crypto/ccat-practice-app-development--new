@@ -100,12 +100,11 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
     if (first) setSub(first);
   }, [tree]); // eslint-disable-line
 
-  // Retired sets sink to the bottom of the list (still visible, just out of the way); order is otherwise
-  // preserved (created_at desc from the API). Stable sort keyed only on the retired flag.
+  // Render sets in the ORDER THE GATEWAY RETURNS — canonical: active oldest→newest (new one at the
+  // bottom), then retired last (see /v1/admin/content/sets ORDER BY). No client-side re-sort: filtering
+  // preserves the server order, so we must NOT sort by name (numeric/editable → lexical 1,10,11,2).
   const rows = useMemo(() => inGrade
-    .filter(s => s.difficulty_key === diff && (!sub || s.subcategory_id === sub))
-    .slice()
-    .sort((a, b) => (a.state === 'retired' ? 1 : 0) - (b.state === 'retired' ? 1 : 0)), [inGrade, diff, sub]);
+    .filter(s => s.difficulty_key === diff && (!sub || s.subcategory_id === sub)), [inGrade, diff, sub]);
   const activeSubName = sub ? (inGrade.find(s => s.subcategory_id === sub)?.subcategory) : null;
   const activeCatName = sub ? (inGrade.find(s => s.subcategory_id === sub)?.category) : null;
 

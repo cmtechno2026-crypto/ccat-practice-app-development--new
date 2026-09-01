@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
-import { Errors } from '../errors.js';
+import { Errors, AppError } from '../errors.js';
 import { createStorage } from '../services/storage.js';
 import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
 
@@ -102,8 +102,14 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     const ext = b.mime_type === 'image/png' ? 'png' : (b.mime_type.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '');
     const key = `${isAvatar ? 'avatars' : 'content'}/${randomUUID()}.${ext}`;
 
-    // Persist the bytes first; only record the row if the object actually landed.
-    await storage.put(key, bytes, b.mime_type);
+    // Persist the bytes first; only record the row if the object actually landed. A storage failure
+    // (e.g. wrong STORAGE_DRIVER / bucket name / missing service key) is surfaced as a clear 502 with the
+    // underlying reason instead of a bare 500 stack, so misconfiguration is obvious in the admin.
+    try {
+      await storage.put(key, bytes, b.mime_type);
+    } catch (e) {
+      throw new AppError(502, 'STORAGE_UPLOAD_FAILED', `Image storage failed (driver "${storage.driver}"): ${(e as Error).message}`);
+    }
 
     const ins = await db.query(
       `insert into ccat.content_assets(storage_key,mime_type,byte_size,checksum_sha256,width,height,alt_text,created_by)
@@ -254,7 +260,12 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         join ccat.categories cat on cat.id=qs.category_id
         join ccat.subcategories sub on sub.id=qs.subcategory_id
         left join ccat.difficulties d on d.id=sv.difficulty_id
-        order by sv.created_at desc limit 400`);
+        -- Canonical set order (SAME as the student catalog): active sets first (state != 'retired'),
+        -- oldest→newest by created_at (a newly published set lands at the BOTTOM of the active list),
+        -- then retired sets last. Never sort by qs.name (numeric/editable → lexical 1,10,11,2). Grouped
+        -- by category/subcategory so each subcategory's block is correctly ordered.
+        order by cat.display_order, sub.display_order, (sv.state = 'retired'), sv.created_at asc, sv.id asc
+        limit 400`);
     return { items: rows.rows };
   });
   app.post('/v1/admin/content/sets/:id/unpublish', guard, async (req) => {

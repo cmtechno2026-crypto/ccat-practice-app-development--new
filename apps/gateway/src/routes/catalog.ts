@@ -54,7 +54,10 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
              limit 1
          ) p on true
         where st.id = $1
-        order by (sv.state = 'retired'), cat.display_order, sub.display_order, qs.name`,
+        -- Canonical set order (SAME as admin): within each subcategory, ACTIVE (published) sets first
+        -- oldest→newest by the version's created_at (a newly published set lands at the BOTTOM), then the
+        -- student's own RETIRED sets last. Never sort by qs.name (numeric/editable → lexical 1,10,11,2).
+        order by cat.display_order, sub.display_order, (sv.state = 'retired'), sv.created_at asc, sv.id asc`,
       [sid],
     );
     return rows.map((r) => {
