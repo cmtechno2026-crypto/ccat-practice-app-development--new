@@ -21,14 +21,14 @@ export interface ChallengeStarted { challenge_id: string | null; expires_at: str
 // Registration — the unified guardian contact is VALIDATED (email format + E.164 phone), not OTP-verified.
 export interface ContactValidated { registration_grant: string; guardian_email: string; guardian_phone: string; }
 
-// The student's currently-equipped avatar stage, resolved to a renderable image + label. Single
-// source of truth for the avatar shown across the app (from GET /v1/profile).
+// The student's currently-equipped avatar stage, resolved to a renderable image + label (from
+// GET /v1/profile). Single source of truth for the avatar shown across the app.
 export interface CurrentAvatar {
   stage_id: string;
   name: string | null;
-  family_key: string | null;  // drives the emoji fallback when image_url is absent
+  family_key: string | null;
   stage_number: number | null;
-  image_url: string | null;   // absolute or gateway-relative; null → fallback to family/stage emoji
+  image_url: string | null;
 }
 export interface StudentProfile {
   id: string; display_name: string; username: string; grade_id: string;
@@ -49,7 +49,10 @@ export interface SessionQuestion {
   question_version_id: string; logical_question_id: string; question_type: string;
   multi?: boolean; // "pick all correct" — number of correct options > 1 (never which)
   category_key?: string; category_name?: string; // battery grouping for exam mode
-  prompt_blocks: unknown[]; option_blocks: { option_id: string; content: unknown[] }[];
+  prompt_blocks: unknown[]; option_blocks: { option_id: string; content: unknown[]; image_url?: string | null }[];
+  // Ready-to-use figure URL for the question and for each option (null when none). Absolute for cloud
+  // storage; a gateway-relative /v1/assets/:id path under the local-disk driver (resolve against the base).
+  image_url?: string | null;
   selected_option_ids: string[]; answer_version: number;
 }
 export interface BatterySummary { category_key: string; correct: number; total: number; attempted: number; }
@@ -181,49 +184,32 @@ export interface Readiness { readiness_pct: number | null; insufficient_data: bo
 export interface Progress { progress_pct: number | null; completed_count: number; eligible_count: number; learning_plan_version_id: string | null; }
 
 // ---- Progress & Analytics (GET /v1/progress/summary, /v1/progress/breakdown) ----
-// Every field is real, driven by the student's own practice data. Metrics that are not tracked are
-// null (never faked). See PROGRESS_ANALYTICS for the exact table/column behind each field.
-// TIME: only SESSION wall-clock exists → practiceTimeMinutes / practiceTimeSeries are LIVE;
-// per-QUESTION duration is not tracked → avgSecondsPerQuestion is always null.
+// Real, driven by the student's own practice data; untracked metrics are null (never faked). Only SESSION
+// wall-clock exists → practiceTimeMinutes / practiceTimeSeries are LIVE; per-question duration is not
+// tracked → avgSecondsPerQuestion is always null. See PROGRESS_ANALYTICS.
 export type ProgressCategory = 'verbal' | 'non_verbal' | 'quantitative';
-
-export interface ProgressReadiness {
-  category: ProgressCategory | string;
-  pct: number | null;               // per-category accuracy (proxy readiness); null when 0 answered
-}
-export interface ProgressExams {
-  attempts: number;
-  lastScore: { score: number; total: number } | null;
-  bestAccuracyPct: number | null;
-}
-export interface ProgressTimePoint { date: string; minutes: number; }  // date = 'YYYY-MM-DD'
-
+export interface ProgressReadiness { category: ProgressCategory | string; pct: number | null; }
+export interface ProgressExams { attempts: number; lastScore: { score: number; total: number } | null; bestAccuracyPct: number | null; }
+export interface ProgressTimePoint { date: string; minutes: number; }
 export interface ProgressSummary {
   questionsAnswered: number;
   setsCompleted: number;
-  avgAccuracy: number | null;         // %, null when 0 answered
-  practiceTimeMinutes: number | null; // real session wall-clock (0 when none)
+  avgAccuracy: number | null;
+  practiceTimeMinutes: number | null;
   mockExamsTaken: number;
   streakDays: number;
-  readiness: ProgressReadiness[];     // verbal / quantitative / non_verbal, fixed order
+  readiness: ProgressReadiness[];
   exams: ProgressExams;
-  practiceTimeSeries: ProgressTimePoint[]; // [] when no terminal sessions in range
+  practiceTimeSeries: ProgressTimePoint[];
 }
-
 export interface ProgressTopic {
   subcategory: string;
   accuracyPct: number | null;
-  avgSecondsPerQuestion: number | null; // always null — per-question duration not tracked
-  completionPct: number | null;         // completed sets / total sets in this subcategory
+  avgSecondsPerQuestion: number | null;
+  completionPct: number | null;
   questionsDone: number;
-  bestStreak: number;                   // longest consecutive-correct run in this topic
-  lastPractisedLabel: string;           // 'Today' | 'Yesterday' | 'N days ago' | 'Aug 22'
+  bestStreak: number;
+  lastPractisedLabel: string;
 }
-export interface ProgressBreakdownCategory {
-  category: ProgressCategory | string;
-  accuracyPct: number | null;
-  topics: ProgressTopic[];
-}
-
-// Query filter for both progress endpoints — DATE RANGE ONLY (applied server-side).
+export interface ProgressBreakdownCategory { category: ProgressCategory | string; accuracyPct: number | null; topics: ProgressTopic[]; }
 export interface ProgressQuery { from?: string; to?: string; }

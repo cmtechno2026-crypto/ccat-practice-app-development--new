@@ -5,7 +5,7 @@ import { ApiError } from '@ccat/api-client';
 import { AnswerBuffer, blocksToText, mmss, remainingSeconds } from '@ccat/client-core';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
-import { AppBar, Loader, ErrorNote, Card } from '../components/ui';
+import { AppBar, Loader, ErrorNote, Card, Figure } from '../components/ui';
 
 const KEYS = ['A', 'B', 'C', 'D', 'E'];
 
@@ -286,7 +286,9 @@ export function SessionScreen() {
                 style={{ filter: bookmarked[q.logical_question_id] ? 'none' : 'grayscale(1) opacity(.6)' }}>🔖 {bookmarked[q.logical_question_id] ? 'Bookmarked' : 'Bookmark'}</button>
             </div>
           </div>
-          <h2 style={{ margin: '8px 0 4px' }}>{blocksToText(q.prompt_blocks)}</h2>
+          {/* Question figure (gateway image_url, or an image block fallback) — above the text, bounded & centered. */}
+          <Figure url={q.image_url} blocks={q.prompt_blocks} kind="question" />
+          {(() => { const t = blocksToText(q.prompt_blocks); return t ? <h2 style={{ margin: '8px 0 4px' }}>{t}</h2> : null; })()}
           {isMulti && <div className="muted">✔ Pick all correct answers, then Check.</div>}
         </div>
 
@@ -318,7 +320,15 @@ export function SessionScreen() {
               <button key={oid} className={cls} disabled={disabled}
                 role={isExam ? 'radio' : undefined} aria-checked={isExam ? examChosen.includes(oid) : undefined} onClick={onClick}>
                 <span className="key">{KEYS[oi]}</span>
-                <span>{blocksToText(opt.content)}</span>
+                {(() => {
+                  const otext = blocksToText(opt.content);
+                  return (
+                    <span className="opt-body">
+                      <Figure url={opt.image_url} blocks={opt.content} kind="option" alt={otext} />
+                      {otext && <span className="opt-text">{otext}</span>}
+                    </span>
+                  );
+                })()}
                 {revealedCorrect && <span style={{ marginLeft: 'auto' }}>✅</span>}
                 {!isExam && p?.picks.includes(oid) && !revealedCorrect && <span style={{ marginLeft: 'auto' }}>❌</span>}
               </button>

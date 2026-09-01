@@ -8,7 +8,8 @@ import { BulkImport } from './BulkImport';
 // them together (batch author endpoint). For an exam battery, `scopeCategoryId` scopes the card list
 // to that CCAT battery (category) and the save preserves the other two batteries.
 
-type Opt = { option_id: string; text: string; correct: boolean };
+type ImgRef = { asset_id: string; url: string; alt?: string };
+type Opt = { option_id: string; text: string; correct: boolean; img?: ImgRef | null };
 type Card = { key: string; id?: string; stem: string; type: string; opts: Opt[]; explanation: string; active: boolean; img?: { asset_id: string; url: string; alt?: string } | null };
 
 const OPTION_IDS = 'abcdef';
@@ -75,7 +76,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
         const correct = new Set<string>(full.correct_option_ids ?? []);
         loaded.push({ key: newKey(), id: q.id, stem: textFromBlocks(full.prompt_blocks), type: full.question_type || 'verbal_analogy',
           explanation: textFromBlocks(full.explanation_blocks), active: q.active !== false, img: imageBlock(full.prompt_blocks),
-          opts: (full.option_blocks || []).map((o: any) => ({ option_id: o.option_id, text: textFromBlocks(o.content), correct: correct.has(o.option_id) })) });
+          opts: (full.option_blocks || []).map((o: any) => ({ option_id: o.option_id, text: textFromBlocks(o.content), correct: correct.has(o.option_id), img: imageBlock(o.content) })) });
       }
       // Empty set: seed the opening cards per the create-flow hints. Opening the bulk importer, or an
       // explicit "start empty" (startBlank===false), begins with NO cards so imported questions aren't
@@ -123,16 +124,41 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   };
   const move = (key: string, dir: -1 | 1) => { setCards(cs => { const i = cs.findIndex(c => c.key === key); const j = i + dir; if (i < 0 || j < 0 || j >= cs.length) return cs; const n = [...cs]; [n[i], n[j]] = [n[j], n[i]]; return n; }); mark(); };
 
+  // Client-side guard mirroring the gateway: PNG/JPG/WEBP only, ≤2 MB. Returns an error string or null.
+  const IMG_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+  const IMG_MAX = 2 * 1024 * 1024;
+  const imgError = (f: File): string | null =>
+    !IMG_TYPES.includes(f.type) ? 'Image must be a PNG, JPG, or WEBP file.'
+      : f.size > IMG_MAX ? 'Image is too large (max 2 MB).' : null;
+  const toB64 = (file: File) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] ?? ''); r.onerror = rej; r.readAsDataURL(file); });
+
+  // busy holds the target currently uploading: `${cardKey}` for the stem, `${cardKey}:${optIndex}` for an option.
+  const [imgBusy, setImgBusy] = useState<string | null>(null);
+
+  // Question stem figure.
   const uploadImg = async (key: string, file: File) => {
-    const b64 = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] ?? ''); r.onerror = rej; r.readAsDataURL(file); });
-    try { const r = await api.uploadAsset(file.type, b64, 'stem'); patchCard(key, { img: { asset_id: r.id, url: r.url, alt: '' } }); toast('Image uploaded'); }
-    catch (e) { toast((e as Error).message); }
+    const bad = imgError(file); if (bad) { toast(bad); return; }
+    setImgBusy(key);
+    try { const b64 = await toB64(file); const r = await api.uploadAsset(file.type, b64, 'stem'); patchCard(key, { img: { asset_id: r.id, url: r.url, alt: '' } }); toast('Figure uploaded'); }
+    catch (e) { toast((e as Error).message); } finally { setImgBusy(null); }
   };
+  // Option figure — attaches an image to one option alongside its text.
+  const uploadOptImg = async (key: string, i: number, file: File) => {
+    const bad = imgError(file); if (bad) { toast(bad); return; }
+    setImgBusy(`${key}:${i}`);
+    try {
+      const b64 = await toB64(file);
+      const r = await api.uploadAsset(file.type, b64, 'option');
+      setCards(cs => cs.map(c => c.key === key ? { ...c, opts: c.opts.map((o, j) => j === i ? { ...o, img: { asset_id: r.id, url: r.url, alt: '' } } : o) } : c));
+      mark(); toast('Option image uploaded');
+    } catch (e) { toast((e as Error).message); } finally { setImgBusy(null); }
+  };
+  const setOptImg = (key: string, i: number, img: ImgRef | null) => { setCards(cs => cs.map(c => c.key === key ? { ...c, opts: c.opts.map((o, j) => j === i ? { ...o, img } : o) } : c)); mark(); };
 
   // Per-card validity for the pre-publish check surfaced inline.
   const cardIssues = (c: Card): string | null => {
     if (!c.stem.trim() && !c.img) return 'needs a question';
-    const filled = c.opts.filter(o => o.text.trim());
+    const filled = c.opts.filter(o => o.text.trim() || o.img); // an option counts if it has text OR an image
     if (filled.length < 2) return 'needs ≥2 options';
     if (!filled.some(o => o.correct)) return 'needs a correct answer';
     return null;
@@ -140,7 +166,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   // Category comes from CONTEXT (the exam battery = scopeCat, or the practice set's own category);
   // subcategory is the set's own (or the context battery's first sub) — never re-picked in the editor.
   const cardToPayload = (c: Card) => {
-    const filled = c.opts.filter(o => o.text.trim());
+    const filled = c.opts.filter(o => o.text.trim() || o.img);
     const prompt_blocks: any[] = [];
     if (c.stem.trim()) prompt_blocks.push({ type: 'text', value: c.stem.trim() });
     if (c.img) prompt_blocks.push({ type: 'image', asset_id: c.img.asset_id, url: c.img.url, alt: c.img.alt ?? '' });
@@ -149,7 +175,15 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
       id: c.id, category_id: scopeCat || set.category_id, subcategory_id: subId || set.subcategory_id,
       grade_id: set.grade_id, difficulty_id: diffId(), question_type: c.type || defaultType(),
       prompt_blocks,
-      option_blocks: filled.map(o => ({ option_id: o.option_id, content: [{ type: 'text', value: o.text.trim() }] })),
+      // Option content carries a text block (when present) and/or an image block — an option may be
+      // answered by its picture alone.
+      option_blocks: filled.map(o => ({
+        option_id: o.option_id,
+        content: [
+          ...(o.text.trim() ? [{ type: 'text', value: o.text.trim() }] : []),
+          ...(o.img ? [{ type: 'image', asset_id: o.img.asset_id, url: o.img.url, alt: o.img.alt ?? '' }] : []),
+        ],
+      })),
       correct_option_ids: filled.filter(o => o.correct).map(o => o.option_id),
       explanation_blocks: c.explanation.trim() ? [{ type: 'text', value: c.explanation.trim() }] : null,
       active: c.active,
@@ -227,13 +261,23 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
                     <button className="iconbtn danger" title="Delete" onClick={() => delCard(c.key)} disabled={cards.length <= 1}>✕</button>
                   </div>
                   <textarea className="qstem" rows={2} placeholder="Question text…" value={c.stem} onChange={e => patchCard(c.key, { stem: e.target.value })} />
-                  {c.img && <div className="qimg"><img src={c.img.url} alt="" /><button className="iconbtn danger" onClick={() => patchCard(c.key, { img: null })}>Remove image</button></div>}
+                  {c.img && <div className="qimg"><img src={api.assetUrl(c.img.asset_id)} alt="" /><button className="iconbtn danger" onClick={() => patchCard(c.key, { img: null })}>Remove image</button></div>}
                   <div className="qopts">
                     {c.opts.map((o, j) => (
-                      <div className="qopt" key={o.option_id}>
+                      <div className="qopt" key={o.option_id} style={{ flexWrap: 'wrap' }}>
                         <input type="radio" name={`correct-${c.key}`} checked={o.correct} onChange={() => markCorrect(c.key, j)} aria-label={`Mark option ${o.option_id} correct`} />
                         <input className="qopttext" placeholder={`Option ${o.option_id.toUpperCase()}`} value={o.text} onChange={e => { setCards(cs => cs.map(cc => cc.key === c.key ? { ...cc, opts: cc.opts.map((oo, jj) => jj === j ? { ...oo, text: e.target.value } : oo) } : cc)); mark(); }} />
+                        <label className="iconbtn" title="Add image to this option" style={{ cursor: 'pointer' }}>
+                          {imgBusy === `${c.key}:${j}` ? '…' : '🖼'}
+                          <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadOptImg(c.key, j, f); if (e.currentTarget) e.currentTarget.value = ''; }} />
+                        </label>
                         <button className="iconbtn" title="Remove option" onClick={() => rmOpt(c.key, j)} disabled={c.opts.length <= 2}>✕</button>
+                        {o.img && (
+                          <div className="qimg" style={{ flexBasis: '100%', marginTop: 4 }}>
+                            <img src={api.assetUrl(o.img.asset_id)} alt="" style={{ maxHeight: 60 }} />
+                            <button className="iconbtn danger" onClick={() => setOptImg(c.key, j, null)}>Remove image</button>
+                          </div>
+                        )}
                       </div>
                     ))}
                     <button className="btn ghost sm" onClick={() => addOpt(c.key)} disabled={c.opts.length >= 6}>+ Option</button>
@@ -241,7 +285,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
                   <div className="qmeta">
                     <input className="qexpl" placeholder="Explanation (shown after answering, optional)" value={c.explanation} onChange={e => patchCard(c.key, { explanation: e.target.value })} />
                     <label className="edcheck"><input type="checkbox" checked={c.active} onChange={e => patchCard(c.key, { active: e.target.checked })} /> Active</label>
-                    <label className="btn ghost sm" style={{ cursor: 'pointer' }}>Image<input type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadImg(c.key, f); }} /></label>
+                    <label className="btn ghost sm" style={{ cursor: 'pointer' }}>{imgBusy === c.key ? 'Uploading…' : (c.img ? '🖼 Replace figure' : '🖼 Add image / figure')}<input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadImg(c.key, f); if (e.currentTarget) e.currentTarget.value = ''; }} /></label>
                   </div>
                 </div>
               );
@@ -272,9 +316,17 @@ function StudentPreview({ cards }: { cards: Card[] }) {
       {cards.map((c, i) => (
         <div className="pvcard" key={c.key}>
           <div className="pvstem"><b>{i + 1}.</b> {c.stem || <span className="muted">[image question]</span>}</div>
-          {c.img && <img className="pvimg" src={c.img.url} alt="" />}
+          {c.img && <img className="pvimg" src={api.assetUrl(c.img.asset_id)} alt="" />}
           <div className="pvopts">
-            {c.opts.filter(o => o.text.trim()).map(o => <div className="pvopt" key={o.option_id}><span className="pvbul">{o.option_id.toUpperCase()}</span>{o.text}</div>)}
+            {c.opts.filter(o => o.text.trim() || o.img).map(o => (
+              <div className="pvopt" key={o.option_id}>
+                <span className="pvbul">{o.option_id.toUpperCase()}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {o.text && <span>{o.text}</span>}
+                  {o.img && <img src={api.assetUrl(o.img.asset_id)} alt="" style={{ maxHeight: 56, borderRadius: 6, display: 'block' }} />}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       ))}

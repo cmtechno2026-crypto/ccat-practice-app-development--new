@@ -7,6 +7,16 @@ import { checkIdempotency, saveIdempotency } from '../lib/idempotency.js';
 import { finalizeSession } from '../lib/finalize.js';
 import { seededShuffle } from '../lib/shuffle.js';
 
+// Extract the ready-to-use image URL from a block array (question prompt or option content). Blocks
+// store an image as { type:'image', url, asset_id, ... }; the url is the asset's public URL (absolute
+// for cloud storage, or the gateway's /v1/assets/:id route for local disk). Returns null when there is
+// no image block.
+function imageUrlOfBlocks(blocks: unknown): string | null {
+  if (!Array.isArray(blocks)) return null;
+  const img = blocks.find((b: any) => b && b.type === 'image');
+  return img && typeof img.url === 'string' ? img.url : null;
+}
+
 const startSchema = z.object({
   set_version_id: z.string().uuid(),
   mode: z.enum(['practice', 'exam']),
@@ -190,11 +200,14 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
         category_key: r.category_key, // battery grouping for exam (Verbal/Non-verbal/Quantitative)
         category_name: r.category_name,
         prompt_blocks: r.prompt_blocks,
+        // Ready-to-use figure URL for the question (from its prompt image block), null when none.
+        image_url: imageUrlOfBlocks(r.prompt_blocks),
         // Options shuffled per-question with a seed derived from the session option seed + index.
+        // Each option also carries a ready image_url (from an image block in its content), null when none.
         option_blocks: seededShuffle(
           Array.isArray(r.option_blocks) ? r.option_blocks : [],
           (Number(sess.option_order_seed) ^ ((i + 1) * 0x9e3779b1)) >>> 0,
-        ),
+        ).map((o: any) => ({ ...o, image_url: imageUrlOfBlocks(o?.content) })),
         selected_option_ids: r.selected_option_ids ?? [],
         answer_version: r.answer_version ?? 0,
       })),

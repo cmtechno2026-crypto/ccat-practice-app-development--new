@@ -3,7 +3,7 @@ import type { Bookmark, BookmarkReview } from '@ccat/api-client';
 import { blocksToText } from '@ccat/client-core';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
-import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
+import { AppBar, Card, Loader, ErrorNote, useAsync, Figure } from '../components/ui';
 
 const KEYS = ['A', 'B', 'C', 'D', 'E', 'F'];
 const CAT_ICON: Record<string, string> = { verbal: '🔤', non_verbal: '🧩', nonverbal: '🧩', quantitative: '🔢' };
@@ -87,7 +87,8 @@ function ReviewPlayer({ ids, onClose, onUnbookmark }: { ids: string[]; onClose: 
               <div className="eyebrow">{data.subcategory}{data.set_name ? ` · ${data.set_name}` : ''}{data.position ? ` · Q${data.position}` : ''}</div>
               <button className="btn small ghost" onClick={unbookmark}>🔖 Unbookmark</button>
             </div>
-            <h2 style={{ margin: '8px 0 4px' }}>{blocksToText(data.prompt_blocks)}</h2>
+            <Figure blocks={data.prompt_blocks} kind="question" />
+            {(() => { const t = blocksToText(data.prompt_blocks); return t ? <h2 style={{ margin: '8px 0 4px' }}>{t}</h2> : null; })()}
             {isMulti && <div className="muted">✔ Pick all correct answers, then Check.</div>}
           </div>
           <div className="options-grid" role="group" aria-label="Answer options">
@@ -101,7 +102,15 @@ function ReviewPlayer({ ids, onClose, onUnbookmark }: { ids: string[]; onClose: 
               return (
                 <button key={oid} className={cls} disabled={checked} onClick={() => togglePick(oid)}>
                   <span className="key">{KEYS[oi]}</span>
-                  <span>{blocksToText(opt.content)}</span>
+                  {(() => {
+                    const otext = blocksToText(opt.content);
+                    return (
+                      <span className="opt-body">
+                        <Figure blocks={opt.content} kind="option" alt={otext} />
+                        {otext && <span className="opt-text">{otext}</span>}
+                      </span>
+                    );
+                  })()}
                   {checked && correct.includes(oid) && <span style={{ marginLeft: 'auto' }}>✅</span>}
                   {checked && !correct.includes(oid) && picks.includes(oid) && <span style={{ marginLeft: 'auto' }}>❌</span>}
                 </button>

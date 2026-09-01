@@ -2,6 +2,43 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/store';
 import { AvatarControl } from './AvatarControl';
+import { resolveAssetUrl } from './Avatar';
+
+// ---- content figures (question/option images) -----------------------------
+// prompt_blocks / option content are block arrays: [{type:'text',value}, {type:'image',url,alt}, …].
+// A question or option may carry an image block; extract its URL (given by the gateway — we don't build
+// URLs, only resolve a gateway-relative path onto the gateway origin, exactly like avatars).
+export interface BlockImage { url: string; alt: string }
+export function imageFromBlocks(blocks: unknown): BlockImage | null {
+  if (!Array.isArray(blocks)) return null;
+  const b = blocks.find((x) => x && typeof x === 'object' && (x as { type?: string }).type === 'image' && (x as { url?: string }).url);
+  return b ? { url: String((b as { url: string }).url), alt: String((b as { alt?: string }).alt ?? '') } : null;
+}
+
+// Bounded, lazy, SELF-HEALING content figure. Renders nothing when there's no image; on load-failure it
+// hides itself (no broken-image icon, no layout jump) so the text stands alone. Used in Practice, Exam,
+// and the bookmark review player so a question looks identical everywhere.
+// Source order: the gateway's flat `url` (question.image_url / option.image_url) first; otherwise an image
+// block inside `blocks` (the bookmark review payload carries blocks, not a flat url). URLs are used as
+// given — we only resolve a gateway-relative path onto the gateway origin (same as avatars).
+export function Figure({ url, blocks, kind, alt }: { url?: string | null; blocks?: unknown; kind: 'question' | 'option'; alt?: string }) {
+  const [broken, setBroken] = useState(false);
+  const fromBlock = blocks !== undefined ? imageFromBlocks(blocks) : null;
+  const rawUrl = url || fromBlock?.url || null;
+  const imgAlt = fromBlock?.alt || alt || (kind === 'question' ? 'Question figure' : 'Option image');
+  if (broken || !rawUrl) return null;
+  const src = resolveAssetUrl(rawUrl);
+  if (!src) return null;
+  return (
+    <img
+      className={kind === 'question' ? 'q-figure' : 'opt-figure'}
+      src={src}
+      loading="lazy"
+      alt={imgAlt}
+      onError={() => setBroken(true)}
+    />
+  );
+}
 
 export function AppBar({ title, sub, back, right }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode }) {
   const nav = useNavigate();

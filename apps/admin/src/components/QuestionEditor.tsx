@@ -12,7 +12,15 @@ interface Props {
   onSaved: () => void;
 }
 
-type Opt = { option_id: string; text: string; correct: boolean };
+type ImgRef = { asset_id: string; url: string; alt?: string };
+type Opt = { option_id: string; text: string; correct: boolean; img?: ImgRef | null };
+
+// Client-side guard mirroring the gateway: PNG/JPG/WEBP only, ≤2 MB. Returns an error string or null.
+const IMG_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const imgError = (f: File): string | null =>
+  !IMG_TYPES.includes(f.type) ? 'Image must be a PNG, JPG, or WEBP file.'
+    : f.size > 2 * 1024 * 1024 ? 'Image is too large (max 2 MB).' : null;
+const fileToB64 = async (f: File) => { const buf = await f.arrayBuffer(); let s = ''; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s); };
 
 function textFromBlocks(blocks: any): string {
   if (!Array.isArray(blocks)) return '';
@@ -43,7 +51,7 @@ export function QuestionEditor({ taxonomy, editing, onClose, onSaved }: Props) {
   const [opts, setOpts] = useState<Opt[]>(() => {
     if (editing?.option_blocks) {
       const correct = new Set<string>(editing.correct_option_ids ?? []);
-      return editing.option_blocks.map((o: any) => ({ option_id: o.option_id, text: textFromBlocks(o.content), correct: correct.has(o.option_id) }));
+      return editing.option_blocks.map((o: any) => ({ option_id: o.option_id, text: textFromBlocks(o.content), correct: correct.has(o.option_id), img: imageBlock(o.content) }));
     }
     return [{ option_id: 'a', text: '', correct: true }, { option_id: 'b', text: '', correct: false }, { option_id: 'c', text: '', correct: false }, { option_id: 'd', text: '', correct: false }];
   });
@@ -59,24 +67,36 @@ export function QuestionEditor({ taxonomy, editing, onClose, onSaved }: Props) {
   const addOpt = () => { if (opts.length >= 5) return; const id = 'abcde'[opts.length]; setOpts(o => [...o, { option_id: id, text: '', correct: false }]); };
   const rmOpt = (i: number) => { if (opts.length <= 2) return; setOpts(o => o.filter((_, j) => j !== i)); };
 
+  const [imgBusy, setImgBusy] = useState<string | null>(null); // 'stem' | `opt:${i}`
   const pickImage = async (f: File) => {
-    if (f.size > 5 * 1024 * 1024) { setErr('Image exceeds 5 MB'); return; }
-    const buf = await f.arrayBuffer();
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-    try { const r = await api.uploadAsset(f.type, b64, stem.slice(0, 80)); setImg({ asset_id: r.id, url: r.url, alt: stem.slice(0, 80) }); toast('Image uploaded'); }
-    catch (e) { setErr((e as Error).message); }
+    const bad = imgError(f); if (bad) { setErr(bad); return; }
+    setErr(''); setImgBusy('stem');
+    try { const b64 = await fileToB64(f); const r = await api.uploadAsset(f.type, b64, stem.slice(0, 80)); setImg({ asset_id: r.id, url: r.url, alt: stem.slice(0, 80) }); toast('Figure uploaded'); }
+    catch (e) { setErr((e as Error).message); } finally { setImgBusy(null); }
+  };
+  const pickOptImage = async (i: number, f: File) => {
+    const bad = imgError(f); if (bad) { setErr(bad); return; }
+    setErr(''); setImgBusy(`opt:${i}`);
+    try { const b64 = await fileToB64(f); const r = await api.uploadAsset(f.type, b64, `option ${opts[i]?.option_id ?? ''}`); setOpt(i, { img: { asset_id: r.id, url: r.url, alt: '' } }); toast('Option image uploaded'); }
+    catch (e) { setErr((e as Error).message); } finally { setImgBusy(null); }
   };
 
   const save = async () => {
     setErr('');
     if (!stem.trim()) { setErr('Question text is required'); return; }
     if (!subId) { setErr('Pick a subcategory'); return; }
-    const filled = opts.filter(o => o.text.trim());
-    if (filled.length < 2) { setErr('At least 2 options with text'); return; }
+    const filled = opts.filter(o => o.text.trim() || o.img); // an option counts if it has text OR an image
+    if (filled.length < 2) { setErr('At least 2 options (each with text or an image)'); return; }
     if (!filled.some(o => o.correct)) { setErr('Mark the correct answer'); return; }
     const prompt_blocks: any[] = [{ type: 'text', value: stem.trim() }];
     if (img) prompt_blocks.push({ type: 'image', asset_id: img.asset_id, url: img.url, alt: img.alt ?? '' });
-    const option_blocks = filled.map(o => ({ option_id: o.option_id, content: [{ type: 'text', value: o.text.trim() }] }));
+    const option_blocks = filled.map(o => ({
+      option_id: o.option_id,
+      content: [
+        ...(o.text.trim() ? [{ type: 'text', value: o.text.trim() }] : []),
+        ...(o.img ? [{ type: 'image', asset_id: o.img.asset_id, url: o.img.url, alt: o.img.alt ?? '' }] : []),
+      ],
+    }));
     const correct_option_ids = filled.filter(o => o.correct).map(o => o.option_id);
     const explanation_blocks = explanation.trim() ? [{ type: 'text', value: explanation.trim() }] : undefined;
     setBusy(true);
@@ -129,18 +149,29 @@ export function QuestionEditor({ taxonomy, editing, onClose, onSaved }: Props) {
         <label>Question text</label>
         <textarea rows={3} value={stem} onChange={e => setStem(e.target.value)} placeholder="Bird is to nest as bee is to ______." />
 
-        <label>Question image (optional)</label>
+        <label>Question image / figure (optional)</label>
         <div className="dropz" onClick={() => fileRef.current?.click()}>
-          {img ? <><div>Image attached · click to replace</div><img src={api.assetUrl(img.asset_id)} alt="" /></> : 'Click to upload a PNG or JPG (shown above the question).'}
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) pickImage(f); }} />
+          {imgBusy === 'stem' ? 'Uploading…' : img ? <><div>Image attached · click to replace</div><img src={api.assetUrl(img.asset_id)} alt="" /></> : 'Click to upload a PNG, JPG, or WEBP (max 2 MB, shown above the question).'}
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) pickImage(f); if (e.currentTarget) e.currentTarget.value = ''; }} />
         </div>
+        {img && <button className="btn ghost sm" style={{ marginTop: 6 }} onClick={() => setImg(null)}>Remove figure</button>}
 
         <label style={{ marginTop: 14 }}>Options — mark the correct one</label>
         {opts.map((o, i) => (
-          <div className="opt" key={i}>
+          <div className="opt" key={i} style={{ flexWrap: 'wrap' }}>
             <label className="mark"><input type="radio" name="correct" checked={o.correct} onChange={() => markCorrect(i)} style={{ width: 'auto' }} /> {o.option_id.toUpperCase()}</label>
             <input type="text" value={o.text} onChange={e => setOpt(i, { text: e.target.value })} placeholder={`Option ${o.option_id.toUpperCase()}`} />
+            <label className="btn ghost sm" style={{ cursor: 'pointer' }} title="Add image to this option">
+              {imgBusy === `opt:${i}` ? '…' : '🖼'}
+              <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) pickOptImage(i, f); if (e.currentTarget) e.currentTarget.value = ''; }} />
+            </label>
             {opts.length > 2 && <button className="rm" onClick={() => rmOpt(i)} title="Remove">✕</button>}
+            {o.img && (
+              <div style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <img src={api.assetUrl(o.img.asset_id)} alt="" style={{ maxHeight: 56, borderRadius: 6 }} />
+                <button className="btn ghost sm" onClick={() => setOpt(i, { img: null })}>Remove image</button>
+              </div>
+            )}
           </div>
         ))}
         {opts.length < 5 && <button className="btn ghost sm" onClick={addOpt}>+ Add option</button>}

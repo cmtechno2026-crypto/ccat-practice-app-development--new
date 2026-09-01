@@ -30,7 +30,9 @@ const reviewSchema = z.object({ decision: z.enum(['approved', 'rejected', 'chang
 // the admin UI applies the same rule client-side for a friendly message.
 const AVATAR_PX = 512;
 const AVATAR_MAX_BYTES = 3 * 1024 * 1024; // 3 MB — generous for a 512² PNG, blocks accidental huge uploads
-const ASSET_MAX_BYTES = 8 * 1024 * 1024;  // generic image cap (question art etc.)
+// Question / option figures: PNG, JPG, or WEBP only (SVG disallowed — no sanitizer), capped at 2 MB.
+const QIMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const QIMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 // PNG signature + IHDR width/height. Returns null when the bytes are not a valid PNG.
 function pngDimensions(bytes: Buffer): { width: number; height: number } | null {
@@ -88,8 +90,10 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         throw Errors.validation(`Avatar art must be exactly ${AVATAR_PX}×${AVATAR_PX} px (got ${dim.width}×${dim.height})`);
       width = dim.width; height = dim.height;
     } else {
-      if (!b.mime_type.startsWith('image/')) throw Errors.validation('Only image assets are supported');
-      if (bytes.length > ASSET_MAX_BYTES) throw Errors.validation('Image is too large (max 8 MB)');
+      // Question stem / option figures. Strict allow-list (no SVG — it can carry script and we don't
+      // sanitize it) and a small size cap; the same rule the admin editor applies client-side.
+      if (!QIMAGE_TYPES.has(b.mime_type)) throw Errors.validation('Image must be a PNG, JPG, or WEBP file');
+      if (bytes.length > QIMAGE_MAX_BYTES) throw Errors.validation('Image is too large (max 2 MB)');
       const dim = pngDimensions(bytes); // best-effort; non-PNG returns null and leaves dims empty
       if (dim) { width = dim.width; height = dim.height; }
     }
