@@ -64,16 +64,12 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
       onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) scheduleClose(); }}
     >
       <div className="sidebar-head">
-        {/* Brand mark "CM-1" — rendered as MARKUP (not a raster) so it stays crisp at any DPI and uses the
-            app font: two-tone "Concept / Mastery" wordmark + "QUALITY EDUCATION" tagline on the left, and a
-            solid CM-blue "CM" tile on the right. Collapsed rail shows only the tile (the emblem); the
-            wordmark fades in when the rail expands. */}
-        <Link to="/home" className="brand cm1" aria-label="Concept Mastery — home">
-          <span className="cm-wordmark">
-            <span className="cm-name"><span className="cm-c">Concept</span><span className="cm-m">Mastery</span></span>
-            <span className="cm-tag">Quality Education</span>
-          </span>
-          <span className="cm-tile" aria-hidden>CM</span>
+        {/* Brand header — matches the ADMIN rail: a "CM" tile fixed on the LEFT (the always-visible
+            emblem in the collapsed rail) + brand text on the RIGHT ("Concept Mastery" / "CCAT Practice")
+            that fades in when the rail expands. Rendered as crisp markup, not a raster. */}
+        <Link to="/home" className="brand" aria-label="Concept Mastery — home">
+          <span className="brand-tile" aria-hidden>CM</span>
+          <span className="brandtext"><strong>Concept Mastery</strong><small>CCAT Practice</small></span>
         </Link>
         {/* Mobile drawer close (CSS-hidden on desktop) */}
         <button type="button" className="sidebar-close" aria-label="Close menu" onClick={onCloseDrawer}>✕</button>

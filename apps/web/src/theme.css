@@ -624,3 +624,38 @@ p { line-height: 1.5; }
 .sidebar .cm-wordmark { display: none; }
 .sidebar.expanded .cm-wordmark { display: flex; }
 @media (max-width: 768px) { .sidebar .cm-wordmark { display: flex; } }
+
+/* ============================================================================
+   SIDEBAR "S2" — admin-style structure in a purple gradient (student web).
+   Overrides the base sidebar paint/sizing; the push-model shell (App.tsx +
+   .main offset via --rail-w/--rail-open) is unchanged, so no overlap.
+   ========================================================================== */
+:root { --rail-w: 72px; --rail-open: 236px; }
+
+.sidebar {
+  background: linear-gradient(180deg, #7b5cff 0%, #5b3ff0 100%);
+  border-right: none;
+  padding: 14px 13px;
+  color: #fff;
+}
+.sidebar.expanded { box-shadow: 8px 0 28px rgba(40, 20, 90, .28); }
+
+/* Header: CM tile (white) on the left + brand text (white) on the right. */
+.sidebar .brand { display: flex; align-items: center; gap: 11px; padding: 2px 2px 14px; min-width: 0; height: 56px; box-sizing: content-box; }
+.sidebar .brand-tile { flex: none; width: 42px; height: 42px; border-radius: 12px; background: #fff; color: #5b3ff0; display: flex; align-items: center; justify-content: center; font-family: 'Baloo 2', sans-serif; font-weight: 900; font-size: 16px; }
+.sidebar .brandtext strong { color: #fff; font-size: 15px; }
+.sidebar .brandtext small { color: rgba(255, 255, 255, .72); }
+
+/* Nav rows: fixed icon slot + label; white pill when active; subtle white hover. */
+.snav { color: #eae4ff; min-height: 46px; padding: 0 12px; }
+.snav .ico { width: 26px; font-size: 20px; }
+.snav:hover { background: rgba(255, 255, 255, .10); color: #fff; }
+.snav.active { background: #fff; color: #5b3ff0; }
+
+/* Footer: faint white divider; fox avatar in a white circle; name + logout in white. */
+.sidebar-foot { border-top: 1px solid rgba(255, 255, 255, .18); padding-top: 10px; }
+.snav-profile .ico { background: #fff; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; }
+.snav-logout { color: #eae4ff; }
+
+/* Mobile drawer close button sits on the purple panel → make it white. */
+.sidebar-close { color: #fff; }
