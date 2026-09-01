@@ -4,7 +4,7 @@ import { Modal, useToast } from './ui';
 import { SetEditor } from './SetEditor';
 import { parseImportText, referencedImages, ImportCard, ImportError } from '../lib/importParse';
 import { readBulkInput, matchImages, uploadImages, attachImages, BulkImage, MatchResult } from '../lib/bulkFile';
-import { SAMPLE } from './BulkImport';
+import { FORMAT_TEXT, SAMPLE_FILE_TEXT } from './BulkImport';
 
 // "Bulk add sets" — takes ONE file/paste of MANY questions and splits it into SEVERAL draft practice
 // sets, each capped at MAX_QUESTIONS_PER_SET, all inheriting the Content page's current context
@@ -16,7 +16,6 @@ import { SAMPLE } from './BulkImport';
 
 // The per-set cap. Single source of truth — imported by Content for the "x / N" set-size bar too.
 export const MAX_QUESTIONS_PER_SET = 15;
-const SAMPLE_FILE = SAMPLE + '\n';
 
 // Sets are named "Set 1", "Set 2", … — the default name for the Nth generated set. Single source of truth.
 const defaultSetName = (n: number) => `Set ${n}`;
@@ -123,13 +122,13 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
     catch (e) { setFileErr((e as Error).message); }
   };
   const downloadSample = () => {
-    const blob = new Blob([SAMPLE_FILE], { type: 'text/markdown' });
+    const blob = new Blob([SAMPLE_FILE_TEXT], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'ccat-question-import-sample.md';
+    const a = document.createElement('a'); a.href = url; a.download = 'ccat-bulk-sample.txt';
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   };
   const copyFormat = async () => {
-    try { await navigator.clipboard.writeText(SAMPLE_FILE); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+    try { await navigator.clipboard.writeText(FORMAT_TEXT); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
   };
 
   const cardToPayload = (c: ImportCard) => {
@@ -169,7 +168,10 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
       const refs = referencedImages(cards);
       if (refs.length) {
         setProgress(`Uploading ${refs.length} image${refs.length === 1 ? '' : 's'}…`);
-        const uploaded = await uploadImages(refs, images, (m, b, a) => api.uploadAsset(m, b, a));
+        const uploaded = await uploadImages(refs, images, items => api.uploadAssetsBatch(items).then(r => {
+          console.info(`[bulk] uploaded ${r.count} image(s) (${r.unique} unique) in ${r.elapsed_ms} ms — storage ${r.upload_ms} ms, db ${r.insert_ms} ms`);
+          return r.assets;
+        }));
         resolved = attachImages(cards, uploaded);
       }
       const chunks: ImportCard[][] = [];
@@ -250,21 +252,11 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
             </div>
 
             {showInstruction && (
-              <div className="infobox" style={{ marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>How to bulk add sets (for beginners):</div>
-                <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 13 }}>
-                  <li>Click <b>Download sample</b> — or <b>Copy format</b> — to get the exact question format.</li>
-                  <li>Paste that sample + all your questions into ChatGPT or Claude and ask: <i>"Rewrite my questions in exactly this format."</i></li>
-                  <li>Copy the AI's result and paste it in the box below (or save as a .md/.txt file and use <b>Choose file…</b>).</li>
-                  <li><b>Figures (optional):</b> add <code>Q-Image: file.png</code> / <code>A-Image: file.png</code> lines, put the .md/.txt + those images in ONE <b>.zip</b>, and choose the ZIP. PNG/JPG/WEBP, ≤2 MB each.</li>
-                  <li>Click <b>Parse &amp; check</b> (it lists any missing images), fix flags, then <b>Preview split</b>.</li>
-                  <li>Your questions are split into sets of {MAX_QUESTIONS_PER_SET} (Set A, Set B, …). Top up the last set if needed, then create and publish.</li>
-                </ol>
-              </div>
+              <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 300, whiteSpace: 'pre-wrap', marginBottom: 8 }}>{FORMAT_TEXT}</pre>
             )}
 
             {showSample && (
-              <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{SAMPLE}</pre>
+              <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{FORMAT_TEXT}</pre>
             )}
 
             <label style={{ marginTop: 4 }}>✍️ Paste ALL your questions here — they'll be split into sets of {MAX_QUESTIONS_PER_SET} (a .zip for figures)</label>

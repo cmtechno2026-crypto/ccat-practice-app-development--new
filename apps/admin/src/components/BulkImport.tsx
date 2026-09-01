@@ -11,46 +11,129 @@ import { readBulkInput, matchImages, uploadImages, attachImages, BulkImage, Matc
 // Strict all-or-nothing text parse; missing image references block import. Grade / battery / subcategory /
 // difficulty / type come from the set. Nothing is saved here — the admin reviews, then Save draft / Publish.
 
-// The downloadable sample — EXACTLY the canonical format guide + examples (now incl. the optional figure
-// lines + ZIP workflow). Exported so "Bulk add sets" downloads/copies the identical spec.
-export const SAMPLE = `# CCAT question import — format guide
+// Single source of the bulk-add format spec, reused by BOTH bulk panels (this one + "Bulk add sets").
+// FORMAT_TEXT (BLOCK A) — shown by "View/Show format" and the Instruction panel, and copied by "Copy format".
+// SAMPLE_FILE_TEXT (BLOCK B) — the clean starter file written by "Download sample" (.txt, UTF-8).
+export const FORMAT_TEXT = `# ============================================================
+# CCAT BULK-ADD — COPY THIS WHOLE THING
+# Paste it into ChatGPT or Claude TOGETHER WITH your raw questions.
+# ============================================================
 #
-# HOW THIS FILE IS READ
-#  - The file is a list of question BLOCKS. Separate each block with a BLANK LINE.
-#  - Each block starts with a "Q:" line, then the question text (it may span several lines).
-#  - Options are labelled  A)  B)  C)  D)  ...  (a dot also works: "A.").  Minimum 2 options.
-#  - "Answer:" gives the SINGLE correct option letter — it must match one of the options.
-#  - "Explanation:" is optional (one line).
-#  - Lines that start with "#" are comments and are ignored.
+# PROMPT (what to tell the AI):
+# "Convert my questions into the exact CCAT bulk-add format shown below.
+#  - One BLOCK per question, separated by ONE blank line.
+#  - Start each block with 'Q:' then the question text.
+#  - List options as 'A)' 'B)' 'C)' 'D)' (2-4 options).
+#  - Put the correct option letter on an 'Answer:' line — it MUST match an option.
+#  - 'Explanation:' is optional, one line.
+#  - If a question or an option has a FIGURE/IMAGE, add a 'Q-Image:' or
+#    '<Letter>-Image:' line with the image FILENAME, and give me the list of
+#    filenames I must put in a .zip with this file. A question or option may be
+#    figure-only (no text).
+#  - Do NOT change my answers. Output ONLY the formatted blocks, nothing else."
 #
-# FIGURES (optional — leave them out for text-only questions):
-#  - "Q-Image: filename"  adds a picture to the QUESTION (a question may be figure-only: leave "Q:" empty).
-#  - "A-Image: filename"  (B-Image, C-Image, …) adds a picture to that OPTION (an option may be image-only).
-#  - Provide the images in a ZIP: put THIS .md/.txt plus the image files into one .zip (images at the zip
-#    root or in an images/ folder) and pick the ZIP with "Choose file…".  PNG / JPG / WEBP only, <= 2 MB each.
-#  - A plain .md/.txt with no images still works with no ZIP.
+# ============================================================
+# FORMAT RULES
+# ============================================================
+# - Blocks are separated by a BLANK LINE. No blank line inside a block.
+# - Minimum 2 options. 'Answer:' is ONE letter and must match a present option.
+# - A QUESTION needs text OR a Q-Image (or both). An OPTION needs text OR an
+#   <Letter>-Image (or both).
+# - Images are OPTIONAL. Text-only files need no zip.
+# - Image files: png / jpg / jpeg / webp. Reference them by filename; put the
+#   actual files in a .ZIP with this text file (at the zip root or in images/).
+# - Lines starting with '#' are comments and are ignored (you can delete them).
 #
-# Fill in your own questions below in the same shape, then Import.
-Q: Cat is to Kitten as Dog is to ?
-A) Puppy
-B) Cub
-C) Foal
-D) Calf
-Answer: A
-Explanation: A young dog is called a puppy.
-Q: Which shape completes the pattern?
-Q-Image: pattern_q2.png
-A-Image: shape_a.png
-B-Image: shape_b.png
-C-Image: shape_c.png
-D-Image: shape_d.png
+# BLOCK TEMPLATE:
+# Q: <question text>            (optional if the question has a figure)
+# Q-Image: <filename>           (optional — question figure)
+# A) <option A text>            (text optional if the option has an image)
+# A-Image: <filename>           (optional — option A figure)
+# B) <option B text>
+# C) <option C text>
+# D) <option D text>
+# Answer: <A/B/C/D>
+# Explanation: <optional one line>
+#
+# ============================================================
+# EXAMPLES
+# ============================================================
+
+Q: Which word best completes the sentence: The puppy ___ across the yard.
+A) run
+B) runs
+C) running
+D) ran
+Answer: B
+Explanation: Present tense, singular subject takes "runs".
+
+Q: Choose the odd one out.
+A) Apple
+B) Banana
+C) Carrot
+D) Mango
 Answer: C
-Q: Choose the word that best completes the sentence: The careful scientist recorded every ___ in her notebook.
-A) observation
-B) observatory
-C) observant
-D) observe
-Answer: A`;
+Explanation: Carrot is a vegetable; the rest are fruits.
+
+# Figure in the QUESTION, text options:
+Q: Which shape comes next in the pattern?
+Q-Image: q_pattern_01.png
+A) Circle
+B) Square
+C) Triangle
+D) Star
+Answer: C
+
+# Figure-only QUESTION, figure OPTIONS (e.g. Figure analogy):
+Q-Image: q_matrix_02.png
+A)
+A-Image: opt2_a.png
+B)
+B-Image: opt2_b.png
+C)
+C-Image: opt2_c.png
+D)
+D-Image: opt2_d.png
+Answer: B
+`;
+
+export const SAMPLE_FILE_TEXT = `# CCAT bulk-add sample — edit or replace with your own questions.
+# One block per question, separated by a blank line.
+# Options A) B) C) D); Answer: <letter> must match an option; Explanation: optional.
+# For figures: add Q-Image:/A-Image: lines with filenames and zip the images with this file.
+
+Q: Which word best completes the sentence: The children ___ happily in the park.
+A) plays
+B) played
+C) playing
+D) play
+Answer: D
+Explanation: Plural subject "children" takes "play".
+
+Q: Choose the word that means the same as "big".
+A) tiny
+B) large
+C) narrow
+D) short
+Answer: B
+
+Q: Which one is the odd one out?
+A) Rose
+B) Lily
+C) Tulip
+D) Oak
+Answer: D
+Explanation: Oak is a tree; the others are flowers.
+
+# Example with a question figure (include q_shape_01.png in the zip):
+Q: Which shape completes the sequence?
+Q-Image: q_shape_01.png
+A) Circle
+B) Square
+C) Pentagon
+D) Hexagon
+Answer: C
+`;
 
 const MAX_SHOWN = 10;
 
@@ -84,15 +167,14 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
     catch (e) { setFileErr((e as Error).message); }
   };
 
-  const SAMPLE_FILE = SAMPLE + '\n';
   const downloadSample = () => {
-    const blob = new Blob([SAMPLE_FILE], { type: 'text/markdown' });
+    const blob = new Blob([SAMPLE_FILE_TEXT], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'ccat-question-import-sample.md';
+    const a = document.createElement('a'); a.href = url; a.download = 'ccat-bulk-sample.txt';
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   };
   const copyFormat = async () => {
-    try { await navigator.clipboard.writeText(SAMPLE_FILE); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+    try { await navigator.clipboard.writeText(FORMAT_TEXT); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
   };
 
   const doImport = async () => {
@@ -103,7 +185,10 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
       let out = cards;
       const refs = referencedImages(cards);
       if (refs.length) {
-        const uploaded = await uploadImages(refs, images, (mime, b64, alt) => api.uploadAsset(mime, b64, alt));
+        const uploaded = await uploadImages(refs, images, items => api.uploadAssetsBatch(items).then(r => {
+          console.info(`[bulk] uploaded ${r.count} image(s) (${r.unique} unique) in ${r.elapsed_ms} ms — storage ${r.upload_ms} ms, db ${r.insert_ms} ms`);
+          return r.assets;
+        }));
         out = attachImages(cards, uploaded);
       }
       await onImport(out);
@@ -124,17 +209,7 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
         </button>
       </>}>
       {showInstruction && (
-        <div className="infobox" style={{ marginBottom: 10 }}>
-          <div style={{ fontWeight: 800, marginBottom: 4 }}>How to bulk add (for beginners):</div>
-          <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 13 }}>
-            <li>Click <b>Download sample</b> — or <b>Copy format</b> — to get the exact format.</li>
-            <li>Paste that sample + your own questions into ChatGPT or Claude and ask: <i>"Rewrite my questions in exactly this format."</i></li>
-            <li>Copy the AI's result and paste it in the box below (or save it as a .md/.txt file and use <b>Choose file…</b>).</li>
-            <li><b>Figures (optional):</b> add <code>Q-Image: file.png</code> / <code>A-Image: file.png</code> lines, put the .md/.txt + those images in ONE <b>.zip</b>, and choose the ZIP. PNG/JPG/WEBP, ≤2 MB each.</li>
-            <li>Click <b>Parse &amp; check</b> (it lists any missing images), fix flags, then <b>Import</b>.</li>
-          </ol>
-          <div style={{ marginTop: 6, fontSize: 12.5 }}>Nothing is saved until you press <b>Save draft</b>. Grade / category / subcategory / difficulty come from the set.</div>
-        </div>
+        <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 300, whiteSpace: 'pre-wrap', marginBottom: 10 }}>{FORMAT_TEXT}</pre>
       )}
 
       <div className="rowactions" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
@@ -148,7 +223,7 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
       </div>
 
       {showSample && (
-        <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{SAMPLE}</pre>
+        <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{FORMAT_TEXT}</pre>
       )}
 
       <label style={{ marginTop: 4 }}>✍️ Paste your questions here — or use “Choose file…” above (a .zip for figures)</label>

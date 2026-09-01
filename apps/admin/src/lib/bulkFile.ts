@@ -7,9 +7,12 @@
 
 import type { ImportCard, ImgRef } from './importParse';
 
-const PER_IMAGE_MAX = 2 * 1024 * 1024;   // ≤ 2 MB per image
-const TOTAL_MAX = 40 * 1024 * 1024;      // ≤ 40 MB of images total
-const MAX_IMAGES = 60;                    // sanity cap on image count
+// Bulk-add ZIP limits (mirror the Gateway's batch-upload caps). Named single constants; enforced client-side
+// in readBulkInput BEFORE any upload, so an over-limit zip is rejected with a clear message.
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;        // ≤ 3 MB per image
+const MAX_ZIP_TOTAL_BYTES = 50 * 1024 * 1024;   // ≤ 50 MB of images total
+const MAX_IMAGES_PER_ZIP = 400;                 // ≤ 400 images per zip
+const OVER_LIMIT_MSG = 'Max 400 images / 50 MB per upload — split into more zips.';
 const IMG_EXT: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
 
 export function baseName(p: string): string { return (p.split(/[\\/]/).pop() ?? p).trim(); }
@@ -83,10 +86,10 @@ export async function readBulkInput(file: File): Promise<BulkInput> {
   for (const e of entries) {
     const type = mimeFromName(e.name);
     if (!type) continue; // ignore non-image / non-text (e.g. svg, readme images we don't support)
-    if (e.bytes.length > PER_IMAGE_MAX) throw new Error(`"${baseName(e.name)}" is larger than 2 MB.`);
+    if (e.bytes.length > MAX_IMAGE_BYTES) throw new Error(`"${baseName(e.name)}" is larger than 3 MB — max 3 MB per image.`);
     count++; total += e.bytes.length;
-    if (count > MAX_IMAGES) throw new Error(`Too many images in the ZIP (max ${MAX_IMAGES}).`);
-    if (total > TOTAL_MAX) throw new Error(`ZIP images exceed the ${TOTAL_MAX / 1024 / 1024} MB total cap.`);
+    if (count > MAX_IMAGES_PER_ZIP) throw new Error(OVER_LIMIT_MSG);
+    if (total > MAX_ZIP_TOTAL_BYTES) throw new Error(OVER_LIMIT_MSG);
     images.set(baseName(e.name).toLowerCase(), { name: baseName(e.name), bytes: e.bytes, type });
   }
   return { text, images };
@@ -108,20 +111,23 @@ function bytesToB64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-// Upload each referenced+matched image ONCE (de-duplicated by basename) via the existing upload fn.
-// Returns basename(lowercased) → resolved asset.
+// Upload every referenced+matched image ONCE (de-duplicated by basename) in a SINGLE batch request, so ~400
+// figures import in one round-trip instead of 400 sequential uploads. `uploadBatch` sends all images together
+// (the Gateway stores them with bounded concurrency + one multi-row insert) and returns assets 1:1 with the
+// order sent. Returns basename(lowercased) → resolved asset.
 export async function uploadImages(
   refs: string[], images: Map<string, BulkImage>,
-  upload: (mime: string, b64: string, alt?: string) => Promise<{ id: string; url: string }>,
+  uploadBatch: (items: { mime_type: string; data_base64: string; alt_text?: string }[]) => Promise<{ id: string; url: string }[]>,
 ): Promise<Map<string, ImgRef>> {
-  const keys = new Set<string>();
-  for (const r of refs) { const k = baseName(r).toLowerCase(); if (images.has(k)) keys.add(k); }
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const r of refs) { const k = baseName(r).toLowerCase(); if (images.has(k) && !seen.has(k)) { seen.add(k); keys.push(k); } }
   const out = new Map<string, ImgRef>();
-  for (const k of keys) {
-    const img = images.get(k)!;
-    const r = await upload(img.type, bytesToB64(img.bytes), img.name);
-    out.set(k, { asset_id: r.id, url: r.url, alt: '' });
-  }
+  if (!keys.length) return out;
+  const items = keys.map(k => { const img = images.get(k)!; return { mime_type: img.type, data_base64: bytesToB64(img.bytes), alt_text: img.name }; });
+  const assets = await uploadBatch(items);
+  if (assets.length !== keys.length) throw new Error(`Upload returned ${assets.length} assets for ${keys.length} image(s).`);
+  keys.forEach((k, i) => out.set(k, { asset_id: assets[i]!.id, url: assets[i]!.url, alt: '' }));
   return out;
 }
 
