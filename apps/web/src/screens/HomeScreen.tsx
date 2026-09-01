@@ -149,7 +149,7 @@ export function HomeScreen() {
                   const an = data.analytics;
                   const accuracy = an?.avgAccuracy ?? null;
                   const sets = an?.setsCompleted ?? 0;
-                  const time = an?.timeSpentMinutes ?? null;
+                  const time = an?.practiceTimeMinutes ?? null;
                   return (
                     <div className="hp-tiles">
                       <button className="hp-tile hp-acc" onClick={() => nav('/progress')}>

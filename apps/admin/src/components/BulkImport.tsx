@@ -9,8 +9,9 @@ import { parseImportText, ImportCard, ImportError } from '../lib/importParse';
 // reasons. Grade / battery / subcategory / difficulty / type come from the set, never the file. Nothing
 // is saved here — the admin reviews, edits, adds more, then uses the existing Save draft / Publish flow.
 
-// The downloadable sample — EXACTLY the canonical format guide + three example questions.
-const SAMPLE = `# CCAT question import — format guide
+// The downloadable sample — EXACTLY the canonical format guide + three example questions. Exported so the
+// "Bulk add sets" panel downloads/copies the identical spec (single source of truth for the format).
+export const SAMPLE = `# CCAT question import — format guide
 #
 # HOW THIS FILE IS READ
 #  - The file is a list of question BLOCKS. Separate each block with a BLANK LINE.

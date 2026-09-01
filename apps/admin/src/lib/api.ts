@@ -95,8 +95,9 @@ export const api = {
   setQuestionActive: (id: string, qid: string, active: boolean) => req<any>('PATCH', `/v1/admin/content/sets/${id}/questions/${qid}`, { active }),
   publishSet: (id: string) => req<any>('POST', `/v1/admin/content/sets/${id}/publish`),
   unpublishSet: (id: string) => req<any>('POST', `/v1/admin/content/sets/${id}/unpublish`),
-  // Retire a published set — removes it from the live student catalog. Published sets are immutable
-  // and cannot be unpublished (§8.1); to bring content back, copy the set to a new draft and publish.
+  // Retire a published set — removes it from the live student catalog (published → 'retired'). Uses the
+  // dedicated /retire route (guarded by content.retire). Published sets are immutable (§8.1); to bring
+  // content back, copy the set to a new draft and publish.
   retireSet: (id: string) => req<any>('POST', `/v1/admin/content/sets/${id}/retire`),
   copySet: (id: string) => req<{ id: string }>('POST', `/v1/admin/content/sets/${id}/copy`),
   deleteSet: (id: string) => req<any>('DELETE', `/v1/admin/content/sets/${id}`),

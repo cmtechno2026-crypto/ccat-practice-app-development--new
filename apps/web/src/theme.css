@@ -581,3 +581,68 @@ p { line-height: 1.5; }
 .tl-acc.acc-mid { background: var(--amber-tint); color: #d9902a; }
 .tl-acc.acc-low { background: var(--coral-tint, #ffecec); color: #c23; }
 .tl-sub { font-size: 12px; font-weight: 700; color: var(--muted); }
+
+/* ============================================================================
+   PROGRESS PAGE — P3 bento (chart / stats / readiness / exams / breakdown)
+   ========================================================================== */
+.p3-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+.p3-chart { grid-column: 1; }
+.p3-stats { grid-column: 2; }
+.p3-readiness { grid-column: 1; }
+.p3-exams { grid-column: 2; }
+.p3-breakdown { grid-column: 1 / -1; }
+@media (max-width: 860px) {
+  .p3-grid { grid-template-columns: 1fr; }
+  .p3-chart, .p3-stats, .p3-readiness, .p3-exams, .p3-breakdown { grid-column: 1; }
+}
+
+/* Practice-time chart card */
+.pt-head { font-family: 'Baloo 2'; font-weight: 800; font-size: 30px; color: var(--ink); margin: 6px 0 4px; }
+.time-chart { display: block; margin-top: 8px; overflow: visible; }
+.tc-axis { fill: var(--muted); font-size: 11px; font-weight: 700; }
+.pt-empty { margin-top: 8px; }
+
+/* 2×2 stat tiles */
+.stat-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.s2-tile { display: flex; flex-direction: column; align-items: center; gap: 3px; border-radius: var(--radius-md); padding: 18px 8px; box-shadow: var(--shadow-card); background: var(--card); }
+.s2-tile .s2-ic { font-size: 22px; }
+.s2-tile .s2-n { font-family: 'Baloo 2'; font-weight: 800; font-size: 22px; color: var(--ink); }
+.s2-tile .s2-l { font-size: 11px; font-weight: 800; color: var(--muted); }
+.s2-q { background: linear-gradient(180deg, var(--tint-blue), var(--card) 70%); }
+.s2-s { background: linear-gradient(180deg, var(--tint-lilac), var(--card) 70%); }
+.s2-a { background: linear-gradient(180deg, var(--tint-green), var(--card) 70%); }
+.s2-m { background: linear-gradient(180deg, var(--amber-tint), var(--card) 70%); }
+
+/* Readiness bars */
+.rdy-list { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+.rdy-row { display: grid; grid-template-columns: 90px 1fr 44px; align-items: center; gap: 10px; }
+.rdy-name { font-weight: 800; font-size: 13px; color: var(--ink); }
+.rdy-track { height: 12px; border-radius: var(--radius-pill); background: var(--line); overflow: hidden; }
+.rdy-fill { height: 100%; border-radius: var(--radius-pill); transition: width .4s ease; }
+.rdy-pct { font-family: 'Baloo 2'; font-weight: 800; font-size: 14px; color: var(--ink); text-align: right; }
+
+/* Exams card */
+.exams-empty { margin-top: 10px; }
+.exams-stats { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.ex-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ex-row .ex-l { font-size: 13px; font-weight: 700; color: var(--muted); }
+.ex-row strong { font-family: 'Baloo 2'; font-weight: 800; font-size: 18px; color: var(--ink); }
+
+/* By category & topic — accordions */
+.bd-cats { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.bd-cat { border: 2px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
+.bd-cat[open] { border-color: var(--cat, var(--primary)); }
+.bd-summary { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; list-style: none; font-weight: 800; }
+.bd-summary::-webkit-details-marker { display: none; }
+.bd-cat-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.bd-cat-name { flex: 1; font-family: 'Baloo 2'; font-size: 16px; color: var(--ink); }
+.bd-cat-acc { font-family: 'Baloo 2'; font-weight: 800; font-size: 15px; color: var(--cat, var(--primary)); }
+.bd-chev { color: var(--muted); transition: transform .18s; }
+.bd-cat[open] .bd-chev { transform: rotate(180deg); }
+.bd-empty { padding: 0 14px 14px; }
+.bd-topics { display: flex; flex-direction: column; gap: 8px; padding: 4px 12px 12px; }
+.bd-topic { background: var(--bg, #f7f8fb); border-radius: var(--radius-sm); padding: 12px; }
+.bt-name { font-family: 'Baloo 2'; font-weight: 800; font-size: 14px; color: var(--ink); margin-bottom: 8px; }
+.bt-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px 14px; }
+.bt-m { display: flex; flex-direction: column; gap: 1px; font-weight: 800; font-size: 14px; color: var(--ink); }
+.bt-m .bt-k { font-size: 10px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); }

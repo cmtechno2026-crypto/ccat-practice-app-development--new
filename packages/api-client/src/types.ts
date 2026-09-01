@@ -177,40 +177,50 @@ export interface CoinsPanel {
 export interface Readiness { readiness_pct: number | null; insufficient_data: boolean; band: string | null; window_questions: number; }
 export interface Progress { progress_pct: number | null; completed_count: number; eligible_count: number; learning_plan_version_id: string | null; }
 
-// ---- Progress & Analytics (GET /v1/progress/summary, /v1/progress/activity) ----
+// ---- Progress & Analytics (GET /v1/progress/summary, /v1/progress/breakdown) ----
 // Every field is real, driven by the student's own practice data. Metrics that are not tracked are
-// null (never faked). See the gateway PROGRESS report for the exact table/column behind each field.
+// null (never faked). See PROGRESS_ANALYTICS for the exact table/column behind each field.
+// TIME: only SESSION wall-clock exists → practiceTimeMinutes / practiceTimeSeries are LIVE;
+// per-QUESTION duration is not tracked → avgSecondsPerQuestion is always null.
 export type ProgressCategory = 'verbal' | 'non_verbal' | 'quantitative';
-export interface ProgressCategoryStat {
+
+export interface ProgressReadiness {
   category: ProgressCategory | string;
-  answered: number;
-  accuracyPct: number | null;   // null when 0 answered in this category
+  pct: number | null;               // per-category accuracy (proxy readiness); null when 0 answered
 }
-export interface ProgressExamReadiness {
-  label: string;                // e.g. 'Ready', 'Building…' — reuses readiness band
-  pct: number | null;           // null while insufficient data
+export interface ProgressExams {
+  attempts: number;
+  lastScore: { score: number; total: number } | null;
+  bestAccuracyPct: number | null;
 }
+export interface ProgressTimePoint { date: string; minutes: number; }  // date = 'YYYY-MM-DD'
+
 export interface ProgressSummary {
   questionsAnswered: number;
   setsCompleted: number;
-  avgAccuracy: number | null;       // %, null when 0 answered
-  timeSpentMinutes: number | null;  // real session wall-clock; null when not tracked
+  avgAccuracy: number | null;         // %, null when 0 answered
+  practiceTimeMinutes: number | null; // real session wall-clock (0 when none)
   mockExamsTaken: number;
-  courseCompletionPct: number | null; // null when no learning-plan sets
-  examReadiness: ProgressExamReadiness;
   streakDays: number;
-  byCategory: ProgressCategoryStat[];
+  readiness: ProgressReadiness[];     // verbal / quantitative / non_verbal, fixed order
+  exams: ProgressExams;
+  practiceTimeSeries: ProgressTimePoint[]; // [] when no terminal sessions in range
 }
-export interface ProgressActivityEvent {
-  id: string;
-  type: 'set' | 'exam' | 'badge';
-  title: string;
-  category: string | null;
-  accuracyPct: number | null;   // green≥80 / amber 50–79 / red<50 in the UI; null for badges & ungraded
-  questions: number | null;
-  timeMinutes: number | null;
-  dayLabel: string;             // DATE-ONLY: 'Today' | 'Yesterday' | 'Aug 22' — never a clock time
-  sortDate: string;             // ISO timestamp, newest-first ordering
+
+export interface ProgressTopic {
+  subcategory: string;
+  accuracyPct: number | null;
+  avgSecondsPerQuestion: number | null; // always null — per-question duration not tracked
+  completionPct: number | null;         // completed sets / total sets in this subcategory
+  questionsDone: number;
+  bestStreak: number;                   // longest consecutive-correct run in this topic
+  lastPractisedLabel: string;           // 'Today' | 'Yesterday' | 'N days ago' | 'Aug 22'
 }
-// Query filters for both progress endpoints. Only filters reported LIVE by the gateway have effect.
-export interface ProgressQuery { from?: string; to?: string; category?: string; mode?: Mode; }
+export interface ProgressBreakdownCategory {
+  category: ProgressCategory | string;
+  accuracyPct: number | null;
+  topics: ProgressTopic[];
+}
+
+// Query filter for both progress endpoints — DATE RANGE ONLY (applied server-side).
+export interface ProgressQuery { from?: string; to?: string; }

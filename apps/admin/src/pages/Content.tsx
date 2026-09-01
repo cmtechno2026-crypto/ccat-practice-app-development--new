@@ -6,6 +6,9 @@ import { Loading, ErrorBox, useToast } from '../components/ui';
 import { CreateSet } from '../components/SetsView';
 import { QuestionEditor } from '../components/QuestionEditor';
 import { SetEditor } from '../components/SetEditor';
+import { BulkSets, MAX_QUESTIONS_PER_SET } from '../components/BulkSets';
+
+const slugKey = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
 const DIFFS = [{ k: 'easy', l: 'Easy' }, { k: 'medium', l: 'Medium' }, { k: 'hard', l: 'Hard' }];
 const cap = (s: string) => s ? s[0].toUpperCase() + s.slice(1) : s;
@@ -44,6 +47,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
   const [diff, setDiff] = useState('medium');
   const [sub, setSub] = useState<string>('');
   const [newSet, setNewSet] = useState(false);
+  const [bulkSets, setBulkSets] = useState(false);
   const [newQ, setNewQ] = useState(false);
   const [editSet, setEditSet] = useState<{ id: string; blank?: boolean; bulk?: boolean } | null>(null);
   const isExam = mode === 'exam';
@@ -95,7 +99,12 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
     if (first) setSub(first);
   }, [tree]); // eslint-disable-line
 
-  const rows = useMemo(() => inGrade.filter(s => s.difficulty_key === diff && (!sub || s.subcategory_id === sub)), [inGrade, diff, sub]);
+  // Retired sets sink to the bottom of the list (still visible, just out of the way); order is otherwise
+  // preserved (created_at desc from the API). Stable sort keyed only on the retired flag.
+  const rows = useMemo(() => inGrade
+    .filter(s => s.difficulty_key === diff && (!sub || s.subcategory_id === sub))
+    .slice()
+    .sort((a, b) => (a.state === 'retired' ? 1 : 0) - (b.state === 'retired' ? 1 : 0)), [inGrade, diff, sub]);
   const activeSubName = sub ? (inGrade.find(s => s.subcategory_id === sub)?.subcategory) : null;
   const activeCatName = sub ? (inGrade.find(s => s.subcategory_id === sub)?.category) : null;
 
@@ -111,6 +120,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
         <div className="row" style={{ margin: 0, gap: 8 }}>
           {can('content.create') && <Link className="btn ghost" to="/content/questions">Question pool</Link>}
           {can('content.create') && <button className="btn ghost" onClick={() => setNewQ(true)}>+ New question</button>}
+          {!isExam && can('content.create') && <button className="btn ghost" onClick={() => { if (!sub) { toast('Pick a subcategory on the left first'); return; } setBulkSets(true); }}>⤓ Bulk add sets</button>}
           {can('content.create') && <button className="btn" onClick={() => setNewSet(true)}>+ New {isExam ? 'exam set' : 'set'}</button>}
         </div>
       </div>
@@ -156,7 +166,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
               <div className="tablewrap"><table>
                 <thead><tr><th>Set</th><th>Questions</th><th>Status</th><th>Updated</th><th className="right">Actions</th></tr></thead>
                 <tbody>{rows.map(s => {
-                  const target = 15; const pct = Math.min(100, Math.round((s.question_count / target) * 100));
+                  const target = MAX_QUESTIONS_PER_SET; const pct = Math.min(100, Math.round((s.question_count / target) * 100));
                   const barc = s.question_count >= target ? 'var(--green)' : s.question_count >= 5 ? 'var(--amber)' : 'var(--coral)';
                   return (
                     <tr key={s.id}>
@@ -206,6 +216,25 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
       {newQ && tax && (
         <QuestionEditor taxonomy={tax} editing={null} onClose={() => setNewQ(false)} onSaved={() => { setNewQ(false); load(); }} />
       )}
+      {bulkSets && tax && sub && (() => {
+        const gradeObj = tax.grades?.find((g: any) => String(g.grade_number) === grade);
+        const subObj = tax.subcategories?.find((s: any) => s.id === sub);
+        const catObj = tax.categories?.find((c: any) => c.id === subObj?.category_id);
+        const diffObj = tax.difficulties?.find((d: any) => d.key === diff);
+        if (!gradeObj || !subObj || !catObj || !diffObj) return null;
+        return (
+          <BulkSets
+            ctx={{
+              gradeId: gradeObj.id, catId: catObj.id, subId: subObj.id, diffId: diffObj.id,
+              qType: slugKey(subObj.key) || 'verbal_analogy',
+              gradeNumber: gradeObj.grade_number, categoryName: catObj.name, subcategoryName: subObj.name,
+              difficultyLabel: diffObj.name, diffKey: diff,
+            }}
+            existingSets={sets || []} taxonomy={tax}
+            onClose={() => setBulkSets(false)} onDone={load}
+          />
+        );
+      })()}
       {editSet && tax && (
         <SetEditor taxonomy={tax} setId={editSet.id} startBlank={editSet.blank} openBulk={editSet.bulk} onClose={() => setEditSet(null)} onSaved={load} />
       )}

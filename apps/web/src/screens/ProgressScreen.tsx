@@ -1,42 +1,27 @@
 import { useMemo, useState } from 'react';
 import { client } from '../lib/api';
-import type { ProgressActivityEvent, ProgressQuery, ProgressSummary } from '@ccat/api-client';
+import type { ProgressBreakdownCategory, ProgressQuery, ProgressSummary } from '@ccat/api-client';
 import { AppBar, Loader, ErrorNote, useAsync } from '../components/ui';
 
-// PROGRESS PAGE ("B4-1") — a real, data-driven two-column analytics view.
-//   TOP    filter row (Date range · Category · Mode) wired to the gateway query params.
-//   LEFT   rail (~320px): "⏱️ Practice time" card (headline + inline SVG line chart, or an honest
-//          "not enough data yet" placeholder) + a 2×2 grid of stat tiles.
-//   RIGHT  "🕑 Recent activity" vertical timeline from /v1/progress/activity.
-// Every value comes from the gateway. Nothing is invented: metrics that aren't tracked render "—",
-// and an empty activity feed shows a clear empty state. Day labels are DATE-ONLY (never a clock time).
+// PROGRESS PAGE ("P3" bento) — real, data-driven analytics.
+//   FILTER  Date range ONLY (wired to gateway ?from=&to=). No category/mode dropdowns.
+//   ROW 1   LEFT  "⏱️ Practice time" line chart (hour gridlines + date axis + markers) or an honest
+//                 "not enough data yet" placeholder.  RIGHT  2×2 stat tiles.
+//   ROW 2   LEFT  "🚀 Readiness" three category bars.  RIGHT  "📝 CCAT exams" last/best/attempts.
+//   ROW 3   "🧠 By category & topic" — three category accordions expanding to topic rows.
+// Nothing is invented: untracked metrics render "—", empty states render on fresh accounts, and the
+// chart shows the placeholder (never a fake line) when there is no time series.
 
-// Category VISUALS reused from PracticeScreen (single visual vocabulary across the app).
 const CAT_VIS: Record<string, { name: string; color: string; tint: string }> = {
   verbal: { name: 'Verbal', color: '#3e7bee', tint: '#eaf0ff' },
   quantitative: { name: 'Quantitative', color: '#22c3a6', tint: '#e8f7f1' },
   non_verbal: { name: 'Non-verbal', color: '#8b5cf6', tint: '#f3ecfb' },
   nonverbal: { name: 'Non-verbal', color: '#8b5cf6', tint: '#f3ecfb' },
 };
-function catVis(key: string | null) {
-  return (key && CAT_VIS[key]) || { name: key ?? '', color: 'var(--muted)', tint: '#eef1f6' };
+function catVis(key: string) {
+  return CAT_VIS[key] || { name: key, color: 'var(--muted)', tint: '#eef1f6' };
 }
 
-// Which filters the gateway actually applies server-side (reported in the PROGRESS backend report).
-// All three are LIVE for /v1/progress/activity; on the summary, category/mode/date narrow the answered/
-// accuracy/time/completion metrics. We render every control as live — none are inert.
-const CATEGORY_OPTIONS = [
-  { value: '', label: 'All categories' },
-  { value: 'verbal', label: 'Verbal' },
-  { value: 'quantitative', label: 'Quantitative' },
-  { value: 'non_verbal', label: 'Non-verbal' },
-];
-const MODE_OPTIONS = [
-  { value: '', label: 'Practice & Exam' },
-  { value: 'practice', label: 'Practice only' },
-  { value: 'exam', label: 'Exam only' },
-];
-// Date range → concrete `from` ISO (to = now). Kept presentational; the gateway filters on the value.
 const RANGE_OPTIONS = [
   { value: '', label: 'All time' },
   { value: '7', label: 'Last 7 days' },
@@ -51,39 +36,55 @@ function rangeToFrom(days: string): string | undefined {
   d.setDate(d.getDate() - n);
   return d.toISOString();
 }
-
 function fmtMinutes(mins: number | null | undefined): string {
   if (mins == null || mins <= 0) return '—';
   if (mins < 60) return `${mins}m`;
   const h = Math.floor(mins / 60), m = mins % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
-function accuracyClass(pct: number | null): string {
-  if (pct == null) return '';
-  if (pct >= 80) return 'acc-good';
-  if (pct >= 50) return 'acc-mid';
-  return 'acc-low';
+function shortDate(iso: string): string {
+  const [ , m, d] = iso.split('-').map(Number);
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${MON[(m ?? 1) - 1]} ${d}`;
 }
 
-// Small inline SVG line chart of per-day practice minutes. Renders ONLY when there are ≥2 days with
-// data — otherwise the caller shows the "not enough data yet" placeholder (never a fake line).
-function TimeChart({ points }: { points: { label: string; minutes: number }[] }) {
-  const W = 280, H = 84, PAD = 6;
-  const max = Math.max(...points.map((p) => p.minutes), 1);
-  const stepX = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
-  const coords = points.map((p, i) => {
-    const x = PAD + i * stepX;
-    const y = H - PAD - (p.minutes / max) * (H - PAD * 2);
-    return [x, y] as const;
-  });
+// Inline SVG line chart of per-day practice minutes: hour gridlines + left hr labels + date x-axis +
+// a circle marker at each point. Rendered only when there are ≥2 points (caller shows placeholder else).
+function TimeChart({ points }: { points: { date: string; minutes: number }[] }) {
+  const W = 560, H = 200, L = 40, R = 12, T = 12, B = 30;      // viewBox + gutters
+  const plotW = W - L - R, plotH = H - T - B;
+  const maxMin = Math.max(...points.map((p) => p.minutes), 1);
+  const maxHours = Math.max(1, Math.ceil(maxMin / 60));
+  const maxScale = maxHours * 60;
+  const xAt = (i: number) => L + (points.length > 1 ? (plotW * i) / (points.length - 1) : plotW / 2);
+  const yAt = (min: number) => T + plotH * (1 - min / maxScale);
+  const coords = points.map((p, i) => [xAt(i), yAt(p.minutes)] as const);
   const line = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const area = `${line} L${coords[coords.length - 1]![0].toFixed(1)},${H - PAD} L${coords[0]![0].toFixed(1)},${H - PAD} Z`;
+  const area = `${line} L${coords[coords.length - 1]![0].toFixed(1)},${(T + plotH).toFixed(1)} L${coords[0]![0].toFixed(1)},${(T + plotH).toFixed(1)} Z`;
+  const hourLines = Array.from({ length: maxHours + 1 }, (_, h) => h);
+  // Thin out x labels so they never collide (always first + last).
+  const stepLbl = Math.max(1, Math.ceil(points.length / 6));
+
   return (
-    <svg className="time-chart" viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label="Practice time trend">
-      <path d={area} fill="var(--tint-orange, #fff1e0)" stroke="none" />
+    <svg className="time-chart" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Practice time per day">
+      {hourLines.map((h) => {
+        const y = yAt(h * 60);
+        return (
+          <g key={h}>
+            <line x1={L} y1={y} x2={W - R} y2={y} stroke="var(--line)" strokeWidth={1} />
+            <text x={L - 6} y={y + 3} textAnchor="end" className="tc-axis">{h}hr</text>
+          </g>
+        );
+      })}
+      <path d={area} fill="var(--amber-tint, #fff3db)" opacity={0.6} stroke="none" />
       <path d={line} fill="none" stroke="var(--amber, #f6a821)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
       {coords.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={2.6} fill="var(--amber, #f6a821)" />
+        <circle key={i} cx={x} cy={y} r={3.2} fill="#fff" stroke="var(--amber, #f6a821)" strokeWidth={2} />
+      ))}
+      {points.map((p, i) => (
+        (i % stepLbl === 0 || i === points.length - 1) && (
+          <text key={p.date} x={xAt(i)} y={H - 8} textAnchor="middle" className="tc-axis">{shortDate(p.date)}</text>
+        )
       ))}
     </svg>
   );
@@ -91,48 +92,31 @@ function TimeChart({ points }: { points: { label: string; minutes: number }[] })
 
 export function ProgressScreen() {
   const [range, setRange] = useState('');
-  const [category, setCategory] = useState('');
-  const [mode, setMode] = useState('');
-
   const query = useMemo<ProgressQuery>(() => {
     const q: ProgressQuery = {};
     const from = rangeToFrom(range);
     if (from) q.from = from;
-    if (category) q.category = category;
-    if (mode === 'practice' || mode === 'exam') q.mode = mode;
     return q;
-  }, [range, category, mode]);
+  }, [range]);
 
   const { loading, error, data, reload } = useAsync(async () => {
-    const [summary, activity] = await Promise.all([
+    const [summary, breakdown] = await Promise.all([
       client.progressSummary(query),
-      client.progressActivity({ ...query, limit: 20 }),
+      client.progressBreakdown(query),
     ]);
-    return { summary, activity } as { summary: ProgressSummary; activity: ProgressActivityEvent[] };
+    return { summary, breakdown } as { summary: ProgressSummary; breakdown: ProgressBreakdownCategory[] };
   }, [query]);
 
   return (
     <>
       <AppBar title="Progress & Analytics" sub="Your real practice data" back />
       <div className="content">
-        {/* FILTER ROW — all three wired to the gateway query params */}
+        {/* FILTER — date range only */}
         <div className="prog-filters" role="group" aria-label="Filters">
           <label className="pf-field">
             <span className="pf-lbl">Date range</span>
             <select value={range} onChange={(e) => setRange(e.target.value)}>
               {RANGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </label>
-          <label className="pf-field">
-            <span className="pf-lbl">Category</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </label>
-          <label className="pf-field">
-            <span className="pf-lbl">Mode</span>
-            <select value={mode} onChange={(e) => setMode(e.target.value)}>
-              {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
         </div>
@@ -142,97 +126,96 @@ export function ProgressScreen() {
 
         {data && (() => {
           const s = data.summary;
-          // Build a per-day minutes series from the activity feed (date-only buckets, chronological).
-          const byDay = new Map<string, number>();
-          for (const ev of data.activity) {
-            if (ev.timeMinutes == null) continue;
-            const key = ev.sortDate.slice(0, 10);
-            byDay.set(key, (byDay.get(key) ?? 0) + ev.timeMinutes);
-          }
-          const chartPoints = [...byDay.entries()]
-            .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([label, minutes]) => ({ label, minutes }));
-
+          const series = s.practiceTimeSeries ?? [];
           return (
-            <div className="prog-grid">
-              {/* LEFT RAIL */}
-              <aside className="prog-rail">
-                <div className="rail-card">
-                  <div className="eyebrow">⏱️ Practice time</div>
-                  <div className="pt-head">{fmtMinutes(s.timeSpentMinutes)}</div>
-                  {chartPoints.length >= 2
-                    ? <TimeChart points={chartPoints} />
-                    : <div className="muted pt-empty">Not enough data yet — practise on more days to see your trend.</div>}
-                </div>
+            <div className="p3-grid">
+              {/* ROW 1 — practice-time chart (2fr) + 2×2 stats (1fr) */}
+              <div className="rail-card p3-chart">
+                <div className="eyebrow">⏱️ Practice time</div>
+                <div className="pt-head">{fmtMinutes(s.practiceTimeMinutes)}</div>
+                {series.length >= 2
+                  ? <TimeChart points={series} />
+                  : <div className="muted pt-empty">Not enough data yet — practise on more days to see your trend.</div>}
+              </div>
 
-                <div className="stat-2x2">
-                  <div className="s2-tile s2-q">
-                    <span className="s2-ic">📝</span>
-                    <span className="s2-n">{s.questionsAnswered}</span>
-                    <span className="s2-l">Questions</span>
-                  </div>
-                  <div className="s2-tile s2-s">
-                    <span className="s2-ic">✅</span>
-                    <span className="s2-n">{s.setsCompleted}</span>
-                    <span className="s2-l">Sets</span>
-                  </div>
-                  <div className="s2-tile s2-a">
-                    <span className="s2-ic">🎯</span>
-                    <span className="s2-n">{s.avgAccuracy == null ? '—' : `${s.avgAccuracy}%`}</span>
-                    <span className="s2-l">Accuracy</span>
-                  </div>
-                  <div className="s2-tile s2-m">
-                    <span className="s2-ic">🧪</span>
-                    <span className="s2-n">{s.mockExamsTaken}</span>
-                    <span className="s2-l">Mocks</span>
-                  </div>
-                </div>
-              </aside>
+              <div className="stat-2x2 p3-stats">
+                <div className="s2-tile s2-q"><span className="s2-ic">📝</span><span className="s2-n">{s.questionsAnswered}</span><span className="s2-l">Questions</span></div>
+                <div className="s2-tile s2-s"><span className="s2-ic">✅</span><span className="s2-n">{s.setsCompleted}</span><span className="s2-l">Sets</span></div>
+                <div className="s2-tile s2-a"><span className="s2-ic">🎯</span><span className="s2-n">{s.avgAccuracy == null ? '—' : `${s.avgAccuracy}%`}</span><span className="s2-l">Accuracy</span></div>
+                <div className="s2-tile s2-m"><span className="s2-ic">🧪</span><span className="s2-n">{s.mockExamsTaken}</span><span className="s2-l">Mocks</span></div>
+              </div>
 
-              {/* RIGHT COLUMN — recent activity timeline */}
-              <section className="prog-main">
-                <div className="rail-card">
-                  <div className="eyebrow">🕑 Recent activity</div>
-                  {data.activity.length === 0 ? (
-                    <div className="muted act-empty">No activity yet — complete a set to see it here.</div>
-                  ) : (
-                    <ol className="timeline">
-                      {data.activity.map((ev) => {
-                        const isBadge = ev.type === 'badge';
-                        const cv = catVis(ev.category);
-                        const icon = isBadge ? '🏅' : ev.type === 'exam' ? '🧪' : '📘';
-                        return (
-                          <li key={`${ev.type}-${ev.id}`} className="tl-item">
-                            <span className="tl-node" style={{ background: isBadge ? 'var(--tint-amber, #fff3db)' : cv.tint }} aria-hidden>{icon}</span>
-                            <div className="tl-body">
-                              <div className="tl-top">
-                                <span className="tl-title">{ev.title}</span>
-                                <span className="tl-day">{ev.dayLabel}</span>
-                              </div>
-                              <div className="tl-meta">
-                                {isBadge ? (
-                                  <span className="tl-tag" style={{ background: 'var(--tint-amber, #fff3db)', color: 'var(--amber, #d9902a)' }}>Badge earned</span>
-                                ) : (
-                                  <>
-                                    {ev.category && (
-                                      <span className="tl-tag" style={{ background: cv.tint, color: cv.color }}>{cv.name}</span>
-                                    )}
-                                    {ev.accuracyPct != null && (
-                                      <span className={`tl-acc ${accuracyClass(ev.accuracyPct)}`}>{ev.accuracyPct}%</span>
-                                    )}
-                                    {ev.questions != null && <span className="tl-sub">· {ev.questions} Q</span>}
-                                    {ev.timeMinutes != null && <span className="tl-sub">· {ev.timeMinutes} min</span>}
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  )}
+              {/* ROW 2 — readiness bars (2fr) + exams (1fr) */}
+              <div className="rail-card p3-readiness">
+                <div className="eyebrow">🚀 Readiness</div>
+                <div className="rdy-list">
+                  {s.readiness.map((r) => {
+                    const cv = catVis(r.category);
+                    const pct = r.pct ?? 0;
+                    return (
+                      <div key={r.category} className="rdy-row">
+                        <span className="rdy-name">{cv.name}</span>
+                        <div className="rdy-track">
+                          <div className="rdy-fill" style={{ width: `${pct}%`, background: cv.color }} />
+                        </div>
+                        <span className="rdy-pct">{r.pct == null ? '—' : `${r.pct}%`}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              </section>
+              </div>
+
+              <div className="rail-card p3-exams">
+                <div className="eyebrow">📝 CCAT exams</div>
+                {s.exams.attempts === 0 ? (
+                  <div className="muted exams-empty">No exams taken yet — try a timed mock!</div>
+                ) : (
+                  <div className="exams-stats">
+                    <div className="ex-row"><span className="ex-l">Last score</span><strong>{s.exams.lastScore ? `${s.exams.lastScore.score}/${s.exams.lastScore.total}` : '—'}</strong></div>
+                    <div className="ex-row"><span className="ex-l">Best accuracy</span><strong>{s.exams.bestAccuracyPct == null ? '—' : `${s.exams.bestAccuracyPct}%`}</strong></div>
+                    <div className="ex-row"><span className="ex-l">Attempts</span><strong>{s.exams.attempts}</strong></div>
+                  </div>
+                )}
+              </div>
+
+              {/* ROW 3 — by category & topic (full width) */}
+              <div className="rail-card p3-breakdown">
+                <div className="eyebrow">🧠 By category &amp; topic</div>
+                <div className="bd-cats">
+                  {data.breakdown.map((c) => {
+                    const cv = catVis(c.category);
+                    return (
+                      <details key={c.category} className="bd-cat" style={{ ['--cat' as any]: cv.color }}>
+                        <summary className="bd-summary">
+                          <span className="bd-cat-dot" style={{ background: cv.color }} aria-hidden />
+                          <span className="bd-cat-name">{cv.name}</span>
+                          <span className="bd-cat-acc">{c.accuracyPct == null ? '—' : `${c.accuracyPct}%`}</span>
+                          <span className="bd-chev" aria-hidden>▾</span>
+                        </summary>
+                        {c.topics.length === 0 ? (
+                          <div className="muted bd-empty">No practice in this category yet.</div>
+                        ) : (
+                          <div className="bd-topics">
+                            {c.topics.map((t) => (
+                              <div key={t.subcategory} className="bd-topic">
+                                <div className="bt-name">{t.subcategory}</div>
+                                <div className="bt-metrics">
+                                  <span className="bt-m"><span className="bt-k">Accuracy</span>{t.accuracyPct == null ? '—' : `${t.accuracyPct}%`}</span>
+                                  <span className="bt-m"><span className="bt-k">Avg time/q</span>{t.avgSecondsPerQuestion == null ? '—' : `${t.avgSecondsPerQuestion}s`}</span>
+                                  <span className="bt-m"><span className="bt-k">Completion</span>{t.completionPct == null ? '—' : `${t.completionPct}%`}</span>
+                                  <span className="bt-m"><span className="bt-k">Questions</span>{t.questionsDone}</span>
+                                  <span className="bt-m"><span className="bt-k">Best streak</span>🔥 {t.bestStreak}</span>
+                                  <span className="bt-m"><span className="bt-k">Last practised</span>{t.lastPractisedLabel}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </details>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           );
         })()}
