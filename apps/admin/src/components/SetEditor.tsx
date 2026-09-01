@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from './ui';
 import { BulkImport } from './BulkImport';
+import { RenameSetName } from './RenameSetName';
 
 // One shared, Google-Forms-style question editor for BOTH practice sets and exam-paper batteries.
 // Opens as a full-height drawer over the Content page. Collects ONE or MANY question cards and saves
@@ -49,6 +50,20 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bulk, setBulk] = useState(!!openBulk);
+  // Sibling set names in the same subcategory + difficulty (lowercased, excluding this set) — for the
+  // rename uniqueness check. Fetched once; refreshed after a rename.
+  const [siblingNames, setSiblingNames] = useState<Set<string>>(new Set());
+  const loadSiblings = async () => {
+    try {
+      const r = await api.sets();
+      const mine = (r.items || []).find((x: any) => x.id === setId);
+      if (!mine) return;
+      setSiblingNames(new Set((r.items || [])
+        .filter((x: any) => x.subcategory_id === mine.subcategory_id && x.difficulty_key === mine.difficulty_key && x.state !== 'retired' && x.id !== setId)
+        .map((x: any) => String(x.name || '').trim().toLowerCase())));
+    } catch { /* rename still works; uniqueness is best-effort client-side */ }
+  };
+  useEffect(() => { loadSiblings(); }, [setId]); // eslint-disable-line
 
   const isExam = !!set?.allowed_exam;
   const scopeCat = scopeCategoryId;
@@ -226,13 +241,20 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   const close = () => { if (dirty && !confirm('Discard unsaved changes?')) return; onClose(); };
 
   const activeCount = cards.filter(c => c.active && !cardIssues(c)).length;
-  const title = set ? (isExam ? `${set.name} — ${scopeLabel ?? 'Battery'}` : set.name) : 'Loading…';
 
   return (
     <div className="editordrawer" role="dialog" aria-label="Question editor">
       <div className="edhead">
         <div>
-          <div className="edtitle">{title}</div>
+          <div className="edtitle">
+            {set ? (
+              <RenameSetName setId={setId} name={set.name} existingNames={siblingNames}
+                onRenamed={(nm) => { setSet((s: any) => ({ ...s, name: nm })); loadSiblings(); onSaved?.(); }}>
+                <span>{set.name}</span>
+              </RenameSetName>
+            ) : 'Loading…'}
+            {set && isExam && <span> — {scopeLabel ?? 'Battery'}</span>}
+          </div>
           <div className="edsub muted">{set && (<>{isExam ? 'Exam battery' : 'Practice set'} · Grade {set.grade_number} · {set.category}{set.subcategory ? ` / ${set.subcategory}` : ''} · <b>{set.state}</b> · {cards.length} card{cards.length === 1 ? '' : 's'} ({activeCount} publish-ready)</>)}</div>
         </div>
         <div className="edactions">

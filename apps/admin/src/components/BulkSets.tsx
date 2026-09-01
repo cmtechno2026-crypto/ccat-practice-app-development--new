@@ -18,26 +18,15 @@ import { SAMPLE } from './BulkImport';
 export const MAX_QUESTIONS_PER_SET = 15;
 const SAMPLE_FILE = SAMPLE + '\n';
 
-// Spreadsheet-style label: 1→A … 26→Z, 27→AA, 28→AB … (used for "Set A", "Set B", …).
-function idxToLabel(n: number): string {
-  let s = '';
-  while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
-  return s;
-}
-// Pick `count` set labels not already used in this subcategory+difficulty, skipping taken letters and
-// rolling over to double letters (AA, AB, …) past Z. Returns the labels and whether doubles were needed.
-function assignLabels(count: number, used: Set<string>): { labels: string[]; usedDouble: boolean } {
-  const labels: string[] = [];
-  let idx = 0;
-  let usedDouble = false;
-  while (labels.length < count) {
-    idx++;
-    const label = idxToLabel(idx);
-    if (used.has(label.toUpperCase())) continue;
-    if (label.length > 1) usedDouble = true;
-    labels.push(label);
-  }
-  return { labels, usedDouble };
+// Sets are named "Set 1", "Set 2", … — the default name for the Nth generated set. Single source of truth.
+const defaultSetName = (n: number) => `Set ${n}`;
+// Pick `count` set NUMBERS not already used in this subcategory+difficulty: start at the lowest free number
+// and increment, skipping taken ones. The design range is 1–100 but it never fails past 100.
+function assignNumbers(count: number, used: Set<number>): number[] {
+  const out: number[] = [];
+  let n = 0;
+  while (out.length < count) { n++; if (!used.has(n)) out.push(n); }
+  return out;
 }
 
 type Ctx = { gradeId: string; catId: string; subId: string; diffId: string; qType: string;
@@ -62,30 +51,62 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   const [progress, setProgress] = useState('');
   const [created, setCreated] = useState<Created[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [names, setNames] = useState<string[]>([]); // editable per-set names in the preview
   const fileRef = useRef<HTMLInputElement>(null);
 
   const ctxLine = `Grade ${ctx.gradeNumber} · ${ctx.categoryName} · ${ctx.subcategoryName} · ${ctx.difficultyLabel}`;
 
-  // Letters already used by existing "Set X" names in the SAME subcategory + difficulty.
-  const usedLetters = useMemo(() => {
-    const used = new Set<string>();
+  // Numbers already used by existing "Set N" names in the SAME subcategory + difficulty (retired sets free
+  // their number). New sets start at the lowest free number.
+  const usedNumbers = useMemo(() => {
+    const used = new Set<number>();
     for (const s of existingSets) {
       if (s.subcategory_id !== ctx.subId || s.difficulty_key !== ctx.diffKey) continue;
-      if (s.state === 'retired') continue; // a retired set's letter is free to reuse
-      const m = /^Set\s+([A-Za-z]+)$/.exec((s.name ?? '').trim());
-      if (m) used.add(m[1].toUpperCase());
+      if (s.state === 'retired') continue;
+      const m = /^Set\s+(\d+)$/.exec((s.name ?? '').trim());
+      if (m) used.add(Number(m[1]));
     }
     return used;
   }, [existingSets, ctx.subId, ctx.diffKey]);
 
-  // Split parsed questions (order preserved) into chunks of ≤ MAX, and assign collision-free names.
+  // Every existing set NAME in the same subcategory + difficulty (lowercased) — for the uniqueness check on
+  // edited names. Retired sets free their name too.
+  const existingNames = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of existingSets) {
+      if (s.subcategory_id !== ctx.subId || s.difficulty_key !== ctx.diffKey) continue;
+      if (s.state === 'retired') continue;
+      if (s.name) set.add(String(s.name).trim().toLowerCase());
+    }
+    return set;
+  }, [existingSets, ctx.subId, ctx.diffKey]);
+
+  // Split parsed questions (order preserved) into chunks of ≤ MAX, and assign collision-free set numbers.
   const plan = useMemo(() => {
     if (!cards || !cards.length) return null;
     const chunks: ImportCard[][] = [];
     for (let i = 0; i < cards.length; i += MAX_QUESTIONS_PER_SET) chunks.push(cards.slice(i, i + MAX_QUESTIONS_PER_SET));
-    const { labels, usedDouble } = assignLabels(chunks.length, usedLetters);
-    return { chunks, labels, usedDouble, total: cards.length };
-  }, [cards, usedLetters]);
+    const numbers = assignNumbers(chunks.length, usedNumbers);
+    return { chunks, numbers, total: cards.length };
+  }, [cards, usedNumbers]);
+
+  // Per-row validation of the (editable) names: non-empty, unique within the batch, no collision with an
+  // existing set name in this subcategory + difficulty. Returns an error string per row (null = ok).
+  const nameErrors = useMemo(() => {
+    const errs: (string | null)[] = names.map(() => null);
+    const seen = new Map<string, number>();
+    names.forEach((raw, i) => {
+      const nm = raw.trim();
+      if (!nm) { errs[i] = 'Name required'; return; }
+      const key = nm.toLowerCase();
+      if (existingNames.has(key)) { errs[i] = 'A set with this name already exists here'; return; }
+      if (seen.has(key)) { errs[i] = 'Duplicate name in this batch'; return; }
+      seen.set(key, i);
+    });
+    return errs;
+  }, [names, existingNames]);
+  const hasNameError = nameErrors.some(e => !!e);
+  const startPreview = () => { if (plan) setNames(plan.numbers.map(defaultSetName)); setStep('preview'); };
 
   const runParse = (src: string, imgs: Map<string, BulkImage>) => {
     const res = parseImportText(src);
@@ -138,6 +159,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   const confirmCreate = async () => {
     if (!plan || !cards) return;
     if (match && match.missing.length) { setFileErr(`${match.missing.length} referenced image(s) are missing from the ZIP — fix before creating.`); return; }
+    if (hasNameError) { setFileErr('Fix the set names flagged below before creating.'); return; }
     setBusy(true); setErrors(null); setFileErr('');
     const done: Created[] = [];
     try {
@@ -153,7 +175,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
       const chunks: ImportCard[][] = [];
       for (let i = 0; i < resolved.length; i += MAX_QUESTIONS_PER_SET) chunks.push(resolved.slice(i, i + MAX_QUESTIONS_PER_SET));
       for (let i = 0; i < chunks.length; i++) {
-        const name = `Set ${plan.labels[i]}`;
+        const name = (names[i] ?? defaultSetName(plan.numbers[i])).trim();
         setProgress(`Creating ${name} (${i + 1}/${chunks.length})…`);
         const r = await api.createSet({ name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
         await api.authorSet(r.set_version_id, chunks[i].map(cardToPayload));
@@ -200,10 +222,10 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
           : undefined}
         footer={step === 'input' ? (
           <><button className="btn ghost grow" onClick={onClose}>Cancel</button>
-            <button className="btn grow" disabled={!cards || !cards.length || !!(match && match.missing.length)} onClick={() => setStep('preview')}>Preview split{cards && cards.length ? ` (${cards.length} questions)` : ''}</button></>
+            <button className="btn grow" disabled={!cards || !cards.length || !!(match && match.missing.length)} onClick={startPreview}>Preview split{cards && cards.length ? ` (${cards.length} questions)` : ''}</button></>
         ) : step === 'preview' ? (
           <><button className="btn ghost grow" onClick={() => setStep('input')} disabled={busy}>← Back</button>
-            <button className="btn grow" disabled={busy || !plan} onClick={confirmCreate}>{busy ? (progress || 'Creating…') : `Create ${plan?.chunks.length ?? 0} draft set${(plan?.chunks.length ?? 0) === 1 ? '' : 's'}`}</button></>
+            <button className="btn grow" disabled={busy || !plan || hasNameError} onClick={confirmCreate}>{busy ? (progress || 'Creating…') : `Create ${plan?.chunks.length ?? 0} draft set${(plan?.chunks.length ?? 0) === 1 ? '' : 's'}`}</button></>
         ) : (
           <><button className="btn ghost grow" onClick={onClose}>Done</button>
             <button className="btn grow" disabled={busy || !created.length} onClick={publishAll}>{busy ? 'Publishing…' : 'Publish all'}</button></>
@@ -286,18 +308,24 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
         {step === 'preview' && plan && (
           <>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>{plan.total} questions → {plan.chunks.length} set{plan.chunks.length === 1 ? '' : 's'}</div>
-            <div style={{ maxHeight: 300, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Edit any set name below before creating. Names must be unique here.</div>
+            <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
               {plan.chunks.map((ch, i) => {
                 const full = ch.length >= MAX_QUESTIONS_PER_SET;
                 return (
-                  <div key={i} className="pickrow" style={{ justifyContent: 'space-between' }}>
-                    <div><b>Set {plan.labels[i]}</b> <span className="muted" style={{ fontSize: 12 }}>· {ctx.subcategoryName} · {ctx.difficultyLabel}</span></div>
+                  <div key={i} className="pickrow" style={{ justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+                      <input value={names[i] ?? ''} aria-label={`Set ${i + 1} name`}
+                        onChange={e => setNames(ns => ns.map((v, j) => j === i ? e.target.value : v))}
+                        style={{ width: 150, fontSize: 14, padding: '4px 8px', borderColor: nameErrors[i] ? 'var(--coral)' : undefined }} />
+                      <span className="muted" style={{ fontSize: 12 }}>· {ctx.subcategoryName} · {ctx.difficultyLabel}</span>
+                      {nameErrors[i] && <span className="err" style={{ fontSize: 12 }}>{nameErrors[i]}</span>}
+                    </div>
                     <div className="tabnum" style={{ fontWeight: 700, color: full ? 'var(--green)' : 'var(--amber)' }}>{ch.length} / {MAX_QUESTIONS_PER_SET}{full ? '' : ' (partial)'}</div>
                   </div>
                 );
               })}
             </div>
-            {plan.usedDouble && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>More than 26 names needed — continued with double letters (Set AA, AB, …).</div>}
             <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>The last set may be partial. After creating, open it to add questions before publishing, or leave it as a draft. Nothing is saved until you press Create.</div>
           </>
         )}

@@ -7,6 +7,7 @@ import { CreateSet } from '../components/SetsView';
 import { QuestionEditor } from '../components/QuestionEditor';
 import { SetEditor } from '../components/SetEditor';
 import { BulkSets, MAX_QUESTIONS_PER_SET } from '../components/BulkSets';
+import { RenameSetName } from '../components/RenameSetName';
 
 const slugKey = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
@@ -169,7 +170,12 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
                   const barc = s.question_count >= target ? 'var(--green)' : s.question_count >= 5 ? 'var(--amber)' : 'var(--coral)';
                   return (
                     <tr key={s.id} className={s.state === 'retired' ? 'row-retired' : ''}>
-                      <td><button className="linklike" style={{ fontWeight: 700 }} onClick={() => setEditSet({ id: s.id })}>{s.name}</button>
+                      <td>
+                        <RenameSetName setId={s.id} name={s.name}
+                          existingNames={new Set((sets || []).filter(x => x.subcategory_id === s.subcategory_id && x.difficulty_key === s.difficulty_key && x.state !== 'retired' && x.id !== s.id).map(x => String(x.name || '').trim().toLowerCase()))}
+                          onRenamed={() => load()}>
+                          <button className="linklike" style={{ fontWeight: 700 }} onClick={() => setEditSet({ id: s.id })}>{s.name}</button>
+                        </RenameSetName>
                         <div className="muted" style={{ fontSize: 12 }}>{cap(s.difficulty_key || 'medium')} · v{s.version_number} · {[s.allowed_practice && 'practice', s.allowed_exam && 'exam'].filter(Boolean).join(' + ') || 'practice'}</div></td>
                       <td style={{ minWidth: 130 }}>
                         <div className="tabnum" style={{ fontWeight: 700, color: barc }}>{s.question_count} / {target}</div>
