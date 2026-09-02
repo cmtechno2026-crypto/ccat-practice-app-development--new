@@ -743,8 +743,12 @@ p { line-height: 1.5; }
 .sd-quantitative { background: linear-gradient(180deg, #e6f7f1, var(--card) 78%); --accent: #22c3a6; }
 .sd-non_verbal   { background: linear-gradient(180deg, #f3ecfb, var(--card) 78%); --accent: #8b5cf6; }
 .sd-total        { background: linear-gradient(180deg, #fff3db, var(--card) 78%); --accent: #f6a821; }
-/* battery metric boxes: a distinct pastel quartet (Accuracy mint · Score sky · Total Q peach · Avg lavender) */
-.bt-acc   { background: linear-gradient(180deg, #e6f7ef, var(--bg, #f7f8fb) 82%); --accent: #16a883; }
-.bt-score { background: linear-gradient(180deg, #e7f0ff, var(--bg, #f7f8fb) 82%); --accent: #3e7bee; }
-.bt-tq    { background: linear-gradient(180deg, #fdeee1, var(--bg, #f7f8fb) 82%); --accent: #ef8f4c; }
-.bt-avg   { background: linear-gradient(180deg, #efe9fb, var(--bg, #f7f8fb) 82%); --accent: #8b5cf6; }
+/* battery metric boxes — Option 1: solid tints + top accent bar + colour-matched numbers */
+.bt-acc   { background: #d8f3e6; --accent: #10b981; }
+.bt-score { background: #dbe8ff; --accent: #3b82f6; }
+.bt-tq    { background: #ffe9d1; --accent: #f59e0b; }
+.bt-avg   { background: #ece1ff; --accent: #8b5cf6; }
+.bt-acc   .btb-n { color: #0f766e; }
+.bt-score .btb-n { color: #1d4ed8; }
+.bt-tq    .btb-n { color: #b45309; }
+.bt-avg   .btb-n { color: #6d28d9; }
