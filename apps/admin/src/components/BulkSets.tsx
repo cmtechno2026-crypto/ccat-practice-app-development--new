@@ -19,7 +19,9 @@ import { FORMAT_TEXT, SAMPLE_FILE_TEXT } from './BulkImport';
 // field is absent — never hard-code 15/45 at a call site; resolve the cap with maxQuestionsForSub / ctx.maxPerSet.
 export const DEFAULT_MAX_QUESTIONS_PER_SET = 15;
 export function maxQuestionsForSub(sub: any): number {
-  const n = Number(sub?.maxQuestionsPerSet);
+  // Accept either key spelling the gateway may send: camelCase maxQuestionsPerSet or snake_case
+  // max_questions_per_set. Fall back to the default when neither is a positive number.
+  const n = Number(sub?.maxQuestionsPerSet ?? sub?.max_questions_per_set);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_QUESTIONS_PER_SET;
 }
 

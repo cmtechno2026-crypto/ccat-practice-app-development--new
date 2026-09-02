@@ -34,6 +34,29 @@ const AVATAR_MAX_BYTES = 3 * 1024 * 1024; // 3 MB — generous for a 512² PNG, 
 const QIMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const QIMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
+// Bulk-add batch upload (many figures in ONE request). Named, tunable limits — the admin splits large
+// uploads into ~8 MB chunks client-side; the work is per-image storage round-trips, so uploads run with
+// BOUNDED concurrency and the content_assets rows land in ONE multi-row insert.
+const BATCH_MAX_IMAGES = 400;                    // images per request
+const BATCH_MAX_IMAGE_BYTES = 3 * 1024 * 1024;   // ≤ 3 MB per image (png/jpg/jpeg/webp)
+const BATCH_TOTAL_MAX_BYTES = 50 * 1024 * 1024;  // ≤ 50 MB decoded per request
+const STORAGE_UPLOAD_CONCURRENCY = 10;           // bounded concurrent storage puts (avoid rate-limiting)
+
+// Run `fn` over `items` with at most `limit` promises in flight at once (bounded concurrency). Order preserved.
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]!, i);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 // PNG signature + IHDR width/height. Returns null when the bytes are not a valid PNG.
 function pngDimensions(bytes: Buffer): { width: number; height: number } | null {
   const SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -122,6 +145,90 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     await db.query('update ccat.content_assets set public_url=$2 where id=$1', [id, url]);
     await audit(db, req, 'content.asset.uploaded', 'content_asset', id, b.constraint ?? b.mime_type);
     return { id, url };
+  });
+
+  // BATCH upload content figures — for bulk-add with figures (up to BATCH_MAX_IMAGES per request; the admin
+  // sends size-bounded chunks). Same StorageService path + content_assets schema as the single endpoint:
+  //   1) validate + decode EVERY image first — over any limit → reject BEFORE any upload (nothing half-lands);
+  //   2) de-dupe identical bytes by checksum — each unique blob is stored + inserted once, reused by all refs;
+  //   3) upload the unique blobs to storage with BOUNDED concurrency (STORAGE_UPLOAD_CONCURRENCY);
+  //   4) insert all rows in ONE multi-row insert, then set public_url in one statement (atomic in a txn);
+  //   5) if any storage put fails, fail the whole request and report which images — never a half-imported set.
+  const assetBatchSchema = z.object({
+    images: z.array(z.object({
+      mime_type: z.string().min(1),
+      data_base64: z.string().min(1),
+      alt_text: z.string().max(500).optional(),
+    })).min(1).max(BATCH_MAX_IMAGES),
+  });
+  app.post('/v1/admin/content/assets/batch', guard, async (req) => {
+    const t0 = Date.now();
+    const b = assetBatchSchema.parse(req.body);
+    requirePermission(req, 'content.create');
+
+    type Prep = { key: string; bytes: Buffer; mime: string; checksum: string; width: number | null; height: number | null; alt: string | null; label: string };
+    const preps: Prep[] = [];
+    let total = 0;
+    b.images.forEach((img, i) => {
+      const label = img.alt_text?.trim() || `#${i + 1}`;
+      if (!QIMAGE_TYPES.has(img.mime_type)) throw Errors.validation(`Image ${label} must be a PNG, JPG, or WEBP file`);
+      const rawB64 = img.data_base64.includes(',') ? img.data_base64.slice(img.data_base64.indexOf(',') + 1) : img.data_base64;
+      let bytes: Buffer;
+      try { bytes = Buffer.from(rawB64, 'base64'); } catch { throw Errors.validation(`Image ${label} is not valid base64`); }
+      if (bytes.length === 0) throw Errors.validation(`Image ${label} is empty`);
+      if (bytes.length > BATCH_MAX_IMAGE_BYTES) throw Errors.validation(`Image ${label} is too large (max 3 MB)`);
+      total += bytes.length;
+      const checksum = createHash('sha256').update(bytes).digest('hex');
+      const dim = pngDimensions(bytes);
+      const ext = img.mime_type === 'image/png' ? 'png' : (img.mime_type.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '');
+      preps.push({ key: `content/${randomUUID()}.${ext}`, bytes, mime: img.mime_type, checksum, width: dim?.width ?? null, height: dim?.height ?? null, alt: img.alt_text ?? null, label });
+    });
+    if (total > BATCH_TOTAL_MAX_BYTES) throw Errors.validation('Max 400 images / 50 MB per upload — split into more zips.');
+
+    const uniqueByChecksum = new Map<string, Prep>();
+    for (const p of preps) if (!uniqueByChecksum.has(p.checksum)) uniqueByChecksum.set(p.checksum, p);
+    const uniqueList = [...uniqueByChecksum.values()];
+
+    const failures: string[] = [];
+    await mapPool(uniqueList, STORAGE_UPLOAD_CONCURRENCY, async (p) => {
+      try { await storage.put(p.key, p.bytes, p.mime); }
+      catch (e) { failures.push(`${p.label}: ${(e as Error).message}`); }
+    });
+    if (failures.length)
+      throw new AppError(502, 'STORAGE_UPLOAD_FAILED',
+        `${failures.length} image(s) failed to store (driver "${storage.driver}"): ${failures.slice(0, 10).join('; ')}${failures.length > 10 ? ` …and ${failures.length - 10} more` : ''}`);
+
+    const assetByChecksum = new Map<string, { id: string; url: string }>();
+    await withTransaction(db, async (c) => {
+      const params: unknown[] = [];
+      const rowsSql = uniqueList.map((p, i) => {
+        const o = i * 8;
+        params.push(p.key, p.mime, p.bytes.length, p.checksum, p.width, p.height, p.alt, req.admin!.adminId);
+        return `($${o + 1},$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6},$${o + 7},$${o + 8})`;
+      }).join(',');
+      const ins = await c.query(
+        `insert into ccat.content_assets(storage_key,mime_type,byte_size,checksum_sha256,width,height,alt_text,created_by)
+         values ${rowsSql} returning id, storage_key`, params);
+      const idByKey = new Map<string, string>();
+      for (const r of ins.rows) idByKey.set(r.storage_key as string, r.id as string);
+      const ids: string[] = [], urls: string[] = [];
+      for (const p of uniqueList) {
+        const id = idByKey.get(p.key)!;
+        const url = storage.publicUrl(p.key) ?? `/v1/assets/${id}`;
+        assetByChecksum.set(p.checksum, { id, url });
+        ids.push(id); urls.push(url);
+      }
+      await c.query(
+        `update ccat.content_assets a set public_url = v.url
+           from unnest($1::uuid[], $2::text[]) as v(id, url) where a.id = v.id`, [ids, urls]);
+    });
+
+    const assets = preps.map(p => assetByChecksum.get(p.checksum)!);
+    const elapsedMs = Date.now() - t0;
+    await audit(db, req, 'content.asset.batch_uploaded', 'content_asset', assets[0]!.id,
+      `${assets.length} images (${uniqueList.length} unique), ${elapsedMs}ms`);
+    req.log.info({ count: assets.length, unique: uniqueList.length, elapsed_ms: elapsedMs }, 'bulk asset batch imported');
+    return { assets, count: assets.length, unique: uniqueList.length, elapsed_ms: elapsedMs };
   });
 
   // PUBLIC asset serve (no auth — <img> tags can't send a bearer token). Redirects to the absolute
