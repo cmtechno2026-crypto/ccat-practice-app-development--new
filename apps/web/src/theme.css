@@ -721,3 +721,30 @@ p { line-height: 1.5; }
 .appbar .inner { flex-wrap: nowrap; }
 .appbar .inner > div[style] { min-width: 0; }
 .appbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ============================================================================
+   P1 polish — header aligned to content column + colourful metric boxes
+   ========================================================================== */
+/* Header (wide): align the inner content to the same 1240px column + side padding as .content-wide,
+   so Back is hard-left over "DATE RANGE" and the avatar hard-right over the right card. */
+.appbar:has(.inner-wide) { padding-left: 0; padding-right: 0; }
+.appbar .inner-wide { box-sizing: border-box; max-width: 1240px; margin: 0 auto; padding: 0 28px; }
+@media (max-width: 600px) { .appbar .inner-wide { padding: 0 16px; } }
+
+/* Colourful "sets done" boxes (one per battery + Total) and Battery-test metric boxes — light shades
+   with a thin accent bar on top. Numbers stay ink for readability. */
+.p1-setsdone .sd-box, .p1-battery .bt-box { position: relative; overflow: hidden; }
+.p1-setsdone .sd-box::before, .p1-battery .bt-box::before {
+  content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 4px;
+  background: var(--accent, var(--primary)); opacity: .9;
+}
+/* sets-done: battery-identity colours (Verbal blue · Quant teal · Non-verbal purple · Total amber) */
+.sd-verbal       { background: linear-gradient(180deg, #eaf0ff, var(--card) 78%); --accent: #3e7bee; }
+.sd-quantitative { background: linear-gradient(180deg, #e6f7f1, var(--card) 78%); --accent: #22c3a6; }
+.sd-non_verbal   { background: linear-gradient(180deg, #f3ecfb, var(--card) 78%); --accent: #8b5cf6; }
+.sd-total        { background: linear-gradient(180deg, #fff3db, var(--card) 78%); --accent: #f6a821; }
+/* battery metric boxes: a distinct pastel quartet (Accuracy mint · Score sky · Total Q peach · Avg lavender) */
+.bt-acc   { background: linear-gradient(180deg, #e6f7ef, var(--bg, #f7f8fb) 82%); --accent: #16a883; }
+.bt-score { background: linear-gradient(180deg, #e7f0ff, var(--bg, #f7f8fb) 82%); --accent: #3e7bee; }
+.bt-tq    { background: linear-gradient(180deg, #fdeee1, var(--bg, #f7f8fb) 82%); --accent: #ef8f4c; }
+.bt-avg   { background: linear-gradient(180deg, #efe9fb, var(--bg, #f7f8fb) 82%); --accent: #8b5cf6; }

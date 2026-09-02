@@ -40,12 +40,14 @@ export function Figure({ url, blocks, kind, alt }: { url?: string | null; blocks
   );
 }
 
-export function AppBar({ title, sub, back, right }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode }) {
+export function AppBar({ title, sub, back, right, wide }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; wide?: boolean }) {
   const nav = useNavigate();
   const { profile } = useApp();
   return (
     <div className="appbar">
-      <div className="inner">
+      {/* `wide` aligns the header's inner content to the same column as `.content-wide` pages (Progress),
+          so Back sits hard-left and the avatar hard-right, in line with the page body. */}
+      <div className={`inner${wide ? ' inner-wide' : ''}`}>
         {back && <button className="iconbtn" aria-label="Back" onClick={() => nav(-1)}>‹</button>}
         <div style={{ flex: 1 }}>
           <h1>{title}</h1>

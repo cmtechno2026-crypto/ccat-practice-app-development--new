@@ -134,7 +134,7 @@ export function ProgressScreen() {
 
   return (
     <>
-      <AppBar title="Progress & Analytics" sub="Your real practice data" back />
+      <AppBar title="Progress & Analytics" sub="Your real practice data" back wide />
       <div className="content content-wide">
         {/* FILTER — date range only */}
         <div className="prog-filters" role="group" aria-label="Filters">
@@ -167,13 +167,13 @@ export function ProgressScreen() {
 
               <div className="p1-setsdone">
                 {batteries.map((b) => (
-                  <div key={b.key} className="sd-box">
+                  <div key={b.key} className={`sd-box sd-${b.key}`}>
                     <span className="sd-n">{b.setsDone}</span>
                     <span className="sd-l">{catVis(b.key).name}</span>
                     <span className="sd-sub">sets done</span>
                   </div>
                 ))}
-                <div className="sd-box">
+                <div className="sd-box sd-total">
                   <span className="sd-n">{totalSets}</span>
                   <span className="sd-l">Total</span>
                   <span className="sd-sub">sets done</span>
@@ -211,19 +211,19 @@ export function ProgressScreen() {
                     {active && (
                       <>
                         <div className="bt-boxes">
-                          <div className="bt-box">
+                          <div className="bt-box bt-acc">
                             <span className="btb-n">{active.accuracyPct == null ? '—' : `${active.accuracyPct}%`}</span>
                             <span className="btb-l">Accuracy</span>
                           </div>
-                          <div className="bt-box">
+                          <div className="bt-box bt-score">
                             <span className="btb-n">{active.score.total > 0 ? `${active.score.correct}/${active.score.total}` : '—'}</span>
                             <span className="btb-l">Score</span>
                           </div>
-                          <div className="bt-box">
+                          <div className="bt-box bt-tq">
                             <span className="btb-n">{active.totalQuestions || '—'}</span>
                             <span className="btb-l">Total Question</span>
                           </div>
-                          <div className="bt-box">
+                          <div className="bt-box bt-avg">
                             <span className="btb-n">{active.avgSecondsPerQuestion == null ? '—' : `${active.avgSecondsPerQuestion}s`}</span>
                             <span className="btb-l">Avg time/q</span>
                           </div>
