@@ -46,30 +46,47 @@ export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     await db.query('update ccat.student_credentials set failed_attempts = 0, locked_until = null where student_id = $1', [s.id]);
 
     // MULTI-DEVICE: a student may log in from ANY device, with no device-count limit and NO rejection on
-    // device mismatch (the former single-device enforcement is removed). We still RECORD/associate the
-    // device for audit + to bind the auth session to a device row. Find this (student_id, device_hash);
-    // if it's new, enrol it; otherwise mark it active and touch last_seen. PIN verify + lockout above are
-    // unchanged, so credential/child-safety checks are unaffected — only the device restriction is dropped.
-    let deviceId: string;
-    const existing = await db.query(
-      `select id from ccat.student_devices where student_id = $1 and device_hash = $2
-        order by (status = 'active') desc, created_at desc limit 1`,
-      [s.id, body.device_hash],
+    // device mismatch (the former single-device enforcement is removed). We bind the auth session to a
+    // device row (the request middleware requires that row to be 'active'). TRUE concurrent multi-device
+    // needs migration 0038, which drops the `student_devices_one_active` unique index. Until that index is
+    // gone it allows only one active device per student, so activating a second device raises 23505 — we
+    // MUST NOT 500 there: we fall back to ROTATION (revoke the other active device(s), then activate this
+    // one) so login from a new device still succeeds. PIN verify + lockout above are unchanged.
+    const activateExisting = (deviceId: string) => db.query(
+      `update ccat.student_devices set status='active', last_seen_at=now(),
+              enrolled_at=coalesce(enrolled_at, now()), updated_at=now() where id=$1`,
+      [deviceId],
     );
-    if (existing.rows.length > 0) {
-      deviceId = existing.rows[0]!.id;
-      await db.query(
-        `update ccat.student_devices set status='active', last_seen_at=now(),
-                enrolled_at=coalesce(enrolled_at, now()), updated_at=now() where id=$1`,
-        [deviceId],
-      );
-    } else {
+    const insertActive = async (): Promise<string> => {
       const ins = await db.query(
         `insert into ccat.student_devices(student_id, device_hash, status, enrolled_at, last_seen_at)
          values ($1,$2,'active',now(),now()) returning id`,
         [s.id, body.device_hash],
       );
-      deviceId = ins.rows[0]!.id;
+      return ins.rows[0]!.id as string;
+    };
+    const existing = await db.query(
+      `select id from ccat.student_devices where student_id = $1 and device_hash = $2
+        order by (status = 'active') desc, created_at desc limit 1`,
+      [s.id, body.device_hash],
+    );
+    const existingId = existing.rows.length > 0 ? (existing.rows[0]!.id as string) : null;
+    let deviceId: string;
+    try {
+      if (existingId) { await activateExisting(existingId); deviceId = existingId; }
+      else { deviceId = await insertActive(); }
+    } catch (e: any) {
+      if (e?.code !== '23505') throw e;
+      // one-active unique index still present (migration 0038 not yet applied) → rotate: revoke the
+      // student's other active device(s), then activate/insert this one. No login rejection, no 500.
+      await db.query(
+        `update ccat.student_devices set status='revoked', revoked_at=now(),
+                revoked_reason='device_rotation', updated_at=now()
+          where student_id=$1 and status='active' and device_hash <> $2`,
+        [s.id, body.device_hash],
+      );
+      if (existingId) { await activateExisting(existingId); deviceId = existingId; }
+      else { deviceId = await insertActive(); }
     }
 
     const refresh = newRefreshToken();

@@ -125,7 +125,10 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
         session_version: row.session_version, started_at: row.started_at, deadline_at: row.deadline_at,
       };
     } catch (e: any) {
-      if (e?.code === '23505') throw Errors.activeSessionExists();
+      // Multiple concurrent ("paused") sessions are allowed — migration 0037 dropped the
+      // sessions_one_in_progress unique index, so a second IN_PROGRESS insert no longer raises 23505.
+      // Starting a new set must NEVER be blocked by an existing paused set, so we do NOT map 23505 to
+      // ACTIVE_SESSION_EXISTS anymore (that was the "A learning session is already in progress" toast).
       throw e;
     }
   });
