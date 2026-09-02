@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
@@ -276,23 +277,44 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     }
     const out = await withTransaction(db, async (c) => {
       const authored: string[] = []; const authoredActive: boolean[] = [];
+      // NEW cards are batched (ids generated here so we don't depend on RETURNING order); EXISTING draft
+      // cards (q.id) are updated individually (usually none in bulk). This turns ~3 round-trips PER question
+      // into ~2 statements TOTAL — a 45-question set went from ~135 sequential queries (~21 s) to a handful,
+      // so a 12-set bulk create finishes in seconds instead of minutes (and no longer outlives the token).
+      const newCards: { lqId: string; qvId: string; q: typeof b.questions[number] }[] = [];
       for (const q of b.questions) {
-        let qvId = q.id;
-        if (qvId) {
-          const cur = await c.query('select state from ccat.question_versions where id=$1', [qvId]);
+        if (q.id) {
+          const cur = await c.query('select state from ccat.question_versions where id=$1', [q.id]);
           if (cur.rows.length === 0) throw Errors.notFound('Question not found');
           if (cur.rows[0]!.state !== 'draft') throw Errors.validation('Only draft questions can be edited; a published version is immutable (create a new version).');
           await c.query(`update ccat.question_versions set grade_id=$2,difficulty_id=$3,question_type=$4,prompt_blocks=$5,option_blocks=$6,correct_option_ids=$7,explanation_blocks=$8 where id=$1`,
-            [qvId, q.grade_id, q.difficulty_id, q.question_type, JSON.stringify(q.prompt_blocks), JSON.stringify(q.option_blocks), q.correct_option_ids, q.explanation_blocks ? JSON.stringify(q.explanation_blocks) : null]);
+            [q.id, q.grade_id, q.difficulty_id, q.question_type, JSON.stringify(q.prompt_blocks), JSON.stringify(q.option_blocks), q.correct_option_ids, q.explanation_blocks ? JSON.stringify(q.explanation_blocks) : null]);
+          authored.push(q.id); authoredActive.push(q.active);
         } else {
-          const lq = await c.query('insert into ccat.logical_questions(category_id,subcategory_id,created_by) values ($1,$2,$3) returning id', [q.category_id, q.subcategory_id, req.admin!.adminId]);
-          const qv = await c.query(`insert into ccat.question_versions(logical_question_id,version_number,grade_id,difficulty_id,question_type,prompt_blocks,option_blocks,correct_option_ids,explanation_blocks,state,provenance,created_by)
-             values ($1,1,$2,$3,$4,$5,$6,$7,$8,'draft',$9,$10) returning id`,
-            [lq.rows[0]!.id, q.grade_id, q.difficulty_id, q.question_type, JSON.stringify(q.prompt_blocks), JSON.stringify(q.option_blocks), q.correct_option_ids, q.explanation_blocks ? JSON.stringify(q.explanation_blocks) : null, JSON.stringify({ origin: 'human' }), req.admin!.adminId]);
-          qvId = qv.rows[0]!.id as string;
+          const lqId = randomUUID(); const qvId = randomUUID();
+          newCards.push({ lqId, qvId, q });
+          authored.push(qvId); authoredActive.push(q.active);
         }
-        authored.push(qvId); authoredActive.push(q.active);
       }
+
+      // Batch-insert the new logical questions, then their draft versions — one multi-row statement each.
+      if (newCards.length) {
+        const lqParams: unknown[] = [];
+        const lqVals = newCards.map((n, i) => { const o = i * 4; lqParams.push(n.lqId, n.q.category_id, n.q.subcategory_id, req.admin!.adminId); return `($${o + 1},$${o + 2},$${o + 3},$${o + 4})`; }).join(',');
+        await c.query(`insert into ccat.logical_questions(id,category_id,subcategory_id,created_by) values ${lqVals}`, lqParams);
+
+        const qvParams: unknown[] = [];
+        const qvVals = newCards.map((n, i) => {
+          const o = i * 11;
+          qvParams.push(n.qvId, n.lqId, n.q.grade_id, n.q.difficulty_id, n.q.question_type,
+            JSON.stringify(n.q.prompt_blocks), JSON.stringify(n.q.option_blocks), n.q.correct_option_ids,
+            n.q.explanation_blocks ? JSON.stringify(n.q.explanation_blocks) : null,
+            JSON.stringify({ origin: 'human' }), req.admin!.adminId);
+          return `($${o + 1},1,$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6}::jsonb,$${o + 7}::jsonb,$${o + 8}::text[],$${o + 9}::jsonb,'draft',$${o + 10}::jsonb,$${o + 11})`;
+        }).join(',');
+        await c.query(`insert into ccat.question_versions(id,version_number,logical_question_id,grade_id,difficulty_id,question_type,prompt_blocks,option_blocks,correct_option_ids,explanation_blocks,state,provenance,created_by) values ${qvVals}`, qvParams);
+      }
+
       // Preserve other batteries when authoring a single one (exam papers).
       let keepIds: string[] = []; let keepActive: boolean[] = [];
       if (b.scope_category_id) {
@@ -306,9 +328,11 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
       const finalIds = [...keepIds, ...authored]; const finalActive = [...keepActive, ...authoredActive];
       await c.query('update ccat.question_set_versions set question_count=$2 where id=$1', [id, finalIds.length]);
       await c.query('delete from ccat.set_version_questions where set_version_id=$1', [id]);
-      let pos = 1;
-      for (let i = 0; i < finalIds.length; i++)
-        await c.query('insert into ccat.set_version_questions(set_version_id,question_version_id,position,active) values ($1,$2,$3,$4)', [id, finalIds[i], pos++, finalActive[i]]);
+      if (finalIds.length) {
+        const svqParams: unknown[] = [];
+        const svqVals = finalIds.map((qid, i) => { const o = i * 4; svqParams.push(id, qid, i + 1, finalActive[i]); return `($${o + 1},$${o + 2},$${o + 3},$${o + 4})`; }).join(',');
+        await c.query(`insert into ccat.set_version_questions(set_version_id,question_version_id,position,active) values ${svqVals}`, svqParams);
+      }
       return { authored, count: finalIds.length };
     });
     await audit(db, req, 'content.set.authored', 'set_version', id, `${b.questions.length} card(s), ${out.count} total`);
