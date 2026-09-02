@@ -1,8 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { Grade } from '@ccat/api-client';
+import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AvatarControl } from './AvatarControl';
 import { resolveAssetUrl } from './Avatar';
+
+// Grades rarely change, so load the list once per app session and reuse it to resolve the student's
+// grade_id → a friendly "Grade N" label for the header pill (no gateway change; a small existing lookup).
+let gradesPromise: Promise<Grade[]> | null = null;
+function loadGrades(): Promise<Grade[]> {
+  if (!gradesPromise) gradesPromise = client.grades().catch(() => [] as Grade[]);
+  return gradesPromise;
+}
+function useGradeLabel(gradeId: string | null | undefined): string | null {
+  const [label, setLabel] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (!gradeId) { setLabel(null); return; }
+    loadGrades().then((gs) => {
+      if (!alive) return;
+      const g = gs.find((x) => x.id === gradeId);
+      setLabel(g ? `Grade ${g.grade_number}` : null);
+    });
+    return () => { alive = false; };
+  }, [gradeId]);
+  return label;
+}
 
 // ---- content figures (question/option images) -----------------------------
 // prompt_blocks / option content are block arrays: [{type:'text',value}, {type:'image',url,alt}, …].
@@ -43,6 +67,7 @@ export function Figure({ url, blocks, kind, alt }: { url?: string | null; blocks
 export function AppBar({ title, sub, back, right, wide }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; wide?: boolean }) {
   const nav = useNavigate();
   const { profile } = useApp();
+  const gradeLabel = useGradeLabel(profile?.grade_id);
   return (
     <div className="appbar">
       {/* `wide` aligns the header's inner content to the same column as `.content-wide` pages (Progress),
@@ -54,6 +79,8 @@ export function AppBar({ title, sub, back, right, wide }: { title: string; sub?:
           {sub && <div className="sub">{sub}</div>}
         </div>
         {right}
+        {/* Student's grade, resolved from grade_id → "Grade N", shown as a pill just left of the avatar. */}
+        {profile && gradeLabel && <span className="grade-pill">🎓 {gradeLabel}</span>}
         {/* Top-right avatar is a control: opens the avatar + theme management panel. Only on in-app pages (has profile). */}
         {profile ? <AvatarControl /> : <div className="avatar-chip" aria-hidden>🦊</div>}
       </div>
