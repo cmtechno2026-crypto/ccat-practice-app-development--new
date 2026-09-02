@@ -25,11 +25,14 @@ import type { DB } from '../db.js';
 // TIME / DURATION — the one honest limitation (verified against the live schema 2026-09-02):
 //   ccat.session_answers has NO per-attempt duration column (only attempts / updated_at / created_at),
 //   and sessions.duration_seconds is the TIMER CONFIG, not elapsed. So:
-//     • avgSecondsPerQuestion — NULL everywhere (per-question timing is not captured; never estimated).
+//     • avgSecondsPerQuestion — DERIVED, not a raw column: finished-attempt session wall-clock
+//       (terminal_at − started_at) ÷ questions answered (see avgPerQ). It is REAL timestamp data, but it
+//       is per-SET/session time spread over its questions — it includes reading and pauses and is not
+//       true per-question timing. null when there is no time or no answered questions. To get true
+//       per-question timing later, the practice client would send elapsed time per answer and the gateway
+//       would store it on session_answers; then avg = Σ per-answer time ÷ answers.
 //     • practiceTimeMinutes / practiceTimeSeries — LIVE from SESSION wall-clock (started_at → terminal_at)
 //       over terminal practice sessions, tz-aware. Real timestamp math, not a fabricated trend.
-//   Capturing avg time/q is a small follow-up: the practice client would send elapsed time per answer
-//   (or per set) and the gateway would store it on session_answers (or set_completions). Not built here.
 
 const CAT_ORDER = ['verbal', 'quantitative', 'non_verbal'] as const;
 
@@ -70,6 +73,7 @@ async function finishedSetRows(db: DB, sid: string, r: Range) {
               coalesce(sub.display_order, 999) as sub_order,
               qsv.question_count as total_questions,
               sr.score_correct::int as score_correct, sr.score_total::int as score_total,
+              extract(epoch from (s.terminal_at - s.started_at))::float8 as attempt_seconds,
               row_number() over (partition by qs.id
                                  order by s.terminal_at desc nulls last, sr.created_at desc) as rn
          from ccat.sessions s
@@ -81,14 +85,22 @@ async function finishedSetRows(db: DB, sid: string, r: Range) {
         where ${where}
      )
      select set_id, set_name, cat_key, cat_name, cat_order, sub_key, sub_name, sub_order,
-            total_questions, score_correct, score_total
+            total_questions, score_correct, score_total, attempt_seconds
        from fin where rn = 1
       order by cat_order, sub_order, set_created asc, set_id asc`, p);
   return res.rows as Array<{
     set_id: string; set_name: string; cat_key: string; cat_name: string; cat_order: number;
     sub_key: string; sub_name: string; sub_order: number;
     total_questions: number | null; score_correct: number; score_total: number;
+    attempt_seconds: number | null;
   }>;
+}
+// Derived "avg time per question" = finished-attempt session wall-clock ÷ questions answered. This is
+// NOT true per-question timing (no such column exists) — it includes reading / pauses — but it is real
+// timestamp data, not an estimate. null when there is no time or no answered questions.
+function avgPerQ(seconds: number | null, answered: number): number | null {
+  if (seconds == null || seconds <= 0 || answered <= 0) return null;
+  return Math.round(seconds / answered);
 }
 const pct = (correct: number, total: number): number | null => (total > 0 ? Math.round((100 * correct) / total) : null);
 
@@ -109,14 +121,15 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
 
     // Finished-set rows (most recent finished attempt per set) → fold into per-battery buckets.
     const rows = await finishedSetRows(db, sid, r);
-    type Bucket = { correct: number; total: number; totalQ: number; setsDone: number;
+    type Bucket = { correct: number; total: number; totalQ: number; setsDone: number; secs: number;
       subs: Map<string, { key: string; name: string; order: number }> };
     const byCat = new Map<string, Bucket>();
     let scoreCorrect = 0, scoreTotal = 0, setsDone = 0;
     for (const row of rows) {
       let b = byCat.get(row.cat_key);
-      if (!b) { b = { correct: 0, total: 0, totalQ: 0, setsDone: 0, subs: new Map() }; byCat.set(row.cat_key, b); }
+      if (!b) { b = { correct: 0, total: 0, totalQ: 0, setsDone: 0, secs: 0, subs: new Map() }; byCat.set(row.cat_key, b); }
       b.correct += row.score_correct; b.total += row.score_total; b.totalQ += (row.total_questions ?? 0); b.setsDone += 1;
+      b.secs += (row.attempt_seconds && row.attempt_seconds > 0 ? row.attempt_seconds : 0);
       if (!b.subs.has(row.sub_key)) b.subs.set(row.sub_key, { key: row.sub_key, name: row.sub_name, order: row.sub_order });
       scoreCorrect += row.score_correct; scoreTotal += row.score_total; setsDone += 1;
     }
@@ -149,7 +162,7 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
         accuracyPct: b ? pct(b.correct, b.total) : null,
         score: { correct: b?.correct ?? 0, total: b?.total ?? 0 },
         totalQuestions: b?.totalQ ?? 0,
-        avgSecondsPerQuestion: null,   // not tracked (see header)
+        avgSecondsPerQuestion: b ? avgPerQ(b.secs, b.total) : null,   // derived from session wall-clock ÷ answered
         setsDone: b?.setsDone ?? 0,
         subcategories: b ? [...b.subs.values()].sort((a, z) => a.order - z.order).map((s) => ({ key: s.key, name: s.name })) : [],
       };
@@ -186,7 +199,7 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
         accuracyPct: pct(row.score_correct, row.score_total),
         score: { correct: row.score_correct, total: row.score_total },
         totalQuestions: row.total_questions ?? 0,
-        avgSecondsPerQuestion: null,   // not tracked (see header)
+        avgSecondsPerQuestion: avgPerQ(row.attempt_seconds, row.score_total),   // wall-clock ÷ answered
       }));
   });
 
