@@ -60,7 +60,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
       const mine = (r.items || []).find((x: any) => x.id === setId);
       if (!mine) return;
       setSiblingNames(new Set((r.items || [])
-        .filter((x: any) => x.subcategory_id === mine.subcategory_id && x.difficulty_key === mine.difficulty_key && x.state !== 'retired' && x.id !== setId)
+        .filter((x: any) => String(x.grade_number) === String(mine.grade_number) && x.subcategory_id === mine.subcategory_id && x.difficulty_key === mine.difficulty_key && x.state !== 'retired' && x.id !== setId)
         .map((x: any) => String(x.name || '').trim().toLowerCase())));
     } catch { /* rename still works; uniqueness is best-effort client-side */ }
   };

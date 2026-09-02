@@ -173,7 +173,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
                     <tr key={s.id} className={s.state === 'retired' ? 'row-retired' : ''}>
                       <td>
                         <RenameSetName setId={s.id} name={s.name}
-                          existingNames={new Set((sets || []).filter(x => x.subcategory_id === s.subcategory_id && x.difficulty_key === s.difficulty_key && x.state !== 'retired' && x.id !== s.id).map(x => String(x.name || '').trim().toLowerCase()))}
+                          existingNames={new Set((sets || []).filter(x => String(x.grade_number) === String(s.grade_number) && x.subcategory_id === s.subcategory_id && x.difficulty_key === s.difficulty_key && x.state !== 'retired' && x.id !== s.id).map(x => String(x.name || '').trim().toLowerCase()))}
                           onRenamed={() => load()}>
                           <button className="linklike" style={{ fontWeight: 700 }} onClick={() => setEditSet({ id: s.id })}>{s.name}</button>
                         </RenameSetName>

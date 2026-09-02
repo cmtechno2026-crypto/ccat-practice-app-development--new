@@ -66,30 +66,36 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
 
   const ctxLine = `Grade ${ctx.gradeNumber} · ${ctx.categoryName} · ${ctx.subcategoryName} · ${ctx.difficultyLabel}`;
 
-  // Numbers already used by existing "Set N" names in the SAME subcategory + difficulty (retired sets free
+  // A set is scoped by GRADE + subcategory + difficulty, so numbering/uniqueness must match on all three.
+  // (A "Set 1" in another grade's same subcategory+difficulty must NOT reserve the number here — that made
+  // Grade 4 start at "Set 2" because Grade 3 already had "Set 1".)
+  const inScope = (s: any) =>
+    String(s.grade_number) === String(ctx.gradeNumber) && s.subcategory_id === ctx.subId && s.difficulty_key === ctx.diffKey;
+
+  // Numbers already used by existing "Set N" names in THIS grade+subcategory+difficulty (retired sets free
   // their number). New sets start at the lowest free number.
   const usedNumbers = useMemo(() => {
     const used = new Set<number>();
     for (const s of existingSets) {
-      if (s.subcategory_id !== ctx.subId || s.difficulty_key !== ctx.diffKey) continue;
+      if (!inScope(s)) continue;
       if (s.state === 'retired') continue;
       const m = /^Set\s+(\d+)$/.exec((s.name ?? '').trim());
       if (m) used.add(Number(m[1]));
     }
     return used;
-  }, [existingSets, ctx.subId, ctx.diffKey]);
+  }, [existingSets, ctx.gradeNumber, ctx.subId, ctx.diffKey]);
 
-  // Every existing set NAME in the same subcategory + difficulty (lowercased) — for the uniqueness check on
+  // Every existing set NAME in THIS grade+subcategory+difficulty (lowercased) — for the uniqueness check on
   // edited names. Retired sets free their name too.
   const existingNames = useMemo(() => {
     const set = new Set<string>();
     for (const s of existingSets) {
-      if (s.subcategory_id !== ctx.subId || s.difficulty_key !== ctx.diffKey) continue;
+      if (!inScope(s)) continue;
       if (s.state === 'retired') continue;
       if (s.name) set.add(String(s.name).trim().toLowerCase());
     }
     return set;
-  }, [existingSets, ctx.subId, ctx.diffKey]);
+  }, [existingSets, ctx.gradeNumber, ctx.subId, ctx.diffKey]);
 
   // Split parsed questions (order preserved) into chunks of ≤ MAX, and assign collision-free set numbers.
   const plan = useMemo(() => {
