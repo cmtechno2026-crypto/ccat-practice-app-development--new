@@ -7,15 +7,21 @@ import { readBulkInput, matchImages, uploadImages, attachImages, BulkImage, Matc
 import { FORMAT_TEXT, SAMPLE_FILE_TEXT } from './BulkImport';
 
 // "Bulk add sets" — takes ONE file/paste of MANY questions and splits it into SEVERAL draft practice
-// sets, each capped at MAX_QUESTIONS_PER_SET, all inheriting the Content page's current context
+// sets, each capped at MAX, all inheriting the Content page's current context
 // (grade / category / subcategory / difficulty). Reuses the SAME parser (parseImportText) and the SAME
 // format sample as the single-set importer — no second parser, no parallel format. On confirm it loops
 // the existing create-set + author (save-draft) endpoints once per chunk, then hands off to the existing
 // SetEditor / publishSet flow for editing the (usually partial) last set and publishing. Nothing is
 // persisted until the admin confirms.
 
-// The per-set cap. Single source of truth — imported by Content for the "x / N" set-size bar too.
-export const MAX_QUESTIONS_PER_SET = 15;
+// The DEFAULT per-set cap. The REAL cap is per-subcategory: subcategory.maxQuestionsPerSet from the catalog
+// (45 for the "… Battery Combine" subcategories, 15 for the rest). This is only the fallback used when that
+// field is absent — never hard-code 15/45 at a call site; resolve the cap with maxQuestionsForSub / ctx.maxPerSet.
+export const DEFAULT_MAX_QUESTIONS_PER_SET = 15;
+export function maxQuestionsForSub(sub: any): number {
+  const n = Number(sub?.maxQuestionsPerSet);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_QUESTIONS_PER_SET;
+}
 
 // Sets are named "Set 1", "Set 2", … — the default name for the Nth generated set. Single source of truth.
 const defaultSetName = (n: number) => `Set ${n}`;
@@ -29,13 +35,16 @@ function assignNumbers(count: number, used: Set<number>): number[] {
 }
 
 type Ctx = { gradeId: string; catId: string; subId: string; diffId: string; qType: string;
-  gradeNumber: number | string; categoryName: string; subcategoryName: string; difficultyLabel: string; diffKey: string };
+  gradeNumber: number | string; categoryName: string; subcategoryName: string; difficultyLabel: string; diffKey: string;
+  maxPerSet: number };
 type Created = { name: string; id: string; count: number; full: boolean };
 
 export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   ctx: Ctx; existingSets: any[]; taxonomy: any; onClose: () => void; onDone: () => void;
 }) {
   const toast = useToast();
+  // Per-set cap for THIS subcategory (45 for a Battery Combine, 15 otherwise) — from the catalog, never hard-coded.
+  const MAX = ctx.maxPerSet && ctx.maxPerSet > 0 ? ctx.maxPerSet : DEFAULT_MAX_QUESTIONS_PER_SET;
   const [text, setText] = useState('');
   const [cards, setCards] = useState<ImportCard[] | null>(null);
   const [errors, setErrors] = useState<ImportError[] | null>(null);
@@ -84,7 +93,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   const plan = useMemo(() => {
     if (!cards || !cards.length) return null;
     const chunks: ImportCard[][] = [];
-    for (let i = 0; i < cards.length; i += MAX_QUESTIONS_PER_SET) chunks.push(cards.slice(i, i + MAX_QUESTIONS_PER_SET));
+    for (let i = 0; i < cards.length; i += MAX) chunks.push(cards.slice(i, i + MAX));
     const numbers = assignNumbers(chunks.length, usedNumbers);
     return { chunks, numbers, total: cards.length };
   }, [cards, usedNumbers]);
@@ -175,13 +184,13 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
         resolved = attachImages(cards, uploaded);
       }
       const chunks: ImportCard[][] = [];
-      for (let i = 0; i < resolved.length; i += MAX_QUESTIONS_PER_SET) chunks.push(resolved.slice(i, i + MAX_QUESTIONS_PER_SET));
+      for (let i = 0; i < resolved.length; i += MAX) chunks.push(resolved.slice(i, i + MAX));
       for (let i = 0; i < chunks.length; i++) {
         const name = (names[i] ?? defaultSetName(plan.numbers[i])).trim();
         setProgress(`Creating ${name} (${i + 1}/${chunks.length})…`);
         const r = await api.createSet({ name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
         await api.authorSet(r.set_version_id, chunks[i].map(cardToPayload));
-        done.push({ name, id: r.set_version_id, count: chunks[i].length, full: chunks[i].length >= MAX_QUESTIONS_PER_SET });
+        done.push({ name, id: r.set_version_id, count: chunks[i].length, full: chunks[i].length >= MAX });
       }
       setCreated(done);
       setStep('created');
@@ -211,7 +220,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   };
 
   const refreshCount = async (id: string) => {
-    try { const d = await api.set(id); setCreated(cs => cs.map(c => c.id === id ? { ...c, count: (d.questions || []).length, full: (d.questions || []).length >= MAX_QUESTIONS_PER_SET } : c)); onDone(); } catch { /* ignore */ }
+    try { const d = await api.set(id); setCreated(cs => cs.map(c => c.id === id ? { ...c, count: (d.questions || []).length, full: (d.questions || []).length >= MAX } : c)); onDone(); } catch { /* ignore */ }
   };
 
   const shown = errors ? errors.slice(0, 10) : [];
@@ -236,7 +245,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
         <div className="infobox" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 12.5 }}>New sets will be created in:</div>
           <div style={{ fontWeight: 800 }}>{ctxLine}</div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Every generated set and question inherits this context. Max {MAX_QUESTIONS_PER_SET} questions per set.</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Every generated set and question inherits this context. Max {MAX} questions per set.</div>
         </div>
 
         {step === 'input' && (
@@ -259,7 +268,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
               <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{FORMAT_TEXT}</pre>
             )}
 
-            <label style={{ marginTop: 4 }}>✍️ Paste ALL your questions here — they'll be split into sets of {MAX_QUESTIONS_PER_SET} (a .zip for figures)</label>
+            <label style={{ marginTop: 4 }}>✍️ Paste ALL your questions here — they'll be split into sets of {MAX} (a .zip for figures)</label>
             <textarea rows={7} value={text}
               onChange={e => { setText(e.target.value); setCards(null); setErrors(null); setMatch(null); }}
               placeholder={'Paste the AI-formatted questions here…\n\nQ: Which one is the odd one out?\nA) Circle\nB) Square\nC) Triangle\nD) Dog\nAnswer: D\nExplanation: Dog is not a shape.'}
@@ -303,7 +312,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
             <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Edit any set name below before creating. Names must be unique here.</div>
             <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
               {plan.chunks.map((ch, i) => {
-                const full = ch.length >= MAX_QUESTIONS_PER_SET;
+                const full = ch.length >= MAX;
                 return (
                   <div key={i} className="pickrow" style={{ justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
@@ -313,7 +322,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
                       <span className="muted" style={{ fontSize: 12 }}>· {ctx.subcategoryName} · {ctx.difficultyLabel}</span>
                       {nameErrors[i] && <span className="err" style={{ fontSize: 12 }}>{nameErrors[i]}</span>}
                     </div>
-                    <div className="tabnum" style={{ fontWeight: 700, color: full ? 'var(--green)' : 'var(--amber)' }}>{ch.length} / {MAX_QUESTIONS_PER_SET}{full ? '' : ' (partial)'}</div>
+                    <div className="tabnum" style={{ fontWeight: 700, color: full ? 'var(--green)' : 'var(--amber)' }}>{ch.length} / {MAX}{full ? '' : ' (partial)'}</div>
                   </div>
                 );
               })}
@@ -329,7 +338,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
             <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
               {created.map(c => (
                 <div key={c.id} className="pickrow" style={{ justifyContent: 'space-between' }}>
-                  <div><b>{c.name}</b> <span className="tabnum muted" style={{ fontSize: 12 }}>· {c.count} / {MAX_QUESTIONS_PER_SET}{c.full ? '' : ' (partial)'}</span></div>
+                  <div><b>{c.name}</b> <span className="tabnum muted" style={{ fontSize: 12 }}>· {c.count} / {MAX}{c.full ? '' : ' (partial)'}</span></div>
                   <div className="rowactions">
                     <button className="btn ghost sm" onClick={() => setEditingId(c.id)}>Open / Edit</button>
                     <button className="btn sm" disabled={busy} onClick={() => publishOne(c)}>Publish</button>

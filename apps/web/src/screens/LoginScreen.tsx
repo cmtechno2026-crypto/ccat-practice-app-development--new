@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ApiError } from '@ccat/api-client';
 import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
@@ -7,7 +7,6 @@ import { AppBar, Field } from '../components/ui';
 
 export function LoginScreen() {
   const nav = useNavigate();
-  const loc = useLocation() as { state?: { from?: string } };
   const { setProfile, flash } = useApp();
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
@@ -22,7 +21,9 @@ export function LoginScreen() {
       const me = await client.profile();
       setProfile(me);
       flash('Welcome back! 👋');
-      nav(loc.state?.from ?? '/home', { replace: true });
+      // Always land on Home after a fresh sign-in — ignore any attempted/previous URL (history replace so
+      // the login page and the old protected page are not left in the back-stack).
+      nav('/home', { replace: true });
     } catch (e) {
       setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username or PIN.' : e.message) : (e as Error).message);
     } finally { setBusy(false); }

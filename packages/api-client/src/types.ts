@@ -143,6 +143,7 @@ export interface CatalogSetProgress {
 }
 export interface CatalogItem {
   set_version_id: string; name: string; category_key: string; category_name?: string; subcategory: string;
+  maxQuestionsPerSet?: number; // this subcategory's cap (45 for *_battery_combine, 15 otherwise)
   difficulty: string | null; question_count: number; duration_minutes?: number | null; allowed_modes: Mode[];
   // A set this student played that has since been RETIRED — kept visible for their history, shown greyed
   // at the bottom of the list and not startable.

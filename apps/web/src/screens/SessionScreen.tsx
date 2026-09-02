@@ -286,9 +286,9 @@ export function SessionScreen() {
                 style={{ filter: bookmarked[q.logical_question_id] ? 'none' : 'grayscale(1) opacity(.6)' }}>🔖 {bookmarked[q.logical_question_id] ? 'Bookmarked' : 'Bookmark'}</button>
             </div>
           </div>
-          {/* Question figure (gateway image_url, or an image block fallback) — above the text, bounded & centered. */}
-          <Figure url={q.image_url} blocks={q.prompt_blocks} kind="question" />
+          {/* Question TEXT first, then the figure below it (gateway image_url, or an image block fallback). */}
           {(() => { const t = blocksToText(q.prompt_blocks); return t ? <h2 style={{ margin: '8px 0 4px' }}>{t}</h2> : null; })()}
+          <Figure url={q.image_url} blocks={q.prompt_blocks} kind="question" />
           {isMulti && <div className="muted">✔ Pick all correct answers, then Check.</div>}
         </div>
 
@@ -340,8 +340,11 @@ export function SessionScreen() {
           <button className="btn" disabled={myMulti.length === 0} onClick={() => attempt(myMulti)}>Check answer</button>
         )}
 
-        {/* PRACTICE feedback panel */}
-        {!isExam && p?.message && (
+        {/* PRACTICE feedback panel. The "reveal" case (locked & wrong) is the explanation panel — show it
+            ONLY when the question actually has an explanation; with none, render nothing there (the correct
+            option is already marked ✅), so there's no empty "Not quite — here's why" box. Correct/retry
+            messages are unaffected. */}
+        {!isExam && p?.message && !(p.locked && !p.ok && !p.explanation) && (
           <div className="feedback" data-tone={p.ok ? 'ok' : p.locked ? 'reveal' : 'retry'}>
             <strong>{p.message}</strong>
             {p.locked && p.explanation && <div className="explanation">{p.explanation}</div>}

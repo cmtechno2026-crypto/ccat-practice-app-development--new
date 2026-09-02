@@ -43,38 +43,46 @@ export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     }
     if (s.status !== 'active') throw Errors.forbidden('ACCOUNT_NOT_ACTIVE', `Account is ${s.status}`);
 
-    // Single-device enforcement (§5.1, §5.4): login only from the enrolled active device.
-    const dev = await db.query(
-      `select id from ccat.student_devices where student_id = $1 and status = 'active'`,
-      [s.id],
-    );
-    if (dev.rows.length === 0) throw Errors.forbidden('NO_ENROLLED_DEVICE', 'No enrolled device; complete device replacement');
-    const enrolled = dev.rows[0]!;
-    // PREVIEW WAIVER (is_preview only): several teammates share one preview id from their own
-    // browsers, so the device_hash match is skipped and the session binds to the shared preview
-    // device. Real students keep strict single-device enforcement — this branch never runs for them.
-    if (!s.is_preview) {
-      const match = await db.query(
-        `select 1 from ccat.student_devices where id = $1 and device_hash = $2`,
-        [enrolled.id, body.device_hash],
-      );
-      if (match.rows.length === 0) throw Errors.deviceNotEnrolled();
-    }
-
     await db.query('update ccat.student_credentials set failed_attempts = 0, locked_until = null where student_id = $1', [s.id]);
+
+    // MULTI-DEVICE: a student may log in from ANY device, with no device-count limit and NO rejection on
+    // device mismatch (the former single-device enforcement is removed). We still RECORD/associate the
+    // device for audit + to bind the auth session to a device row. Find this (student_id, device_hash);
+    // if it's new, enrol it; otherwise mark it active and touch last_seen. PIN verify + lockout above are
+    // unchanged, so credential/child-safety checks are unaffected — only the device restriction is dropped.
+    let deviceId: string;
+    const existing = await db.query(
+      `select id from ccat.student_devices where student_id = $1 and device_hash = $2
+        order by (status = 'active') desc, created_at desc limit 1`,
+      [s.id, body.device_hash],
+    );
+    if (existing.rows.length > 0) {
+      deviceId = existing.rows[0]!.id;
+      await db.query(
+        `update ccat.student_devices set status='active', last_seen_at=now(),
+                enrolled_at=coalesce(enrolled_at, now()), updated_at=now() where id=$1`,
+        [deviceId],
+      );
+    } else {
+      const ins = await db.query(
+        `insert into ccat.student_devices(student_id, device_hash, status, enrolled_at, last_seen_at)
+         values ($1,$2,'active',now(),now()) returning id`,
+        [s.id, body.device_hash],
+      );
+      deviceId = ins.rows[0]!.id;
+    }
 
     const refresh = newRefreshToken();
     const authSession = await db.query(
       `insert into ccat.auth_sessions(student_id, device_id, refresh_hash, expires_at)
        values ($1,$2,$3, now() + ($4 || ' seconds')::interval) returning id`,
-      [s.id, enrolled.id, hashToken(refresh), String(cfg.refreshTokenTtlSeconds)],
+      [s.id, deviceId, hashToken(refresh), String(cfg.refreshTokenTtlSeconds)],
     );
     const sid = authSession.rows[0]!.id;
     const access = signToken(
-      { sub: s.id, did: enrolled.id, sid, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds },
+      { sub: s.id, did: deviceId, sid, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds },
       cfg.hmacSecret,
     );
-    await db.query('update ccat.student_devices set last_seen_at = now() where id = $1', [enrolled.id]);
     return { access_token: access, refresh_token: refresh, expires_in: cfg.accessTokenTtlSeconds };
   });
 

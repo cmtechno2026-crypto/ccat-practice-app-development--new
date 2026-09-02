@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '@ccat/api-client';
 import { parsePhone, type CountryCode } from '../lib/phone';
@@ -34,6 +34,44 @@ const COUNTRIES: { iso: CountryCode; label: string; dial: string; flag: string }
   { iso: 'SG', label: 'Singapore', dial: '+65', flag: '🇸🇬' },
   { iso: 'ZA', label: 'South Africa', dial: '+27', flag: '🇿🇦' },
 ];
+
+// Country-code picker. A native <select> shows the same text collapsed and open, but we want the
+// COLLAPSED control to show only the dial code (e.g. "+1") while the OPEN list shows flag + dial + name
+// so users can still pick by country. So this is a small custom listbox (close on outside-click / Esc).
+function CountrySelect({ value, onChange }: { value: CountryCode; onChange: (c: CountryCode) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const cur = COUNTRIES.find((c) => c.iso === value) ?? COUNTRIES[0]!;
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown); document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  return (
+    <div className="cc-select" ref={ref}>
+      <button type="button" className="input cc-trigger" aria-haspopup="listbox" aria-expanded={open}
+        aria-label={`Country code (${cur.dial} ${cur.label})`} onClick={() => setOpen((o) => !o)}>
+        <span className="cc-dial-sel">{cur.dial}</span>
+        <span className="cc-caret" aria-hidden>▾</span>
+      </button>
+      {open && (
+        <ul className="cc-menu" role="listbox" aria-label="Country">
+          {COUNTRIES.map((c) => (
+            <li key={c.iso} role="option" aria-selected={c.iso === value}
+              className={`cc-item ${c.iso === value ? 'on' : ''}`}
+              onClick={() => { onChange(c.iso); setOpen(false); }}>
+              <span className="cc-flag" aria-hidden>{c.flag}</span>
+              <span className="cc-dial">{c.dial}</span>
+              <span className="cc-name">{c.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function ageFrom(y: number, m: number, d: number): number {
   const now = new Date();
@@ -137,7 +175,7 @@ export function RegisterScreen() {
 
   return (
     <>
-      <AppBar title="Create account" sub="A grown-up sets this up" back />
+      <AppBar title="Create account" back />
       <div className="content center-narrow">
         <div className="stack">
           {FUNNEL.includes(step) && (
@@ -195,9 +233,7 @@ export function RegisterScreen() {
                 hint={phoneNational ? (phoneObj ? `✓ ${phoneE164}` : 'Enter a valid number for the selected country') : 'Pick a country, then enter the number'}
                 hintKind={phoneNational ? (phoneObj ? 'ok' : 'bad') : undefined}>
                 <div className="row" style={{ gap: 8 }}>
-                  <select className="input" style={{ maxWidth: 150 }} aria-label="Country code" value={phoneCountry} onChange={(e) => setPhoneCountry(e.target.value as CountryCode)}>
-                    {COUNTRIES.map((c) => <option key={c.iso} value={c.iso}>{c.flag} {c.label} ({c.dial})</option>)}
-                  </select>
+                  <CountrySelect value={phoneCountry} onChange={setPhoneCountry} />
                   <input className={`input ${phoneNational ? (phoneObj ? 'ok' : 'bad') : ''}`} inputMode="tel" style={{ flex: 1 }}
                     value={phoneNational} onChange={(e) => setPhoneNational(e.target.value)} placeholder="416 555 0132" />
                 </div>

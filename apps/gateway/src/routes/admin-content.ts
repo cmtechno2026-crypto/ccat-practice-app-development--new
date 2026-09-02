@@ -34,33 +34,6 @@ const AVATAR_MAX_BYTES = 3 * 1024 * 1024; // 3 MB — generous for a 512² PNG, 
 const QIMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const QIMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
-// Bulk-add batch upload (many figures in ONE request). Named, tunable limits — a ~400-image zip of small
-// figures imports in a single round-trip. The work is dominated by per-image storage round-trips, not bytes,
-// so uploads run with BOUNDED concurrency and the content_assets rows land in ONE multi-row insert.
-const BATCH_MAX_IMAGES = 400;                    // MAX_IMAGES_PER_ZIP
-const BATCH_MAX_IMAGE_BYTES = 3 * 1024 * 1024;   // MAX_IMAGE_BYTES (3 MB) — png/jpg/jpeg/webp only
-const BATCH_TOTAL_MAX_BYTES = 50 * 1024 * 1024;  // MAX_ZIP_TOTAL_BYTES (decoded image bytes)
-const STORAGE_UPLOAD_CONCURRENCY = 10;           // bounded concurrent storage puts (avoid Supabase rate-limiting)
-const BATCH_BODY_LIMIT_BYTES = 80 * 1024 * 1024; // per-route body cap: a 50 MB zip → ~68 MB base64 + JSON envelope
-// Single-asset route body cap. Fastify's global default is 1 MiB, which would 413 a legitimate 2–3 MB image
-// once base64-encoded (~4 MB JSON) — so give this route an explicit, generous cap matching what it validates.
-const SINGLE_ASSET_BODY_LIMIT_BYTES = 8 * 1024 * 1024;
-
-// Run `fn` over `items` with at most `limit` promises in flight at once (bounded concurrency). Order preserved.
-async function mapPool<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    for (;;) {
-      const i = next++;
-      if (i >= items.length) return;
-      out[i] = await fn(items[i]!, i);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
-
 // PNG signature + IHDR width/height. Returns null when the bytes are not a valid PNG.
 function pngDimensions(bytes: Buffer): { width: number; height: number } | null {
   const SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -94,7 +67,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     alt_text: z.string().max(500).optional(),
     constraint: z.enum(['avatar_512']).optional(),
   });
-  app.post('/v1/admin/content/assets', { ...guard, bodyLimit: SINGLE_ASSET_BODY_LIMIT_BYTES }, async (req) => {
+  app.post('/v1/admin/content/assets', guard, async (req) => {
     const b = assetSchema.parse(req.body);
     const isAvatar = b.constraint === 'avatar_512';
     // Avatar art is managed under avatar.manage; other content images under content.create.
@@ -151,103 +124,6 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { id, url };
   });
 
-  // BATCH upload content figures — for bulk-add with figures (up to BATCH_MAX_IMAGES in one request). Same
-  // StorageService upload path + content_assets schema as the single endpoint, but tuned for throughput:
-  //   1) validate + decode EVERY image first — over any limit → reject BEFORE any upload (nothing half-lands);
-  //   2) de-dupe identical bytes by checksum — each unique blob is stored + inserted once, reused by all refs;
-  //   3) upload the unique blobs to storage with BOUNDED concurrency (STORAGE_UPLOAD_CONCURRENCY);
-  //   4) insert all rows in ONE multi-row insert, then set public_url in one statement (atomic in a txn);
-  //   5) if any storage put fails, fail the whole import and report which images — never a half-imported set.
-  // The per-image caps/type-check mirror the single path (3 MB here). Reuses content.create permission + guard.
-  const assetBatchSchema = z.object({
-    images: z.array(z.object({
-      mime_type: z.string().min(1),
-      data_base64: z.string().min(1),
-      alt_text: z.string().max(500).optional(),
-    })).min(1).max(BATCH_MAX_IMAGES),
-  });
-  app.post('/v1/admin/content/assets/batch', { preHandler: [authenticateAdmin], bodyLimit: BATCH_BODY_LIMIT_BYTES }, async (req) => {
-    const t0 = Date.now();
-    const b = assetBatchSchema.parse(req.body);
-    requirePermission(req, 'content.create');
-
-    // Decode + validate all first, so any limit breach rejects before a single storage put.
-    type Prep = { key: string; bytes: Buffer; mime: string; checksum: string; width: number | null; height: number | null; alt: string | null; label: string };
-    const preps: Prep[] = [];
-    let total = 0;
-    b.images.forEach((img, i) => {
-      const label = img.alt_text?.trim() || `#${i + 1}`;
-      if (!QIMAGE_TYPES.has(img.mime_type)) throw Errors.validation(`Image ${label} must be a PNG, JPG, or WEBP file`);
-      const rawB64 = img.data_base64.includes(',') ? img.data_base64.slice(img.data_base64.indexOf(',') + 1) : img.data_base64;
-      let bytes: Buffer;
-      try { bytes = Buffer.from(rawB64, 'base64'); } catch { throw Errors.validation(`Image ${label} is not valid base64`); }
-      if (bytes.length === 0) throw Errors.validation(`Image ${label} is empty`);
-      if (bytes.length > BATCH_MAX_IMAGE_BYTES) throw Errors.validation(`Image ${label} is too large (max 3 MB)`);
-      total += bytes.length;
-      const checksum = createHash('sha256').update(bytes).digest('hex');
-      const dim = pngDimensions(bytes); // best-effort; non-PNG returns null
-      const ext = img.mime_type === 'image/png' ? 'png' : (img.mime_type.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '');
-      preps.push({ key: `content/${randomUUID()}.${ext}`, bytes, mime: img.mime_type, checksum, width: dim?.width ?? null, height: dim?.height ?? null, alt: img.alt_text ?? null, label });
-    });
-    if (total > BATCH_TOTAL_MAX_BYTES) throw Errors.validation('Max 400 images / 50 MB per upload — split into more zips.');
-
-    // De-dupe by checksum: store + insert each distinct blob once; every input maps back to its blob's asset.
-    const uniqueByChecksum = new Map<string, Prep>();
-    for (const p of preps) if (!uniqueByChecksum.has(p.checksum)) uniqueByChecksum.set(p.checksum, p);
-    const uniqueList = [...uniqueByChecksum.values()];
-
-    // (3) Upload unique blobs with bounded concurrency. Gather failures (don't stop at the first) so we can
-    // report every image that failed; no content_assets row is written unless all puts succeed.
-    const tUpload = Date.now();
-    const failures: string[] = [];
-    await mapPool(uniqueList, STORAGE_UPLOAD_CONCURRENCY, async (p) => {
-      try { await storage.put(p.key, p.bytes, p.mime); }
-      catch (e) { failures.push(`${p.label}: ${(e as Error).message}`); }
-    });
-    const uploadMs = Date.now() - tUpload;
-    if (failures.length)
-      throw new AppError(502, 'STORAGE_UPLOAD_FAILED',
-        `${failures.length} image(s) failed to store (driver "${storage.driver}"): ${failures.slice(0, 10).join('; ')}${failures.length > 10 ? ` …and ${failures.length - 10} more` : ''}`);
-
-    // (4) One multi-row insert for the unique assets, then one public_url update — atomic.
-    const tDb = Date.now();
-    const assetByChecksum = new Map<string, { id: string; url: string }>();
-    await withTransaction(db, async (c) => {
-      const params: unknown[] = [];
-      const rowsSql = uniqueList.map((p, i) => {
-        const o = i * 8;
-        params.push(p.key, p.mime, p.bytes.length, p.checksum, p.width, p.height, p.alt, req.admin!.adminId);
-        return `($${o + 1},$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6},$${o + 7},$${o + 8})`;
-      }).join(',');
-      const ins = await c.query(
-        `insert into ccat.content_assets(storage_key,mime_type,byte_size,checksum_sha256,width,height,alt_text,created_by)
-         values ${rowsSql} returning id, storage_key`, params);
-      const idByKey = new Map<string, string>();
-      for (const r of ins.rows) idByKey.set(r.storage_key as string, r.id as string);
-      // public_url: absolute for Supabase (bucket public-read); the Gateway asset route for local disk.
-      const ids: string[] = [], urls: string[] = [];
-      for (const p of uniqueList) {
-        const id = idByKey.get(p.key)!;
-        const url = storage.publicUrl(p.key) ?? `/v1/assets/${id}`;
-        assetByChecksum.set(p.checksum, { id, url });
-        ids.push(id); urls.push(url);
-      }
-      await c.query(
-        `update ccat.content_assets a set public_url = v.url
-           from unnest($1::uuid[], $2::text[]) as v(id, url) where a.id = v.id`, [ids, urls]);
-    });
-    const insertMs = Date.now() - tDb;
-
-    // 1:1 with input order (deduped inputs share one asset). Client maps these back to image basenames.
-    const assets = preps.map(p => assetByChecksum.get(p.checksum)!);
-    const elapsedMs = Date.now() - t0;
-    await audit(db, req, 'content.asset.batch_uploaded', 'content_asset', assets[0]!.id,
-      `${assets.length} images (${uniqueList.length} unique), ${elapsedMs}ms`);
-    // (6) Measure: wall-clock for the whole batch, plus the storage-upload and DB phases, logged + returned.
-    req.log.info({ count: assets.length, unique: uniqueList.length, upload_ms: uploadMs, insert_ms: insertMs, elapsed_ms: elapsedMs }, 'bulk asset batch imported');
-    return { assets, count: assets.length, unique: uniqueList.length, upload_ms: uploadMs, insert_ms: insertMs, elapsed_ms: elapsedMs };
-  });
-
   // PUBLIC asset serve (no auth — <img> tags can't send a bearer token). Redirects to the absolute
   // public URL when the object lives in cloud storage (Supabase); otherwise streams the bytes from the
   // local-disk driver. Safe to expose: assets are non-secret art/images referenced by public URL anyway.
@@ -270,7 +146,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
   // Taxonomy (for pickers)
   app.get('/v1/admin/content/taxonomy', guard, async () => {
     const cats = await db.query('select id,key,name from ccat.categories where active order by display_order');
-    const subs = await db.query('select id,category_id,key,name from ccat.subcategories where active order by display_order');
+    const subs = await db.query('select id,category_id,key,name,coalesce(max_questions_per_set,15) as max_questions_per_set from ccat.subcategories where active order by display_order');
     const diffs = await db.query('select id,key,name,weight from ccat.difficulties order by display_order');
     const grades = await db.query('select id,grade_number,name from ccat.grades where active and retired_at is null order by display_order');
     return { categories: cats.rows, subcategories: subs.rows, difficulties: diffs.rows, grades: grades.rows };
@@ -384,7 +260,12 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         join ccat.categories cat on cat.id=qs.category_id
         join ccat.subcategories sub on sub.id=qs.subcategory_id
         left join ccat.difficulties d on d.id=sv.difficulty_id
-        order by sv.created_at desc limit 400`);
+        -- Canonical set order (SAME as the student catalog): active sets first (state != 'retired'),
+        -- oldest→newest by created_at (a newly published set lands at the BOTTOM of the active list),
+        -- then retired sets last. Never sort by qs.name (numeric/editable → lexical 1,10,11,2). Grouped
+        -- by category/subcategory so each subcategory's block is correctly ordered.
+        order by cat.display_order, sub.display_order, (sv.state = 'retired'), sv.created_at asc, sv.id asc
+        limit 400`);
     return { items: rows.rows };
   });
   app.post('/v1/admin/content/sets/:id/unpublish', guard, async (req) => {
@@ -494,6 +375,15 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     const cnt = await db.query('select count(*)::int n, count(*) filter (where active)::int a from ccat.set_version_questions where set_version_id=$1', [id]);
     if (cnt.rows[0]!.n !== cur.rows[0]!.question_count) throw Errors.validation('Set membership does not match question_count');
     if (cnt.rows[0]!.a < 5) throw Errors.validation('A set needs at least 5 active questions before it can be published (§18)');
+    // Enforce this subcategory's max questions per set (45 for Combine, 15 otherwise) at publish, too.
+    const capRow = await db.query(
+      `select coalesce(sub.max_questions_per_set, 15) as maxq
+         from ccat.question_set_versions sv
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.subcategories sub on sub.id = qs.subcategory_id
+        where sv.id = $1`, [id]);
+    const maxq = Number(capRow.rows[0]?.maxq ?? 15);
+    if (cnt.rows[0]!.n > maxq) throw Errors.validation(`This subcategory allows up to ${maxq} questions per set`, { code: 'SET_TOO_LARGE' });
     // Validate every ACTIVE member card is complete before publish (blocks an invalid publish):
     // a stem, ≥2 options, ≥1 correct answer, no empty option content.
     const memberQs = await db.query(

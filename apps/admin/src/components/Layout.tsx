@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, Link } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 
 interface Tab { to: string; label: string; perm?: string; }
@@ -30,6 +30,10 @@ function sectionFor(path: string): RailItem | undefined {
 export function Layout() {
   const { me, logout, can } = useAuth();
   const loc = useLocation();
+  const nav = useNavigate();
+  // Sign out AND reset the URL to the default route, so the stale protected page can't be replayed on the
+  // next sign-in (the router unmounts once logged out; without this the address bar keeps the old path).
+  const signOut = () => { logout(); nav('/', { replace: true }); };
   // Mobile hamburger drawer (desktop uses the CSS hover-expand rail; this only matters below 860px).
   const [drawer, setDrawer] = useState(false);
   useEffect(() => { setDrawer(false); }, [loc.pathname]); // route change closes the drawer
@@ -96,7 +100,7 @@ export function Layout() {
           </span>
           <div className="who">
             <button className="iconbtn" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">◐</button>
-            <button className="btn ghost sm" onClick={logout}>Sign out</button>
+            <button className="btn ghost sm" onClick={signOut}>Sign out</button>
           </div>
         </div>
         {tabs.length > 1 && (

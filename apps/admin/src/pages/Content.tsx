@@ -6,7 +6,7 @@ import { Loading, ErrorBox, useToast } from '../components/ui';
 import { CreateSet } from '../components/SetsView';
 import { QuestionEditor } from '../components/QuestionEditor';
 import { SetEditor } from '../components/SetEditor';
-import { BulkSets, MAX_QUESTIONS_PER_SET } from '../components/BulkSets';
+import { BulkSets, maxQuestionsForSub } from '../components/BulkSets';
 import { RenameSetName } from '../components/RenameSetName';
 
 const slugKey = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -70,6 +70,8 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
   }, [tax, sets]); // eslint-disable-line
 
   const act = async (fn: Promise<any>, m: string) => { try { await fn; toast(m); load(); } catch (e) { toast((e as Error).message); } };
+  // Per-set cap for a subcategory (45 for a "… Battery Combine", 15 otherwise) — read from the catalog.
+  const subMaxById = (id: string) => maxQuestionsForSub((tax?.subcategories ?? []).find((s: any) => s.id === id));
 
   const inGrade = useMemo(() => (sets || [])
     .filter(s => !grade || String(s.grade_number) === grade)
@@ -165,7 +167,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
               <div className="tablewrap"><table>
                 <thead><tr><th>Set</th><th>Questions</th><th>Status</th><th>Updated</th><th className="right">Actions</th></tr></thead>
                 <tbody>{rows.map(s => {
-                  const target = MAX_QUESTIONS_PER_SET; const pct = Math.min(100, Math.round((s.question_count / target) * 100));
+                  const target = subMaxById(s.subcategory_id); const pct = Math.min(100, Math.round((s.question_count / target) * 100));
                   const barc = s.question_count >= target ? 'var(--green)' : s.question_count >= 5 ? 'var(--amber)' : 'var(--coral)';
                   return (
                     <tr key={s.id} className={s.state === 'retired' ? 'row-retired' : ''}>
@@ -232,7 +234,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
               gradeId: gradeObj.id, catId: catObj.id, subId: subObj.id, diffId: diffObj.id,
               qType: slugKey(subObj.key) || 'verbal_analogy',
               gradeNumber: gradeObj.grade_number, categoryName: catObj.name, subcategoryName: subObj.name,
-              difficultyLabel: diffObj.name, diffKey: diff,
+              difficultyLabel: diffObj.name, diffKey: diff, maxPerSet: maxQuestionsForSub(subObj),
             }}
             existingSets={sets || []} taxonomy={tax}
             onClose={() => setBulkSets(false)} onDone={load}

@@ -83,15 +83,27 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
       return { category, pct: c && c.answered > 0 ? Math.round((100 * c.correct) / c.answered) : null };
     });
 
-    // --- completions by mode (setsCompleted = practice, mockExamsTaken = exam) ---
-    const cp: any[] = [sid]; const cc: string[] = ['sc.student_id = $1'];
-    if (r.from) { cp.push(r.from); cc.push(`sc.created_at >= $${cp.length}`); }
-    if (r.to) { cp.push(r.to); cc.push(`sc.created_at < $${cp.length}`); }
+    // --- "Sets done" = sets the student FINISHED (a session with a terminal result: SUBMITTED /
+    // AUTO_SUBMITTED), counted DISTINCT per set. NOT ccat.set_completions — that table only records
+    // learning-plan COVERAGE (its insert inner-joins learning_plan_sets), so a finished practice set
+    // outside a plan was never recorded → the sets-done=0 bug. Source of truth for "finished" is a
+    // terminal session_results row. Save & Leave / abandon leave no session_results row, so paused sets
+    // are correctly excluded. mockExamsTaken = count of finished EXAM sessions (attempts). Date range
+    // applies via the session's terminal_at.
+    const cp: any[] = [sid];
+    const cc: string[] = ['s.student_id = $1', "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')"];
+    if (r.from) { cp.push(r.from); cc.push(`s.terminal_at >= $${cp.length}`); }
+    if (r.to) { cp.push(r.to); cc.push(`s.terminal_at < $${cp.length}`); }
     const comp = await db.query(
-      `select sc.mode::text as mode, count(*)::int as n from ccat.set_completions sc
-        where ${cc.join(' and ')} group by sc.mode`, cp);
-    let setsCompleted = 0, mockExamsTaken = 0;
-    for (const row of comp.rows as any[]) { if (row.mode === 'exam') mockExamsTaken = row.n; else setsCompleted += row.n; }
+      `select (count(distinct qs.id) filter (where s.mode <> 'exam'))::int as sets_done,
+              (count(*) filter (where s.mode = 'exam'))::int as mocks
+         from ccat.sessions s
+         join ccat.session_results r on r.session_id = s.id
+         join ccat.question_set_versions sv on sv.id = s.set_version_id
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+        where ${cc.join(' and ')}`, cp);
+    const setsCompleted = Number(comp.rows[0]?.sets_done ?? 0);
+    const mockExamsTaken = Number(comp.rows[0]?.mocks ?? 0);
 
     // --- practice time: real session wall-clock (started_at → terminal_at) over terminal sessions ---
     const tp: any[] = [sid]; const tc: string[] = ['s.student_id = $1', 's.terminal_at is not null'];

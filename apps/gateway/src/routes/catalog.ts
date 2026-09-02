@@ -22,6 +22,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
     const sid = req.student!.studentId;
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name, cat.key as category_key, cat.name as category_name, sub.name as subcategory,
+              coalesce(sub.max_questions_per_set, 15) as max_questions_per_set,
               cat.display_order as cat_order, sub.display_order as sub_order, sv.state as set_state,
               d.key as difficulty, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.duration_minutes,
               g.practice_enabled as grade_practice_enabled,
@@ -72,6 +73,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
         category_key: r.category_key,
         category_name: r.category_name,   // battery display name (e.g. "Verbal Reasoning")
         subcategory: r.subcategory,
+        maxQuestionsPerSet: Number(r.max_questions_per_set ?? 15),
         difficulty: r.difficulty,
         question_count: r.question_count,
         duration_minutes: r.duration_minutes ?? null,

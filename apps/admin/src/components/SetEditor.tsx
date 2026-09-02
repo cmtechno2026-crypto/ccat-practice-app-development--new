@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { useToast } from './ui';
 import { BulkImport } from './BulkImport';
 import { RenameSetName } from './RenameSetName';
+import { maxQuestionsForSub } from './BulkSets';
 
 // One shared, Google-Forms-style question editor for BOTH practice sets and exam-paper batteries.
 // Opens as a full-height drawer over the Content page. Collects ONE or MANY question cards and saves
@@ -66,6 +67,10 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   useEffect(() => { loadSiblings(); }, [setId]); // eslint-disable-line
 
   const isExam = !!set?.allowed_exam;
+  // Per-set question cap for this set's subcategory (45 for a "… Battery Combine", 15 otherwise) — from the
+  // catalog via subcategory.maxQuestionsPerSet; never hard-coded. Shown in the header so the admin sees the
+  // real ceiling. A Battery Combine set may hold up to 45 questions; every other subcategory stays at 15.
+  const maxPerSet = maxQuestionsForSub((subs as any[]).find((s: any) => s.id === set?.subcategory_id));
   const scopeCat = scopeCategoryId;
   const subForCat = useMemo(() => subs.filter((s: any) => s.category_id === (scopeCat || set?.category_id)), [subs, scopeCat, set]);
   // The per-question TYPE field was removed from the card UI (it is redundant — every question inherits
@@ -255,7 +260,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
             ) : 'Loading…'}
             {set && isExam && <span> — {scopeLabel ?? 'Battery'}</span>}
           </div>
-          <div className="edsub muted">{set && (<>{isExam ? 'Exam battery' : 'Practice set'} · Grade {set.grade_number} · {set.category}{set.subcategory ? ` / ${set.subcategory}` : ''} · <b>{set.state}</b> · {cards.length} card{cards.length === 1 ? '' : 's'} ({activeCount} publish-ready)</>)}</div>
+          <div className="edsub muted">{set && (<>{isExam ? 'Exam battery' : 'Practice set'} · Grade {set.grade_number} · {set.category}{set.subcategory ? ` / ${set.subcategory}` : ''} · <b>{set.state}</b> · {cards.length} / {maxPerSet} card{cards.length === 1 ? '' : 's'} ({activeCount} publish-ready)</>)}</div>
         </div>
         <div className="edactions">
           <button className="btn ghost sm" disabled={busy || !set || loading || preview} onClick={() => setBulk(true)}>⤓ Bulk add from file</button>
@@ -358,8 +363,9 @@ function StudentPreview({ cards }: { cards: Card[] }) {
       <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>Student preview — how these questions appear in Practice/Exam (order may shuffle at runtime).</div>
       {cards.map((c, i) => (
         <div className="pvcard" key={c.key}>
+          {/* Match the student website: question TEXT first, then the figure BELOW it (own line, block). */}
           <div className="pvstem"><b>{i + 1}.</b> {c.stem || <span className="muted">[image question]</span>}</div>
-          {c.img && <><img className="pvimg" src={api.assetUrl(c.img.asset_id)} alt="" onError={onImgError} /><span hidden className="muted" style={{ fontSize: 12 }}>⚠ Question image not loading.</span></>}
+          {c.img && <><img className="pvimg" src={api.assetUrl(c.img.asset_id)} alt="" style={{ display: 'block', marginTop: 4 }} onError={onImgError} /><span hidden className="muted" style={{ fontSize: 12 }}>⚠ Question image not loading.</span></>}
           <div className="pvopts">
             {c.opts.filter(o => o.text.trim() || o.img).map(o => (
               <div className="pvopt" key={o.option_id}>

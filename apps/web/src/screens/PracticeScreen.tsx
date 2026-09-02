@@ -87,9 +87,9 @@ export function PracticeScreen() {
       const session = await client.sessionStart(item.set_version_id, 'practice', timerType, durationSeconds);
       nav(`/session/${session.id}`);
     } catch (e) {
-      flash(e instanceof ApiError
-        ? (e.code === 'ACTIVE_SESSION_EXISTS' ? 'You already have a session in progress — resume it from Home.' : e.message)
-        : (e as Error).message);
+      // A saved/left session must NOT block starting another set (the gateway no longer holds a
+      // one-active-session lock). No special "resume it from Home" blocking toast — surface only a real error.
+      flash(e instanceof ApiError ? e.message : (e as Error).message);
     } finally { setStarting(false); }
   }
 
@@ -108,9 +108,9 @@ export function PracticeScreen() {
       const session = await client.sessionStart(item.set_version_id, 'practice', timerType, durationSeconds);
       nav(`/session/${session.id}`);
     } catch (e) {
-      flash(e instanceof ApiError
-        ? (e.code === 'ACTIVE_SESSION_EXISTS' ? 'You already have a session in progress — resume it from Home.' : e.message)
-        : (e as Error).message);
+      // A saved/left session must NOT block starting another set (the gateway no longer holds a
+      // one-active-session lock). No special "resume it from Home" blocking toast — surface only a real error.
+      flash(e instanceof ApiError ? e.message : (e as Error).message);
     } finally { setStarting(false); }
   }
 

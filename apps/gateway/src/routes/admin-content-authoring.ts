@@ -104,13 +104,19 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     allowed_practice: z.boolean().default(true),
     allowed_exam: z.boolean().default(false),
     allowed_timers: z.array(z.string()).optional(),
-    // Exam papers may start empty (built up per section); practice sets pick 5–20 up front.
-    question_version_ids: z.array(z.string().uuid()).max(20).default([]),
+    // Exam papers may start empty (built up per section). Static ceiling = 45 (Battery Combine); the
+    // real per-subcategory limit is enforced at runtime below.
+    question_version_ids: z.array(z.string().uuid()).max(45).default([]),
     duration_minutes: z.number().int().min(1).max(180).optional(), // exam papers only
   });
   app.post('/v1/admin/content/sets', guard, async (req) => {
     requirePermission(req, 'content.create');
     const b = createSetSchema.parse(req.body);
+    // Enforce the target subcategory's max questions per set (45 for Combine, 15 otherwise).
+    const capRow = await db.query('select coalesce(max_questions_per_set, 15) as maxq from ccat.subcategories where id = $1', [b.subcategory_id]);
+    const maxq = Number(capRow.rows[0]?.maxq ?? 15);
+    if (b.question_version_ids.length > maxq)
+      throw Errors.validation(`This subcategory allows up to ${maxq} questions per set`, { code: 'SET_TOO_LARGE' });
     const timers = b.allowed_timers ?? (b.allowed_exam ? ['timed'] : ['untimed']);
     const setVersionId = await withTransaction(db, async (c) => {
       const qs = await c.query(
@@ -196,7 +202,9 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     return { id: qid, active: b.active };
   });
 
-  const membershipSchema = z.object({ question_version_ids: z.array(z.string().uuid()).min(0).max(20) });
+  // Static ceiling = the largest allowed set (Battery Combine = 45); the real per-subcategory limit
+  // (15 default, 45 for *_battery_combine) is enforced at runtime below against max_questions_per_set.
+  const membershipSchema = z.object({ question_version_ids: z.array(z.string().uuid()).min(0).max(45) });
   app.post('/v1/admin/content/sets/:id/questions', guard, async (req) => {
     requirePermission(req, 'content.create');
     const id = (req.params as any).id;
@@ -204,6 +212,16 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     const cur = await db.query('select state from ccat.question_set_versions where id=$1', [id]);
     if (cur.rows.length === 0) throw Errors.notFound('Set not found');
     if (cur.rows[0]!.state !== 'draft') throw Errors.validation('Only draft sets can change membership');
+    // Enforce this subcategory's max questions per set (45 for Combine, 15 otherwise).
+    const capRow = await db.query(
+      `select coalesce(sub.max_questions_per_set, 15) as maxq
+         from ccat.question_set_versions sv
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.subcategories sub on sub.id = qs.subcategory_id
+        where sv.id = $1`, [id]);
+    const maxq = Number(capRow.rows[0]?.maxq ?? 15);
+    if (b.question_version_ids.length > maxq)
+      throw Errors.validation(`This subcategory allows up to ${maxq} questions per set`, { code: 'SET_TOO_LARGE' });
     await withTransaction(db, async (c) => {
       // Preserve per-question active flags across a membership edit: a question toggled inactive must
       // stay inactive when another question is added/removed (the mockup keeps that state).
@@ -364,10 +382,13 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
       const sets: any[] = []; let imported = 0;
       for (const rows of groups.values()) {
         const { grade, cat, sub, diff } = rows[0]!;
-        // Split into ≤20-question draft sets (the set-size hard cap).
-        for (let start = 0; start < rows.length; start += SET_CAP) {
-          const batch = rows.slice(start, start + SET_CAP);
-          const part = Math.floor(start / SET_CAP);
+        // Split into draft sets sized to THIS subcategory's max (45 for Combine, 15 otherwise), not a
+        // hard-coded cap. Falls back to SET_CAP when the column is unavailable.
+        const capRow = await c.query('select coalesce(max_questions_per_set, $2) as maxq from ccat.subcategories where id=$1', [sub.id, SET_CAP]);
+        const grpCap = Math.max(1, Number(capRow.rows[0]?.maxq ?? SET_CAP));
+        for (let start = 0; start < rows.length; start += grpCap) {
+          const batch = rows.slice(start, start + grpCap);
+          const part = Math.floor(start / grpCap);
           const name = `${cap(sub.name)} · ${cap(diff.name)}${part > 0 ? ` (part ${part + 1})` : ''}`;
           const qs = await c.query(
             `insert into ccat.question_sets(grade_id, category_id, subcategory_id, name, created_by)

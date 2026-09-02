@@ -30,8 +30,9 @@ const AUTH_ROUTES = ['/', '/login', '/register', '/recovery', '/device'];
 
 function Protected({ children }: { children: JSX.Element }) {
   const { profile } = useApp();
-  const loc = useLocation();
-  if (!profile) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
+  // Bounce unauthenticated users to login WITHOUT remembering the attempted URL. A fresh sign-in must
+  // ALWAYS land on Home — never replay the page the user was on when logged out (or a pasted deep link).
+  if (!profile) return <Navigate to="/login" replace />;
   return children;
 }
 

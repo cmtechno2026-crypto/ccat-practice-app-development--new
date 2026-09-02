@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { ApiError } from './lib/api';
 import { Layout } from './components/Layout';
@@ -23,6 +23,7 @@ import { Audit } from './pages/Audit';
 
 function Login() {
   const { login } = useAuth();
+  const nav = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
@@ -36,6 +37,10 @@ function Login() {
     setErr(''); setBusy(true);
     try {
       await login(email.trim(), password);
+      // Always land on the admin default (Dashboard, "/") after a fresh sign-in — the routing tree only
+      // mounts once authenticated, and the browser keeps whatever protected URL the user was logged out on,
+      // so explicitly replace-navigate Home instead of re-rendering that stale page.
+      nav('/', { replace: true });
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         setFails(f => f + 1);

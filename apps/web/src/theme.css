@@ -627,3 +627,17 @@ p { line-height: 1.5; }
 .option .opt-figure { display: block; max-width: 100%; max-height: 150px; object-fit: contain; border-radius: 10px; background: var(--bg, #f7f8fb); }
 .option:has(.opt-figure) { align-items: flex-start; }
 .option:has(.opt-figure) .key { margin-top: 2px; }
+
+/* --- Signup country-code picker (custom listbox: dial code collapsed, flag+dial+name open) --- */
+.cc-select { position: relative; flex: none; }
+.cc-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; width: 96px; cursor: pointer; }
+.cc-trigger .cc-dial-sel { font-weight: 800; }
+.cc-trigger .cc-caret { color: var(--muted); font-size: 12px; }
+.cc-menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 240px; max-height: 320px; overflow-y: auto; margin: 0; padding: 6px; list-style: none; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-lift); }
+.cc-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--radius-sm); cursor: pointer; font-weight: 700; }
+.cc-item:hover { background: var(--subtle, var(--tint-blue)); }
+.cc-item.on { background: var(--tint-blue); color: var(--primary); }
+.cc-item .cc-flag { font-size: 18px; }
+.cc-item .cc-dial { font-weight: 800; min-width: 44px; }
+.cc-item .cc-name { color: var(--muted); }
+.cc-item.on .cc-name { color: var(--primary); }

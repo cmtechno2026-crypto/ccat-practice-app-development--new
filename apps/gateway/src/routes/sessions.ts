@@ -147,7 +147,9 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
          join ccat.categories cat on cat.id = qs.category_id
          join ccat.subcategories sub on sub.id = qs.subcategory_id
          left join ccat.difficulties d on d.id = sv.difficulty_id
-        where s.student_id = $1 and s.state = 'IN_PROGRESS'`,
+        where s.student_id = $1 and s.state = 'IN_PROGRESS'
+        order by s.started_at desc
+        limit 1`,
       [req.student!.studentId],
     );
     return rows[0] ?? null;
