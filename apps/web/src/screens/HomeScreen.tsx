@@ -3,7 +3,7 @@ import { firstName } from '@ccat/client-core';
 import type { Achievement, ProgressSummary } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
-import { Card, Loader, ErrorNote, useAsync } from '../components/ui';
+import { Card, Loader, ErrorNote, useAsync, GradePill } from '../components/ui';
 import { AvatarControl } from '../components/AvatarControl';
 import { Avatar } from '../components/Avatar';
 
@@ -87,6 +87,7 @@ export function HomeScreen() {
               ▶ Continue practice
             </button>
           )}
+          <GradePill />
           <AvatarControl />
         </div>
       </header>

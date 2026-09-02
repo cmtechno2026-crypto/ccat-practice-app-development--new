@@ -28,6 +28,15 @@ function useGradeLabel(gradeId: string | null | undefined): string | null {
   return label;
 }
 
+// Reusable "🎓 Grade N" pill for any purple header — the shared AppBar AND the Home hero (which does not
+// use AppBar). Renders nothing until the student's grade resolves.
+export function GradePill() {
+  const { profile } = useApp();
+  const gradeLabel = useGradeLabel(profile?.grade_id);
+  if (!profile || !gradeLabel) return null;
+  return <span className="grade-pill">🎓 {gradeLabel}</span>;
+}
+
 // ---- content figures (question/option images) -----------------------------
 // prompt_blocks / option content are block arrays: [{type:'text',value}, {type:'image',url,alt}, …].
 // A question or option may carry an image block; extract its URL (given by the gateway — we don't build
@@ -67,7 +76,6 @@ export function Figure({ url, blocks, kind, alt }: { url?: string | null; blocks
 export function AppBar({ title, sub, back, right, wide }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; wide?: boolean }) {
   const nav = useNavigate();
   const { profile } = useApp();
-  const gradeLabel = useGradeLabel(profile?.grade_id);
   return (
     <div className="appbar">
       {/* `wide` aligns the header's inner content to the same column as `.content-wide` pages (Progress),
@@ -80,7 +88,7 @@ export function AppBar({ title, sub, back, right, wide }: { title: string; sub?:
         </div>
         {right}
         {/* Student's grade, resolved from grade_id → "Grade N", shown as a pill just left of the avatar. */}
-        {profile && gradeLabel && <span className="grade-pill">🎓 {gradeLabel}</span>}
+        <GradePill />
         {/* Top-right avatar is a control: opens the avatar + theme management panel. Only on in-app pages (has profile). */}
         {profile ? <AvatarControl /> : <div className="avatar-chip" aria-hidden>🦊</div>}
       </div>

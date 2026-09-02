@@ -753,11 +753,12 @@ p { line-height: 1.5; }
 .bt-tq    .btb-n { color: #b45309; }
 .bt-avg   .btb-n { color: #6d28d9; }
 
-/* Header grade pill — student's grade shown just left of the avatar (translucent, matches the header). */
-.appbar .grade-pill {
+/* Grade pill — student's grade shown just left of the avatar. Used on the shared AppBar AND the Home
+   hero (both are purple), so the selector is not scoped to .appbar. Translucent white to match. */
+.grade-pill {
   display: inline-flex; align-items: center; gap: 6px; flex: none;
   height: 36px; padding: 0 14px; border-radius: var(--radius-pill, 999px);
   background: rgba(255, 255, 255, .18); color: #fff; font-weight: 800; font-size: 14px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28); white-space: nowrap;
 }
-@media (max-width: 480px) { .appbar .grade-pill { display: none; } }
+@media (max-width: 480px) { .grade-pill { display: none; } }
