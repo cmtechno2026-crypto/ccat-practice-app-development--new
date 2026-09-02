@@ -49,7 +49,14 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
 
   // Tolerate an empty body on JSON requests (e.g. bodyless DELETE/POST that still send
   // content-type: application/json) → treat as no body rather than a parse error.
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+  //
+  // bodyLimit MUST be set on the parser here: a custom `parseAs` content-type parser enforces the GLOBAL
+  // body limit (Fastify's 1 MiB default) and IGNORES per-route `bodyLimit`, so admin image/bulk uploads
+  // (base64 JSON of several MB) were being rejected with 413 before ever reaching the route. 16 MB comfortably
+  // fits a single ≤3 MB figure and the CHUNKED bulk-figure batches (the admin splits large uploads into
+  // ~8 MB requests), while staying bounded for every other (tiny) admin JSON route.
+  const JSON_BODY_LIMIT = 16 * 1024 * 1024;
+  app.addContentTypeParser('application/json', { parseAs: 'string', bodyLimit: JSON_BODY_LIMIT }, (_req, body, done) => {
     const s = typeof body === 'string' ? body.trim() : '';
     if (s === '') { done(null, undefined); return; }
     try { done(null, JSON.parse(s)); }

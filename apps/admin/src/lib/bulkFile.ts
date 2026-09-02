@@ -111,9 +111,15 @@ function bytesToB64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-// Upload every referenced+matched image ONCE (de-duplicated by basename) in a SINGLE batch request, so ~400
-// figures import in one round-trip instead of 400 sequential uploads. `uploadBatch` sends all images together
-// (the Gateway stores them with bounded concurrency + one multi-row insert) and returns assets 1:1 with the
+// Per-request upload chunk caps. A single huge request (all figures' base64 in one POST) is rejected as 413
+// by the JSON body limit / edge proxy, so the referenced images are uploaded in bounded CHUNKS. Each chunk is
+// still stored server-side with bounded concurrency + one multi-row insert; results are stitched back in order.
+const UPLOAD_CHUNK_MAX_BYTES = 8 * 1024 * 1024; // ≤ 8 MB of base64 per request (gateway JSON limit is 16 MB)
+const UPLOAD_CHUNK_MAX_IMAGES = 30;             // …and at most 30 images per request
+
+// Upload every referenced+matched image ONCE (de-duplicated by basename), in size-bounded batches so a large
+// figure set imports reliably instead of failing a single oversized request. `uploadBatch` sends one chunk
+// (the Gateway stores it with bounded concurrency + one multi-row insert) and returns assets 1:1 with the
 // order sent. Returns basename(lowercased) → resolved asset.
 export async function uploadImages(
   refs: string[], images: Map<string, BulkImage>,
@@ -124,10 +130,28 @@ export async function uploadImages(
   for (const r of refs) { const k = baseName(r).toLowerCase(); if (images.has(k) && !seen.has(k)) { seen.add(k); keys.push(k); } }
   const out = new Map<string, ImgRef>();
   if (!keys.length) return out;
+
   const items = keys.map(k => { const img = images.get(k)!; return { mime_type: img.type, data_base64: bytesToB64(img.bytes), alt_text: img.name }; });
-  const assets = await uploadBatch(items);
-  if (assets.length !== keys.length) throw new Error(`Upload returned ${assets.length} assets for ${keys.length} image(s).`);
-  keys.forEach((k, i) => out.set(k, { asset_id: assets[i]!.id, url: assets[i]!.url, alt: '' }));
+
+  // Split into chunks that stay under both the byte and count caps (a single image over the byte cap still
+  // rides alone in its own chunk — it is already ≤ 3 MB by the per-image limit, well under the request cap).
+  const chunks: { start: number; items: typeof items }[] = [];
+  let cur: typeof items = []; let curBytes = 0; let start = 0;
+  for (let i = 0; i < items.length; i++) {
+    const sz = items[i]!.data_base64.length;
+    if (cur.length && (cur.length >= UPLOAD_CHUNK_MAX_IMAGES || curBytes + sz > UPLOAD_CHUNK_MAX_BYTES)) {
+      chunks.push({ start, items: cur }); cur = []; curBytes = 0; start = i;
+    }
+    cur.push(items[i]!); curBytes += sz;
+  }
+  if (cur.length) chunks.push({ start, items: cur });
+
+  // Upload chunks sequentially (each chunk is itself parallelised server-side); stitch results back by index.
+  for (const ch of chunks) {
+    const assets = await uploadBatch(ch.items);
+    if (assets.length !== ch.items.length) throw new Error(`Upload returned ${assets.length} assets for ${ch.items.length} image(s).`);
+    assets.forEach((a, j) => { const k = keys[ch.start + j]!; out.set(k, { asset_id: a.id, url: a.url, alt: '' }); });
+  }
   return out;
 }
 
