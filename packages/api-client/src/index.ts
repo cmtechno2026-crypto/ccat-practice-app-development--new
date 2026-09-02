@@ -4,7 +4,7 @@ import type {
   SessionResult, ExamHistoryItem, RewardsSummary, CoinsPanel, Readiness, Progress, CatalogItem, Bookmark, BookmarkReview, Achievement,
   AvatarsResponse, Theme, Announcement, Book, AdultChallenge, RetailerHandoff, PracticeAttemptResult,
   SupportCase, SupportCaseCreated, AccountInfo, AccountGuardian, DeletionResult, ReferralInfo,
-  ContactValidated, ProgressSummary, ProgressBreakdownCategory, ProgressQuery,
+  ContactValidated, ProgressSummary, ProgressBreakdownCategory, ProgressQuery, ProgressSetsQuery, ProgressSetRow,
 } from './types.js';
 
 export * from './types.js';
@@ -146,6 +146,10 @@ export class CcatClient {
   }
   progressBreakdown(q: ProgressQuery = {}) {
     return this.request<ProgressBreakdownCategory[]>('GET', `/v1/progress/breakdown${progressQs(q)}`, { auth: true });
+  }
+  // Per-set rows for one battery (finished sets), optional subcategory filter ('all'/omitted = every one).
+  progressSets(q: ProgressSetsQuery) {
+    return this.request<ProgressSetRow[]>('GET', `/v1/progress/sets${progressQs(q)}`, { auth: true });
   }
 
   // ---- help & support (Gate 4A) ---------------------------------------------

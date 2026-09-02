@@ -184,24 +184,45 @@ export interface CoinsPanel {
 export interface Readiness { readiness_pct: number | null; insufficient_data: boolean; band: string | null; window_questions: number; }
 export interface Progress { progress_pct: number | null; completed_count: number; eligible_count: number; learning_plan_version_id: string | null; }
 
-// ---- Progress & Analytics (GET /v1/progress/summary, /v1/progress/breakdown) ----
+// ---- Progress & Analytics (GET /v1/progress/summary, /v1/progress/sets, /v1/progress/breakdown) ----
 // Real, driven by the student's own practice data; untracked metrics are null (never faked). Only SESSION
 // wall-clock exists → practiceTimeMinutes / practiceTimeSeries are LIVE; per-question duration is not
 // tracked → avgSecondsPerQuestion is always null. See PROGRESS_ANALYTICS.
 export type ProgressCategory = 'verbal' | 'non_verbal' | 'quantitative';
-export interface ProgressReadiness { category: ProgressCategory | string; pct: number | null; }
-export interface ProgressExams { attempts: number; lastScore: { score: number; total: number } | null; bestAccuracyPct: number | null; }
 export interface ProgressTimePoint { date: string; minutes: number; }
+export interface ProgressScore { correct: number; total: number; }
+export interface ProgressSubcategory { key: string; name: string; }
+
+// One battery (category) in the summary. Metrics are over the student's FINISHED sets (most recent
+// finished attempt per set); numbers reconcile — Σ batteries[].score === summary.score, and the /sets
+// rows for a battery sum to that battery's score. avgSecondsPerQuestion is null (not tracked).
+export interface ProgressBatterySummary {
+  key: string;                          // category key (e.g. 'verbal') — from the DB, not hard-coded
+  name: string;                         // category display name
+  accuracyPct: number | null;
+  score: ProgressScore;
+  totalQuestions: number;
+  avgSecondsPerQuestion: number | null; // always null (per-question timing not captured)
+  setsDone: number;
+  subcategories: ProgressSubcategory[]; // subcategories present among this battery's finished sets (filter)
+}
 export interface ProgressSummary {
-  questionsAnswered: number;
-  setsCompleted: number;
-  avgAccuracy: number | null;
-  practiceTimeMinutes: number | null;
-  mockExamsTaken: number;
-  streakDays: number;
-  readiness: ProgressReadiness[];
-  exams: ProgressExams;
-  practiceTimeSeries: ProgressTimePoint[];
+  score: ProgressScore;                 // across ALL finished sets (e.g. 46/60)
+  setsDone: number;                     // total finished sets
+  practiceTimeMinutes: number | null;   // LIVE (session wall-clock); null/0 when no terminal sessions
+  practiceTimeSeries: ProgressTimePoint[]; // LIVE per-day; [] when none
+  batteries: ProgressBatterySummary[];
+}
+
+// One per-set row from GET /v1/progress/sets (finished sets in a battery, optional subcategory filter).
+export interface ProgressSetRow {
+  setId: string;
+  name: string;
+  subcategory: ProgressSubcategory;
+  accuracyPct: number | null;
+  score: ProgressScore;
+  totalQuestions: number;
+  avgSecondsPerQuestion: number | null; // always null (per-question timing not captured)
 }
 export interface ProgressTopic {
   subcategory: string;
@@ -214,3 +235,5 @@ export interface ProgressTopic {
 }
 export interface ProgressBreakdownCategory { category: ProgressCategory | string; accuracyPct: number | null; topics: ProgressTopic[]; }
 export interface ProgressQuery { from?: string; to?: string; }
+// Query for GET /v1/progress/sets. subcategory 'all' (or omitted) → every subcategory in the battery.
+export interface ProgressSetsQuery extends ProgressQuery { battery: string; subcategory?: string; }

@@ -3,23 +3,33 @@ import type { DB } from '../db.js';
 
 // Progress & analytics reads for the student dashboard (Home "Progress & Analytics" card + Progress page).
 // Read-only aggregates over the AUTHENTICATED student's own data — the student id always comes from the
-// session (req.student), never from the client. Straightforward set-based aggregate SQL (no N+1).
+// session (req.student), never from the client. Set-based aggregate SQL (GROUP BY / window; no N+1).
 //
-// Data sources (see PROGRESS_ANALYTICS report):
-//   questionsAnswered / avgAccuracy / readiness[]  ← ccat.session_answers (is_locked) vs
-//        ccat.question_versions.correct_option_ids, category via
-//        sessions → question_set_versions → question_sets.category_id → categories.key
-//   setsCompleted / mockExamsTaken                 ← ccat.set_completions.mode
-//   practiceTimeMinutes / practiceTimeSeries       ← Σ(sessions.terminal_at − started_at) over terminal
-//        sessions (session/set wall-clock — LIVE; per-QUESTION duration is NOT tracked)
-//   exams{}                                        ← exam sessions + ccat.session_results
-//   streakDays                                     ← ccat.student_streaks (effective current, tz-aware)
-//   breakdown topics                               ← session_answers grouped by subcategory, with
-//        completion from question_sets vs set_completions
+// CONTRACT (H4 / P1):
+//   GET /v1/progress/summary?from=&to=   → { score{correct,total}, setsDone, practiceTimeMinutes,
+//        practiceTimeSeries[], batteries[{ key, name, accuracyPct, score{correct,total},
+//        totalQuestions, avgSecondsPerQuestion, setsDone, subcategories[{key,name}] }] }
+//   GET /v1/progress/sets?battery=&subcategory=  → [{ setId, name, accuracyPct, score{correct,total},
+//        totalQuestions, avgSecondsPerQuestion }]
+//   GET /v1/progress/breakdown?from=&to=  → per-category → topics (kept for compatibility; unchanged).
 //
-// TIME TRACKING: only SESSION wall-clock exists (started_at → terminal_at). That powers practiceTimeMinutes
-// and practiceTimeSeries (LIVE). There is NO per-answer/per-question duration column, so
-// avgSecondsPerQuestion is returned null everywhere (never estimated).
+// FINISHED-SET MODEL (score / setsDone / batteries / sets):
+//   The unit is a FINISHED practice set. "Finished" = a practice session (mode<>'exam') with a terminal
+//   session_results row (SUBMITTED / AUTO_SUBMITTED). For each set we take the MOST RECENT finished
+//   attempt (row_number over terminal_at desc) and read its authoritative score_correct / score_total
+//   from ccat.session_results. Save & Leave / abandon leave no session_results row, so paused sets are
+//   excluded (matches the sets-done bug fix). Because every level is derived from the SAME per-set
+//   (rn=1) rows, the numbers reconcile exactly: Σ per-set = per-battery; Σ per-battery = summary.
+//   Date range applies on the finished session's terminal_at.
+//
+// TIME / DURATION — the one honest limitation (verified against the live schema 2026-09-02):
+//   ccat.session_answers has NO per-attempt duration column (only attempts / updated_at / created_at),
+//   and sessions.duration_seconds is the TIMER CONFIG, not elapsed. So:
+//     • avgSecondsPerQuestion — NULL everywhere (per-question timing is not captured; never estimated).
+//     • practiceTimeMinutes / practiceTimeSeries — LIVE from SESSION wall-clock (started_at → terminal_at)
+//       over terminal practice sessions, tz-aware. Real timestamp math, not a fabricated trend.
+//   Capturing avg time/q is a small follow-up: the practice client would send elapsed time per answer
+//   (or per set) and the gateway would store it on session_answers (or set_completions). Not built here.
 
 const CAT_ORDER = ['verbal', 'quantitative', 'non_verbal'] as const;
 
@@ -44,6 +54,44 @@ function daysAgoLabel(isoDay: string | null, todayIso: string): string {
   return `${MON[(m ?? 1) - 1]} ${d}`;
 }
 
+// Per-set row from the "most recent finished attempt per set" window. Shared by /summary and /sets.
+// Returns raw rows (rn=1), ordered category → subcategory → set creation → set id.
+async function finishedSetRows(db: DB, sid: string, r: Range) {
+  const p: any[] = [sid];
+  const extra: string[] = [];
+  if (r.from) { p.push(r.from); extra.push(`s.terminal_at >= $${p.length}`); }
+  if (r.to) { p.push(r.to); extra.push(`s.terminal_at < $${p.length}`); }
+  const where = ["s.student_id = $1", "s.mode <> 'exam'", "sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')", ...extra].join(' and ');
+  const res = await db.query(
+    `with fin as (
+       select qs.id as set_id, qs.name as set_name, qs.created_at as set_created,
+              cat.key as cat_key, cat.name as cat_name, cat.display_order as cat_order,
+              coalesce(sub.key, 'none') as sub_key, coalesce(sub.name, 'General') as sub_name,
+              coalesce(sub.display_order, 999) as sub_order,
+              qsv.question_count as total_questions,
+              sr.score_correct::int as score_correct, sr.score_total::int as score_total,
+              row_number() over (partition by qs.id
+                                 order by s.terminal_at desc nulls last, sr.created_at desc) as rn
+         from ccat.sessions s
+         join ccat.session_results sr on sr.session_id = s.id
+         join ccat.question_set_versions qsv on qsv.id = s.set_version_id
+         join ccat.question_sets qs on qs.id = qsv.question_set_id
+         join ccat.categories cat on cat.id = qs.category_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
+        where ${where}
+     )
+     select set_id, set_name, cat_key, cat_name, cat_order, sub_key, sub_name, sub_order,
+            total_questions, score_correct, score_total
+       from fin where rn = 1
+      order by cat_order, sub_order, set_created asc, set_id asc`, p);
+  return res.rows as Array<{
+    set_id: string; set_name: string; cat_key: string; cat_name: string; cat_order: number;
+    sub_key: string; sub_name: string; sub_order: number;
+    total_questions: number | null; score_correct: number; score_total: number;
+  }>;
+}
+const pct = (correct: number, total: number): number | null => (total > 0 ? Math.round((100 * correct) / total) : null);
+
 export function registerProgressRoutes(app: FastifyInstance, db: DB) {
   // GET /v1/progress/summary?from=&to=
   app.get('/v1/progress/summary', { preHandler: [app.authenticateStudent] }, async (req) => {
@@ -53,60 +101,28 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
     const tzRow = await db.query('select timezone from ccat.students where id=$1', [sid]);
     const tz = (tzRow.rows[0]?.timezone as string) || 'UTC';
 
-    // --- answered + per-answer accuracy, grouped by category (locked answers only) ---
-    const ap: any[] = [sid]; const ac: string[] = ['sa.is_locked'];
-    if (r.from) { ap.push(r.from); ac.push(`sa.updated_at >= $${ap.length}`); }
-    if (r.to) { ap.push(r.to); ac.push(`sa.updated_at < $${ap.length}`); }
-    const answers = await db.query(
-      `select cat.key as category, count(*)::int as answered,
-              sum(case when (array(select unnest(sa.selected_option_ids) order by 1)
-                            = array(select unnest(qv.correct_option_ids) order by 1)) then 1 else 0 end)::int as correct
-         from ccat.session_answers sa
-         join ccat.sessions s on s.id = sa.session_id and s.student_id = $1
-         join ccat.question_set_versions qsv on qsv.id = s.set_version_id
-         join ccat.question_sets qs on qs.id = qsv.question_set_id
-         join ccat.categories cat on cat.id = qs.category_id
-         join ccat.question_versions qv on qv.id = sa.question_version_id
-        where ${ac.join(' and ')}
-        group by cat.key`, ap);
-    const catMap = new Map<string, { answered: number; correct: number }>();
-    let questionsAnswered = 0, correctTotal = 0;
-    for (const row of answers.rows as any[]) {
-      catMap.set(row.category, { answered: row.answered, correct: row.correct });
-      questionsAnswered += row.answered; correctTotal += row.correct;
+    // Battery skeleton — every ACTIVE category, in display order (names + keys straight from the DB, so
+    // nothing is hard-coded). Empty batteries still appear with zeros / null.
+    const catRows = await db.query(
+      `select key, name from ccat.categories where active = true order by display_order, name`);
+    const cats = (catRows.rows as any[]).map((c) => ({ key: c.key as string, name: c.name as string }));
+
+    // Finished-set rows (most recent finished attempt per set) → fold into per-battery buckets.
+    const rows = await finishedSetRows(db, sid, r);
+    type Bucket = { correct: number; total: number; totalQ: number; setsDone: number;
+      subs: Map<string, { key: string; name: string; order: number }> };
+    const byCat = new Map<string, Bucket>();
+    let scoreCorrect = 0, scoreTotal = 0, setsDone = 0;
+    for (const row of rows) {
+      let b = byCat.get(row.cat_key);
+      if (!b) { b = { correct: 0, total: 0, totalQ: 0, setsDone: 0, subs: new Map() }; byCat.set(row.cat_key, b); }
+      b.correct += row.score_correct; b.total += row.score_total; b.totalQ += (row.total_questions ?? 0); b.setsDone += 1;
+      if (!b.subs.has(row.sub_key)) b.subs.set(row.sub_key, { key: row.sub_key, name: row.sub_name, order: row.sub_order });
+      scoreCorrect += row.score_correct; scoreTotal += row.score_total; setsDone += 1;
     }
-    const avgAccuracy = questionsAnswered > 0 ? Math.round((100 * correctTotal) / questionsAnswered) : null;
-    // Per-category "readiness" bars. No separate per-category readiness model exists, so this is the
-    // student's per-answer ACCURACY in that category (null when nothing answered) — documented as such.
-    const readiness = CAT_ORDER.map((category) => {
-      const c = catMap.get(category);
-      return { category, pct: c && c.answered > 0 ? Math.round((100 * c.correct) / c.answered) : null };
-    });
 
-    // --- "Sets done" = sets the student FINISHED (a session with a terminal result: SUBMITTED /
-    // AUTO_SUBMITTED), counted DISTINCT per set. NOT ccat.set_completions — that table only records
-    // learning-plan COVERAGE (its insert inner-joins learning_plan_sets), so a finished practice set
-    // outside a plan was never recorded → the sets-done=0 bug. Source of truth for "finished" is a
-    // terminal session_results row. Save & Leave / abandon leave no session_results row, so paused sets
-    // are correctly excluded. mockExamsTaken = count of finished EXAM sessions (attempts). Date range
-    // applies via the session's terminal_at.
-    const cp: any[] = [sid];
-    const cc: string[] = ['s.student_id = $1', "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')"];
-    if (r.from) { cp.push(r.from); cc.push(`s.terminal_at >= $${cp.length}`); }
-    if (r.to) { cp.push(r.to); cc.push(`s.terminal_at < $${cp.length}`); }
-    const comp = await db.query(
-      `select (count(distinct qs.id) filter (where s.mode <> 'exam'))::int as sets_done,
-              (count(*) filter (where s.mode = 'exam'))::int as mocks
-         from ccat.sessions s
-         join ccat.session_results r on r.session_id = s.id
-         join ccat.question_set_versions sv on sv.id = s.set_version_id
-         join ccat.question_sets qs on qs.id = sv.question_set_id
-        where ${cc.join(' and ')}`, cp);
-    const setsCompleted = Number(comp.rows[0]?.sets_done ?? 0);
-    const mockExamsTaken = Number(comp.rows[0]?.mocks ?? 0);
-
-    // --- practice time: real session wall-clock (started_at → terminal_at) over terminal sessions ---
-    const tp: any[] = [sid]; const tc: string[] = ['s.student_id = $1', 's.terminal_at is not null'];
+    // --- practice time: real session wall-clock (started_at → terminal_at) over terminal PRACTICE sessions ---
+    const tp: any[] = [sid]; const tc: string[] = ['s.student_id = $1', "s.mode <> 'exam'", 's.terminal_at is not null'];
     if (r.from) { tp.push(r.from); tc.push(`s.terminal_at >= $${tp.length}`); }
     if (r.to) { tp.push(r.to); tc.push(`s.terminal_at < $${tp.length}`); }
     const timeRow = await db.query(
@@ -115,8 +131,7 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
     const practiceTimeMinutes = Number(timeRow.rows[0]?.mins ?? 0);
 
     // --- practice time series: per-day minutes (tz-aware), chronological for the line chart ---
-    // Independent param list: $1 = sid, $2 = tz, range (if any) at $3+.
-    const spar: any[] = [sid, tz]; const scnd: string[] = ['s.student_id = $1', 's.terminal_at is not null'];
+    const spar: any[] = [sid, tz]; const scnd: string[] = ['s.student_id = $1', "s.mode <> 'exam'", 's.terminal_at is not null'];
     if (r.from) { spar.push(r.from); scnd.push(`s.terminal_at >= $${spar.length}`); }
     if (r.to) { spar.push(r.to); scnd.push(`s.terminal_at < $${spar.length}`); }
     const seriesRow = await db.query(
@@ -126,43 +141,53 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
         group by 1 order by 1`, spar);
     const practiceTimeSeries = (seriesRow.rows as any[]).map((x) => ({ date: x.date as string, minutes: Number(x.minutes) }));
 
-    // --- exams: attempts / last score / best accuracy from terminal EXAM sessions + results ---
-    const ep: any[] = [sid]; const ec: string[] = ["s.student_id = $1", "s.mode = 'exam'", 'sr.session_id is not null'];
-    if (r.from) { ep.push(r.from); ec.push(`sr.created_at >= $${ep.length}`); }
-    if (r.to) { ep.push(r.to); ec.push(`sr.created_at < $${ep.length}`); }
-    const examRows = await db.query(
-      `select sr.score_correct, sr.score_total, sr.created_at
-         from ccat.sessions s join ccat.session_results sr on sr.session_id = s.id
-        where ${ec.join(' and ')} order by sr.created_at desc`, ep);
-    const exRows = examRows.rows as any[];
-    const attempts = exRows.length;
-    const lastScore = attempts > 0 ? { score: exRows[0].score_correct as number, total: exRows[0].score_total as number } : null;
-    let bestAccuracyPct: number | null = null;
-    for (const x of exRows) {
-      if (x.score_total > 0) {
-        const acc = Math.round((100 * x.score_correct) / x.score_total);
-        if (bestAccuracyPct == null || acc > bestAccuracyPct) bestAccuracyPct = acc;
-      }
-    }
-    const exams = { attempts, lastScore, bestAccuracyPct };
-
-    // --- streak (effective current; tz-aware, same logic as /v1/rewards/summary) ---
-    const stk = await db.query(
-      `select case when ss.last_active_day >= (now() at time zone s.timezone)::date - 1 then ss.current_streak else 0 end as current
-         from ccat.student_streaks ss join ccat.students s on s.id = ss.student_id where ss.student_id=$1`, [sid]);
-    const streakDays = stk.rows[0] ? Number(stk.rows[0].current) : 0;
+    const batteries = cats.map((c) => {
+      const b = byCat.get(c.key);
+      return {
+        key: c.key,
+        name: c.name,
+        accuracyPct: b ? pct(b.correct, b.total) : null,
+        score: { correct: b?.correct ?? 0, total: b?.total ?? 0 },
+        totalQuestions: b?.totalQ ?? 0,
+        avgSecondsPerQuestion: null,   // not tracked (see header)
+        setsDone: b?.setsDone ?? 0,
+        subcategories: b ? [...b.subs.values()].sort((a, z) => a.order - z.order).map((s) => ({ key: s.key, name: s.name })) : [],
+      };
+    });
 
     return {
-      questionsAnswered,
-      setsCompleted,
-      avgAccuracy,
+      score: { correct: scoreCorrect, total: scoreTotal },
+      setsDone,
       practiceTimeMinutes,
-      mockExamsTaken,
-      streakDays,
-      readiness,
-      exams,
       practiceTimeSeries,
+      batteries,
     };
+  });
+
+  // GET /v1/progress/sets?battery=<category key>&subcategory=<subcategory key | 'all'>
+  // Per-set rows for one battery (most recent finished attempt per set), optionally filtered to a
+  // subcategory. Ordered the way the app lists sets (creation order). Reconciles with /summary batteries.
+  app.get('/v1/progress/sets', { preHandler: [app.authenticateStudent] }, async (req) => {
+    const sid = req.student!.studentId;
+    const r = pickRange(req.query);
+    const q: any = req.query || {};
+    const battery = typeof q.battery === 'string' ? q.battery.trim() : '';
+    const subRaw = typeof q.subcategory === 'string' ? q.subcategory.trim() : '';
+    const sub = subRaw && subRaw.toLowerCase() !== 'all' ? subRaw : null;
+    if (!battery) return [];
+
+    const rows = await finishedSetRows(db, sid, r);
+    return rows
+      .filter((row) => row.cat_key === battery && (sub == null || row.sub_key === sub))
+      .map((row) => ({
+        setId: row.set_id,
+        name: row.set_name,
+        subcategory: { key: row.sub_key, name: row.sub_name },
+        accuracyPct: pct(row.score_correct, row.score_total),
+        score: { correct: row.score_correct, total: row.score_total },
+        totalQuestions: row.total_questions ?? 0,
+        avgSecondsPerQuestion: null,   // not tracked (see header)
+      }));
   });
 
   // GET /v1/progress/breakdown?from=&to=  → per category, with nested topics (subcategories).
@@ -175,8 +200,6 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
     const tz = (meta.rows[0]?.timezone as string) || 'UTC';
     const todayIso = (await db.query(`select to_char((now() at time zone $1)::date,'YYYY-MM-DD') as d`, [tz])).rows[0]!.d as string;
 
-    // Ordered per-answer rows (locked), carrying category + subcategory + correctness + tz day.
-    // Ordered by subcategory then time so bestStreak (longest consecutive-correct run) is computed in JS.
     const ap: any[] = [sid, tz]; const ac: string[] = ['sa.is_locked'];
     if (r.from) { ap.push(r.from); ac.push(`sa.updated_at >= $${ap.length}`); }
     if (r.to) { ap.push(r.to); ac.push(`sa.updated_at < $${ap.length}`); }
@@ -197,7 +220,6 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
         where ${ac.join(' and ')}
         order by cat.display_order, coalesce(sub.display_order, 999), sa.updated_at`, ap);
 
-    // Completion per subcategory for the student's grade: completed sets vs total sets.
     const compRows = gradeId ? await db.query(
       `select coalesce(qs.subcategory_id::text,'none') as subid,
               count(distinct qs.id)::int as total,
@@ -209,14 +231,13 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
     const compBySub = new Map<string, { total: number; done: number }>();
     for (const c of compRows.rows as any[]) compBySub.set(c.subid, { total: c.total, done: c.done });
 
-    // Fold ordered answers into category → subcategory aggregates (JS; single scan).
     type Topic = { subcategory: string; accuracyPct: number | null; avgSecondsPerQuestion: null;
                    completionPct: number | null; questionsDone: number; bestStreak: number; lastPractisedLabel: string; };
-    const cats = new Map<string, { key: string; order: number; answered: number; correct: number; topics: Map<string, {
+    const catsMap = new Map<string, { key: string; order: number; answered: number; correct: number; topics: Map<string, {
       subid: string; name: string; order: number; done: number; correct: number; run: number; best: number; lastDay: string | null; }> }>();
     for (const row of rows.rows as any[]) {
-      if (!cats.has(row.category)) cats.set(row.category, { key: row.category, order: row.cat_order, answered: 0, correct: 0, topics: new Map() });
-      const c = cats.get(row.category)!;
+      if (!catsMap.has(row.category)) catsMap.set(row.category, { key: row.category, order: row.cat_order, answered: 0, correct: 0, topics: new Map() });
+      const c = catsMap.get(row.category)!;
       c.answered += 1; if (row.correct) c.correct += 1;
       let t = c.topics.get(row.subid);
       if (!t) { t = { subid: row.subid, name: row.subname, order: row.sub_order, done: 0, correct: 0, run: 0, best: 0, lastDay: null }; c.topics.set(row.subid, t); }
@@ -225,10 +246,8 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
       if (!t.lastDay || row.day > t.lastDay) t.lastDay = row.day;
     }
 
-    // Emit all three categories in fixed order; topics ordered by display order. Categories with no
-    // activity come back with accuracyPct null + empty topics (frontend shows an empty state).
     const result = CAT_ORDER.map((key) => {
-      const c = cats.get(key);
+      const c = catsMap.get(key);
       const topics: Topic[] = c
         ? [...c.topics.values()].sort((a, b) => a.order - b.order).map((t) => {
             const comp = compBySub.get(t.subid);

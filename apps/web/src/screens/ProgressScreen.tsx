@@ -1,25 +1,36 @@
 import { useMemo, useState } from 'react';
 import { client } from '../lib/api';
-import type { ProgressBreakdownCategory, ProgressQuery, ProgressSummary } from '@ccat/api-client';
+import type { ProgressQuery, ProgressSetRow, ProgressSummary } from '@ccat/api-client';
 import { AppBar, Loader, ErrorNote, useAsync } from '../components/ui';
 
-// PROGRESS PAGE ("P3" bento) — real, data-driven analytics.
+// PROGRESS PAGE ("P1") — real, data-driven analytics.
 //   FILTER  Date range ONLY (wired to gateway ?from=&to=). No category/mode dropdowns.
-//   ROW 1   LEFT  "⏱️ Practice time" line chart (hour gridlines + date axis + markers) or an honest
-//                 "not enough data yet" placeholder.  RIGHT  2×2 stat tiles.
-//   ROW 2   LEFT  "🚀 Readiness" three category bars.  RIGHT  "📝 CCAT exams" last/best/attempts.
-//   ROW 3   "🧠 By category & topic" — three category accordions expanding to topic rows.
-// Nothing is invented: untracked metrics render "—", empty states render on fresh accounts, and the
-// chart shows the placeholder (never a fake line) when there is no time series.
+//   ROW 1   LEFT (~1.6fr) "⏱️ Overall practice time": headline total + per-day line chart (hour
+//                 gridlines + date axis + markers) or an honest "not enough data yet" placeholder.
+//           RIGHT (~1fr)  2×2 of FOUR uniform "sets done" boxes — one per battery + Total (Total is
+//                 just the sum; styled identically, never special).
+//   ROW 2   "🧠 Battery Tests": one tab per battery. The selected tab shows FOUR metric boxes
+//                 (Accuracy % · Score · Total Question · Avg time/q) and a "Sets" table with a
+//                 subcategory filter; rows are the sets in that battery, filtered by subcategory.
+// Data: GET /v1/progress/summary (score, setsDone, practice time, batteries[]) + GET /v1/progress/sets
+// (per-set rows for the active battery + subcategory). Numbers reconcile server-side. Nothing invented:
+// avgSecondsPerQuestion renders "—" (not tracked), empty states render on fresh accounts, and the chart
+// shows the placeholder (never a fake line) when there is no time series.
 
-const CAT_VIS: Record<string, { name: string; color: string; tint: string }> = {
-  verbal: { name: 'Verbal', color: '#3e7bee', tint: '#eaf0ff' },
-  quantitative: { name: 'Quantitative', color: '#22c3a6', tint: '#e8f7f1' },
-  non_verbal: { name: 'Non-verbal', color: '#8b5cf6', tint: '#f3ecfb' },
-  nonverbal: { name: 'Non-verbal', color: '#8b5cf6', tint: '#f3ecfb' },
+// Per-battery visuals. Colours fixed per spec (Verbal blue, Quant teal, Non-verbal purple); short names
+// for the known keys with a prettified fallback so any category the gateway returns still renders.
+// Order everywhere follows what the summary returns (never hard-coded).
+const CAT_VIS: Record<string, { name: string; color: string }> = {
+  verbal: { name: 'Verbal', color: '#3e7bee' },
+  quantitative: { name: 'Quantitative', color: '#22c3a6' },
+  non_verbal: { name: 'Non-verbal', color: '#8b5cf6' },
+  nonverbal: { name: 'Non-verbal', color: '#8b5cf6' },
 };
 function catVis(key: string) {
-  return CAT_VIS[key] || { name: key, color: 'var(--muted)', tint: '#eef1f6' };
+  const hit = CAT_VIS[key];
+  if (hit) return hit;
+  const name = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return { name, color: 'var(--purple)' };
 }
 
 const RANGE_OPTIONS = [
@@ -62,7 +73,6 @@ function TimeChart({ points }: { points: { date: string; minutes: number }[] }) 
   const line = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   const area = `${line} L${coords[coords.length - 1]![0].toFixed(1)},${(T + plotH).toFixed(1)} L${coords[0]![0].toFixed(1)},${(T + plotH).toFixed(1)} Z`;
   const hourLines = Array.from({ length: maxHours + 1 }, (_, h) => h);
-  // Thin out x labels so they never collide (always first + last).
   const stepLbl = Math.max(1, Math.ceil(points.length / 6));
 
   return (
@@ -92,6 +102,8 @@ function TimeChart({ points }: { points: { date: string; minutes: number }[] }) 
 
 export function ProgressScreen() {
   const [range, setRange] = useState('');
+  const [tab, setTab] = useState<string | null>(null);       // selected battery key (null → first)
+  const [sub, setSub] = useState('');                        // subcategory key filter ('' = All)
   const query = useMemo<ProgressQuery>(() => {
     const q: ProgressQuery = {};
     const from = rangeToFrom(range);
@@ -99,13 +111,26 @@ export function ProgressScreen() {
     return q;
   }, [range]);
 
-  const { loading, error, data, reload } = useAsync(async () => {
-    const [summary, breakdown] = await Promise.all([
-      client.progressSummary(query),
-      client.progressBreakdown(query),
-    ]);
-    return { summary, breakdown } as { summary: ProgressSummary; breakdown: ProgressBreakdownCategory[] };
-  }, [query]);
+  const { loading, error, data, reload } = useAsync(
+    async () => client.progressSummary(query) as Promise<ProgressSummary>,
+    [query],
+  );
+
+  const batteries = data?.batteries ?? [];
+  // Selected battery: the chosen tab if it still exists, else the first battery.
+  const active = batteries.find((b) => b.key === tab) ?? batteries[0] ?? null;
+  const activeKey = active?.key ?? null;
+  const subOptions = active?.subcategories ?? [];
+  const subActive = subOptions.some((s) => s.key === sub) ? sub : '';
+
+  // Per-set rows for the active battery + subcategory (own request; reconciles with the battery totals).
+  const setsAsync = useAsync(
+    async () => (activeKey
+      ? await client.progressSets({ battery: activeKey, subcategory: subActive || 'all', ...query })
+      : ([] as ProgressSetRow[])),
+    [activeKey, subActive, query],
+  );
+  const setsShown = setsAsync.data ?? [];
 
   return (
     <>
@@ -125,96 +150,132 @@ export function ProgressScreen() {
         {error && <ErrorNote error={error} onRetry={reload} />}
 
         {data && (() => {
-          const s = data.summary;
+          const s = data;
           const series = s.practiceTimeSeries ?? [];
+          const totalSets = s.setsDone ?? 0;
+
           return (
-            <div className="p3-grid">
-              {/* ROW 1 — practice-time chart (2fr) + 2×2 stats (1fr) */}
-              <div className="rail-card p3-chart">
-                <div className="eyebrow">⏱️ Practice time</div>
+            <div className="p1-grid">
+              {/* ROW 1 — practice-time chart (1.6fr) + 2×2 sets-done boxes (1fr) */}
+              <div className="rail-card p1-chart">
+                <div className="eyebrow">⏱️ Overall practice time</div>
                 <div className="pt-head">{fmtMinutes(s.practiceTimeMinutes)}</div>
                 {series.length >= 2
                   ? <TimeChart points={series} />
                   : <div className="muted pt-empty">Not enough data yet — practise on more days to see your trend.</div>}
               </div>
 
-              <div className="stat-2x2 p3-stats">
-                <div className="s2-tile s2-q"><span className="s2-ic">📝</span><span className="s2-n">{s.questionsAnswered}</span><span className="s2-l">Questions</span></div>
-                <div className="s2-tile s2-s"><span className="s2-ic">✅</span><span className="s2-n">{s.setsCompleted}</span><span className="s2-l">Sets</span></div>
-                <div className="s2-tile s2-a"><span className="s2-ic">🎯</span><span className="s2-n">{s.avgAccuracy == null ? '—' : `${s.avgAccuracy}%`}</span><span className="s2-l">Accuracy</span></div>
-                <div className="s2-tile s2-m"><span className="s2-ic">🧪</span><span className="s2-n">{s.mockExamsTaken}</span><span className="s2-l">Mocks</span></div>
-              </div>
-
-              {/* ROW 2 — readiness bars (2fr) + exams (1fr) */}
-              <div className="rail-card p3-readiness">
-                <div className="eyebrow">🚀 Readiness</div>
-                <div className="rdy-list">
-                  {s.readiness.map((r) => {
-                    const cv = catVis(r.category);
-                    const pct = r.pct ?? 0;
-                    return (
-                      <div key={r.category} className="rdy-row">
-                        <span className="rdy-name">{cv.name}</span>
-                        <div className="rdy-track">
-                          <div className="rdy-fill" style={{ width: `${pct}%`, background: cv.color }} />
-                        </div>
-                        <span className="rdy-pct">{r.pct == null ? '—' : `${r.pct}%`}</span>
-                      </div>
-                    );
-                  })}
+              <div className="p1-setsdone">
+                {batteries.map((b) => (
+                  <div key={b.key} className="sd-box">
+                    <span className="sd-n">{b.setsDone}</span>
+                    <span className="sd-l">{catVis(b.key).name}</span>
+                    <span className="sd-sub">sets done</span>
+                  </div>
+                ))}
+                <div className="sd-box">
+                  <span className="sd-n">{totalSets}</span>
+                  <span className="sd-l">Total</span>
+                  <span className="sd-sub">sets done</span>
                 </div>
               </div>
 
-              <div className="rail-card p3-exams">
-                <div className="eyebrow">📝 CCAT exams</div>
-                {s.exams.attempts === 0 ? (
-                  <div className="muted exams-empty">No exams taken yet — try a timed mock!</div>
-                ) : (
-                  <div className="exams-stats">
-                    <div className="ex-row"><span className="ex-l">Last score</span><strong>{s.exams.lastScore ? `${s.exams.lastScore.score}/${s.exams.lastScore.total}` : '—'}</strong></div>
-                    <div className="ex-row"><span className="ex-l">Best accuracy</span><strong>{s.exams.bestAccuracyPct == null ? '—' : `${s.exams.bestAccuracyPct}%`}</strong></div>
-                    <div className="ex-row"><span className="ex-l">Attempts</span><strong>{s.exams.attempts}</strong></div>
-                  </div>
-                )}
-              </div>
+              {/* ROW 2 — Battery Tests (full width): tabs → four metric boxes → sets table */}
+              <div className="rail-card p1-battery">
+                <div className="eyebrow">🧠 Battery Tests</div>
 
-              {/* ROW 3 — by category & topic (full width) */}
-              <div className="rail-card p3-breakdown">
-                <div className="eyebrow">🧠 By category &amp; topic</div>
-                <div className="bd-cats">
-                  {data.breakdown.map((c) => {
-                    const cv = catVis(c.category);
-                    return (
-                      <details key={c.category} className="bd-cat" style={{ ['--cat' as any]: cv.color }}>
-                        <summary className="bd-summary">
-                          <span className="bd-cat-dot" style={{ background: cv.color }} aria-hidden />
-                          <span className="bd-cat-name">{cv.name}</span>
-                          <span className="bd-cat-acc">{c.accuracyPct == null ? '—' : `${c.accuracyPct}%`}</span>
-                          <span className="bd-chev" aria-hidden>▾</span>
-                        </summary>
-                        {c.topics.length === 0 ? (
-                          <div className="muted bd-empty">No practice in this category yet.</div>
+                {batteries.length === 0 ? (
+                  <div className="muted" style={{ marginTop: 10 }}>No practice yet — start a set to see your battery breakdown.</div>
+                ) : (
+                  <>
+                    <div className="bt-tabs" role="tablist">
+                      {batteries.map((b) => {
+                        const cv = catVis(b.key);
+                        const on = b.key === activeKey;
+                        return (
+                          <button
+                            key={b.key}
+                            role="tab"
+                            aria-selected={on}
+                            className={`bt-tab ${on ? 'on' : ''}`}
+                            style={on ? { ['--cat' as any]: cv.color } : undefined}
+                            onClick={() => { setTab(b.key); setSub(''); }}
+                          >
+                            <span className="bt-tab-dot" style={{ background: cv.color }} aria-hidden />
+                            {cv.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {active && (
+                      <>
+                        <div className="bt-boxes">
+                          <div className="bt-box">
+                            <span className="btb-n">{active.accuracyPct == null ? '—' : `${active.accuracyPct}%`}</span>
+                            <span className="btb-l">Accuracy</span>
+                          </div>
+                          <div className="bt-box">
+                            <span className="btb-n">{active.score.total > 0 ? `${active.score.correct}/${active.score.total}` : '—'}</span>
+                            <span className="btb-l">Score</span>
+                          </div>
+                          <div className="bt-box">
+                            <span className="btb-n">{active.totalQuestions || '—'}</span>
+                            <span className="btb-l">Total Question</span>
+                          </div>
+                          <div className="bt-box">
+                            <span className="btb-n">{active.avgSecondsPerQuestion == null ? '—' : `${active.avgSecondsPerQuestion}s`}</span>
+                            <span className="btb-l">Avg time/q</span>
+                          </div>
+                        </div>
+
+                        <div className="bt-sets-head">
+                          <div className="eyebrow">Sets</div>
+                          <label className="pf-field bt-subfilter">
+                            <span className="pf-lbl">Subcategory</span>
+                            <select value={subActive} onChange={(e) => setSub(e.target.value)}>
+                              <option value="">All</option>
+                              {subOptions.map((o) => <option key={o.key} value={o.key}>{o.name}</option>)}
+                            </select>
+                          </label>
+                        </div>
+
+                        {setsAsync.loading ? (
+                          <Loader />
+                        ) : setsAsync.error ? (
+                          <ErrorNote error={setsAsync.error} onRetry={setsAsync.reload} />
+                        ) : setsShown.length === 0 ? (
+                          <div className="muted bt-sets-empty">No sets in this battery yet.</div>
                         ) : (
-                          <div className="bd-topics">
-                            {c.topics.map((t) => (
-                              <div key={t.subcategory} className="bd-topic">
-                                <div className="bt-name">{t.subcategory}</div>
-                                <div className="bt-metrics">
-                                  <span className="bt-m"><span className="bt-k">Accuracy</span>{t.accuracyPct == null ? '—' : `${t.accuracyPct}%`}</span>
-                                  <span className="bt-m"><span className="bt-k">Avg time/q</span>{t.avgSecondsPerQuestion == null ? '—' : `${t.avgSecondsPerQuestion}s`}</span>
-                                  <span className="bt-m"><span className="bt-k">Completion</span>{t.completionPct == null ? '—' : `${t.completionPct}%`}</span>
-                                  <span className="bt-m"><span className="bt-k">Questions</span>{t.questionsDone}</span>
-                                  <span className="bt-m"><span className="bt-k">Best streak</span>🔥 {t.bestStreak}</span>
-                                  <span className="bt-m"><span className="bt-k">Last practised</span>{t.lastPractisedLabel}</span>
-                                </div>
-                              </div>
-                            ))}
+                          <div className="bt-table-wrap">
+                            <table className="bt-table">
+                              <thead>
+                                <tr>
+                                  <th>Set</th>
+                                  <th>Accuracy (%)</th>
+                                  <th>Score (correct/total)</th>
+                                  <th className="ta-center">Total Question</th>
+                                  <th>Avg time/q</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {setsShown.map((row, i) => (
+                                  <tr key={row.setId}>
+                                    <td>Set {i + 1}</td>
+                                    <td>{row.accuracyPct == null ? '—' : `${row.accuracyPct}%`}</td>
+                                    <td>{row.score.total > 0 ? `${row.score.correct}/${row.score.total}` : '—'}</td>
+                                    <td className="ta-center">{row.totalQuestions || '—'}</td>
+                                    <td>{row.avgSecondsPerQuestion == null ? '—' : `${row.avgSecondsPerQuestion}s`}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
                         )}
-                      </details>
-                    );
-                  })}
-                </div>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           );

@@ -31,12 +31,20 @@ function mondayWeek(activeByDate: Map<string, boolean>): { date: string; active:
     return { date: iso, active: activeByDate.get(iso) === true, label };
   });
 }
-// Kid-friendly minutes → "24m" / "1h 20m". null / 0 → "—" (honest empty state, never a fake estimate).
-function fmtMinutes(mins: number | null | undefined): string {
-  if (mins == null || mins <= 0) return '—';
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60), m = mins % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+// Per-battery visuals for the H4 accuracy rings. Colours are fixed per spec (Verbal blue, Quant teal,
+// Non-verbal purple); names are friendly labels for the known keys with a prettified fallback so any
+// category the gateway returns still renders. We render whatever readiness[] returns, in its order.
+const CAT_VIS: Record<string, { name: string; color: string }> = {
+  verbal: { name: 'Verbal', color: '#3e7bee' },
+  quantitative: { name: 'Quantitative', color: '#22c3a6' },
+  non_verbal: { name: 'Non-verbal', color: '#8b5cf6' },
+  nonverbal: { name: 'Non-verbal', color: '#8b5cf6' },
+};
+function catVis(key: string) {
+  const hit = CAT_VIS[key];
+  if (hit) return hit;
+  const name = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return { name, color: 'var(--purple)' };
 }
 function mascotLine(streak: number, completion: number | null): string {
   if (streak >= 7) return "You're unstoppable — what a streak! 🔥";
@@ -138,8 +146,8 @@ export function HomeScreen() {
                 </div>
               </div>
 
-              {/* Progress & analytics — header row + three tappable mini-tiles (A4). Every value is real;
-                  honest empty states ("—"/"0") when nothing has been tracked yet. */}
+              {/* Progress & analytics — "H4": Score (all batteries) + Sets done + three per-battery
+                  accuracy rings. Every value is real; honest empty states ("—" / 0 / rings at 0). */}
               <Card className="home-progress">
                 <div className="hp-head">
                   <div className="eyebrow">📊 Progress &amp; Analytics</div>
@@ -147,25 +155,41 @@ export function HomeScreen() {
                 </div>
                 {(() => {
                   const an = data.analytics;
-                  const accuracy = an?.avgAccuracy ?? null;
-                  const sets = an?.setsCompleted ?? 0;
-                  const time = an?.practiceTimeMinutes ?? null;
+                  const scoreCorrect = an?.score?.correct ?? 0;
+                  const scoreTotal = an?.score?.total ?? 0;
+                  const sets = an?.setsDone ?? 0;
+                  const rings = an?.batteries ?? [];
                   return (
-                    <div className="hp-tiles">
-                      <button className="hp-tile hp-acc" onClick={() => nav('/progress')}>
+                    <div className="hp-tiles hp-tiles-h4">
+                      <button className="hp-tile hp-score" onClick={() => nav('/progress')}>
                         <span className="hpt-ic">🎯</span>
-                        <span className="hpt-n">{accuracy == null ? '—' : `${accuracy}%`}</span>
-                        <span className="hpt-l">Accuracy</span>
+                        <span className="hpt-n">{scoreTotal > 0 ? `${scoreCorrect}/${scoreTotal}` : '—'}</span>
+                        <span className="hpt-l">Score · all batteries</span>
                       </button>
                       <button className="hp-tile hp-sets" onClick={() => nav('/progress')}>
                         <span className="hpt-ic">✅</span>
                         <span className="hpt-n">{sets}</span>
                         <span className="hpt-l">Sets done</span>
                       </button>
-                      <button className="hp-tile hp-time" onClick={() => nav('/progress')}>
-                        <span className="hpt-ic">⏱️</span>
-                        <span className="hpt-n">{fmtMinutes(time)}</span>
-                        <span className="hpt-l">Time spent</span>
+                      <button className="hp-tile hp-rings" onClick={() => nav('/progress')}>
+                        <span className="hpt-l hpt-rings-title">Progress</span>
+                        <div className="hp-ring-row">
+                          {rings.map((b) => {
+                            const cv = catVis(b.key);
+                            const pct = b.accuracyPct ?? 0;
+                            return (
+                              <div key={b.key} className="hp-ring-item">
+                                <div
+                                  className="hp-ring"
+                                  style={{ ['--pct' as any]: `${pct}%`, ['--ring' as any]: cv.color }}
+                                >
+                                  <span>{b.accuracyPct == null ? '0%' : `${b.accuracyPct}%`}</span>
+                                </div>
+                                <span className="hp-ring-lbl">{cv.name}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </button>
                     </div>
                   );
