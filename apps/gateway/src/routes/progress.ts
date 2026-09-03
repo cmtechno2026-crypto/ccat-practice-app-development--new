@@ -167,22 +167,26 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
     }
 
     // Finished-set rows (most recent finished attempt per set) → fold into per-battery buckets.
-    // setsDone EXCLUDES combine sets; score/accuracy/time include everything the student finished.
+    // COMBINE is a separate "battery mock" track (Option A): it feeds only its OWN subcategory box, and is
+    // EXCLUDED from the battery ring/score/time and from sets-done — so nothing double-counts and the
+    // battery ring equals the sum of the NORMAL subcategory boxes exactly.
     const rows = await finishedSetRows(db, sid, r);
     type Bucket = { correct: number; total: number; totalQ: number; setsDone: number; secs: number };
     const byCat = new Map<string, Bucket>();
     let scoreCorrect = 0, scoreTotal = 0, setsDone = 0;
     for (const row of rows) {
+      // per-subcategory aggregate — every subcategory incl combine (drives the boxes; reconciles with Set rows)
+      const sk = `${row.cat_key}|${row.sub_key}`;
+      const sa = subAgg.get(sk) ?? { correct: 0, total: 0 };
+      sa.correct += row.score_correct; sa.total += row.score_total; subAgg.set(sk, sa);
+      // combine excluded from every battery-level / all-battery roll-up
+      if (isCombine(row.sub_key)) continue;
       let b = byCat.get(row.cat_key);
       if (!b) { b = { correct: 0, total: 0, totalQ: 0, setsDone: 0, secs: 0 }; byCat.set(row.cat_key, b); }
       b.correct += row.score_correct; b.total += row.score_total; b.totalQ += (row.total_questions ?? 0);
       b.secs += (row.attempt_seconds && row.attempt_seconds > 0 ? row.attempt_seconds : 0);
-      if (!isCombine(row.sub_key)) { b.setsDone += 1; setsDone += 1; }
+      b.setsDone += 1; setsDone += 1;
       scoreCorrect += row.score_correct; scoreTotal += row.score_total;
-      // per-subcategory aggregate (finished sets) — reconciles with the Set rows
-      const sk = `${row.cat_key}|${row.sub_key}`;
-      const sa = subAgg.get(sk) ?? { correct: 0, total: 0 };
-      sa.correct += row.score_correct; sa.total += row.score_total; subAgg.set(sk, sa);
     }
 
     // --- practice time: real session wall-clock (started_at → terminal_at) over terminal PRACTICE sessions ---
