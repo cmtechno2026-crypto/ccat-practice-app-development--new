@@ -800,12 +800,17 @@ p { line-height: 1.5; }
 /* ============================================================================
    Slide-in set-review panel (Option D header) — page shrinks, no overlap
    ========================================================================== */
-.prog-shell{display:flex;align-items:stretch}
-.prog-col{flex:1;min-width:0}
-.set-panel{flex:none;width:0;overflow:hidden;transition:width .32s cubic-bezier(.4,0,.2,1)}
-.set-panel.open{width:min(520px,92vw)}
-.sp-in{width:min(520px,92vw);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;
-  background:var(--card);box-shadow:-14px 0 40px -24px rgba(30,20,80,.5)}
+.prog-shell{position:relative}
+.prog-col{min-width:0;transition:margin-right .32s cubic-bezier(.4,0,.2,1)}
+/* Full-height drawer fixed to the viewport's right edge; the page shrinks (margin-right) so nothing is
+   overlapped. Slides in from the right. */
+.set-panel{position:fixed;top:0;right:0;bottom:0;width:min(520px,92vw);z-index:60;
+  transform:translateX(100%);transition:transform .32s cubic-bezier(.4,0,.2,1);
+  box-shadow:-14px 0 40px -24px rgba(30,20,80,.5)}
+.set-panel.open{transform:none}
+.prog-shell.paneled .prog-col{margin-right:min(520px,92vw)}
+.sp-in{width:100%;height:100%;display:flex;flex-direction:column;
+  background:var(--card)}
 .sp-head{display:flex;align-items:center;gap:10px;min-height:76px;padding:0 18px;background:#3b2bb8;color:#fff}
 .sp-head h3{flex:1;margin:0;font-size:18px;font-weight:800;color:#fff}
 .sp-x{all:unset;cursor:pointer;width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.2);color:#fff;
@@ -824,4 +829,4 @@ p { line-height: 1.5; }
 .sp-opt.correct{background:#e6f7ef;color:#0f766e}.sp-opt.wrong{background:#fdecec;color:#b42318}
 .sp-opt .sp-ot{flex:1}.sp-opt .sp-mk{font-weight:800}
 .sp-opt .opt-figure{max-height:60px;width:auto}
-@media(max-width:760px){.set-panel.open,.sp-in{width:100vw}}
+@media(max-width:760px){.set-panel{width:100vw}.prog-shell.paneled .prog-col{margin-right:0}}

@@ -143,26 +143,9 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
          from ccat.subcategories s join ccat.categories c on c.id = s.category_id
         where s.active = true order by c.display_order, s.display_order`);
 
-    // Per-subcategory accuracy from locked answers (date range) — for the battery boxes (combine included).
-    const sap: any[] = [sid]; const sac: string[] = ['sa.is_locked'];
-    if (r.from) { sap.push(r.from); sac.push(`sa.updated_at >= $${sap.length}`); }
-    if (r.to) { sap.push(r.to); sac.push(`sa.updated_at < $${sap.length}`); }
-    const subAccRows = await db.query(
-      `select cat.key as cat, coalesce(sub.key, 'none') as sub_key,
-              count(*)::int as answered,
-              sum(case when (array(select unnest(sa.selected_option_ids) order by 1)
-                            = array(select unnest(qv.correct_option_ids) order by 1)) then 1 else 0 end)::int as correct
-         from ccat.session_answers sa
-         join ccat.sessions s on s.id = sa.session_id and s.student_id = $1
-         join ccat.question_set_versions qsv on qsv.id = s.set_version_id
-         join ccat.question_sets qs on qs.id = qsv.question_set_id
-         join ccat.categories cat on cat.id = qs.category_id
-         left join ccat.subcategories sub on sub.id = qs.subcategory_id
-         join ccat.question_versions qv on qv.id = sa.question_version_id
-        where ${sac.join(' and ')}
-        group by cat.key, sub.key`, sap);
-    const subAcc = new Map<string, { correct: number; answered: number }>();
-    for (const x of subAccRows.rows as any[]) subAcc.set(`${x.cat}|${x.sub_key}`, { correct: x.correct, answered: x.answered });
+    // Per-subcategory accuracy is derived from the SAME finished-set rows as the sets table below (built
+    // in the fold loop) so the subcategory box, the battery ring and each Set row reconcile exactly.
+    const subAgg = new Map<string, { correct: number; total: number }>();
 
     // Total available sets per battery for the grade, EXCLUDING combine (the "/total" denominator).
     // Available = a published version with at least one active question.
@@ -196,6 +179,10 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
       b.secs += (row.attempt_seconds && row.attempt_seconds > 0 ? row.attempt_seconds : 0);
       if (!isCombine(row.sub_key)) { b.setsDone += 1; setsDone += 1; }
       scoreCorrect += row.score_correct; scoreTotal += row.score_total;
+      // per-subcategory aggregate (finished sets) — reconciles with the Set rows
+      const sk = `${row.cat_key}|${row.sub_key}`;
+      const sa = subAgg.get(sk) ?? { correct: 0, total: 0 };
+      sa.correct += row.score_correct; sa.total += row.score_total; subAgg.set(sk, sa);
     }
 
     // --- practice time: real session wall-clock (started_at → terminal_at) over terminal PRACTICE sessions ---
@@ -225,8 +212,8 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
       const subcategories = (subListRows.rows as any[])
         .filter((s) => s.cat === c.key)
         .map((s) => {
-          const a = subAcc.get(`${c.key}|${s.sub_key}`);
-          return { key: s.sub_key as string, name: s.sub_name as string, accuracyPct: a && a.answered > 0 ? pct(a.correct, a.answered) : null };
+          const a = subAgg.get(`${c.key}|${s.sub_key}`);
+          return { key: s.sub_key as string, name: s.sub_name as string, accuracyPct: a && a.total > 0 ? pct(a.correct, a.total) : null };
         });
       return {
         key: c.key,
