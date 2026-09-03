@@ -173,13 +173,13 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
            from ccat.question_sets qs
            join ccat.categories cat on cat.id = qs.category_id
            left join ccat.subcategories sub on sub.id = qs.subcategory_id
-          where qs.grade_id = $2
+          where qs.grade_id = $1
             and (sub.key is null or right(sub.key, 16) <> '_battery_combine')
             and exists (select 1 from ccat.question_set_versions sv
                          where sv.question_set_id = qs.id and sv.state = 'published'
                            and exists (select 1 from ccat.set_version_questions svq
                                         where svq.set_version_id = sv.id and svq.active = true))
-          group by cat.key`, [sid, gradeId]);
+          group by cat.key`, [gradeId]);
       for (const t of totalRows.rows as any[]) totalByCat.set(t.cat, t.total);
     }
 
