@@ -192,19 +192,22 @@ export type ProgressCategory = 'verbal' | 'non_verbal' | 'quantitative';
 export interface ProgressTimePoint { date: string; minutes: number; }
 export interface ProgressScore { correct: number; total: number; }
 export interface ProgressSubcategory { key: string; name: string; }
+// A subcategory of a battery with its accuracy — one box per subcategory (combine included).
+export interface ProgressSubAccuracy { key: string; name: string; accuracyPct: number | null; }
 
-// One battery (category) in the summary. Metrics are over the student's FINISHED sets (most recent
-// finished attempt per set); numbers reconcile — Σ batteries[].score === summary.score, and the /sets
-// rows for a battery sum to that battery's score. avgSecondsPerQuestion is null (not tracked).
+// One battery (category) in the summary. accuracyPct = the battery "progress %" (Home ring).
+// setsDone / setsTotal EXCLUDE combine subcategories; subcategories[] is the FULL list (combine included)
+// with per-subcategory accuracy — powers the battery boxes and the sets-table subcategory filter.
 export interface ProgressBatterySummary {
   key: string;                          // category key (e.g. 'verbal') — from the DB, not hard-coded
   name: string;                         // category display name
-  accuracyPct: number | null;
+  accuracyPct: number | null;           // battery progress %
   score: ProgressScore;
   totalQuestions: number;
-  avgSecondsPerQuestion: number | null; // always null (per-question timing not captured)
-  setsDone: number;
-  subcategories: ProgressSubcategory[]; // subcategories present among this battery's finished sets (filter)
+  avgSecondsPerQuestion: number | null; // derived (session wall-clock ÷ answered); null when no data
+  setsDone: number;                     // finished sets, combine excluded
+  setsTotal: number;                    // available sets for the grade, combine excluded
+  subcategories: ProgressSubAccuracy[]; // every subcategory of the battery (incl combine) + accuracy
 }
 export interface ProgressSummary {
   score: ProgressScore;                 // across ALL finished sets (e.g. 46/60)
@@ -237,3 +240,32 @@ export interface ProgressBreakdownCategory { category: ProgressCategory | string
 export interface ProgressQuery { from?: string; to?: string; }
 // Query for GET /v1/progress/sets. subcategory 'all' (or omitted) → every subcategory in the battery.
 export interface ProgressSetsQuery extends ProgressQuery { battery: string; subcategory?: string; }
+
+// ---- Set review (GET /v1/progress/set-review?setId=) — the latest submitted attempt of a set, for the
+// slide-in preview panel. Reveals correct answers (study view). Rendered in the child's play order.
+export interface ProgressReviewOption {
+  option_id: string;
+  content: unknown[];            // option content blocks (text/image)
+  image_url: string | null;
+  correct: boolean;              // is a correct option
+  selected: boolean;            // the child picked this
+}
+export interface ProgressReviewQuestion {
+  question_version_id: string;
+  question_type: string;
+  prompt_blocks: unknown[];
+  image_url: string | null;
+  options: ProgressReviewOption[];
+  selected_option_ids: string[];
+  correct_option_ids: string[];
+  answered: boolean;
+  correct: boolean;              // the child got this question right
+}
+export interface ProgressSetReview {
+  found: boolean;                // false when the student has no submitted attempt of this set
+  setName: string | null;
+  score: ProgressScore;
+  accuracyPct: number | null;
+  timeSeconds: number | null;    // total session wall-clock for the attempt
+  questions: ProgressReviewQuestion[];
+}

@@ -34,17 +34,17 @@ function mondayWeek(activeByDate: Map<string, boolean>): { date: string; active:
 // Per-battery visuals for the H4 accuracy rings. Colours are fixed per spec (Verbal blue, Quant teal,
 // Non-verbal purple); names are friendly labels for the known keys with a prettified fallback so any
 // category the gateway returns still renders. We render whatever readiness[] returns, in its order.
-const CAT_VIS: Record<string, { name: string; color: string }> = {
-  verbal: { name: 'Verbal', color: '#3e7bee' },
-  quantitative: { name: 'Quantitative', color: '#22c3a6' },
-  non_verbal: { name: 'Non-verbal', color: '#8b5cf6' },
-  nonverbal: { name: 'Non-verbal', color: '#8b5cf6' },
+const CAT_VIS: Record<string, { name: string; color: string; tint: string }> = {
+  verbal: { name: 'Verbal', color: '#3e7bee', tint: '#eaf0ff' },
+  quantitative: { name: 'Quantitative', color: '#22c3a6', tint: '#e6f7f1' },
+  non_verbal: { name: 'Non-verbal', color: '#8b5cf6', tint: '#f3ecfb' },
+  nonverbal: { name: 'Non-verbal', color: '#8b5cf6', tint: '#f3ecfb' },
 };
 function catVis(key: string) {
   const hit = CAT_VIS[key];
   if (hit) return hit;
   const name = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  return { name, color: 'var(--purple)' };
+  return { name, color: 'var(--purple)', tint: '#eef1f6' };
 }
 function mascotLine(streak: number, completion: number | null): string {
   if (streak >= 7) return "You're unstoppable — what a streak! 🔥";
@@ -155,43 +155,31 @@ export function HomeScreen() {
                   <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>
                 </div>
                 {(() => {
-                  const an = data.analytics;
-                  const scoreCorrect = an?.score?.correct ?? 0;
-                  const scoreTotal = an?.score?.total ?? 0;
-                  const sets = an?.setsDone ?? 0;
-                  const rings = an?.batteries ?? [];
+                  // Sample 4 — one tile per battery: progress-% ring on the left, "N sets done" on the right.
+                  const batteries = data.analytics?.batteries ?? [];
                   return (
-                    <div className="hp-tiles hp-tiles-h4">
-                      <button className="hp-tile hp-score" onClick={() => nav('/progress')}>
-                        <span className="hpt-ic">🎯</span>
-                        <span className="hpt-n">{scoreTotal > 0 ? `${scoreCorrect}/${scoreTotal}` : '—'}</span>
-                        <span className="hpt-l">Score · all batteries</span>
-                      </button>
-                      <button className="hp-tile hp-sets" onClick={() => nav('/progress')}>
-                        <span className="hpt-ic">✅</span>
-                        <span className="hpt-n">{sets}</span>
-                        <span className="hpt-l">Sets done</span>
-                      </button>
-                      <button className="hp-tile hp-rings" onClick={() => nav('/progress')}>
-                        <span className="hpt-l hpt-rings-title">Progress</span>
-                        <div className="hp-ring-row">
-                          {rings.map((b) => {
-                            const cv = catVis(b.key);
-                            const pct = b.accuracyPct ?? 0;
-                            return (
-                              <div key={b.key} className="hp-ring-item">
-                                <div
-                                  className="hp-ring"
-                                  style={{ ['--pct' as any]: `${pct}%`, ['--ring' as any]: cv.color }}
-                                >
-                                  <span>{b.accuracyPct == null ? '0%' : `${b.accuracyPct}%`}</span>
-                                </div>
-                                <span className="hp-ring-lbl">{cv.name}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </button>
+                    <div className="hp-bat-row">
+                      {batteries.map((b) => {
+                        const cv = catVis(b.key);
+                        const pct = b.accuracyPct ?? 0;
+                        return (
+                          <button
+                            key={b.key}
+                            className="hp-bat"
+                            style={{ ['--ring' as any]: cv.color, ['--tint' as any]: cv.tint }}
+                            onClick={() => nav('/progress')}
+                          >
+                            <div className="hp-bat-ring" style={{ ['--pct' as any]: `${pct}%` }}>
+                              <span>{b.accuracyPct == null ? '0%' : `${b.accuracyPct}%`}</span>
+                            </div>
+                            <div className="hp-bat-txt">
+                              <span className="hp-bat-n">{b.setsDone}</span>
+                              <span className="hp-bat-l">{cv.name}</span>
+                              <span className="hp-bat-s">sets done</span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   );
                 })()}

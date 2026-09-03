@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Home card — 5 samples</title>
+<style>
+  :root{--ink:#1f2340;--muted:#8a90a6;--line:#e7e9f2;--bg:#f4f6fb;--card:#fff;--purple:#6d46e6;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-weight:600;}
+  .wrap{max-width:1000px;margin:0 auto;padding:22px 18px 60px;}
+  .tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#fff;background:var(--purple);border-radius:999px;padding:3px 10px;margin:26px 2px 8px;}
+  .desc{font-size:13px;color:#5b6076;margin:0 2px 12px;}
+  .card{background:var(--card);border-radius:18px;padding:18px;box-shadow:0 8px 24px -18px rgba(30,30,60,.5);}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .eyebrow{font-size:12px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);}
+  .pill{font-size:12px;font-weight:800;color:var(--purple);background:#efeafe;border-radius:999px;padding:5px 12px;}
+  .v{--c:#3b82f6;--cd:#1d4ed8;--tint:#eaf0ff}
+  .q{--c:#10b981;--cd:#0f766e;--tint:#e6f7f1}
+  .nv{--c:#8b5cf6;--cd:#6d28d9;--tint:#f3ecfb}
+
+  /* S1 — three colored tiles: big count + name + "sets done" */
+  .s1{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .s1 .t{border-radius:14px;padding:18px 10px;text-align:center;position:relative;overflow:hidden;background:linear-gradient(180deg,var(--tint),#fff 80%);}
+  .s1 .t::before{content:"";position:absolute;left:0;top:0;width:100%;height:4px;background:var(--c);}
+  .s1 .n{font-weight:800;font-size:30px;color:var(--cd)} .s1 .l{font-weight:800;font-size:13px;margin-top:4px} .s1 .s{font-size:11px;font-weight:800;color:var(--muted)}
+
+  /* S2 — list rows: name + bar + count */
+  .s2{display:flex;flex-direction:column;gap:14px}
+  .s2 .r{display:grid;grid-template-columns:110px 1fr 74px;align-items:center;gap:12px}
+  .s2 .nm{font-weight:800;font-size:14px}
+  .s2 .track{height:14px;border-radius:999px;background:var(--line);overflow:hidden}
+  .s2 .fill{height:100%;border-radius:999px;background:var(--c)}
+  .s2 .ct{text-align:right;font-weight:800;font-size:15px;color:var(--cd)} .s2 .ct small{color:var(--muted);font-size:11px}
+
+  /* S3 — count-in-circle badges + name under */
+  .s3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;justify-items:center}
+  .s3 .b{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .s3 .ring{width:74px;height:74px;border-radius:50%;background:conic-gradient(var(--c) var(--p),var(--line) 0);display:flex;align-items:center;justify-content:center}
+  .s3 .ring span{width:58px;height:58px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:var(--cd)}
+  .s3 .l{font-weight:800;font-size:13px} .s3 .s{font-size:11px;font-weight:800;color:var(--muted);margin-top:-4px}
+
+  /* S4 — one card, 3 segments with big number + colored footer bar */
+  .s4{display:grid;grid-template-columns:repeat(3,1fr)}
+  .s4 .seg{padding:8px 10px 0;text-align:center;border-right:1px solid var(--line)} .s4 .seg:last-child{border-right:none}
+  .s4 .n{font-weight:800;font-size:32px;color:var(--cd)} .s4 .l{font-weight:800;font-size:13px;margin:4px 0 10px} .s4 .bar{height:5px;border-radius:5px;background:var(--c)}
+
+  /* S5 — icon chip rows, compact */
+  .s5{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .s5 .c{display:flex;align-items:center;gap:12px;border-radius:14px;padding:14px;background:var(--tint)}
+  .s5 .ic{width:44px;height:44px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 3px 8px -5px rgba(0,0,0,.4)}
+  .s5 .n{font-weight:800;font-size:22px;color:var(--cd);line-height:1} .s5 .l{font-size:12px;font-weight:800;color:var(--muted)}
+</style></head>
+<body><div class="wrap">
+  <p style="font-size:13px;color:#5b6076;margin:2px">Home “Progress &amp; Analytics” card — Score &amp; Sets-done tiles removed; now shows <b>sets done per battery</b> (combine subcategory excluded). Sample numbers: Verbal 5, Quantitative 2, Non-verbal 8.</p>
+
+  <span class="tag">Sample 1 — colored count tiles</span>
+  <div class="card"><div class="head"><div class="eyebrow">📊 Progress &amp; Analytics</div><span class="pill">Details ›</span></div>
+    <div class="s1">
+      <div class="t v"><div class="n">5</div><div class="l">Verbal</div><div class="s">sets done</div></div>
+      <div class="t q"><div class="n">2</div><div class="l">Quantitative</div><div class="s">sets done</div></div>
+      <div class="t nv"><div class="n">8</div><div class="l">Non-verbal</div><div class="s">sets done</div></div>
+    </div>
+  </div>
+
+  <span class="tag">Sample 2 — list rows with progress bars (done / total)</span>
+  <div class="card"><div class="head"><div class="eyebrow">📊 Progress &amp; Analytics</div><span class="pill">Details ›</span></div>
+    <div class="s2">
+      <div class="r v"><span class="nm">Verbal</span><div class="track"><div class="fill" style="width:14%"></div></div><span class="ct">5<small>/36</small></span></div>
+      <div class="r q"><span class="nm">Quantitative</span><div class="track"><div class="fill" style="width:8%"></div></div><span class="ct">2<small>/24</small></span></div>
+      <div class="r nv"><span class="nm">Non-verbal</span><div class="track"><div class="fill" style="width:27%"></div></div><span class="ct">8<small>/30</small></span></div>
+    </div>
+  </div>
+
+  <span class="tag">Sample 3 — count inside a ring (ring = done/total)</span>
+  <div class="card"><div class="head"><div class="eyebrow">📊 Progress &amp; Analytics</div><span class="pill">Details ›</span></div>
+    <div class="s3">
+      <div class="b v" style="--p:14%"><div class="ring"><span>5</span></div><div class="l">Verbal</div><div class="s">sets done</div></div>
+      <div class="b q" style="--p:8%"><div class="ring"><span>2</span></div><div class="l">Quantitative</div><div class="s">sets done</div></div>
+      <div class="b nv" style="--p:27%"><div class="ring"><span>8</span></div><div class="l">Non-verbal</div><div class="s">sets done</div></div>
+    </div>
+  </div>
+
+  <span class="tag">Sample 4 — one card, three segments</span>
+  <div class="card"><div class="head"><div class="eyebrow">📊 Progress &amp; Analytics</div><span class="pill">Details ›</span></div>
+    <div class="s4">
+      <div class="seg v"><div class="n">5</div><div class="l">Verbal</div><div class="bar"></div></div>
+      <div class="seg q"><div class="n">2</div><div class="l">Quantitative</div><div class="bar"></div></div>
+      <div class="seg nv"><div class="n">8</div><div class="l">Non-verbal</div><div class="bar"></div></div>
+    </div>
+  </div>
+
+  <span class="tag">Sample 5 — icon chips</span>
+  <div class="card"><div class="head"><div class="eyebrow">📊 Progress &amp; Analytics</div><span class="pill">Details ›</span></div>
+    <div class="s5">
+      <div class="c v"><div class="ic">📘</div><div><div class="n">5</div><div class="l">Verbal · sets done</div></div></div>
+      <div class="c q"><div class="ic">🔢</div><div><div class="n">2</div><div class="l">Quantitative · sets done</div></div></div>
+      <div class="c nv"><div class="ic">🧩</div><div><div class="n">8</div><div class="l">Non-verbal · sets done</div></div></div>
+    </div>
+  </div>
+</div></body></html>

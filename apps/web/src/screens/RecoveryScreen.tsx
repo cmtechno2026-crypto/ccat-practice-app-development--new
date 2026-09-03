@@ -35,7 +35,7 @@ export function RecoveryScreen() {
 
   return (
     <>
-      <AppBar title="Recover PIN" sub="Verify with a guardian code" back />
+      <AppBar title="Recover PIN" sub="Verify with a parent code" back />
       <div className="content center-narrow stack">
         {err && <div className="err" role="alert">{err}</div>}
         {step === 'start' && (
@@ -50,7 +50,7 @@ export function RecoveryScreen() {
         )}
         {step === 'complete' && (
           <>
-            <p className="muted">Enter the code sent to the guardian.{devCode ? ` (dev code: ${devCode})` : ''}</p>
+            <p className="muted">Enter the code sent to the parent.{devCode ? ` (dev code: ${devCode})` : ''}</p>
             <Field label="Code"><input className="input" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} /></Field>
             <Field label="New PIN"><input className="input" value={newPin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
             <button className="btn" disabled={code.length < 4 || newPin.length !== 4 || busy} onClick={complete}>Set new PIN</button>

@@ -1,5 +1,20 @@
 import type { FastifyInstance } from 'fastify';
 import type { DB } from '../db.js';
+import { seededShuffle } from '../lib/shuffle.js';
+
+// Combine subcategories (…_battery_combine) are the 45-question mixed sets; excluded from per-battery
+// sets-done / totals (Home + Progress boxes), but INCLUDED in per-subcategory accuracy boxes.
+const isCombine = (k: unknown): boolean => typeof k === 'string' && k.endsWith('_battery_combine');
+// Ready-to-use image URL from a prompt/option block array (mirrors sessions.ts).
+function imageUrlOfBlocks(blocks: unknown): string | null {
+  if (!Array.isArray(blocks)) return null;
+  const img = blocks.find((b: any) => b && b.type === 'image');
+  return img && typeof img.url === 'string' ? img.url : null;
+}
+const eqSet = (a: string[], b: string[]): boolean => {
+  const x = [...a].sort(), y = [...b].sort();
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+};
 
 // Progress & analytics reads for the student dashboard (Home "Progress & Analytics" card + Progress page).
 // Read-only aggregates over the AUTHENTICATED student's own data — the student id always comes from the
@@ -113,25 +128,74 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
     const tzRow = await db.query('select timezone from ccat.students where id=$1', [sid]);
     const tz = (tzRow.rows[0]?.timezone as string) || 'UTC';
 
+    const gradeRow = await db.query('select grade_id from ccat.students where id=$1', [sid]);
+    const gradeId = gradeRow.rows[0]?.grade_id as string | undefined;
+
     // Battery skeleton — every ACTIVE category, in display order (names + keys straight from the DB, so
     // nothing is hard-coded). Empty batteries still appear with zeros / null.
     const catRows = await db.query(
       `select key, name from ccat.categories where active = true order by display_order, name`);
     const cats = (catRows.rows as any[]).map((c) => ({ key: c.key as string, name: c.name as string }));
 
+    // FULL subcategory list per category (active), including combine — one box per subcategory.
+    const subListRows = await db.query(
+      `select c.key as cat, s.key as sub_key, s.name as sub_name, s.display_order as sub_order
+         from ccat.subcategories s join ccat.categories c on c.id = s.category_id
+        where s.active = true order by c.display_order, s.display_order`);
+
+    // Per-subcategory accuracy from locked answers (date range) — for the battery boxes (combine included).
+    const sap: any[] = [sid]; const sac: string[] = ['sa.is_locked'];
+    if (r.from) { sap.push(r.from); sac.push(`sa.updated_at >= $${sap.length}`); }
+    if (r.to) { sap.push(r.to); sac.push(`sa.updated_at < $${sap.length}`); }
+    const subAccRows = await db.query(
+      `select cat.key as cat, coalesce(sub.key, 'none') as sub_key,
+              count(*)::int as answered,
+              sum(case when (array(select unnest(sa.selected_option_ids) order by 1)
+                            = array(select unnest(qv.correct_option_ids) order by 1)) then 1 else 0 end)::int as correct
+         from ccat.session_answers sa
+         join ccat.sessions s on s.id = sa.session_id and s.student_id = $1
+         join ccat.question_set_versions qsv on qsv.id = s.set_version_id
+         join ccat.question_sets qs on qs.id = qsv.question_set_id
+         join ccat.categories cat on cat.id = qs.category_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
+         join ccat.question_versions qv on qv.id = sa.question_version_id
+        where ${sac.join(' and ')}
+        group by cat.key, sub.key`, sap);
+    const subAcc = new Map<string, { correct: number; answered: number }>();
+    for (const x of subAccRows.rows as any[]) subAcc.set(`${x.cat}|${x.sub_key}`, { correct: x.correct, answered: x.answered });
+
+    // Total available sets per battery for the grade, EXCLUDING combine (the "/total" denominator).
+    // Available = a published version with at least one active question.
+    const totalByCat = new Map<string, number>();
+    if (gradeId) {
+      const totalRows = await db.query(
+        `select cat.key as cat, count(distinct qs.id)::int as total
+           from ccat.question_sets qs
+           join ccat.categories cat on cat.id = qs.category_id
+           left join ccat.subcategories sub on sub.id = qs.subcategory_id
+          where qs.grade_id = $2
+            and (sub.key is null or right(sub.key, 16) <> '_battery_combine')
+            and exists (select 1 from ccat.question_set_versions sv
+                         where sv.question_set_id = qs.id and sv.state = 'published'
+                           and exists (select 1 from ccat.set_version_questions svq
+                                        where svq.set_version_id = sv.id and svq.active = true))
+          group by cat.key`, [sid, gradeId]);
+      for (const t of totalRows.rows as any[]) totalByCat.set(t.cat, t.total);
+    }
+
     // Finished-set rows (most recent finished attempt per set) → fold into per-battery buckets.
+    // setsDone EXCLUDES combine sets; score/accuracy/time include everything the student finished.
     const rows = await finishedSetRows(db, sid, r);
-    type Bucket = { correct: number; total: number; totalQ: number; setsDone: number; secs: number;
-      subs: Map<string, { key: string; name: string; order: number }> };
+    type Bucket = { correct: number; total: number; totalQ: number; setsDone: number; secs: number };
     const byCat = new Map<string, Bucket>();
     let scoreCorrect = 0, scoreTotal = 0, setsDone = 0;
     for (const row of rows) {
       let b = byCat.get(row.cat_key);
-      if (!b) { b = { correct: 0, total: 0, totalQ: 0, setsDone: 0, secs: 0, subs: new Map() }; byCat.set(row.cat_key, b); }
-      b.correct += row.score_correct; b.total += row.score_total; b.totalQ += (row.total_questions ?? 0); b.setsDone += 1;
+      if (!b) { b = { correct: 0, total: 0, totalQ: 0, setsDone: 0, secs: 0 }; byCat.set(row.cat_key, b); }
+      b.correct += row.score_correct; b.total += row.score_total; b.totalQ += (row.total_questions ?? 0);
       b.secs += (row.attempt_seconds && row.attempt_seconds > 0 ? row.attempt_seconds : 0);
-      if (!b.subs.has(row.sub_key)) b.subs.set(row.sub_key, { key: row.sub_key, name: row.sub_name, order: row.sub_order });
-      scoreCorrect += row.score_correct; scoreTotal += row.score_total; setsDone += 1;
+      if (!isCombine(row.sub_key)) { b.setsDone += 1; setsDone += 1; }
+      scoreCorrect += row.score_correct; scoreTotal += row.score_total;
     }
 
     // --- practice time: real session wall-clock (started_at → terminal_at) over terminal PRACTICE sessions ---
@@ -156,15 +220,24 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
 
     const batteries = cats.map((c) => {
       const b = byCat.get(c.key);
+      // Every subcategory of this battery (incl combine) with its accuracy — for the battery boxes AND
+      // the sets-table subcategory filter.
+      const subcategories = (subListRows.rows as any[])
+        .filter((s) => s.cat === c.key)
+        .map((s) => {
+          const a = subAcc.get(`${c.key}|${s.sub_key}`);
+          return { key: s.sub_key as string, name: s.sub_name as string, accuracyPct: a && a.answered > 0 ? pct(a.correct, a.answered) : null };
+        });
       return {
         key: c.key,
         name: c.name,
-        accuracyPct: b ? pct(b.correct, b.total) : null,
+        accuracyPct: b ? pct(b.correct, b.total) : null,   // battery "progress %" (Home ring)
         score: { correct: b?.correct ?? 0, total: b?.total ?? 0 },
         totalQuestions: b?.totalQ ?? 0,
         avgSecondsPerQuestion: b ? avgPerQ(b.secs, b.total) : null,   // derived from session wall-clock ÷ answered
-        setsDone: b?.setsDone ?? 0,
-        subcategories: b ? [...b.subs.values()].sort((a, z) => a.order - z.order).map((s) => ({ key: s.key, name: s.name })) : [],
+        setsDone: b?.setsDone ?? 0,        // finished sets, combine excluded
+        setsTotal: totalByCat.get(c.key) ?? 0,   // available sets for the grade, combine excluded
+        subcategories,
       };
     });
 
@@ -201,6 +274,80 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
         totalQuestions: row.total_questions ?? 0,
         avgSecondsPerQuestion: avgPerQ(row.attempt_seconds, row.score_total),   // wall-clock ÷ answered
       }));
+  });
+
+  // GET /v1/progress/set-review?setId=<question_set id>  → the student's LATEST submitted attempt of a
+  // set, rebuilt for read-only review: each question with its options, the correct answer(s) and what the
+  // child picked, in the SAME order the child saw (same seeded shuffle as the player), plus a summary
+  // (score / accuracy / total session time). Powers the slide-in preview panel on the Progress page.
+  app.get('/v1/progress/set-review', { preHandler: [app.authenticateStudent] }, async (req) => {
+    const sid = req.student!.studentId;
+    const q: any = req.query || {};
+    const setId = typeof q.setId === 'string' ? q.setId.trim() : '';
+    const empty = { found: false, setName: null as string | null, score: { correct: 0, total: 0 }, accuracyPct: null as number | null, timeSeconds: null as number | null, questions: [] as any[] };
+    if (!setId) return empty;
+
+    const sRes = await db.query(
+      `select s.id, s.set_version_id, s.question_order_seed, s.option_order_seed, sv.preserve_order,
+              qs.name as set_name, s.started_at, s.terminal_at,
+              sr.score_correct::int as score_correct, sr.score_total::int as score_total
+         from ccat.sessions s
+         join ccat.session_results sr on sr.session_id = s.id
+         join ccat.question_set_versions sv on sv.id = s.set_version_id
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+        where s.student_id = $1 and qs.id = $2 and s.mode <> 'exam'
+          and sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')
+        order by s.terminal_at desc nulls last, sr.created_at desc
+        limit 1`, [sid, setId]);
+    if (sRes.rows.length === 0) return empty;
+    const sess = sRes.rows[0]!;
+
+    const qRes = await db.query(
+      `select svq.position, qv.id as question_version_id, qv.question_type,
+              qv.prompt_blocks, qv.option_blocks, qv.correct_option_ids, sa.selected_option_ids
+         from ccat.set_version_questions svq
+         join ccat.question_versions qv on qv.id = svq.question_version_id
+         left join ccat.session_answers sa on sa.session_id = $1 and sa.question_version_id = qv.id
+        where svq.set_version_id = $2 and svq.active = true
+        order by svq.position`, [sess.id, sess.set_version_id]);
+
+    const ordered = sess.preserve_order ? qRes.rows : seededShuffle(qRes.rows, Number(sess.question_order_seed));
+    const questions = (ordered as any[]).map((r0, i) => {
+      const correctIds: string[] = Array.isArray(r0.correct_option_ids) ? r0.correct_option_ids : [];
+      const selected: string[] = Array.isArray(r0.selected_option_ids) ? r0.selected_option_ids : [];
+      const options = seededShuffle(
+        Array.isArray(r0.option_blocks) ? r0.option_blocks : [],
+        (Number(sess.option_order_seed) ^ ((i + 1) * 0x9e3779b1)) >>> 0,
+      ).map((o: any) => ({
+        option_id: o.option_id,
+        content: o.content,
+        image_url: imageUrlOfBlocks(o?.content),
+        correct: correctIds.includes(o.option_id),
+        selected: selected.includes(o.option_id),
+      }));
+      return {
+        question_version_id: r0.question_version_id,
+        question_type: r0.question_type,
+        prompt_blocks: r0.prompt_blocks,
+        image_url: imageUrlOfBlocks(r0.prompt_blocks),
+        options,
+        selected_option_ids: selected,
+        correct_option_ids: correctIds,
+        answered: selected.length > 0,
+        correct: selected.length > 0 && eqSet(selected, correctIds),
+      };
+    });
+    const timeSeconds = sess.started_at && sess.terminal_at
+      ? Math.max(0, Math.round((new Date(sess.terminal_at).getTime() - new Date(sess.started_at).getTime()) / 1000))
+      : null;
+    return {
+      found: true,
+      setName: sess.set_name as string,
+      score: { correct: sess.score_correct as number, total: sess.score_total as number },
+      accuracyPct: sess.score_total > 0 ? Math.round((100 * sess.score_correct) / sess.score_total) : null,
+      timeSeconds,
+      questions,
+    };
   });
 
   // GET /v1/progress/breakdown?from=&to=  → per category, with nested topics (subcategories).

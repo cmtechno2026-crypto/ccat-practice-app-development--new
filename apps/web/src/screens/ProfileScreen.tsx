@@ -49,20 +49,20 @@ function GuardianEditor({ account, onSaved }: { account: AccountInfo; onSaved: (
   const [relationship, setRelationship] = useState(g?.relationship ?? '');
   const [busy, setBusy] = useState(false);
   async function save() {
-    if (!email.trim() && !phone.trim()) { flash('A guardian needs an email or a phone.'); return; }
+    if (!email.trim() && !phone.trim()) { flash('A parent needs an email or a phone.'); return; }
     setBusy(true);
     try {
       // Guardian email is not editable here (recovery/OTP anchor) — send only phone + relationship.
       const r = await client.updateGuardian({ phone: phone.trim() || undefined, relationship: relationship.trim() || undefined });
-      onSaved(r); flash('Guardian updated'); setEditing(false);
+      onSaved(r); flash('Parent updated'); setEditing(false);
     } catch (e) { flash((e as Error).message); } finally { setBusy(false); }
   }
-  if (!g) return <Card><div><h3>Guardian</h3><div className="muted">No guardian on file.</div></div></Card>;
+  if (!g) return <Card><div><h3>Parent</h3><div className="muted">No parent on file.</div></div></Card>;
   if (!editing) {
     return (
       <Card onClick={() => { setEmail(g.email ?? ''); setPhone(g.phone ?? ''); setRelationship(g.relationship ?? ''); setEditing(true); }}>
         <div className="between">
-          <div><h3>Guardian</h3><div className="muted">{g.email ?? g.phone ?? '—'}{g.relationship ? ` · ${g.relationship}` : ''}</div></div>
+          <div><h3>Parent</h3><div className="muted">{g.email ?? g.phone ?? '—'}{g.relationship ? ` · ${g.relationship}` : ''}</div></div>
           <span className="pill">Edit</span>
         </div>
       </Card>
@@ -70,17 +70,17 @@ function GuardianEditor({ account, onSaved }: { account: AccountInfo; onSaved: (
   }
   return (
     <Card>
-      <div className="eyebrow">👪 Edit guardian</div>
+      <div className="eyebrow">👪 Edit parent</div>
       <label className="field" style={{ marginTop: 8 }}><span>Email</span>
         <input className="input" type="email" value={email} readOnly disabled /></label>
-      <div className="hint" style={{ marginTop: 6 }}>Guardian email can't be changed here — it secures recovery. Contact support to change it.</div>
+      <div className="hint" style={{ marginTop: 6 }}>Parent email can't be changed here — it secures recovery. Contact support to change it.</div>
       <label className="field" style={{ marginTop: 10 }}><span>Phone</span>
         <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 000 0000" /></label>
       <label className="field" style={{ marginTop: 10 }}><span>Relationship</span>
         <select className="input" value={relationship} onChange={(e) => setRelationship(e.target.value)}>
           <option value="">Not specified</option>
           <option value="mother">Mother</option><option value="father">Father</option>
-          <option value="guardian">Guardian</option><option value="grandparent">Grandparent</option><option value="other">Other</option>
+          <option value="grandparent">Grandparent</option><option value="other">Other</option>
         </select></label>
       <div className="row" style={{ marginTop: 10, justifyContent: 'flex-end', gap: 8 }}>
         <button className="btn small secondary" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
@@ -172,7 +172,7 @@ export function ProfileScreen() {
             only Help & Support renders. To re-enable, uncomment and restore the "Security" heading. */}
         <div className="eyebrow">Support</div>
         {/*
-        <Card onClick={() => nav('/recovery')}><div className="between"><div><h3>Change / recover PIN</h3><div className="muted">Verify by guardian OTP</div></div><span className="pill">›</span></div></Card>
+        <Card onClick={() => nav('/recovery')}><div className="between"><div><h3>Change / recover PIN</h3><div className="muted">Verify by parent OTP</div></div><span className="pill">›</span></div></Card>
         <Card onClick={() => nav('/device')}><div className="between"><div><h3>Move to a new device</h3><div className="muted">Re-enroll this browser</div></div><span className="pill">›</span></div></Card>
         <Card onClick={() => nav('/referrals')}><div className="between"><div><h3>Invite friends</h3><div className="muted">Share your code, earn coins</div></div><span className="pill">›</span></div></Card>
         */}

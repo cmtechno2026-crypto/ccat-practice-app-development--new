@@ -45,7 +45,7 @@ export function WelcomeScreen() {
         <p className="muted">Ready to become a CCAT champion? Create an account or log in to get started.</p>
         <Link to="/register" className="btn">Create an account 🚀</Link>
         <Link to="/login" className="btn secondary">I already have an account</Link>
-        <p className="hint">A parent or guardian sets up the account. We follow Canadian privacy rules (PIPEDA).</p>
+        <p className="hint">A parent sets up the account. We follow Canadian privacy rules (PIPEDA).</p>
       </div>
     </div>
   );

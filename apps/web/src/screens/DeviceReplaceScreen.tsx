@@ -41,7 +41,7 @@ export function DeviceReplaceScreen() {
         {err && <div className="err" role="alert">{err}</div>}
         {step === 'start' && (
           <>
-            <p className="muted">Moving to a new device? Verify with a guardian code to enrol it.</p>
+            <p className="muted">Moving to a new device? Verify with a parent code to enrol it.</p>
             <Field label="Username"><input className="input" value={username} autoCapitalize="none" onChange={(e) => setUsername(e.target.value.toLowerCase())} /></Field>
             <div className="row">
               <button className={`btn small ${channel === 'email' ? '' : 'secondary'}`} onClick={() => setChannel('email')}>Email</button>
@@ -52,7 +52,7 @@ export function DeviceReplaceScreen() {
         )}
         {step === 'verify' && (
           <>
-            <p className="muted">Enter the guardian code.{devCode ? ` (dev code: ${devCode})` : ''}</p>
+            <p className="muted">Enter the parent code.{devCode ? ` (dev code: ${devCode})` : ''}</p>
             <Field label="Code"><input className="input" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} /></Field>
             <button className="btn" disabled={code.length < 4 || busy} onClick={verify}>Enrol device</button>
           </>

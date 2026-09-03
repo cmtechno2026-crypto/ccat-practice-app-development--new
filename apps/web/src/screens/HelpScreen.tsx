@@ -10,7 +10,7 @@ const FAQ: { q: string; a: string }[] = [
   { q: 'How do I earn coins and keep my streak?', a: 'You keep a daily streak by practising on consecutive days. Reaching streak milestones (3, 7, 14 and 30 days) grants bonus coins. Your balance, streak and the milestone ladder are on the Rewards page.' },
   { q: 'How do avatars and themes unlock?', a: 'Avatars evolve and themes unlock as you earn XP. Anything you have reached the XP for equips instantly from the avatar button in the top-right; locked items show how much XP they need.' },
   { q: 'What are bookmarks for?', a: 'Bookmark any question during practice to revisit it later from the Bookmarks page, where you can review the correct answer and explanation as study — it is not re-scored.' },
-  { q: 'I forgot my PIN. What do I do?', a: 'Open My profile → Change / recover PIN. Recovery is verified by your guardian, since accounts belong to learners under a guardian.' },
+  { q: 'I forgot my PIN. What do I do?', a: 'Open My profile → Change / recover PIN. Recovery is verified by your parent, since accounts belong to learners under a parent.' },
 ];
 
 function FaqItem({ item }: { item: { q: string; a: string } }) {

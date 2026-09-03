@@ -109,7 +109,9 @@ export function RegisterScreen() {
     client.grades()
       .then((g: any) => {
         if (ignore) return;
-        const list = Array.isArray(g) ? g : [];
+        // Grades 5 & 6 are hidden at registration for now (content not ready) — re-enable by removing
+        // this filter when those grades launch.
+        const list = (Array.isArray(g) ? g : []).filter((x: any) => Number(x?.grade_number) <= 4);
         setGradeList(list);
         if (list[0]) setGradeId((cur) => cur || list[0].id);
       })
@@ -197,7 +199,7 @@ export function RegisterScreen() {
           {step === 'details' && (
             <>
               <div className="card" style={{ background: 'var(--tint-blue)' }}>
-                <p>🧑‍👧 <strong>A parent or guardian sets this up.</strong> We ask for a grown-up's email and phone and for consent before creating the account — Canadian privacy rules (PIPEDA), no ads, no selling data.</p>
+                <p>🧑‍👧 <strong>A parent sets this up.</strong> We ask for a grown-up's email and phone and for consent before creating the account — Canadian privacy rules (PIPEDA), no ads, no selling data.</p>
               </div>
 
               <div className="eyebrow">About the learner</div>
@@ -223,13 +225,13 @@ export function RegisterScreen() {
               </Field>
               <div className="pill" style={{ background: 'var(--tint-green)', color: 'var(--green)' }}>🎂 {Math.max(0, age)} years old</div>
 
-              <div className="eyebrow" style={{ marginTop: 8 }}>Parent / guardian</div>
-              <Field label="Guardian name"><input className="input" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="Parent / guardian full name" /></Field>
-              <Field label="Guardian email" hint={guardianEmail ? (emailOk ? '✓ Looks good' : 'Enter a valid email address') : undefined} hintKind={guardianEmail ? (emailOk ? 'ok' : 'bad') : undefined}>
+              <div className="eyebrow" style={{ marginTop: 8 }}>Parent</div>
+              <Field label="Parent name"><input className="input" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="Parent full name" /></Field>
+              <Field label="Parent email" hint={guardianEmail ? (emailOk ? '✓ Looks good' : 'Enter a valid email address') : undefined} hintKind={guardianEmail ? (emailOk ? 'ok' : 'bad') : undefined}>
                 <input className={`input ${guardianEmail ? (emailOk ? 'ok' : 'bad') : ''}`} type="email" inputMode="email"
                   value={guardianEmail} onChange={(e) => setGuardianEmail(e.target.value)} placeholder="parent@email.com" />
               </Field>
-              <Field label="Guardian phone (with country code)"
+              <Field label="Parent phone (with country code)"
                 hint={phoneNational ? (phoneObj ? `✓ ${phoneE164}` : 'Enter a valid number for the selected country') : 'Pick a country, then enter the number'}
                 hintKind={phoneNational ? (phoneObj ? 'ok' : 'bad') : undefined}>
                 <div className="row" style={{ gap: 8 }}>
@@ -248,13 +250,13 @@ export function RegisterScreen() {
             <>
               <h2>Parent consent 📝</h2>
               <div className="card">
-                <p><strong>What we collect</strong> — your child's username, name, grade, age and practice progress. Guardian contact is used only to secure and recover the account.</p>
+                <p><strong>What we collect</strong> — your child's username, name, grade, age and practice progress. Parent contact is used only to secure and recover the account.</p>
                 <p><strong>What we never do</strong> — no ads, no selling data, no in-app purchases.</p>
                 <p><strong>Your rights</strong> — export or delete your child's data anytime. Data residency: Canada (PIPEDA). Policy version {POLICY_VERSION}.</p>
               </div>
               <button type="button" className="consent-check" aria-pressed={consentChecked} onClick={() => setConsentChecked((c) => !c)}>
                 <span className={`bm-box ${consentChecked ? 'on' : ''}`} aria-hidden>{consentChecked ? '✓' : ''}</span>
-                I'm {guardianName || 'the parent/guardian'} and I agree to the above.
+                I'm {guardianName || 'the parent'} and I agree to the above.
               </button>
               <button className="btn" disabled={busy || !consentChecked} onClick={acceptConsent}>I agree — continue</button>
             </>
