@@ -1,6 +1,6 @@
 # CCAT Project State
 
-_Last updated: 2026-09-04 — Payments Phase 2 authored, committed to feature/payments, build- and test-verified (net improvement over master)._
+_Last updated: 2026-09-04 — Payments Phase 2 deployed to Render+Vercel preview; 0040 applied to PROD; admin Membership page now shows linked students on email entry (gateway+admin change, needs push + redeploy of BOTH services)._
 
 ## Architecture
 Admin Web (apps/admin, Vite/React) -> Gateway -> Supabase
@@ -27,11 +27,21 @@ feature/payments (Phase 2 work; uncommitted working-tree changes, not yet `git c
   0040 entitlements migration; gateway resolver + capability map + demo-set derivation + catalog locked flags
   + /v1/sessions/start & /:id 403 upgrade_required + /v1/entitlements/me + admin upsert; web lock UI + Upgrade panel;
   admin manual grant. See PAYMENTS_PHASE2.md. Combine detected via subcategory KEY (no dependency on out-of-band column).
+- Admin Membership page: entering a guardian email now auto-looks-up and lists the linked student(s) — real name,
+  @username, grade, relationship/primary, status pill — so the operator grants the right family. Gateway GET
+  /v1/admin/entitlements returns { item, students, allowed_tiers }; admin api.ts + Membership.tsx render it.
+- 0040 entitlements migration APPLIED TO PROD (Supabase MCP, user-approved); ledger rows 0040+0041 inserted.
+- Preview deployed: Render gateway (NODE_ENV=staging so prod dev-pepper check is bypassed) + Vercel web/admin
+  with VITE_PAYMENTS_ENABLED=true. Membership icon/route confirmed showing; t50 grant saved for a test guardian.
 - 0041 migration: backfills the prod-only ccat.subcategories.max_questions_per_set column (add-if-not-exists;
   no-op on prod) so local/CI matches prod. This was a pre-existing gap unrelated to payments.
 - VERIFIED: @ccat/gateway typecheck clean; @ccat/web build clean; @ccat/admin build clean.
 - VERIFIED: gateway vitest suite — feature/payments = 167/176 pass (9 fail); master baseline = 140/176 (36 fail).
   Phase 2 fixed 27 pre-existing failures and introduced ZERO regressions.
+- VERIFIED on a preview DB (throwaway Postgres 16, migrations 0000-0041 applied clean): 36/36 payment-logic
+  checks pass — guardian resolution, demo-set derivation (first set of first subcat per battery), free=demo-only,
+  t50=all-practice (exam/combine still locked), t250/t500 phase-clamped to t50, expired/canceled -> free, and the
+  admin upsert's case-insensitive lower(guardian_email) keying. HTTP-layer 403 wire test not yet run (optional).
 
 ## Current blockers / known pre-existing test failures (9 on branch, all also on master)
 - 0037/0038 test drift (tests assert removed behavior): e2e "blocks a second session" (expects 409), e2e/phase-c/
@@ -42,10 +52,14 @@ feature/payments (Phase 2 work; uncommitted working-tree changes, not yet `git c
 - device_bash unavailable this session — builds/tests were run by the user on their machine.
 
 ## Next tasks
-1. User: review diff, decide on 0041 (schema-parity migration) — keep or drop.
-2. User: `git commit` + push feature/payments (Claude does not commit/push/merge).
-3. Optional (user's call): update the ~5 stale drift tests to current 0037/0038 behavior; investigate the 4 untouched-subsystem failures.
-4. Later: apply 0040 (+0041) on preview DB, flip flags on preview, run PAYMENTS_PHASE2.md test plan; then Phase 1 (Stripe), Phase 4 (webhook), Phase 5 (flag ON in prod).
+1. User: `git commit` + push feature/payments (Claude does not commit/push/merge). The Membership linked-students
+   change touches BOTH gateway (new students query) and admin UI — after push, REDEPLOY the preview gateway
+   (Render) AND the admin (Vercel). A plain browser refresh is not enough; both need a rebuild.
+2. Verify on preview after redeploy: enter a guardian email on /config/membership → linked student(s) appear.
+3. Finish Phase 3 preview verification (web): free→t50 unlock, Exam/Combine stay locked, 403 hard-gate on /sessions.
+4. Optional (user's call): update the ~5 stale drift tests to current 0037/0038 behavior; investigate the 4 untouched-subsystem failures.
+5. FLAGGED SECURITY GAP: prod gateway runs dev-pepper (NODE_ENV not 'production'). Remediation write-up offered, not done.
+6. Later: Phase 1 (Stripe), Phase 4 (webhook), Phase 5 (flag ON in prod).
 
 ## Important constraints
 - Do not modify mobile production (apps/mobile).

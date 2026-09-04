@@ -7,13 +7,19 @@ import { Panel, useToast } from '../components/ui';
 // guardian's tier by email so both states can be tested today with no payment: free (demo-only) vs
 // t50 (all practice; Exam/Combine still locked). Super-Admin only (server enforces config.global).
 // Only tiers reachable this phase are offered (free / t50) — $250/$500 have no grant path yet.
-// No AI, no card fields, no bulk — a single grant control. Reached only when VITE_PAYMENTS_ENABLED.
+// Entering an email also shows the student(s) linked to that guardian so you grant the right family.
 
 const TIERS: { value: 'free' | 't50'; label: string }[] = [
   { value: 'free', label: 'free — demo sets only' },
   { value: 't50', label: 't50 ($50) — all practice (Exam/Combine still locked)' },
 ];
 const STATUSES = ['active', 'canceled', 'expired', 'pending'] as const;
+
+interface LinkedStudent {
+  display_name: string; username: string; status: string;
+  grade_number?: number | null; grade_name?: string | null;
+  is_primary?: boolean; relationship?: string | null;
+}
 
 export function Membership() {
   const { can } = useAuth();
@@ -25,17 +31,21 @@ export function Membership() {
   const [status, setStatus] = useState<string>('active');
   const [expiry, setExpiry] = useState<string>(''); // datetime-local; empty = no expiry
   const [current, setCurrent] = useState<any | null>(null);
+  const [students, setStudents] = useState<LinkedStudent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [lastLoadedEmail, setLastLoadedEmail] = useState('');
 
-  const load = async () => {
+  const load = async (opts: { silent?: boolean } = {}) => {
     const e = email.trim().toLowerCase();
-    if (!e) { toast('Enter a guardian email'); return; }
+    if (!e) { if (!opts.silent) toast('Enter a guardian email'); return; }
     setBusy(true);
     try {
       const r = await api.getEntitlement(e);
       setCurrent(r.item);
+      setStudents(r.students ?? []);
       setLoaded(true);
+      setLastLoadedEmail(e);
       if (r.item) {
         setTier(r.item.tier === 't50' ? 't50' : 'free');
         setStatus(r.item.status ?? 'active');
@@ -43,27 +53,37 @@ export function Membership() {
       } else {
         setTier('t50'); setStatus('active'); setExpiry('');
       }
-    } catch (err) { toast((err as Error).message); }
+    } catch (err) { if (!opts.silent) toast((err as Error).message); }
     finally { setBusy(false); }
   };
+
+  // Auto-lookup when the admin leaves the email field (still keep the explicit button).
+  const onEmailBlur = () => { const e = email.trim().toLowerCase(); if (e && e !== lastLoadedEmail) load({ silent: true }); };
 
   const save = async () => {
     const e = email.trim().toLowerCase();
     if (!e) { toast('Enter a guardian email'); return; }
     setBusy(true);
     try {
-      const r = await api.setEntitlement({
+      await api.setEntitlement({
         guardian_email: e,
         tier,
         status,
         current_period_end: expiry ? new Date(expiry).toISOString() : null,
       });
-      setCurrent(r.item);
+      // Refresh so the "Current" line + linked students reflect the saved state consistently.
+      const g = await api.getEntitlement(e);
+      setCurrent(g.item);
+      setStudents(g.students ?? []);
       setLoaded(true);
+      setLastLoadedEmail(e);
       toast(`Saved — ${e} → ${tier}`);
     } catch (err) { toast((err as Error).message); }
     finally { setBusy(false); }
   };
+
+  const gradeLabel = (s: LinkedStudent) =>
+    s.grade_name || (s.grade_number != null ? `Grade ${s.grade_number}` : '—');
 
   return (
     <>
@@ -74,21 +94,51 @@ export function Membership() {
       </p>
 
       <Panel title="Set a guardian's tier">
-        <div className="stack" style={{ display: 'grid', gap: 12, maxWidth: 520 }}>
+        <div className="stack" style={{ display: 'grid', gap: 12, maxWidth: 560 }}>
           <label>
             <div className="muted" style={{ marginBottom: 4 }}>Guardian email</div>
             <div className="row" style={{ gap: 8 }}>
               <input className="input" type="email" value={email} placeholder="guardian@example.com"
-                onChange={(e) => { setEmail(e.target.value); setLoaded(false); setCurrent(null); }} style={{ flex: 1 }} />
-              <button className="btn ghost" onClick={load} disabled={busy || !email.trim()}>Load current</button>
+                onChange={(e) => { setEmail(e.target.value); setLoaded(false); setCurrent(null); setStudents([]); }}
+                onBlur={onEmailBlur}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); load(); } }}
+                style={{ flex: 1 }} />
+              <button className="btn ghost" onClick={() => load()} disabled={busy || !email.trim()}>Look up</button>
             </div>
           </label>
+
+          {/* Who is this email — the linked student(s), so you grant the right family. */}
+          {loaded && (
+            <div className="panel" style={{ padding: 12, background: 'var(--tint, rgba(127,127,127,.06))' }}>
+              <div className="muted" style={{ fontSize: 12.5, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                Linked {students.length === 1 ? 'student' : 'students'}
+              </div>
+              {students.length === 0 ? (
+                <div className="muted" style={{ fontSize: 13 }}>No student is linked to this guardian email.</div>
+              ) : (
+                <div className="stack" style={{ display: 'grid', gap: 8 }}>
+                  {students.map((s, i) => (
+                    <div key={i} className="between" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <div>
+                        <strong>{s.display_name}</strong>{' '}
+                        <span className="muted">@{s.username}</span>
+                        <div className="muted" style={{ fontSize: 12.5 }}>
+                          {gradeLabel(s)} · {s.relationship || 'guardian'}{s.is_primary ? ' · primary' : ''}
+                        </div>
+                      </div>
+                      <span className={`pill dotted s-${s.status} st-${s.status}`}>{s.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {loaded && (
             <div className="muted" style={{ fontSize: 13 }}>
               {current
-                ? <>Current: <strong>{current.tier}</strong> · {current.status}{current.current_period_end ? ` · expires ${new Date(current.current_period_end).toLocaleString()}` : ' · no expiry'} · source {current.source}</>
-                : <>No entitlement yet for this email — saving will create one (defaults to free elsewhere).</>}
+                ? <>Current entitlement: <strong>{current.tier}</strong> · {current.status}{current.current_period_end ? ` · expires ${new Date(current.current_period_end).toLocaleString()}` : ' · no expiry'} · source {current.source}</>
+                : <>No entitlement yet for this email — saving will create one (a guardian with no row is treated as free).</>}
             </div>
           )}
 

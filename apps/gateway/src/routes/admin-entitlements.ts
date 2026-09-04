@@ -36,7 +36,21 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
          from ccat.entitlements where lower(guardian_email) = $1 limit 1`,
       [email],
     );
-    return { item: rows[0] ?? null, allowed_tiers: ALLOWED_TIERS };
+    // Who is this email? Return the student(s) linked to this guardian contact so the admin can confirm
+    // they're granting the right family (real name, username, grade). Read-only; guardian PII already
+    // visible to this Super-Admin surface (§24).
+    const students = await db.query(
+      `select s.display_name, s.username_normalized as username, s.status,
+              g.grade_number, g.name as grade_name, sg.is_primary, sg.relationship
+         from ccat.student_guardians sg
+         join ccat.students s on s.id = sg.student_id
+         join ccat.guardian_contacts gc on gc.id = sg.guardian_id
+         left join ccat.grades g on g.id = s.grade_id
+        where lower(gc.email::text) = $1
+        order by sg.is_primary desc, s.display_name`,
+      [email],
+    );
+    return { item: rows[0] ?? null, students: students.rows, allowed_tiers: ALLOWED_TIERS };
   });
 
   // POST /v1/admin/entitlements — upsert a guardian's entitlement (source='manual').

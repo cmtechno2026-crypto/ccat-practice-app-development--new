@@ -112,11 +112,7 @@ export const api = {
   flags: () => req<{ items: any[] }>('GET', '/v1/admin/config/flags'),
   setFlag: (key: string, value: boolean, reason?: string) => req<any>('POST', '/v1/admin/config/flags', { key, value, reason }),
   // Payments Phase 2 — manual membership grant (Super-Admin, gated by config.global). Keyed by lower(email).
-<<<<<<< Updated upstream
-  getEntitlement: (email: string) => req<{ item: any; allowed_tiers: string[] }>('GET', `/v1/admin/entitlements?email=${encodeURIComponent(email)}`),
-=======
   getEntitlement: (email: string) => req<{ item: any; students: any[]; allowed_tiers: string[] }>('GET', `/v1/admin/entitlements?email=${encodeURIComponent(email)}`),
->>>>>>> Stashed changes
   setEntitlement: (b: { guardian_email: string; tier: 'free' | 't50'; status?: string; current_period_end?: string | null }) => req<{ item: any }>('POST', '/v1/admin/entitlements', b),
   // rewards
   achievements: () => req<{ items: any[] }>('GET', '/v1/admin/rewards/achievements'),
