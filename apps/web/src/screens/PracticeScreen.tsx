@@ -5,12 +5,19 @@ import { ApiError } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
+import { capsOf, PAYMENTS_ENABLED, type UpgradeFeature } from '../lib/entitlements';
+import { UpgradePanel, LockBadge } from '../components/UpgradePanel';
 
 // PRACTICE — 3-level browse that ends in a quiz (mockup: CCAT Practice.dc.html), desktop layout,
 // mockup tokens:  BATTERY (3) → CATEGORY (subcategories) → SET → start screen → practice quiz.
 // Everything comes from GET /v1/catalog (published-only, student's grade, sets with active
 // questions), grouped client-side. Difficulty is a per-set attribute → a filter on the sets view;
 // the timer is a per-session choice on the start screen. Exam keeps its existing flat paper list.
+//
+// Payments Phase 2 (flag-gated): the gateway marks locked practice sets (demo tier: non-demo sets; t50:
+// combine) and reports exam capability. Locks here are COSMETIC — the hard gate is /v1/sessions/start —
+// so a locked click opens the Upgrade panel instead of starting. When VITE_PAYMENTS_ENABLED is off,
+// capsOf() returns everything-unlocked and no set is ever locked, so this screen renders as before.
 
 // Battery VISUALS (icon/colour = mockup tokens). The display NAME comes from the gateway catalog
 // (category_name); the fallback name here is only used before the catalog loads.
@@ -36,7 +43,15 @@ function loadPrefs(): Prefs {
 
 export function PracticeScreen() {
   const nav = useNavigate();
-  const { flash } = useApp();
+  const { flash, entitlements } = useApp();
+  const caps = capsOf(entitlements);
+  const [upgrade, setUpgrade] = useState<UpgradeFeature | null>(null);
+  const openUpgrade = (f: UpgradeFeature) => setUpgrade(f);
+  const upgradeEl = <UpgradePanel open={!!upgrade} feature={upgrade ?? 'practice'} onClose={() => setUpgrade(null)} />;
+  // A practice set is locked only when the flag is on AND the server marked it locked.
+  const isLocked = (s: CatalogItem) => PAYMENTS_ENABLED && s.locked === true;
+  const setFeature = (s: CatalogItem): UpgradeFeature => (s.is_combine ? 'combine' : 'practice');
+
   const [sp, setSp] = useSearchParams();
   const mode: Mode = sp.get('mode') === 'exam' ? 'exam' : 'practice';
   const battery = sp.get('battery');            // level 2 when set
@@ -79,6 +94,8 @@ export function PracticeScreen() {
 
   async function startSet(item: CatalogItem, resumeId?: string | null) {
     if (resumeId) { nav(`/session/${resumeId}`); return; }
+    // Locked practice set → surface the Upgrade panel, never call the API.
+    if (isLocked(item)) { openUpgrade(setFeature(item)); return; }
     setStarting(true);
     try {
       const min = timerMin;
@@ -87,6 +104,11 @@ export function PracticeScreen() {
       const session = await client.sessionStart(item.set_version_id, 'practice', timerType, durationSeconds);
       nav(`/session/${session.id}`);
     } catch (e) {
+      // Payments Phase 2: a locked set caught at the server surfaces the Upgrade panel, not an error toast.
+      if (PAYMENTS_ENABLED && e instanceof ApiError && e.code === 'upgrade_required') {
+        openUpgrade(item.is_combine ? 'combine' : (mode === 'exam' ? 'exam' : 'practice'));
+        return;
+      }
       // A saved/left session must NOT block starting another set (the gateway no longer holds a
       // one-active-session lock). No special "resume it from Home" blocking toast — surface only a real error.
       flash(e instanceof ApiError ? e.message : (e as Error).message);
@@ -98,6 +120,7 @@ export function PracticeScreen() {
   // delete completion history (set_completions / session_results are separate records), so this is a new
   // attempt, not a data wipe. Then start a clean session and open it at question 1.
   async function redoSet(item: CatalogItem) {
+    if (isLocked(item)) { openUpgrade(setFeature(item)); return; }
     setStarting(true);
     try {
       const sid = item.progress?.status === 'in_progress' ? item.progress.session_id : null;
@@ -108,6 +131,10 @@ export function PracticeScreen() {
       const session = await client.sessionStart(item.set_version_id, 'practice', timerType, durationSeconds);
       nav(`/session/${session.id}`);
     } catch (e) {
+      if (PAYMENTS_ENABLED && e instanceof ApiError && e.code === 'upgrade_required') {
+        openUpgrade(item.is_combine ? 'combine' : 'practice');
+        return;
+      }
       // A saved/left session must NOT block starting another set (the gateway no longer holds a
       // one-active-session lock). No special "resume it from Home" blocking toast — surface only a real error.
       flash(e instanceof ApiError ? e.message : (e as Error).message);
@@ -116,6 +143,7 @@ export function PracticeScreen() {
 
   // ============================ EXAM (unchanged flat paper list) ============================
   if (mode === 'exam') {
+    const examLocked = PAYMENTS_ENABLED && !caps.exam; // whole exam surface is membership-gated this phase
     const papers = (data ?? []).filter((c) => c.allowed_modes.includes('exam'))
       .slice().sort((a, b) => (a.retired ? 1 : 0) - (b.retired ? 1 : 0)); // retired (already taken) sink to bottom
     return (
@@ -125,6 +153,18 @@ export function PracticeScreen() {
           <div className="card" style={{ background: 'var(--tint-blue)' }}>
             <div className="muted">⏱ The timer starts the moment you open a set. Work through the three batteries (Verbal · Non-verbal · Quantitative) before time runs out.</div>
           </div>
+          {examLocked && (
+            <div className="card" style={{ background: 'var(--tint, #f1eefb)' }}>
+              <div className="row" style={{ alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }} aria-hidden>🔒</span>
+                <div style={{ flex: 1 }}>
+                  <strong>Full exams unlock with a membership</strong>
+                  <div className="muted">You can still practise! Ask a grown-up to unlock timed exams.</div>
+                </div>
+                <button className="btn small" onClick={() => openUpgrade('exam')}>Learn more</button>
+              </div>
+            </div>
+          )}
           {loading && <Loader />}
           {error && <ErrorNote error={error} onRetry={reload} />}
           {data && papers.length === 0 && <div className="empty">No exam sets for your grade yet.<br />Check back after your teacher publishes an exam.</div>}
@@ -142,13 +182,16 @@ export function PracticeScreen() {
                   </div>
                   {s.retired
                     ? <span className="pill" style={{ background: 'var(--tint)', color: 'var(--muted)' }}>Retired</span>
-                    : <button className={`btn small ${st === 'completed' ? 'secondary' : ''}`} disabled={starting}
-                        onClick={() => startSet(s, st === 'in_progress' ? s.progress?.session_id : null)}>{cta}</button>}
+                    : examLocked
+                      ? <button className="btn small secondary" onClick={() => openUpgrade('exam')} aria-label="Unlocks with a membership">🔒 Unlock</button>
+                      : <button className={`btn small ${st === 'completed' ? 'secondary' : ''}`} disabled={starting}
+                          onClick={() => startSet(s, st === 'in_progress' ? s.progress?.session_id : null)}>{cta}</button>}
                 </div>
               </Card>
             );
           })}
         </div>
+        {upgradeEl}
       </>
     );
   }
@@ -169,6 +212,7 @@ export function PracticeScreen() {
     const bm = batteryMeta(selectedSet.category_key);
     const st = selectedSet.progress?.status ?? 'not_started';
     const timerLabel = timerMin == null ? 'Untimed' : `${timerMin} min`;
+    const locked = isLocked(selectedSet);
     return (
       <>
         <AppBar title="Ready to start?" sub={selectedSet.name} back />
@@ -181,6 +225,7 @@ export function PracticeScreen() {
                 <div className="eyebrow" style={{ color: bm.color }}>{bm.name} · {selectedSet.subcategory}</div>
                 <h2 style={{ marginTop: 2 }}>{selectedSet.name}</h2>
               </div>
+              {locked && <span style={{ marginLeft: 'auto' }}><LockBadge /></span>}
             </div>
             <div className="start-facts">
               <div className="fact"><div className="n">{selectedSet.question_count}</div><div className="l">Questions</div></div>
@@ -189,34 +234,47 @@ export function PracticeScreen() {
             </div>
             <div className="muted" style={{ marginTop: 4 }}>Practice mode gives instant feedback: a hint after a wrong first try, two attempts, then the answer and why. Bookmark any question to revisit it later.</div>
 
-            {/* Timer choice for THIS session */}
-            <div style={{ marginTop: 12 }}>
-              <div className="eyebrow" style={{ marginBottom: 6 }}>Timer · {timerLabel}</div>
-              <div className="row" style={{ flexWrap: 'wrap' }} role="group" aria-label="Timer">
-                <button className={`btn small ${timerMin == null ? '' : 'secondary'}`} aria-pressed={timerMin == null} onClick={() => { setTimerMin(null); setCustomOpen(false); }}>∞ Untimed</button>
-                {[5, 10, 15].map((m) => (
-                  <button key={m} className={`btn small ${timerMin === m ? '' : 'secondary'}`} aria-pressed={timerMin === m} onClick={() => { setTimerMin(m); setCustomOpen(false); }}>{m} min</button>
-                ))}
-                <button className={`btn small ${customOpen || (timerMin != null && ![5, 10, 15].includes(timerMin)) ? '' : 'secondary'}`}
-                  onClick={() => { setCustomOpen((o) => !o); setTimerMin(customMins); }}>
-                  Custom{timerMin != null && ![5, 10, 15].includes(timerMin) ? ` · ${timerMin}m` : ''}
-                </button>
-              </div>
-              {customOpen && (
-                <div className="row" style={{ marginTop: 8, gap: 10 }}>
-                  <input className="input" type="range" min={20} max={120} step={5} value={customMins}
-                    onChange={(e) => { const v = Number(e.target.value); setCustomMins(v); setTimerMin(v); }} style={{ flex: 1 }} />
-                  <span className="pill">{customMins} min</span>
+            {locked ? (
+              // Membership-gated set: no timer/start; offer the Upgrade path instead.
+              <div style={{ marginTop: 14 }}>
+                <div className="muted" style={{ marginBottom: 10 }}>
+                  {selectedSet.is_combine ? 'Battery Combine is part of a membership.' : 'This set is part of a membership.'} Ask a grown-up to unlock it.
                 </div>
-              )}
-            </div>
+                <button className="btn" onClick={() => openUpgrade(setFeature(selectedSet))}>🔒 Unlock with a membership</button>
+              </div>
+            ) : (
+              <>
+                {/* Timer choice for THIS session */}
+                <div style={{ marginTop: 12 }}>
+                  <div className="eyebrow" style={{ marginBottom: 6 }}>Timer · {timerLabel}</div>
+                  <div className="row" style={{ flexWrap: 'wrap' }} role="group" aria-label="Timer">
+                    <button className={`btn small ${timerMin == null ? '' : 'secondary'}`} aria-pressed={timerMin == null} onClick={() => { setTimerMin(null); setCustomOpen(false); }}>∞ Untimed</button>
+                    {[5, 10, 15].map((m) => (
+                      <button key={m} className={`btn small ${timerMin === m ? '' : 'secondary'}`} aria-pressed={timerMin === m} onClick={() => { setTimerMin(m); setCustomOpen(false); }}>{m} min</button>
+                    ))}
+                    <button className={`btn small ${customOpen || (timerMin != null && ![5, 10, 15].includes(timerMin)) ? '' : 'secondary'}`}
+                      onClick={() => { setCustomOpen((o) => !o); setTimerMin(customMins); }}>
+                      Custom{timerMin != null && ![5, 10, 15].includes(timerMin) ? ` · ${timerMin}m` : ''}
+                    </button>
+                  </div>
+                  {customOpen && (
+                    <div className="row" style={{ marginTop: 8, gap: 10 }}>
+                      <input className="input" type="range" min={20} max={120} step={5} value={customMins}
+                        onChange={(e) => { const v = Number(e.target.value); setCustomMins(v); setTimerMin(v); }} style={{ flex: 1 }} />
+                      <span className="pill">{customMins} min</span>
+                    </div>
+                  )}
+                </div>
 
-            <button className="btn" style={{ marginTop: 14 }} disabled={starting}
-              onClick={() => startSet(selectedSet, st === 'in_progress' ? selectedSet.progress?.session_id : null)}>
-              {starting ? 'Starting…' : st === 'in_progress' ? 'Resume practice ▶' : st === 'completed' ? 'Practise again ▶' : 'Start practice ▶'}
-            </button>
+                <button className="btn" style={{ marginTop: 14 }} disabled={starting}
+                  onClick={() => startSet(selectedSet, st === 'in_progress' ? selectedSet.progress?.session_id : null)}>
+                  {starting ? 'Starting…' : st === 'in_progress' ? 'Resume practice ▶' : st === 'completed' ? 'Practise again ▶' : 'Start practice ▶'}
+                </button>
+              </>
+            )}
           </Card>
         </div>
+        {upgradeEl}
       </>
     );
   }
@@ -255,6 +313,22 @@ export function PracticeScreen() {
                 </div>
               );
             }
+            // Membership-locked practice set (flag on): tapping opens the Upgrade panel, not the set.
+            if (isLocked(s)) {
+              return (
+                <div key={s.set_version_id} className="practice-set tap" role="button" tabIndex={0}
+                  onClick={() => openUpgrade(setFeature(s))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUpgrade(setFeature(s)); } }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong>{s.name}</strong>
+                    <div className="muted">
+                      {dm ? `${dm.icon} ` : ''}{s.difficulty ?? '—'} · {s.question_count} questions
+                    </div>
+                  </div>
+                  <LockBadge />
+                </div>
+              );
+            }
             return (
               <div key={s.set_version_id} className="practice-set tap" role="button" tabIndex={0}
                 onClick={() => go({ set: s.set_version_id })}
@@ -283,6 +357,7 @@ export function PracticeScreen() {
             );
           })}
         </div>
+        {upgradeEl}
       </>
     );
   }
@@ -300,16 +375,22 @@ export function PracticeScreen() {
           {loading && <Loader />}
           {error && <ErrorNote error={error} onRetry={reload} />}
           {data && entries.length === 0 && <div className="empty">No published sets in {bm.name} for your grade yet.<br />Check back after your teacher publishes content.</div>}
-          {entries.map(([sub, sets]) => (
-            <Card key={sub} onClick={() => go({ category: sub })}>
-              <div className="row">
-                <div className="ic" style={{ background: bm.tint }}>{bm.icon}</div>
-                <div style={{ flex: 1 }}><h3>{sub}</h3><div className="muted">{sets.length} set{sets.length === 1 ? '' : 's'}</div></div>
-                <span className="pill">›</span>
-              </div>
-            </Card>
-          ))}
+          {entries.map(([sub, sets]) => {
+            // A category whose every set is membership-locked shows a lock hint (e.g. Battery Combine on
+            // the $50 tier). Navigation still works so the child can see what's inside; each set is gated.
+            const allLocked = PAYMENTS_ENABLED && sets.length > 0 && sets.every((s) => isLocked(s));
+            return (
+              <Card key={sub} onClick={() => go({ category: sub })}>
+                <div className="row">
+                  <div className="ic" style={{ background: bm.tint }}>{bm.icon}</div>
+                  <div style={{ flex: 1 }}><h3>{sub}</h3><div className="muted">{sets.length} set{sets.length === 1 ? '' : 's'}</div></div>
+                  {allLocked ? <LockBadge /> : <span className="pill">›</span>}
+                </div>
+              </Card>
+            );
+          })}
         </div>
+        {upgradeEl}
       </>
     );
   }
@@ -340,6 +421,7 @@ export function PracticeScreen() {
           );
         })}
       </div>
+      {upgradeEl}
     </>
   );
 }

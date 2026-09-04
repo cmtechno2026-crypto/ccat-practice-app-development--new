@@ -22,6 +22,7 @@ import { registerPracticeRoutes } from './routes/practice.js';
 import { registerSupportRoutes } from './routes/support.js';
 import { registerAccountRoutes } from './routes/account.js';
 import { registerReferralRoutes } from './routes/referrals.js';
+import { registerEntitlementsRoutes } from './routes/entitlements.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAdminDashboardRoutes } from './routes/admin-dashboard.js';
 import { registerAdminContentRoutes } from './routes/admin-content.js';
@@ -33,6 +34,7 @@ import { registerAdminCommsRoutes } from './routes/admin-comms.js';
 import { registerAdminAccountsRoutes } from './routes/admin-accounts.js';
 import { registerAdminStudentDetailRoutes } from './routes/admin-students.js';
 import { registerAdminOpsRoutes } from './routes/admin-ops.js';
+import { registerAdminEntitlementsRoutes } from './routes/admin-entitlements.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -135,7 +137,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
 
   // Routes
   registerHealthRoutes(app, db);
-  registerCatalogRoutes(app, db);
+  registerCatalogRoutes(app, db, cfg);
   registerRegistrationRoutes(app, db, cfg);
   registerAuthRoutes(app, db, cfg);
   registerRecoveryRoutes(app, db, cfg);
@@ -150,6 +152,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerSupportRoutes(app, db);
   registerAccountRoutes(app, db);
   registerReferralRoutes(app, db);
+  registerEntitlementsRoutes(app, db, cfg);
   registerAdminRoutes(app, db, cfg);
   registerAdminDashboardRoutes(app, db, cfg);
   registerAdminStudentDetailRoutes(app, db, cfg);
@@ -161,6 +164,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerAdminCommsRoutes(app, db, cfg);
   registerAdminAccountsRoutes(app, db, cfg);
   registerAdminOpsRoutes(app, db, cfg);
+  registerAdminEntitlementsRoutes(app, db, cfg);
 
   return app;
 }

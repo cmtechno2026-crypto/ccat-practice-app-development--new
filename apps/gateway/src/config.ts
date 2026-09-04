@@ -13,6 +13,10 @@ export interface Config {
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
   untimedPracticeInactivityHours: number;
+  // Payments Phase 2 master switch. Default FALSE — when off, the gateway serves content exactly as
+  // today (a true no-op): no entitlement resolution, no locked flags, no upgrade_required gating.
+  // Turn on only for the payments preview/branch. See PAYMENTS_ENABLED in .env.example.
+  paymentsEnabled: boolean;
   // Service abstractions (Blueprint §36). Drivers are pluggable; local is the dev default.
   storageDriver: string;      // local | s3 | supabase | gcs
   uploadsDir: string;         // local-disk asset root
@@ -56,6 +60,8 @@ export function loadConfig(): Config {
     accessTokenTtlSeconds: Number(process.env.ACCESS_TTL_SECONDS ?? 900),
     refreshTokenTtlSeconds: Number(process.env.REFRESH_TTL_SECONDS ?? 60 * 60 * 24 * 30),
     untimedPracticeInactivityHours: Number(process.env.UNTIMED_INACTIVITY_HOURS ?? 24),
+    // Default OFF. Only the literal string 'true' enables it, so any other value keeps production free.
+    paymentsEnabled: process.env.PAYMENTS_ENABLED === 'true',
     storageDriver: process.env.STORAGE_DRIVER ?? 'local',
     uploadsDir: process.env.UPLOADS_DIR ?? '.uploads',
     supabaseUrl: (process.env.SUPABASE_URL ?? '').replace(/\/$/, ''),

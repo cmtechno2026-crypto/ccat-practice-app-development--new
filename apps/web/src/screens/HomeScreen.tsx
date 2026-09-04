@@ -6,6 +6,7 @@ import { useApp } from '../lib/store';
 import { Card, Loader, ErrorNote, useAsync, GradePill } from '../components/ui';
 import { AvatarControl } from '../components/AvatarControl';
 import { Avatar } from '../components/Avatar';
+import { capsOf, PAYMENTS_ENABLED } from '../lib/entitlements';
 
 // HOME — "Option A": a two-column dashboard for kids (grade 3–6). Purple header band (greeting,
 // streak, Continue, avatar) → LEFT column (stat tiles, progress card, hero Practice/Exam, announcements)
@@ -56,7 +57,10 @@ function mascotLine(streak: number, completion: number | null): string {
 
 export function HomeScreen() {
   const nav = useNavigate();
-  const { profile } = useApp();
+  const { profile, entitlements } = useApp();
+  // Payments Phase 2: when the flag is off, capsOf() unlocks everything, so examLocked is always false
+  // and the exam entry tile renders exactly as today.
+  const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements).exam;
   const { loading, error, data, reload } = useAsync(async () => {
     const [summary, readiness, progress, announcements, active, achievements, analytics] = await Promise.all([
       client.rewardsSummary(), client.readiness(), client.progress(), client.announcements(),
@@ -197,7 +201,7 @@ export function HomeScreen() {
                   <span className="et-ic">📝</span>
                   <span className="et-title">CCAT exam</span>
                   <span className="et-sub">Timed mock — Verbal, Non-verbal &amp; Quantitative</span>
-                  <span className="et-go">Start ›</span>
+                  <span className="et-go">{examLocked ? '🔒 Membership' : 'Start ›'}</span>
                 </button>
               </div>
 

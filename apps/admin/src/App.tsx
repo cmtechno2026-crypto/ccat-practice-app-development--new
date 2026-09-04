@@ -20,6 +20,8 @@ import { Grades } from './pages/Grades';
 import { Flags } from './pages/Flags';
 import { Admins } from './pages/Admins';
 import { Audit } from './pages/Audit';
+import { Membership } from './pages/Membership';
+import { PAYMENTS_ENABLED } from './lib/payments';
 
 function Login() {
   const { login } = useAuth();
@@ -127,6 +129,8 @@ export function App() {
         <Route path="/config" element={<Navigate to="/config/grades" replace />} />
         <Route path="/config/grades" element={<Grades />} />
         <Route path="/config/flags" element={<Flags />} />
+        {/* Payments Phase 2 — manual membership grant. Route exists only when the flag is on. */}
+        {PAYMENTS_ENABLED && <Route path="/config/membership" element={<Membership />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

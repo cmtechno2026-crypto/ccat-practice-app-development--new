@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { DB } from '../db.js';
+import type { Config } from '../config.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { Errors } from '../errors.js';
+import { resolveEntitlement, computeDemoSetIds, isCombineSubcategory, isSetLockedForPractice, type Capabilities } from '../lib/entitlements.js';
 
-export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
+export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // GET /v1/grades — data-driven catalog (§29). Public-ish (no student data).
   app.get('/v1/grades', async () => {
     const { rows } = await db.query(
@@ -22,7 +24,9 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
     const sid = req.student!.studentId;
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name, cat.key as category_key, cat.name as category_name, sub.name as subcategory,
+              sub.key as subcategory_key,
               coalesce(sub.max_questions_per_set, 15) as max_questions_per_set,
+              st.grade_id as grade_id,
               cat.display_order as cat_order, sub.display_order as sub_order, sv.state as set_state,
               d.key as difficulty, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.duration_minutes,
               g.practice_enabled as grade_practice_enabled,
@@ -61,12 +65,28 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
         order by cat.display_order, sub.display_order, (sv.state = 'retired'), sv.created_at asc, sv.id asc`,
       [sid],
     );
+
+    // Payments Phase 2 — when the flag is ON, resolve this student's effective entitlement once and mark
+    // each PRACTICE set locked/unlocked per capability (demo → only the per-battery demo set unlocked;
+    // t50 → all non-combine unlocked, combine locked). Prefer marking locked over hiding, so the child
+    // sees what a membership adds. Exam entries are locked wholesale by the client from capabilities.exam
+    // and hard-gated at /v1/sessions/start. When the flag is OFF this whole block is skipped and rows are
+    // returned exactly as before (no `locked` field) — a true no-op.
+    let caps: Capabilities | null = null;
+    let demoSetIds: Set<string> | null = null;
+    if (cfg.paymentsEnabled) {
+      const gradeId = rows[0]?.grade_id ?? null;
+      const ent = await resolveEntitlement(db, sid);
+      caps = ent.capabilities;
+      demoSetIds = gradeId ? await computeDemoSetIds(db, String(gradeId)) : new Set<string>();
+    }
+
     return rows.map((r) => {
       const isTerminal = r.session_state && r.session_state !== 'IN_PROGRESS';
       const inProgress = r.session_state === 'IN_PROGRESS';
       const retired = r.set_state === 'retired';
       const status = inProgress ? 'in_progress' : isTerminal ? 'completed' : 'not_started';
-      return {
+      const base = {
         set_version_id: r.set_version_id,
         name: r.name,
         retired,
@@ -88,6 +108,12 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB) {
           score_total: isTerminal ? r.score_total : null,
         },
       };
+      if (caps && demoSetIds) {
+        const isCombine = isCombineSubcategory(r.subcategory_key, Number(r.max_questions_per_set ?? 15));
+        const locked = isSetLockedForPractice({ setVersionId: r.set_version_id, isCombine }, caps, demoSetIds);
+        return { ...base, locked, is_combine: isCombine };
+      }
+      return base;
     });
   });
 

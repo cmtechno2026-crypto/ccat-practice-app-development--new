@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import { PAYMENTS_ENABLED } from '../lib/payments';
 
 interface Tab { to: string; label: string; perm?: string; }
 interface RailItem { to: string; label: string; ic: string; perm?: string; match: string; tabs?: Tab[]; }
@@ -9,7 +10,7 @@ interface RailItem { to: string; label: string; ic: string; perm?: string; match
 // Super-Admin see the same rail; pages enforce RBAC server-side). Service Health, Coins & XP,
 // Feature flags, and Create-admin are NOT rail items — they are reached from the Super-Admin
 // dashboard controls panel and from in-page tabs. Icons use the mockup's emoji glyphs.
-const RAIL: RailItem[] = [
+const BASE_RAIL: RailItem[] = [
   { to: '/', label: 'Dashboard', ic: '📊', match: '/' },
   // Content's Practice-sets/Exam-papers toggle is rendered in-page as pills (mockup), not as a top strip.
   { to: '/content', label: 'Content', ic: '📚', match: '/content' },
@@ -20,6 +21,12 @@ const RAIL: RailItem[] = [
   { to: '/announcements', label: 'Announcements', ic: '📣', match: '/announcements' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
 ];
+
+// Payments Phase 2 — the Membership grant is a Super-Admin control shown ONLY when the flag is on.
+// When off, RAIL === BASE_RAIL, so the rail is identical to today.
+const RAIL: RailItem[] = PAYMENTS_ENABLED
+  ? [...BASE_RAIL, { to: '/config/membership', label: 'Membership', ic: '💳', match: '/config/membership', perm: 'config.global' }]
+  : BASE_RAIL;
 
 function sectionFor(path: string): RailItem | undefined {
   // longest match wins so '/' doesn't swallow everything
