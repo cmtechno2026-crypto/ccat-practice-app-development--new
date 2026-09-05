@@ -24,6 +24,7 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { UnavailableScreen } from './screens/UnavailableScreen';
 import { HelpScreen } from './screens/HelpScreen';
 import { ReferralScreen } from './screens/ReferralScreen';
+import { MyPlanScreen } from './screens/MyPlanScreen';
 
 // Routes without the app chrome (pre-auth): welcome/login/register/recovery/device.
 const AUTH_ROUTES = ['/', '/login', '/register', '/recovery', '/device'];
@@ -56,6 +57,8 @@ const RoutesTree = ({ profile }: { profile: unknown }) => (
     <Route path="/profile" element={<Protected><ProfileScreen /></Protected>} />
     <Route path="/help" element={<Protected><HelpScreen /></Protected>} />
     <Route path="/referrals" element={<Protected><ReferralScreen /></Protected>} />
+    {/* Payments Phase 1 — My Plan. The screen self-guards to /home when VITE_PAYMENTS_ENABLED is off. */}
+    <Route path="/plan" element={<Protected><MyPlanScreen /></Protected>} />
     <Route path="*" element={<Navigate to={profile ? '/home' : '/'} replace />} />
   </Routes>
 );

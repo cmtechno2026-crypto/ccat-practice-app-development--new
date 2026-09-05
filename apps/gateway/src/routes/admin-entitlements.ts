@@ -14,8 +14,9 @@ import { ALLOWED_TIERS } from '../lib/entitlements.js';
 // gateway PAYMENTS_ENABLED flag — enforcement is what the flag governs, not the data table.
 const upsertSchema = z.object({
   guardian_email: z.string().email(),
-  // Only tiers reachable this phase are accepted; a t250/t500 has no grant path yet.
-  tier: z.enum(['free', 't50']),
+  // Phase 1 opens all four tiers (ALLOWED_TIERS). Manual grants can set any of them for testing;
+  // a defence-in-depth ALLOWED_TIERS check below still rejects a tier not reachable this phase.
+  tier: z.enum(['free', 't50', 't250', 't500']),
   status: z.enum(['active', 'canceled', 'expired', 'pending']).default('active'),
   // ISO timestamp or null (no expiry). Optional.
   current_period_end: z.string().datetime().nullable().optional(),

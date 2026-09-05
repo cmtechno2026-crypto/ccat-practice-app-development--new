@@ -9,9 +9,12 @@ import { Panel, useToast } from '../components/ui';
 // Only tiers reachable this phase are offered (free / t50) — $250/$500 have no grant path yet.
 // Entering an email also shows the student(s) linked to that guardian so you grant the right family.
 
-const TIERS: { value: 'free' | 't50'; label: string }[] = [
+type Tier = 'free' | 't50' | 't250' | 't500';
+const TIERS: { value: Tier; label: string }[] = [
   { value: 'free', label: 'free — demo sets only' },
-  { value: 't50', label: 't50 ($50) — all practice (Exam/Combine still locked)' },
+  { value: 't50', label: 't50 ($50) — all practice (Exam/Combine locked)' },
+  { value: 't250', label: 't250 ($250) — practice + Exam + Combine (Weekly locked)' },
+  { value: 't500', label: 't500 ($500) — everything incl. Weekly' },
 ];
 const STATUSES = ['active', 'canceled', 'expired', 'pending'] as const;
 
@@ -27,7 +30,7 @@ export function Membership() {
   const editable = can('config.global'); // Super-Admin (config.global is Super-Admin-only)
 
   const [email, setEmail] = useState('');
-  const [tier, setTier] = useState<'free' | 't50'>('t50');
+  const [tier, setTier] = useState<Tier>('t50');
   const [status, setStatus] = useState<string>('active');
   const [expiry, setExpiry] = useState<string>(''); // datetime-local; empty = no expiry
   const [current, setCurrent] = useState<any | null>(null);
@@ -47,7 +50,7 @@ export function Membership() {
       setLoaded(true);
       setLastLoadedEmail(e);
       if (r.item) {
-        setTier(r.item.tier === 't50' ? 't50' : 'free');
+        setTier((['free', 't50', 't250', 't500'] as const).includes(r.item.tier) ? r.item.tier : 'free');
         setStatus(r.item.status ?? 'active');
         setExpiry(r.item.current_period_end ? toLocalInput(r.item.current_period_end) : '');
       } else {
@@ -144,7 +147,7 @@ export function Membership() {
 
           <label>
             <div className="muted" style={{ marginBottom: 4 }}>Tier</div>
-            <select className="input" value={tier} disabled={!editable} onChange={(e) => setTier(e.target.value as 'free' | 't50')}>
+            <select className="input" value={tier} disabled={!editable} onChange={(e) => setTier(e.target.value as Tier)}>
               {TIERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </label>
@@ -165,8 +168,8 @@ export function Membership() {
             <button className="btn" onClick={save} disabled={!editable || busy || !email.trim()}>{busy ? 'Saving…' : 'Save grant'}</button>
           </div>
           <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-            Only free and t50 are grantable this phase. Exam and Battery Combine stay locked for every tier
-            until the $250/$500 phases ship.
+            All tiers are grantable (free / t50 / t250 / t500). t250 unlocks Exam + Battery Combine; t500 adds
+            Weekly. Manual grants are for testing; real purchases flow through Stripe Checkout and the webhook.
           </p>
         </div>
       </Panel>

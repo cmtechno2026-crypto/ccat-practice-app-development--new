@@ -23,6 +23,8 @@ import { registerSupportRoutes } from './routes/support.js';
 import { registerAccountRoutes } from './routes/account.js';
 import { registerReferralRoutes } from './routes/referrals.js';
 import { registerEntitlementsRoutes } from './routes/entitlements.js';
+import { registerCheckoutRoutes } from './routes/checkout.js';
+import { registerStripeWebhookRoutes } from './routes/stripe-webhook.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAdminDashboardRoutes } from './routes/admin-dashboard.js';
 import { registerAdminContentRoutes } from './routes/admin-content.js';
@@ -153,6 +155,8 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerAccountRoutes(app, db);
   registerReferralRoutes(app, db);
   registerEntitlementsRoutes(app, db, cfg);
+  registerCheckoutRoutes(app, db, cfg);
+  registerStripeWebhookRoutes(app, db, cfg);
   registerAdminRoutes(app, db, cfg);
   registerAdminDashboardRoutes(app, db, cfg);
   registerAdminStudentDetailRoutes(app, db, cfg);

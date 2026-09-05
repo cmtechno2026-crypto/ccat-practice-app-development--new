@@ -1,4 +1,5 @@
-import { MEMBERSHIP_URL, type UpgradeFeature } from '../lib/entitlements';
+import { Link } from 'react-router-dom';
+import { PAYMENTS_ENABLED, MEMBERSHIP_URL, type UpgradeFeature } from '../lib/entitlements';
 
 // Payments Phase 2 — child-safe Upgrade panel. Explains what a membership unlocks and links OUT to
 // MEMBERSHIP_URL (a grown-up completes payment on the website). The CCAT app NEVER collects card or
@@ -47,15 +48,28 @@ export function UpgradePanel({
         <div style={{ fontSize: 40, lineHeight: 1 }} aria-hidden>{c.icon}</div>
         <h2 style={{ marginTop: 10 }}>{c.title}</h2>
         <div className="muted" style={{ marginTop: 6 }}>{c.line}</div>
-        <a
-          className="btn"
-          href={MEMBERSHIP_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ marginTop: 16, display: 'inline-flex', justifyContent: 'center' }}
-        >
-          Ask a grown-up →
-        </a>
+        {/* Payments Phase 1: keep the upgrade path IN-APP (Stripe Checkout via My Plan). When payments is
+            off, fall back to the external membership link so the Phase 2 behaviour is unchanged. */}
+        {PAYMENTS_ENABLED ? (
+          <Link
+            className="btn"
+            to="/plan"
+            onClick={onClose}
+            style={{ marginTop: 16, display: 'inline-flex', justifyContent: 'center' }}
+          >
+            See plans →
+          </Link>
+        ) : (
+          <a
+            className="btn"
+            href={MEMBERSHIP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ marginTop: 16, display: 'inline-flex', justifyContent: 'center' }}
+          >
+            Ask a grown-up →
+          </a>
+        )}
         <div style={{ marginTop: 10 }}>
           <button className="btn small secondary" onClick={onClose}>Maybe later</button>
         </div>

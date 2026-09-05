@@ -1,6 +1,6 @@
 # CCAT Project State
 
-_Last updated: 2026-09-04 — Payments Phase 2 deployed to Render+Vercel preview; 0040 applied to PROD; admin Membership page now shows linked students on email entry (gateway+admin change, needs push + redeploy of BOTH services)._
+_Last updated: 2026-09-05 — Payments Phase 1 (Stripe Checkout) AUTHORED + fully verified in a cloud checkout (typecheck/build/tests green, 8 new tests pass, zero regressions). NOT yet committed/pushed/deployed. See "Payments Phase 1" state table below._
 
 ## Architecture
 Admin Web (apps/admin, Vite/React) -> Gateway -> Supabase
@@ -17,7 +17,29 @@ Supabase: production project `ccat-practice-app-development`
 Web/Admin deploy: Vercel (vercel.json present in apps/web, apps/admin).
 
 ## Current branch
-feature/payments (Phase 2 work; uncommitted working-tree changes, not yet `git commit`ed). master untouched.
+feature/payments. Phase 2 committed + pushed (HEAD 9e83497). Phase 1 (Stripe) authored on top, NOT yet
+committed (handed over as a patch for the operator to apply + commit + push). master untouched.
+
+## Payments Phase 1 (Stripe Checkout) — state separation
+AUTHORED (code written, in the handover patch, all behind PAYMENTS_ENABLED / VITE_PAYMENTS_ENABLED, default OFF):
+  - Stripe: 3 products + one-time CAD prices in the MAIN account acct_1UBsKMC2blhVy9Jd (TEST mode):
+      t50=price_1UCFcCC2blhVy9JdhhjZgFKd ($50) · t250=price_1UCFcEC2blhVy9JdtihSHdlS ($250) · t500=price_1UCFcGC2blhVy9JdtyfpqUOL ($500)
+  - Gateway: POST /v1/checkout/session (student auth, server-owned tier->price map, eligibility: no downgrade/
+    same/non-sellable, mode=payment); POST /v1/webhooks/stripe (raw-body signature verify, idempotent via
+    ccat.payment_events, grants ONLY on checkout.session.completed+payment_status=paid, price<->tier cross-check);
+    lib/stripe.ts; config env vars; ALLOWED_TIERS opened to free/t50/t250/t500; migration 0042_payment_events.sql.
+  - Web: My Plan screen + /plan route + sidebar "My Plan" (flag-gated) + Stripe redirect + success poll of
+    /v1/entitlements/me; lock-modal CTA repointed off conceptmastery.com to in-app /plan.
+  - Admin: manual grant opened to all four tiers.
+  - Billing model = ONE-TIME purchase, currency CAD (owner decisions 2026-09-05). Grant sets status=active, no expiry.
+RUNTIME-VERIFIED (in a throwaway cloud checkout + local Postgres 16, migrations 0000-0042 applied):
+  - typecheck: gateway/web/api-client clean; admin only the pre-existing bulkFile.ts error (unrelated).
+  - build: @ccat/web + @ccat/admin succeed.
+  - tests: new test/payments-stripe.test.ts 8/8 pass (eligibility no-downgrade/same/invalid; webhook bad-sig 400;
+    paid grant; idempotent redelivery; unpaid = no grant; price/tier mismatch 400). Full suite 175/184 pass;
+    baseline (my changes stashed) 167/176 — i.e. +8 new passing, the same 9 pre-existing failures, ZERO regressions.
+  - Stripe prices confirmed one_time + cad via API read.
+COMMITTED: NO.   PUSHED: NO.   DEPLOYED (Render/Vercel): NO.   0042 APPLIED to any DB: NO.   Stripe webhook endpoint registered: NO.
 
 ## Completed
 - Gateway deployed; Supabase session-pooler wiring; login; grade isolation; block-format import; exam scaffolding.

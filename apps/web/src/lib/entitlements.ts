@@ -20,3 +20,41 @@ export function capsOf(ent: EntitlementsMe | null | undefined): EntitlementCapab
 }
 
 export type UpgradeFeature = 'practice' | 'combine' | 'exam' | 'weekly';
+
+// ---- Payments Phase 1 (My Plan / Stripe Checkout) --------------------------------------------------
+// DISPLAY-ONLY tier catalog for the My Plan page. Prices here are for showing the user; the gateway
+// owns the real Stripe price and the eligibility decision (this list never gates anything server-side).
+import type { EntitlementTier } from '@ccat/api-client';
+
+export interface TierInfo {
+  tier: EntitlementTier;
+  label: string;        // short ($50)
+  name: string;         // full name
+  priceLabel: string;   // display price
+  features: string[];   // what it unlocks (kid-readable)
+}
+
+export const TIER_SEQUENCE: EntitlementTier[] = ['free', 't50', 't250', 't500'];
+export const SELLABLE_TIERS: EntitlementTier[] = ['t50', 't250', 't500'];
+
+export const TIER_CATALOG: Record<EntitlementTier, TierInfo> = {
+  free: { tier: 'free', label: 'Free', name: 'Free', priceLabel: '$0',
+    features: ['One demo practice set per battery'] },
+  t50: { tier: 't50', label: '$50', name: 'All Practice', priceLabel: '$50 CAD',
+    features: ['All practice sets unlocked'] },
+  t250: { tier: 't250', label: '$250', name: 'Practice + Exam + Combine', priceLabel: '$250 CAD',
+    features: ['All practice sets', 'Full timed Exam papers', 'Battery Combine'] },
+  t500: { tier: 't500', label: '$500', name: 'Everything + Weekly', priceLabel: '$500 CAD',
+    features: ['All practice sets', 'Full timed Exam papers', 'Battery Combine', 'Weekly test'] },
+};
+
+export function tierIndex(t: EntitlementTier): number {
+  const i = TIER_SEQUENCE.indexOf(t);
+  return i < 0 ? 0 : i;
+}
+
+// Higher, purchasable tiers a student currently at `current` may upgrade to (no downgrade, no same).
+// Mirrors the gateway's server-side eligibility; the gateway still enforces it at checkout.
+export function eligibleUpgradeTiers(current: EntitlementTier): EntitlementTier[] {
+  return SELLABLE_TIERS.filter((t) => tierIndex(t) > tierIndex(current));
+}

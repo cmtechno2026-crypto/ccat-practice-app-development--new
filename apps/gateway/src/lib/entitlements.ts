@@ -16,10 +16,35 @@ export type Tier = 'free' | 't50' | 't250' | 't500';
 // to ALLOWED_TIERS below.
 const TIER_ORDER: Tier[] = ['free', 't50', 't250', 't500'];
 
-// PHASE CLAMP: only these tiers are reachable this phase. A stray t250/t500 entitlement row (e.g. a
-// future webhook write, or a manual mistake) is treated as the HIGHEST allowed tier, so it can NEVER
-// unlock Exam/Combine before those phases ship. To open $250/$500 later, extend this array.
-export const ALLOWED_TIERS: Tier[] = ['free', 't50'];
+// PHASE CLAMP: tiers reachable this phase. Phase 1 (Stripe checkout) OPENS all four — a paid t250/t500
+// now grants its real capabilities. clampTier still guards against a tier outside this array (defence in
+// depth). To re-close a tier, remove it here and any t250/t500 row is clamped down to the highest listed.
+export const ALLOWED_TIERS: Tier[] = ['free', 't50', 't250', 't500'];
+
+// Tiers that can be PURCHASED via Stripe (free is the default, never sold). Order low -> high.
+export const SELLABLE_TIERS: Tier[] = ['t50', 't250', 't500'];
+
+// Numeric rank of a tier in TIER_ORDER (free=0). Unknown -> 0 (treated as free).
+export function tierRank(t: Tier): number {
+  const i = TIER_ORDER.indexOf(t);
+  return i < 0 ? 0 : i;
+}
+
+// The tiers a guardian currently at `current` may upgrade TO: strictly higher, sellable, and reachable
+// this phase (ALLOWED_TIERS). Server-owned eligibility — the client never decides this. No downgrades,
+// no same-tier "upgrade".
+export function eligibleUpgrades(current: Tier): Tier[] {
+  return SELLABLE_TIERS.filter((t) => ALLOWED_TIERS.includes(t) && tierRank(t) > tierRank(current));
+}
+
+// Guard for the checkout route: is `requested` a legal upgrade from `current`? Returns null when OK,
+// otherwise a short machine reason ('not_sellable' | 'not_an_upgrade' | 'not_available').
+export function checkoutRejectReason(current: Tier, requested: Tier): null | 'not_sellable' | 'not_an_upgrade' | 'not_available' {
+  if (!SELLABLE_TIERS.includes(requested)) return 'not_sellable';
+  if (!ALLOWED_TIERS.includes(requested)) return 'not_available';
+  if (tierRank(requested) <= tierRank(current)) return 'not_an_upgrade';
+  return null;
+}
 
 export interface Capabilities {
   practice: 'demo' | 'all';
