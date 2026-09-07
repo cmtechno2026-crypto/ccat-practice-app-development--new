@@ -54,6 +54,10 @@ export function registerCheckoutRoutes(app: FastifyInstance, db: DB, cfg: Config
     const stripe = deps.stripe ?? getStripe(cfg);
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      // Charge in the price's currency (CAD) only — no local-currency chooser. Disables Stripe Adaptive
+      // Pricing per session, so this holds regardless of the account's dashboard setting (incl. the main
+      // account at launch). Cast: the field may not be in this SDK version's generated types.
+      ...( { adaptive_pricing: { enabled: false } } as any ),
       line_items: [{ price: priceId, quantity: 1 }],
       // Both fields carry the guardian key + tier so the webhook can grant to the right guardian.
       client_reference_id: guardianEmail,
