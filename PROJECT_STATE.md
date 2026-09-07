@@ -49,6 +49,14 @@ DEPLOY ORDER when ready: apply 0043 → deploy gateway (reads app_settings/grant
 
 
 
+## Update 2026-09-07 (later)
+- Migration 0043 is now APPLIED to PROD (wazutprwrhnabjfggghp) + ledger row inserted. (It was applied to fix a
+  /v1/catalog 500 caused by deploying the grant_reason resolver before the migration — deploy order lesson.)
+- Student web My Plan: Stripe checkout REMOVED. Upgrade buttons ($50/$250/$500) now redirect OUT to
+  https://conceptmastery.com/ccat/ (MEMBERSHIP_URL). The web app takes no payment. Entitlements are granted
+  server-side (manual admin grant now; webhook later). Gateway /v1/checkout/session + api-client.checkoutSession
+  remain in the codebase but are UNUSED by the web (dead, flag-gated) — safe to remove later.
+
 ## Architecture
 Admin Web (apps/admin, Vite/React) -> Gateway -> Supabase
 Student Web (apps/web, Vite/React) -> Gateway -> Supabase

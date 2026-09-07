@@ -7,7 +7,7 @@ export const PAYMENTS_ENABLED: boolean =
 
 // Where the Upgrade button sends a grown-up. PLACEHOLDER — set the real conceptmastery.com membership
 // URL later. The CCAT app NEVER collects card/payment details; it only links OUT to this page.
-export const MEMBERSHIP_URL = 'https://www.conceptmastery.com/membership';
+export const MEMBERSHIP_URL = 'https://conceptmastery.com/ccat/';
 
 // Capabilities used when payments is OFF or entitlements haven't loaded yet: everything unlocked, so the
 // experience is identical to today. Mirrors the gateway's CAPABILITIES_UNLOCKED_ALL.

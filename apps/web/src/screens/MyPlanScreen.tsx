@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import type { EntitlementTier } from '@ccat/api-client';
-import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AppBar, Card, Loader } from '../components/ui';
 import {
-  PAYMENTS_ENABLED, TIER_CATALOG, eligibleUpgradeTiers, tierIndex,
+  PAYMENTS_ENABLED, TIER_CATALOG, MEMBERSHIP_URL, eligibleUpgradeTiers, tierIndex,
 } from '../lib/entitlements';
 
-// Payments Phase 1 — My Plan. Shows the student's current membership + what each higher plan unlocks,
-// and starts a Stripe Checkout for an UPGRADE (never a downgrade). The app collects NO card details —
-// payment happens on Stripe's hosted page; we only redirect there and back. The entitlement is granted
-// server-side by the webhook after Stripe confirms payment, so on return we POLL until it unlocks.
+// My Plan. Shows the student's current membership + what each higher plan unlocks. The CCAT app does NOT
+// process payments: clicking Upgrade sends the grown-up OUT to the Concept Mastery membership page
+// (MEMBERSHIP_URL). Entitlements are granted server-side (manual admin grant, or a future webhook), so on
+// return the page POLLs /v1/entitlements/me until the new tier unlocks.
 
 const POLL_INTERVAL_MS = 1800;
 const POLL_MAX_TRIES = 12; // ~22s
@@ -20,7 +19,7 @@ export function MyPlanScreen() {
   // Flag OFF → no My Plan (true no-op). Route guard mirrors the sidebar visibility.
   if (!PAYMENTS_ENABLED) return <Navigate to="/home" replace />;
 
-  const { entitlements, refreshEntitlements, flash } = useApp();
+  const { entitlements, refreshEntitlements } = useApp();
   const [params] = useSearchParams();
   const checkout = params.get('checkout'); // 'success' | 'cancel' | null
 
@@ -56,18 +55,11 @@ export function MyPlanScreen() {
     }
   }, [entitlements, phase]);
 
-  async function upgrade(tier: EntitlementTier) {
+  function upgrade(tier: EntitlementTier) {
     if (tier === 'free') return;
+    // The CCAT app does not take payment. Send the grown-up to the Concept Mastery membership page.
     setBusyTier(tier);
-    try {
-      const r = await client.checkoutSession(tier as 't50' | 't250' | 't500');
-      if (r.url) window.location.href = r.url;
-      else flash('Could not start checkout — please try again.');
-    } catch (e) {
-      flash((e as Error).message || 'Could not start checkout.');
-    } finally {
-      setBusyTier(null);
-    }
+    window.location.href = MEMBERSHIP_URL;
   }
 
   const current: EntitlementTier = entitlements?.tier ?? 'free';
@@ -138,13 +130,13 @@ export function MyPlanScreen() {
                     {info.features.map((f) => <li key={f} className="muted" style={{ fontSize: 13 }}>{f}</li>)}
                   </ul>
                   <button className="btn" disabled={busyTier === t} onClick={() => upgrade(t)}>
-                    {busyTier === t ? 'Starting…' : `Upgrade to ${info.label}`}
+                    {busyTier === t ? 'Opening…' : `Upgrade to ${info.label}`}
                   </button>
                 </Card>
               );
             })}
             <div className="muted" style={{ fontSize: 12.5 }}>
-              Payment is completed securely on Stripe — the app never sees your card. Ask a grown-up to complete it.
+              Upgrades are completed on the Concept Mastery website — the app never takes payment. Ask a grown-up to complete it.
             </div>
           </>
         )}
