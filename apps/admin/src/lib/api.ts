@@ -52,6 +52,14 @@ export const api = {
   studentDetail: (id: string) => req<any>('GET', `/v1/admin/students/${id}/detail`),
   studentStatus: (id: string, version: number, to_status: string, reason_code: string, reason_text?: string) =>
     req<any>('POST', `/v1/admin/students/${id}/status`, { to_status, reason_code, reason_text }, { 'if-match': String(version) }),
+  // Edit student profile (name/grade). Optimistic concurrency via If-Match against students.version.
+  editStudent: (id: string, version: number, b: { display_name?: string; grade_id?: string }) =>
+    req<{ id: string; display_name: string; grade_id: string; version: number }>('PATCH', `/v1/admin/students/${id}`, b, { 'if-match': String(version) }),
+  // Grade-change request review queue + approve/reject (Admin → Students, mirrors delete-request flow).
+  gradeRequests: (status: 'pending' | 'approved' | 'rejected' = 'pending') =>
+    req<{ items: any[] }>('GET', `/v1/admin/students/grade-requests?status=${status}`),
+  approveGradeRequest: (id: string, reqId: string) => req<{ status: string; grade_id: string }>('POST', `/v1/admin/students/${id}/grade-requests/${reqId}/approve`),
+  rejectGradeRequest: (id: string, reqId: string) => req<{ status: string }>('POST', `/v1/admin/students/${id}/grade-requests/${reqId}/reject`),
   revokeDevice: (id: string, reason: string) => req<any>('POST', `/v1/admin/students/${id}/device/revoke`, { reason }),
   breakGlass: (id: string, b: { platform?: string; device_hash: string; verification_note: string; reference?: string }) => req<any>('POST', `/v1/admin/students/${id}/device/break-glass`, b),
   approveBreakGlass: (id: string, reqId: string) => req<any>('POST', `/v1/admin/students/${id}/device/break-glass/${reqId}/approve`),

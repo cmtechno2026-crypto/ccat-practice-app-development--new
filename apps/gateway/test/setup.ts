@@ -28,6 +28,9 @@ export default async function () {
   // Seed grade (age bounds wide enough for the test child), category graph, published set.
   await c.query(`insert into grades(id,grade_number,name,age_min_years,age_max_years)
     values ('a0000000-0000-0000-0000-000000000005',5,'Grade 5',8,13)`);
+  // Second grade so grade-change requests have a distinct target.
+  await c.query(`insert into grades(id,grade_number,name,age_min_years,age_max_years)
+    values ('a0000000-0000-0000-0000-000000000006',6,'Grade 6',9,14)`);
   await c.query(`insert into categories(id,key,name) values ('b0000000-0000-0000-0000-000000000001','verbal','Verbal')`);
   await c.query(`insert into subcategories(id,category_id,key,name)
     values ('b1000000-0000-0000-0000-000000000001','b0000000-0000-0000-0000-000000000001','an','Analogies')`);
@@ -116,7 +119,7 @@ export default async function () {
   const perms: [string, boolean][] = [
     ['student.directory',false],['student.suspend',false],['student.unsuspend',false],['student.ban',false],['student.unban',false],
     ['device.revoke',false],['device.replace',false],['device.break_glass',false],['session.invalidate',false],['reward.adjust',false],
-    ['deletion.support',false],['export.support',false],['student.deletion.override',false],
+    ['deletion.support',false],['export.support',false],['student.deletion.override',false],['student.update',false],
     ['content.create',false],['content.edit',false],['content.review',false],['content.publish',false],['content.retire',false],['learning_plan.manage',false],
     ['achievement.manage',false],['avatar.manage',false],['theme.manage',false],
     ['announcement.manage',false],['announcement.publish',false],['push.request',false],['book.manage',false],
@@ -140,7 +143,8 @@ export default async function () {
     ('a9000000-0000-0000-0000-000000000003','content.edit','a9000000-0000-0000-0000-000000000001'),
     ('a9000000-0000-0000-0000-000000000003','content.review','a9000000-0000-0000-0000-000000000001'),
     ('a9000000-0000-0000-0000-000000000003','content.publish','a9000000-0000-0000-0000-000000000001'),
-    ('a9000000-0000-0000-0000-000000000003','achievement.manage','a9000000-0000-0000-0000-000000000001')`);
+    ('a9000000-0000-0000-0000-000000000003','achievement.manage','a9000000-0000-0000-0000-000000000001'),
+    ('a9000000-0000-0000-0000-000000000003','student.update','a9000000-0000-0000-0000-000000000001')`);
   const pw = await hashSecret('Passw0rd!', 'dev-pepper');
   await c.query('insert into admin_local_credentials(admin_id,password_hash) values ($1,$2),($3,$2),($4,$2)',
     ['a9000000-0000-0000-0000-000000000001', pw, 'a9000000-0000-0000-0000-000000000002', 'a9000000-0000-0000-0000-000000000003']);

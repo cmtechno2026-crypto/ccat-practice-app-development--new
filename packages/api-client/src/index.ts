@@ -5,6 +5,7 @@ import type {
   AvatarsResponse, Theme, Announcement, Book, AdultChallenge, RetailerHandoff, PracticeAttemptResult,
   SupportCase, SupportCaseCreated, AccountInfo, AccountGuardian, DeletionResult, ReferralInfo,
   ContactValidated, ProgressSummary, ProgressBreakdownCategory, ProgressQuery, ProgressSetsQuery, ProgressSetRow, ProgressSetReview,
+  GradeChangeStatus, GradeChangeRequest,
 } from './types.js';
 
 export * from './types.js';
@@ -167,6 +168,12 @@ export class CcatClient {
   updateName(display_name: string) { return this.request<{ display_name: string }>('PATCH', '/v1/account/name', { auth: true, body: { display_name } }); }
   updateGuardian(patch: Partial<AccountGuardian>) { return this.request<AccountGuardian>('PATCH', '/v1/account/guardian', { auth: true, body: patch }); }
   deleteAccount() { return this.request<DeletionResult>('POST', '/v1/account/deletion', { auth: true, body: {} }); }
+  // Grade-change request self-service: view current status, and file a new request (no direct grade
+  // update — an admin reviews it). A second request while one is pending fails with GRADE_REQUEST_PENDING.
+  gradeChangeStatus() { return this.request<GradeChangeStatus>('GET', '/v1/account/grade-change', { auth: true }); }
+  requestGradeChange(requested_grade_id: string, reason?: string) {
+    return this.request<GradeChangeRequest>('POST', '/v1/account/grade-change', { auth: true, body: { requested_grade_id, reason } });
+  }
 
   // ---- referrals (Gate 2B) --------------------------------------------------
   referrals() { return this.request<ReferralInfo>('GET', '/v1/referrals', { auth: true }); }

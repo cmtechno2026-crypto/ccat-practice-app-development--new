@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { DB } from '../db.js';
-import { Errors } from '../errors.js';
+import { AppError, Errors } from '../errors.js';
 
 // Gate 3B: authenticated account self-service — the learner acts on their OWN account directly
 // (no guardian OTP, per product decision). Everything is owned-only (scoped to req.student.studentId).
@@ -16,6 +16,11 @@ const guardianSchema = z.object({
   relationship: z.string().trim().max(40).optional(),
 }).refine((b) => b.email !== undefined || b.phone !== undefined || b.relationship !== undefined, {
   message: 'Nothing to update',
+});
+
+const gradeChangeSchema = z.object({
+  requested_grade_id: z.string().uuid(),
+  reason: z.string().trim().max(500).optional(),
 });
 
 async function primaryGuardian(db: DB, studentId: string): Promise<{ guardian_id: string; email: string | null; phone: string | null; relationship: string | null } | null> {
@@ -118,5 +123,79 @@ export function registerAccountRoutes(app: FastifyInstance, db: DB) {
       [sid, JSON.stringify({ status: s.rows[0]!.status }), JSON.stringify({ status: 'pending_deletion' }), reference],
     );
     return { state: 'pending_deletion', reference, restore_deadline: ins.rows[0]!.restore_deadline, already: false };
+  });
+
+  // GET /v1/account/grade-change — the learner's current grade-change request status (owned-only).
+  // Returns the newest request (pending takes priority for display) plus the student's current grade,
+  // so the web Profile can render "Pending", "Approved", or "Rejected" and gate a new submission.
+  app.get('/v1/account/grade-change', { preHandler: [app.authenticateStudent] }, async (req) => {
+    const sid = req.student!.studentId;
+    const me = await db.query(
+      `select s.grade_id, g.grade_number as current_grade_number
+         from ccat.students s join ccat.grades g on g.id = s.grade_id
+        where s.id=$1`, [sid]);
+    if (me.rows.length === 0) throw Errors.notFound('Student not found');
+    const r = await db.query(
+      `select r.id, r.status, r.reason, r.created_at, r.decided_at,
+              cg.grade_number as current_grade_number,
+              rg.grade_number as requested_grade_number
+         from ccat.grade_change_requests r
+         join ccat.grades cg on cg.id = r.current_grade_id
+         join ccat.grades rg on rg.id = r.requested_grade_id
+        where r.student_id=$1
+        order by (r.status='pending') desc, r.created_at desc
+        limit 1`, [sid]);
+    return {
+      current_grade_id: me.rows[0]!.grade_id,
+      current_grade_number: me.rows[0]!.current_grade_number,
+      request: r.rows[0] ?? null,
+    };
+  });
+
+  // POST /v1/account/grade-change — the learner files a grade-change request. No direct grade update:
+  // this records a pending request that an admin holding `student.update` reviews. Duplicate pending
+  // requests are blocked (both here and by a partial unique index). Audited as an actor_kind='student'
+  // event. Grade itself is untouched until an admin approves — progress/history are never affected.
+  app.post('/v1/account/grade-change', { preHandler: [app.authenticateStudent] }, async (req) => {
+    const body = gradeChangeSchema.parse(req.body);
+    const sid = req.student!.studentId;
+    const me = await db.query('select grade_id, status from ccat.students where id=$1', [sid]);
+    if (me.rows.length === 0) throw Errors.notFound('Student not found');
+    if (me.rows[0]!.status !== 'active') throw Errors.validation('Account is not active.');
+    const currentGradeId = me.rows[0]!.grade_id as string;
+    if (body.requested_grade_id === currentGradeId) {
+      throw Errors.validation('Requested grade matches your current grade.');
+    }
+    const dup = await db.query(
+      `select id from ccat.grade_change_requests where student_id=$1 and status='pending' limit 1`, [sid]);
+    if (dup.rows.length > 0) {
+      throw new AppError(409, 'GRADE_REQUEST_PENDING', 'You already have a grade-change request awaiting review.');
+    }
+    const g = await db.query('select id from ccat.grades where id=$1 and active = true and retired_at is null', [body.requested_grade_id]);
+    if (g.rows.length === 0) throw Errors.validation('That grade is not available.');
+    let ins;
+    try {
+      ins = await db.query(
+        `insert into ccat.grade_change_requests(student_id,current_grade_id,requested_grade_id,reason)
+         values ($1,$2,$3,$4)
+         returning id, status, reason, created_at`,
+        [sid, currentGradeId, body.requested_grade_id, body.reason ?? null],
+      );
+    } catch (e) {
+      // Partial unique index (one pending per student) — race with a concurrent submit.
+      if ((e as any)?.code === '23505') {
+        throw new AppError(409, 'GRADE_REQUEST_PENDING', 'You already have a grade-change request awaiting review.');
+      }
+      throw e;
+    }
+    const row = ins.rows[0]!;
+    await db.query(
+      `insert into ccat.audit_log(actor_kind,event_type,target_kind,target_id,old_value,new_value)
+       values ('student','student.self.grade_change_requested','student',$1,$2,$3)`,
+      [sid,
+       JSON.stringify({ grade_id: currentGradeId }),
+       JSON.stringify({ requested_grade_id: body.requested_grade_id, request_id: row.id })],
+    );
+    return { id: row.id, status: row.status, reason: row.reason, created_at: row.created_at };
   });
 }

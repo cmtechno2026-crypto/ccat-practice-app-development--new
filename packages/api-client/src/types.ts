@@ -115,6 +115,21 @@ export interface AccountGuardian { email: string | null; phone: string | null; r
 export interface AccountInfo { display_name: string; username: string; guardian: AccountGuardian | null; }
 export interface DeletionResult { state: string; reference: string | null; restore_deadline: string | null; already: boolean; }
 
+export type GradeChangeRequestStatus = 'pending' | 'approved' | 'rejected';
+export interface GradeChangeRequest {
+  id: string; status: GradeChangeRequestStatus; reason: string | null; created_at: string;
+}
+// Full status view for the web Profile: the student's current grade plus the newest request (if any).
+export interface GradeChangeStatus {
+  current_grade_id: string;
+  current_grade_number: number;
+  request: {
+    id: string; status: GradeChangeRequestStatus; reason: string | null;
+    created_at: string; decided_at: string | null;
+    current_grade_number: number; requested_grade_number: number;
+  } | null;
+}
+
 export interface SupportCase { reference: string; summary: string; state: string; created_at: string; }
 export interface SupportCaseCreated { reference: string; state: string; created_at: string; }
 
@@ -268,4 +283,21 @@ export interface ProgressSetReview {
   accuracyPct: number | null;
   timeSeconds: number | null;    // total session wall-clock for the attempt
   questions: ProgressReviewQuestion[];
+}
+
+// ---- Payments Phase 2 (entitlements + $50 gating) — GET /v1/entitlements/me -------------------------
+// Membership tier. This phase only 'free' and 't50' are reachable; 't250'/'t500' are encoded for later.
+export type EntitlementTier = 'free' | 't50' | 't250' | 't500';
+export interface EntitlementCapabilities {
+  practice: 'demo' | 'all';
+  combine: boolean;
+  exam: boolean;
+  weekly: boolean;
+}
+export interface EntitlementsMe {
+  paymentsEnabled: boolean;               // false when the gateway flag is off (capabilities unlock all)
+  tier: EntitlementTier;                  // effective, clamped tier
+  capabilities: EntitlementCapabilities;
+  status: string;                         // 'active' | 'canceled' | 'expired' | 'pending' | 'inactive'
+  currentPeriodEnd: string | null;        // ISO timestamp, or null for no expiry
 }

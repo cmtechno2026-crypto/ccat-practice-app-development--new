@@ -44,6 +44,13 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const breakGlass = await db.query(`select r.id, r.platform, r.device_hash, r.verification_note, r.reference, r.created_at,
         (select display_name from ccat.admin_profiles ap where ap.id=r.requested_by) requested_by
         from ccat.student_break_glass_requests r where r.student_id=$1 and r.status='pending' order by r.created_at desc`, [id]);
+    const gradeReq = await db.query(
+      `select r.id, r.requested_grade_id, r.reason, r.created_at,
+              cg.grade_number as current_grade_number, rg.grade_number as requested_grade_number
+         from ccat.grade_change_requests r
+         join ccat.grades cg on cg.id=r.current_grade_id
+         join ccat.grades rg on rg.id=r.requested_grade_id
+        where r.student_id=$1 and r.status='pending' order by r.created_at desc limit 1`, [id]);
     const streakRow = await db.query(
       `select case when last_active_day >= (now() at time zone $2)::date - 1 then current_streak else 0 end as current,
               longest_streak as longest, last_active_day
@@ -60,7 +67,106 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
       readiness: readiness.rows[0] ?? null, progress: progress.rows[0] ?? null,
       recent_sessions: sessions.rows, consents: consents.rows, streak,
       break_glass_requests: breakGlass.rows,
+      grade_change_request: gradeReq.rows[0] ?? null,
     };
+  });
+
+  // Edit student profile fields (STUDENTS — granular). Requires `student.update` (Super-Admin passes
+  // via role). Optimistic concurrency via If-Match against students.version (same as status changes).
+  // Only display_name and grade_id are editable here; grade is a plain FK, so changing it does NOT
+  // touch sessions/results/answers/achievements — progress/history are preserved. Audited old→new.
+  const editStudentSchema = z.object({
+    display_name: z.string().trim().min(1).max(40).optional(),
+    grade_id: z.string().uuid().optional(),
+  }).refine((b) => b.display_name !== undefined || b.grade_id !== undefined, { message: 'Nothing to update' });
+  app.patch('/v1/admin/students/:id', guard, async (req) => {
+    requirePermission(req, 'student.update');
+    const id = (req.params as any).id;
+    const b = editStudentSchema.parse(req.body ?? {});
+    const ifMatch = req.headers['if-match'];
+    const expected = ifMatch !== undefined ? Number(String(ifMatch)) : undefined;
+    if (expected !== undefined && !Number.isFinite(expected)) throw Errors.validation('If-Match must be the numeric student version');
+
+    const cur = await db.query('select display_name, grade_id, version from ccat.students where id=$1', [id]);
+    if (cur.rows.length === 0) throw Errors.notFound('Student not found');
+    const prev = cur.rows[0]!;
+    if (expected !== undefined && Number(prev.version) !== expected)
+      throw Errors.conflict('VERSION_CONFLICT', 'Student was modified by someone else — reload and retry.');
+
+    // Validate the target grade exists and is selectable.
+    if (b.grade_id !== undefined) {
+      const g = await db.query('select 1 from ccat.grades where id=$1 and active and retired_at is null', [b.grade_id]);
+      if (g.rows.length === 0) throw Errors.validation('Unknown or inactive grade');
+    }
+    const nextName = b.display_name ?? prev.display_name;
+    const nextGrade = b.grade_id ?? prev.grade_id;
+    const updated = await db.query(
+      `update ccat.students set display_name=$2, grade_id=$3, version=version+1, updated_at=now()
+        where id=$1 and version=$4 returning version, grade_id`,
+      [id, nextName, nextGrade, prev.version],
+    );
+    if (updated.rows.length === 0) throw Errors.conflict('VERSION_CONFLICT', 'Student was modified by someone else — reload and retry.');
+    await db.query(
+      `insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value)
+       values ($1,'admin','student.updated','student',$2,$3,$4)`,
+      [req.admin!.adminId, id,
+       JSON.stringify({ display_name: prev.display_name, grade_id: prev.grade_id }),
+       JSON.stringify({ display_name: nextName, grade_id: nextGrade })],
+    );
+    return { id, display_name: nextName, grade_id: nextGrade, version: Number(updated.rows[0]!.version) };
+  });
+
+  // Pending grade-change requests queue (Admin → Students). Gated on the review authority.
+  app.get('/v1/admin/students/grade-requests', guard, async (req) => {
+    requirePermission(req, 'student.update');
+    const q = z.object({ status: z.enum(['pending', 'approved', 'rejected']).optional() }).parse(req.query ?? {});
+    const status = q.status ?? 'pending';
+    const rows = await db.query(
+      `select r.id, r.student_id, s.display_name as student_name, r.reason, r.status, r.created_at, r.decided_at,
+              cg.grade_number as current_grade_number, rg.grade_number as requested_grade_number
+         from ccat.grade_change_requests r
+         join ccat.students s on s.id=r.student_id
+         join ccat.grades cg on cg.id=r.current_grade_id
+         join ccat.grades rg on rg.id=r.requested_grade_id
+        where r.status=$1 order by r.created_at asc`, [status]);
+    return { items: rows.rows };
+  });
+
+  // Approve a pending grade-change request — updates the student's grade AND closes the request in ONE
+  // transaction. Grade is a plain FK, so no progress/history is affected. Rejection (below) leaves grade.
+  app.post('/v1/admin/students/:id/grade-requests/:reqId/approve', guard, async (req) => {
+    requirePermission(req, 'student.update');
+    const id = (req.params as any).id; const reqId = (req.params as any).reqId;
+    const out = await withTransaction(db, async (c) => {
+      const rq = await c.query(
+        `select id, requested_grade_id, current_grade_id from ccat.grade_change_requests
+          where id=$1 and student_id=$2 and status='pending' for update`, [reqId, id]);
+      if (rq.rows.length === 0) throw Errors.notFound('No pending grade-change request');
+      const requested = rq.rows[0]!.requested_grade_id as string;
+      const g = await c.query('select 1 from ccat.grades where id=$1 and active and retired_at is null', [requested]);
+      if (g.rows.length === 0) throw Errors.validation('Requested grade is no longer selectable');
+      const prev = await c.query('select grade_id from ccat.students where id=$1 for update', [id]);
+      await c.query('update ccat.students set grade_id=$2, version=version+1, updated_at=now() where id=$1', [id, requested]);
+      await c.query(`update ccat.grade_change_requests set status='approved', reviewed_by=$2, decided_at=now() where id=$1`, [reqId, req.admin!.adminId]);
+      await c.query(
+        `insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value)
+         values ($1,'admin','student.grade_change.approved','student',$2,$3,$4)`,
+        [req.admin!.adminId, id, JSON.stringify({ grade_id: prev.rows[0]?.grade_id ?? null }), JSON.stringify({ grade_id: requested })]);
+      return { requested_grade_id: requested };
+    });
+    return { status: 'approved', grade_id: out.requested_grade_id };
+  });
+
+  // Reject a pending grade-change request — status only; the student's grade is unchanged.
+  app.post('/v1/admin/students/:id/grade-requests/:reqId/reject', guard, async (req) => {
+    requirePermission(req, 'student.update');
+    const id = (req.params as any).id; const reqId = (req.params as any).reqId;
+    const r = await db.query(
+      `update ccat.grade_change_requests set status='rejected', reviewed_by=$3, decided_at=now()
+        where id=$1 and student_id=$2 and status='pending' returning id`, [reqId, id, req.admin!.adminId]);
+    if (r.rows.length === 0) throw Errors.notFound('No pending grade-change request');
+    await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','student.grade_change.rejected','student',$2)`, [req.admin!.adminId, id]);
+    return { status: 'rejected' };
   });
 
   // Break-glass device enrollment (§5.2) — bypasses guardian OTP, so it needs a Super-Admin signature.
