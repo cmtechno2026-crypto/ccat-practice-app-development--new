@@ -87,33 +87,55 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const expected = ifMatch !== undefined ? Number(String(ifMatch)) : undefined;
     if (expected !== undefined && !Number.isFinite(expected)) throw Errors.validation('If-Match must be the numeric student version');
 
-    const cur = await db.query('select display_name, grade_id, version from ccat.students where id=$1', [id]);
-    if (cur.rows.length === 0) throw Errors.notFound('Student not found');
-    const prev = cur.rows[0]!;
-    if (expected !== undefined && Number(prev.version) !== expected)
-      throw Errors.conflict('VERSION_CONFLICT', 'Student was modified by someone else — reload and retry.');
+    const out = await withTransaction(db, async (c) => {
+      const cur = await c.query('select display_name, grade_id, version from ccat.students where id=$1 for update', [id]);
+      if (cur.rows.length === 0) throw Errors.notFound('Student not found');
+      const prev = cur.rows[0]!;
+      if (expected !== undefined && Number(prev.version) !== expected)
+        throw Errors.conflict('VERSION_CONFLICT', 'Student was modified by someone else — reload and retry.');
 
-    // Validate the target grade exists and is selectable.
-    if (b.grade_id !== undefined) {
-      const g = await db.query('select 1 from ccat.grades where id=$1 and active and retired_at is null', [b.grade_id]);
-      if (g.rows.length === 0) throw Errors.validation('Unknown or inactive grade');
-    }
-    const nextName = b.display_name ?? prev.display_name;
-    const nextGrade = b.grade_id ?? prev.grade_id;
-    const updated = await db.query(
-      `update ccat.students set display_name=$2, grade_id=$3, version=version+1, updated_at=now()
-        where id=$1 and version=$4 returning version, grade_id`,
-      [id, nextName, nextGrade, prev.version],
-    );
-    if (updated.rows.length === 0) throw Errors.conflict('VERSION_CONFLICT', 'Student was modified by someone else — reload and retry.');
-    await db.query(
-      `insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value)
-       values ($1,'admin','student.updated','student',$2,$3,$4)`,
-      [req.admin!.adminId, id,
-       JSON.stringify({ display_name: prev.display_name, grade_id: prev.grade_id }),
-       JSON.stringify({ display_name: nextName, grade_id: nextGrade })],
-    );
-    return { id, display_name: nextName, grade_id: nextGrade, version: Number(updated.rows[0]!.version) };
+      // Validate the target grade exists and is selectable.
+      if (b.grade_id !== undefined) {
+        const g = await c.query('select 1 from ccat.grades where id=$1 and active and retired_at is null', [b.grade_id]);
+        if (g.rows.length === 0) throw Errors.validation('Unknown or inactive grade');
+      }
+      const nextName = b.display_name ?? prev.display_name;
+      const nextGrade = b.grade_id ?? prev.grade_id;
+      const updated = await c.query(
+        `update ccat.students set display_name=$2, grade_id=$3, version=version+1, updated_at=now()
+          where id=$1 and version=$4 returning version, grade_id`,
+        [id, nextName, nextGrade, prev.version],
+      );
+      if (updated.rows.length === 0) throw Errors.conflict('VERSION_CONFLICT', 'Student was modified by someone else — reload and retry.');
+      await c.query(
+        `insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value)
+         values ($1,'admin','student.updated','student',$2,$3,$4)`,
+        [req.admin!.adminId, id,
+         JSON.stringify({ display_name: prev.display_name, grade_id: prev.grade_id }),
+         JSON.stringify({ display_name: nextName, grade_id: nextGrade })],
+      );
+      // If this edit moved the grade to exactly what a PENDING grade-change request asked for, the admin
+      // has effectively granted it — approve+close that request so the learner stops seeing "Pending"
+      // (and it clears from the review queue/bell). Otherwise a direct edit leaves any request untouched.
+      let resolvedRequest: string | null = null;
+      if (nextGrade !== prev.grade_id) {
+        const pend = await c.query(
+          `update ccat.grade_change_requests
+              set status='approved', reviewed_by=$2, decided_at=now()
+            where student_id=$1 and status='pending' and requested_grade_id=$3
+            returning id`,
+          [id, req.admin!.adminId, nextGrade]);
+        if (pend.rows.length > 0) {
+          resolvedRequest = pend.rows[0]!.id as string;
+          await c.query(
+            `insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value,reason)
+             values ($1,'admin','student.grade_change.approved','student',$2,$3,$4,'resolved_by_direct_edit')`,
+            [req.admin!.adminId, id, JSON.stringify({ grade_id: prev.grade_id }), JSON.stringify({ grade_id: nextGrade })]);
+        }
+      }
+      return { version: Number(updated.rows[0]!.version), grade_id: nextGrade, display_name: nextName, resolvedRequest };
+    });
+    return { id, display_name: out.display_name, grade_id: out.grade_id, version: out.version, resolved_grade_request: out.resolvedRequest };
   });
 
   // Pending grade-change requests queue (Admin → Students). Gated on the review authority.
