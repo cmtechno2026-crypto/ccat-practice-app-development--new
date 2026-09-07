@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Panel, useToast } from '../components/ui';
@@ -17,6 +17,14 @@ const TIERS: { value: Tier; label: string }[] = [
   { value: 't500', label: 't500 ($500) — everything incl. Weekly' },
 ];
 const STATUSES = ['active', 'canceled', 'expired', 'pending'] as const;
+// Admins grant only NON-paid reasons; 'paid' is reserved for the Stripe webhook.
+const REASONS: { value: string; label: string }[] = [
+  { value: 'comp', label: 'Comp (free access)' },
+  { value: 'sale', label: 'Sale' },
+  { value: 'discount', label: 'Discount' },
+  { value: 'trial', label: 'Trial' },
+  { value: 'other', label: 'Other' },
+];
 
 interface LinkedStudent {
   display_name: string; username: string; status: string;
@@ -31,6 +39,7 @@ export function Membership() {
 
   const [email, setEmail] = useState('');
   const [tier, setTier] = useState<Tier>('t50');
+  const [reason, setReason] = useState<string>('comp');
   const [status, setStatus] = useState<string>('active');
   const [expiry, setExpiry] = useState<string>(''); // datetime-local; empty = no expiry
   const [current, setCurrent] = useState<any | null>(null);
@@ -53,8 +62,11 @@ export function Membership() {
         setTier((['free', 't50', 't250', 't500'] as const).includes(r.item.tier) ? r.item.tier : 'free');
         setStatus(r.item.status ?? 'active');
         setExpiry(r.item.current_period_end ? toLocalInput(r.item.current_period_end) : '');
+        // Preselect the stored reason if it's an admin-grantable one; a 'paid' row stays paid unless the
+        // admin deliberately changes it (the dropdown only offers non-paid reasons).
+        setReason(REASONS.some((x) => x.value === r.item.grant_reason) ? r.item.grant_reason : 'comp');
       } else {
-        setTier('t50'); setStatus('active'); setExpiry('');
+        setTier('t50'); setStatus('active'); setExpiry(''); setReason('comp');
       }
     } catch (err) { if (!opts.silent) toast((err as Error).message); }
     finally { setBusy(false); }
@@ -73,6 +85,7 @@ export function Membership() {
         tier,
         status,
         current_period_end: expiry ? new Date(expiry).toISOString() : null,
+        grant_reason: reason,
       });
       // Refresh so the "Current" line + linked students reflect the saved state consistently.
       const g = await api.getEntitlement(e);
@@ -95,6 +108,8 @@ export function Membership() {
         Manually set a guardian's membership tier by email. This is a temporary bridge for testing until
         Stripe is connected. {editable ? '' : 'Read-only — needs Super-Admin.'}
       </p>
+
+      <DefaultPlanPanel editable={editable} />
 
       <Panel title="Set a guardian's tier">
         <div className="stack" style={{ display: 'grid', gap: 12, maxWidth: 560 }}>
@@ -153,6 +168,16 @@ export function Membership() {
           </label>
 
           <label>
+            <div className="muted" style={{ marginBottom: 4 }}>Reason</div>
+            <select className="input" value={reason} disabled={!editable} onChange={(e) => setReason(e.target.value)}>
+              {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Manual grants are non-paying access. "Paid" is set only by a confirmed Stripe payment.
+            </div>
+          </label>
+
+          <label>
             <div className="muted" style={{ marginBottom: 4 }}>Status</div>
             <select className="input" value={status} disabled={!editable} onChange={(e) => setStatus(e.target.value)}>
               {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -174,6 +199,64 @@ export function Membership() {
         </div>
       </Panel>
     </>
+  );
+}
+
+// Site-wide DEFAULT plan (promo lever). Setting this to a non-free tier grants that tier to every
+// non-paying user until the (optional) expiry; setting it back to Free instantly returns them to demo.
+// Paid users are unaffected either way.
+function DefaultPlanPanel({ editable }: { editable: boolean }) {
+  const toast = useToast();
+  const [tier, setTier] = useState<Tier>('free');
+  const [until, setUntil] = useState<string>('');
+  const [current, setCurrent] = useState<{ default_tier: string; default_until: string | null } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    try { const r = await api.getDefaultPlan(); setCurrent(r); setTier((['free', 't50', 't250', 't500'] as const).includes(r.default_tier as Tier) ? (r.default_tier as Tier) : 'free'); setUntil(r.default_until ? toLocalInput(r.default_until) : ''); }
+    catch (e) { toast((e as Error).message); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await api.setDefaultPlan({ tier, until: until ? new Date(until).toISOString() : null });
+      setCurrent(r);
+      toast(`Default plan → ${r.default_tier}${r.default_until ? ` until ${new Date(r.default_until).toLocaleString()}` : ' (no expiry)'}`);
+    } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  };
+
+  return (
+    <Panel title="Default plan (applies to all non-paying users)">
+      <div className="stack" style={{ display: 'grid', gap: 12, maxWidth: 560 }}>
+        {current && (
+          <div className="muted" style={{ fontSize: 13 }}>
+            Current default: <strong>{current.default_tier}</strong>
+            {current.default_until ? ` · until ${new Date(current.default_until).toLocaleString()}` : ' · no expiry'}
+            {current.default_tier === 'free' ? ' · (no promo — non-paying users get demo only)' : ''}
+          </div>
+        )}
+        <label>
+          <div className="muted" style={{ marginBottom: 4 }}>Default tier</div>
+          <select className="input" value={tier} disabled={!editable} onChange={(e) => setTier(e.target.value as Tier)}>
+            {TIERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </label>
+        <label>
+          <div className="muted" style={{ marginBottom: 4 }}>Until (optional — blank = no expiry)</div>
+          <input className="input" type="datetime-local" value={until} disabled={!editable} onChange={(e) => setUntil(e.target.value)} />
+        </label>
+        {tier === 'free' && (
+          <div className="muted" style={{ fontSize: 12.5, color: 'var(--amber, #a15c00)' }}>
+            ⚠ Setting this to Free removes the site-wide default: users WITHOUT an explicit grant return to the demo. Existing comp/paid grants stay active until you cancel or expire them.
+          </div>
+        )}
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn" onClick={save} disabled={!editable || busy}>{busy ? 'Saving…' : 'Save default plan'}</button>
+        </div>
+      </div>
+    </Panel>
   );
 }
 

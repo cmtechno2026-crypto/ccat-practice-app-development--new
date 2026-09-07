@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useAsync, Panel, StatusPill, Stat, Modal, Loading, ErrorBox, useToast } from '../components/ui';
+import { PAYMENTS_ENABLED } from '../lib/payments';
 
 export function StudentDetail() {
   const { id } = useParams();
@@ -118,6 +119,8 @@ export function StudentDetail() {
         <div className="muted">XP {d.xp_total} · Coins {d.coins}. Adjustments create compensating ledger entries (§19.3), never overwrites.</div>
       </Panel>
 
+      {PAYMENTS_ENABLED && <MembershipSection studentId={id!} canEdit={can('config.global')} />}
+
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <Panel title="Recent sessions">
           {d.recent_sessions.length === 0 ? <div className="muted">None yet.</div> : (
@@ -205,5 +208,104 @@ function BreakGlassModal({ studentName, isSuper, onClose, onDone, submit }: { st
       <label className="pickrow"><input type="checkbox" checked={c3} onChange={e => setC3(e.target.checked)} /><span>I understand this enrollment is audited and reviewed.</span></label>
       {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
     </Modal>
+  );
+}
+
+// Payments — per-student Membership. Shows the guardian's EFFECTIVE tier + source + expiry and lets a
+// Super-Admin set it with the same tier + reason + period controls as the Membership page, scoped by the
+// student id (no email field). Rendered only when VITE_PAYMENTS_ENABLED (see caller).
+const M_TIERS: { value: string; label: string }[] = [
+  { value: 'free', label: 'free — demo sets only' },
+  { value: 't50', label: 't50 ($50) — all practice' },
+  { value: 't250', label: 't250 ($250) — practice + Exam + Combine' },
+  { value: 't500', label: 't500 ($500) — everything incl. Weekly' },
+];
+const M_REASONS: { value: string; label: string }[] = [
+  { value: 'comp', label: 'Comp (free access)' },
+  { value: 'sale', label: 'Sale' },
+  { value: 'discount', label: 'Discount' },
+  { value: 'trial', label: 'Trial' },
+  { value: 'other', label: 'Other' },
+];
+function mLocalInput(iso: string): string {
+  const d = new Date(iso); if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function MembershipSection({ studentId, canEdit }: { studentId: string; canEdit: boolean }) {
+  const toast = useToast();
+  const [data, setData] = useState<any | null>(null);
+  const [tier, setTier] = useState('free');
+  const [reason, setReason] = useState('comp');
+  const [until, setUntil] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [loadErr, setLoadErr] = useState('');
+
+  const load = async () => {
+    setLoadErr('');
+    try {
+      const r = await api.getStudentMembership(studentId);
+      setData(r);
+      const it = r.item;
+      setTier(it && ['free', 't50', 't250', 't500'].includes(it.tier) ? it.tier : 'free');
+      setReason(it && M_REASONS.some((x) => x.value === it.grant_reason) ? it.grant_reason : 'comp');
+      setUntil(it?.current_period_end ? mLocalInput(it.current_period_end) : '');
+    } catch (e) { setLoadErr((e as Error).message); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [studentId]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.setStudentMembership(studentId, { tier: tier as any, grant_reason: reason, until: until ? new Date(until).toISOString() : null });
+      toast('Membership updated');
+      await load();
+    } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  };
+
+  const eff = data?.effective;
+  return (
+    <Panel title="Membership">
+      {loadErr && <div className="err" style={{ marginBottom: 8 }}>{loadErr}</div>}
+      {!data ? <div className="muted">Loading…</div> : !data.guardian_email ? (
+        <div className="muted">No guardian email on file — a membership can't be set for this student until a guardian email exists.</div>
+      ) : (
+        <div className="stack" style={{ display: 'grid', gap: 12, maxWidth: 560 }}>
+          <div className="muted" style={{ fontSize: 13 }}>
+            Effective plan: <strong>{eff?.tier}</strong> · source {eff?.source}
+            {eff?.current_period_end ? ` · expires ${new Date(eff.current_period_end).toLocaleString()}` : ' · no expiry'}
+            {eff?.promo_active ? ` · promo active (default ${eff.default_tier})` : ''}
+            <br />Guardian: {data.guardian_email}
+            {data.item?.grant_reason === 'paid' && <> · <span className="tag">paid (Stripe)</span></>}
+          </div>
+          {data.item?.grant_reason === 'paid' && (
+            <div className="muted" style={{ fontSize: 12.5, color: 'var(--amber, #a15c00)' }}>
+              ⚠ This is a paid (Stripe) entitlement. Saving here overrides it with a non-paid grant — do this only to correct a mistake.
+            </div>
+          )}
+          <label>
+            <div className="muted" style={{ marginBottom: 4 }}>Tier</div>
+            <select className="input" value={tier} disabled={!canEdit} onChange={(e) => setTier(e.target.value)}>
+              {M_TIERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </label>
+          <label>
+            <div className="muted" style={{ marginBottom: 4 }}>Reason</div>
+            <select className="input" value={reason} disabled={!canEdit} onChange={(e) => setReason(e.target.value)}>
+              {M_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </label>
+          <label>
+            <div className="muted" style={{ marginBottom: 4 }}>Until (optional — blank = no expiry)</div>
+            <input className="input" type="datetime-local" value={until} disabled={!canEdit} onChange={(e) => setUntil(e.target.value)} />
+          </label>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn" onClick={save} disabled={!canEdit || busy}>{busy ? 'Saving…' : 'Save membership'}</button>
+          </div>
+          {!canEdit && <div className="muted" style={{ fontSize: 12 }}>Read-only — needs Super-Admin.</div>}
+        </div>
+      )}
+    </Panel>
   );
 }

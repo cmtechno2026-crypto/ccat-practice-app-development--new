@@ -74,6 +74,43 @@ export function clampTier(t: Tier): Tier {
   return i > maxI ? maxAllowed : t;
 }
 
+// Grant provenance. 'paid' = Stripe-confirmed payment (only the webhook writes it). Everything else is
+// non-paying access. Mirrors the ccat.entitlements.grant_reason CHECK (migration 0043).
+export type GrantReason = 'paid' | 'sale' | 'discount' | 'comp' | 'trial' | 'other';
+export const GRANT_REASONS: GrantReason[] = ['paid', 'sale', 'discount', 'comp', 'trial', 'other'];
+
+// Site-wide default plan (single ccat.app_settings row). "Promo active" = a non-free default that has not
+// expired. It applies to everyone as a floor and also gates whether NON-paid entitlements are honored.
+export interface DefaultPlan {
+  defaultTier: Tier;
+  defaultUntil: string | null; // ISO or null (no expiry)
+}
+
+// Load the singleton default plan. Defensive: if app_settings is missing (migration 0043 not yet applied)
+// or empty, treat it as no promo (default free) rather than erroring the whole content path.
+export async function loadDefaultPlan(db: DB): Promise<DefaultPlan> {
+  try {
+    const { rows } = await db.query(
+      `select default_tier, default_until from ccat.app_settings where id = 1 limit 1`,
+    );
+    const r = rows[0];
+    if (!r) return { defaultTier: 'free', defaultUntil: null };
+    const dt = TIER_ORDER.includes(r.default_tier) ? (r.default_tier as Tier) : 'free';
+    return { defaultTier: dt, defaultUntil: r.default_until ? new Date(r.default_until).toISOString() : null };
+  } catch {
+    return { defaultTier: 'free', defaultUntil: null };
+  }
+}
+
+// Is a default plan an active promo? Non-free AND (no expiry OR expiry in the future).
+export function isPromoActive(dp: DefaultPlan, now: Date = new Date()): boolean {
+  return dp.defaultTier !== 'free' && (dp.defaultUntil == null || new Date(dp.defaultUntil) > now);
+}
+
+// Where the effective tier came from (for the admin student view). A stored non-paid reason surfaces as
+// itself (comp/sale/…) so the admin sees why access is granted.
+export type EntitlementSource = GrantReason | 'default' | 'free';
+
 export interface EffectiveEntitlement {
   tier: Tier;                 // effective, CLAMPED tier used for capabilities
   rawTier: Tier;              // tier stored in the DB before clamp (audit/debug only)
@@ -81,6 +118,10 @@ export interface EffectiveEntitlement {
   currentPeriodEnd: string | null;
   guardianEmail: string | null;
   capabilities: Capabilities;
+  grantReason: GrantReason | null; // reason on the stored row, or null when there is no row
+  source: EntitlementSource;       // what produced the effective tier
+  defaultTier: Tier;               // current site default (promo) tier
+  promoActive: boolean;            // whether the default plan is an active promo
 }
 
 // Resolve the authenticated student's primary guardian email (lower-cased match key), or null when the
@@ -100,17 +141,53 @@ export async function resolveGuardianEmail(db: DB, studentId: string): Promise<s
   return email ? String(email).trim().toLowerCase() : null;
 }
 
-// Resolve the effective entitlement for a student. Null-safe: no guardian, no row, expired, or canceled
-// all collapse to 'free'. An over-allowed tier is clamped to ALLOWED_TIERS.
+// Pure effective-tier decision (no DB), unit-tested. An ACTIVE grant is honored on its own regardless of
+// reason; the promo default is a floor; effective = the higher of the two. A canceled/expired grant
+// (rowActive=false) contributes nothing and falls back to the promo floor or free.
+export function computeEffective(args: {
+  rowActive: boolean;
+  rowTier: Tier;
+  grantReason: GrantReason | null;
+  promo: DefaultPlan;
+}): { rawTier: Tier; source: EntitlementSource } {
+  const promoActive = isPromoActive(args.promo);
+  const grantRank = args.rowActive ? tierRank(args.rowTier) : -1; // -1 = no active grant
+  const promoRank = promoActive ? tierRank(args.promo.defaultTier) : -1;
+  if (grantRank < 0 && promoRank < 0) return { rawTier: 'free', source: 'free' };
+  if (grantRank >= promoRank) return { rawTier: args.rowTier, source: args.grantReason ?? 'comp' };
+  return { rawTier: args.promo.defaultTier, source: 'default' };
+}
+
+// Resolve the effective entitlement for a student.
+//
+// An ACTIVE entitlement (status='active' AND not past current_period_end) is honored ON ITS OWN, whatever
+// the grant_reason — 'paid' and 'comp'/'sale'/… are equal here: a complimentary grant is real access, not
+// something the promo lever revokes. grant_reason is provenance/audit, not a gate. Only a canceled/expired
+// grant (or no grant) falls back.
+//
+// The site DEFAULT plan is a separate, site-wide FLOOR that applies while a promo is active (default_tier
+// != 'free' and not past default_until). The effective tier is the HIGHER of the active grant and the
+// active promo floor.
+//
+//   effective = max( active-grant tier | none , promo default tier | none , free )
+//
+// The default-plan lever therefore governs users WITHOUT an explicit active grant (default riders); it
+// never downgrades a real active grant. To revoke a specific guardian, cancel/expire THEIR entitlement.
+// An over-allowed tier is still clamped to ALLOWED_TIERS.
 export async function resolveEntitlement(db: DB, studentId: string): Promise<EffectiveEntitlement> {
   const guardianEmail = await resolveGuardianEmail(db, studentId);
-  let rawTier: Tier = 'free';
+  const dp = await loadDefaultPlan(db);
+  const promoActive = isPromoActive(dp);
+
+  let rowTier: Tier = 'free';
   let status = 'active';
   let currentPeriodEnd: string | null = null;
+  let grantReason: GrantReason | null = null;
+  let rowActive = false;
 
   if (guardianEmail) {
     const { rows } = await db.query(
-      `select tier, status, current_period_end
+      `select tier, status, current_period_end, grant_reason
          from ccat.entitlements
         where lower(guardian_email) = $1
         limit 1`,
@@ -120,14 +197,20 @@ export async function resolveEntitlement(db: DB, studentId: string): Promise<Eff
       const r = rows[0]!;
       status = r.status;
       currentPeriodEnd = r.current_period_end ? new Date(r.current_period_end).toISOString() : null;
+      grantReason = (GRANT_REASONS as string[]).includes(r.grant_reason) ? (r.grant_reason as GrantReason) : 'comp';
       const notExpired = r.current_period_end == null || new Date(r.current_period_end) > new Date();
-      const active = r.status === 'active' && notExpired;
-      rawTier = active ? (TIER_ORDER.includes(r.tier) ? (r.tier as Tier) : 'free') : 'free';
+      rowActive = r.status === 'active' && notExpired;
+      rowTier = rowActive && TIER_ORDER.includes(r.tier) ? (r.tier as Tier) : 'free';
     }
   }
 
+  const { rawTier, source } = computeEffective({ rowActive, rowTier, grantReason, promo: dp });
   const tier = clampTier(rawTier);
-  return { tier, rawTier, status, currentPeriodEnd, guardianEmail, capabilities: CAPABILITY_MAP[tier] };
+  return {
+    tier, rawTier, status, currentPeriodEnd, guardianEmail,
+    capabilities: CAPABILITY_MAP[tier],
+    grantReason, source, defaultTier: dp.defaultTier, promoActive,
+  };
 }
 
 // A subcategory is a "Battery Combine" subcategory (key convention '<battery>_battery_combine', cap 45)

@@ -1,6 +1,46 @@
 # CCAT Project State
 
-_Last updated: 2026-09-05 — Payments Phase 1 (Stripe Checkout) AUTHORED + fully verified in a cloud checkout (typecheck/build/tests green, 8 new tests pass, zero regressions). NOT yet committed/pushed/deployed. See "Payments Phase 1" state table below._
+_Last updated: 2026-09-07 — Admin membership control AUTHORED + verified in cloud checkout; RESOLVER CORRECTED so active comp grants stay usable (only canceled/expired fall back to Free; default plan is a floor, not a revoker). prod parentd@gmail.com set to status=canceled (kept for audit). NOT committed/pushed/deployed; migration 0043 NOT applied. See "Admin membership control" below. (Prior: Payments Phase 1 Stripe — committed 53c28de, deployed to preview on sandbox Stripe.)_
+
+## Admin membership control (default plan + paid/comp flag + per-student) — AUTHORED, not committed/deployed
+DATA (migration NOT applied — path: packages/contracts/migrations/0043_app_settings_grant_reason.sql):
+  - ccat.app_settings — single row (id=1 check): default_tier (free/t50/t250/t500, default 'free'), default_until timestamptz null, updated_at + trigger. Seeded {free, null}.
+  - ccat.entitlements.grant_reason text NOT NULL DEFAULT 'comp' CHECK (paid/sale/discount/comp/trial/other). Existing rows backfilled to 'comp'. 'paid' is WEBHOOK-ONLY (Stripe-confirmed); admins can only set non-paid reasons.
+RESOLVER (apps/gateway/src/lib/entitlements.ts, resolveEntitlement → pure computeEffective()):
+  - An ACTIVE grant (status='active' AND not past current_period_end) is honored ON ITS OWN, regardless of
+    grant_reason. 'paid' and 'comp'/'sale'/… are equal for resolution — grant_reason is provenance/audit,
+    NOT a gate. A comp grant is real complimentary access; the promo lever never revokes it.
+  - The site default plan is a separate FLOOR, active while promo is on (default_tier != 'free' AND
+    (default_until IS NULL OR default_until > now())). It lifts users who have no active grant.
+  - effective = HIGHER of { active-grant tier | none, promo floor tier | none, free } (ties → the grant).
+  - Only a canceled/expired grant (or no grant) falls back — to the promo floor if active, else free.
+  Consequence: default_tier back to 'free' returns only DEFAULT RIDERS (no explicit grant) to demo; it does
+  NOT downgrade active comp/paid grants. To revoke a specific guardian, cancel/expire THEIR entitlement.
+  Returns source (paid/comp/sale/…/default/free) + promoActive + defaultTier. loadDefaultPlan is defensive
+  (missing app_settings → no promo). computeEffective is unit-tested (see below).
+  [Corrected 2026-09-07 from an earlier draft where the lever also revoked comp grants — that was wrong.]
+ENDPOINTS (apps/gateway/src/routes/admin-entitlements.ts; admin auth + config.global; the new 4 are flag-gated → 404 when PAYMENTS_ENABLED off):
+  - GET/PUT /v1/admin/settings/default-plan
+  - POST /v1/admin/entitlements — extended with grant_reason (non-paid enum, default comp)
+  - GET/POST /v1/admin/students/:id/membership (guardian resolved from student id server-side; no email in body)
+  - apps/gateway/src/routes/stripe-webhook.ts — paid grant now writes grant_reason='paid' (overrides prior comp).
+UI (apps/admin, behind VITE_PAYMENTS_ENABLED):
+  - pages/Membership.tsx — "Default plan" panel (tier + until → PUT, warning that Free restricts non-paying users) + Reason dropdown on the email grant form.
+  - pages/StudentDetail.tsx — Membership section: effective tier + source + expiry (GET students/:id/membership) + edit with tier/reason/until (POST), no email field; warns when overriding a paid row.
+  - lib/api.ts — getDefaultPlan/setDefaultPlan/getStudentMembership/setStudentMembership; setEntitlement gains grant_reason.
+FLAG OFF = unchanged: new endpoints 404; resolver not on content paths (me returns unlock-all); admin panels/section render only when VITE_PAYMENTS_ENABLED.
+BUILD/TEST: gateway typecheck clean; admin build clean (only pre-existing bulkFile.ts tsc error); gateway suite
+  passes with zero regressions; payments-stripe now 15/15 (8 checkout/webhook + 7 computeEffective cases:
+  comp stays usable at default=free; canceled/expired incl. paid → free; promo floor = max; expiry respected).
+TEST GRANT (owner decision 2026-09-07): keep the row for audit, do NOT delete.
+  - DONE on prod: parentd@gmail.com set status='canceled' (tier t50 retained for audit, source=webhook).
+    Verified against the real row that BOTH resolvers return effective='free' for the canceled row (no promo).
+  - AFTER 0043 is applied: the migration backfills grant_reason='comp' for all existing rows (incl. this one);
+    no separate action needed. (It stays canceled ⇒ Free regardless of reason.)
+  - Only canceled/expired grants fall back to Free; active comp/paid grants remain usable (see RESOLVER).
+DEPLOY ORDER when ready: apply 0043 → deploy gateway (reads app_settings/grant_reason) → deploy admin. Migration 0043 must precede the gateway deploy or resolveEntitlement's grant_reason select errors.
+
+
 
 ## Architecture
 Admin Web (apps/admin, Vite/React) -> Gateway -> Supabase

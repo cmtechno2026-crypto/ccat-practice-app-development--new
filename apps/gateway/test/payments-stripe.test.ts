@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import { createPool, type DB } from '../src/db.js';
 import type { Config } from '../src/config.js';
 import { registerStripeWebhookRoutes } from '../src/routes/stripe-webhook.js';
-import { checkoutRejectReason, eligibleUpgrades } from '../src/lib/entitlements.js';
+import { checkoutRejectReason, eligibleUpgrades, computeEffective } from '../src/lib/entitlements.js';
 
 // CCAT Payments Phase 1 — Stripe checkout eligibility + webhook (signature, idempotency, confirmed-payment
 // grant, redirect-is-not-authority). Uses the real Stripe SDK OFFLINE for signature crypto; listLineItems
@@ -31,6 +31,59 @@ describe('checkout eligibility (server-owned)', () => {
     expect(checkoutRejectReason('free', 't50')).toBeNull();
     expect(checkoutRejectReason('t50', 't250')).toBeNull();
     expect(checkoutRejectReason('t250', 't500')).toBeNull();
+  });
+});
+
+// ---- Effective-tier resolution (grants vs default-plan lever) -----------------------------------
+describe('computeEffective (default plan + grant_reason)', () => {
+  const noPromo = { defaultTier: 'free' as const, defaultUntil: null };
+  const promo = (t: 't50' | 't250' | 't500') => ({ defaultTier: t, defaultUntil: null });
+  const future = { defaultTier: 't50' as const, defaultUntil: new Date(Date.now() + 864e5).toISOString() };
+  const past = { defaultTier: 't50' as const, defaultUntil: new Date(Date.now() - 864e5).toISOString() };
+
+  it('active comp grant stays usable when default_tier=free (NOT revoked by the lever)', () => {
+    expect(computeEffective({ rowActive: true, rowTier: 't50', grantReason: 'comp', promo: noPromo }))
+      .toEqual({ rawTier: 't50', source: 'comp' });
+  });
+
+  it('canceled/expired grant falls back to Free when no promo (any reason, incl. paid)', () => {
+    expect(computeEffective({ rowActive: false, rowTier: 't50', grantReason: 'comp', promo: noPromo }))
+      .toEqual({ rawTier: 'free', source: 'free' });
+    expect(computeEffective({ rowActive: false, rowTier: 't500', grantReason: 'paid', promo: noPromo }))
+      .toEqual({ rawTier: 'free', source: 'free' });
+  });
+
+  it('active paid grant is honored', () => {
+    expect(computeEffective({ rowActive: true, rowTier: 't250', grantReason: 'paid', promo: noPromo }))
+      .toEqual({ rawTier: 't250', source: 'paid' });
+  });
+
+  it('no grant + promo active → default tier; canceled grant + promo → promo floor', () => {
+    expect(computeEffective({ rowActive: false, rowTier: 'free', grantReason: null, promo: promo('t250') }))
+      .toEqual({ rawTier: 't250', source: 'default' });
+    expect(computeEffective({ rowActive: false, rowTier: 't50', grantReason: 'comp', promo: promo('t250') }))
+      .toEqual({ rawTier: 't250', source: 'default' });
+  });
+
+  it('effective = higher of active grant and promo floor', () => {
+    // comp t50 rider, promo t500 → promo wins (floor lifts everyone)
+    expect(computeEffective({ rowActive: true, rowTier: 't50', grantReason: 'comp', promo: promo('t500') }))
+      .toEqual({ rawTier: 't500', source: 'default' });
+    // comp t500 grant, promo t50 → grant wins
+    expect(computeEffective({ rowActive: true, rowTier: 't500', grantReason: 'comp', promo: promo('t50') }))
+      .toEqual({ rawTier: 't500', source: 'comp' });
+  });
+
+  it('promo expiry respected: future until = active floor, past until = no promo', () => {
+    expect(computeEffective({ rowActive: false, rowTier: 'free', grantReason: null, promo: future }))
+      .toEqual({ rawTier: 't50', source: 'default' });
+    expect(computeEffective({ rowActive: false, rowTier: 'free', grantReason: null, promo: past }))
+      .toEqual({ rawTier: 'free', source: 'free' });
+  });
+
+  it('no grant, no promo → free', () => {
+    expect(computeEffective({ rowActive: false, rowTier: 'free', grantReason: null, promo: noPromo }))
+      .toEqual({ rawTier: 'free', source: 'free' });
   });
 });
 
