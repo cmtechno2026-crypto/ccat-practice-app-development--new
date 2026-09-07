@@ -80,6 +80,8 @@ export function StudentDetail() {
         <Stat n={d.streak ? `🔥 ${d.streak.current}d` : '—'} label={`Streak · best ${d.streak?.longest ?? 0}d`} color="var(--amber)" />
       </div>
 
+      {PAYMENTS_ENABLED && <MembershipSection studentId={id!} canEdit={can('config.global')} />}
+
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <Panel title="Guardians">
           {d.guardians.length === 0 ? <div className="muted">None on file.</div> : d.guardians.map((g: any, i: number) => (
@@ -118,8 +120,6 @@ export function StudentDetail() {
       <Panel title="Rewards" right={can('reward.adjust') ? <button className="btn sm" onClick={() => { setForm({ kind: 'coins', delta: '10', reason: '', reference: '' }); setErr(''); setAdjust(true); }}>Adjust reward</button> : undefined}>
         <div className="muted">XP {d.xp_total} · Coins {d.coins}. Adjustments create compensating ledger entries (§19.3), never overwrites.</div>
       </Panel>
-
-      {PAYMENTS_ENABLED && <MembershipSection studentId={id!} canEdit={can('config.global')} />}
 
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <Panel title="Recent sessions">

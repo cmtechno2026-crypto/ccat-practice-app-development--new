@@ -109,8 +109,6 @@ export function Membership() {
         Stripe is connected. {editable ? '' : 'Read-only — needs Super-Admin.'}
       </p>
 
-      <DefaultPlanPanel editable={editable} />
-
       <Panel title="Set a guardian's tier">
         <div className="stack" style={{ display: 'grid', gap: 12, maxWidth: 560 }}>
           <label>
@@ -198,6 +196,8 @@ export function Membership() {
           </p>
         </div>
       </Panel>
+
+      <DefaultPlanPanel editable={editable} />
     </>
   );
 }

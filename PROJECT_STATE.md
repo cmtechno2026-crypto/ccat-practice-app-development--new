@@ -28,6 +28,13 @@ UI (apps/admin, behind VITE_PAYMENTS_ENABLED):
   - pages/Membership.tsx — "Default plan" panel (tier + until → PUT, warning that Free restricts non-paying users) + Reason dropdown on the email grant form.
   - pages/StudentDetail.tsx — Membership section: effective tier + source + expiry (GET students/:id/membership) + edit with tier/reason/until (POST), no email field; warns when overriding a paid row.
   - lib/api.ts — getDefaultPlan/setDefaultPlan/getStudentMembership/setStudentMembership; setEntitlement gains grant_reason.
+UI refinements (2026-09-07):
+  - Students directory: new optional "Tier" column (plan) — GET /v1/admin/students now returns membership_tier
+    per row (effective tier via primary-guardian email + default plan). DEFENSIVE + flag-gated: computed only
+    when PAYMENTS_ENABLED, wrapped in try/catch so a missing app_settings/grant_reason (0043 not yet applied)
+    leaves tier null and never breaks the directory. Column + CSV shown only when VITE_PAYMENTS_ENABLED.
+  - StudentDetail: Membership section moved ABOVE Guardians/Devices.
+  - Membership page: Default-plan panel moved BELOW "Set a guardian's tier".
 FLAG OFF = unchanged: new endpoints 404; resolver not on content paths (me returns unlock-all); admin panels/section render only when VITE_PAYMENTS_ENABLED.
 BUILD/TEST: gateway typecheck clean; admin build clean (only pre-existing bulkFile.ts tsc error); gateway suite
   passes with zero regressions; payments-stripe now 15/15 (8 checkout/webhook + 7 computeEffective cases:

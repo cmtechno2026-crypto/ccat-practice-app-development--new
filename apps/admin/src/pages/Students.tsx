@@ -3,6 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Modal, ErrorBox, useToast } from '../components/ui';
+import { PAYMENTS_ENABLED } from '../lib/payments';
+
+// Membership tier label for the directory column (Payments). Shown only when VITE_PAYMENTS_ENABLED.
+const tierLabel = (t?: string | null) =>
+  t === 't50' ? '$50' : t === 't250' ? '$250' : t === 't500' ? '$500' : t === 'free' ? 'Free' : '—';
 
 // ---- helpers ---------------------------------------------------------------
 const AVATARS = ['🦊', '🐢', '🦋', '🦖', '🐝', '🦉', '🐬', '🐼', '🦁', '🐧'];
@@ -36,6 +41,8 @@ function Readiness({ pct, band, insufficient }: { pct: number | null; band: stri
 
 const ALL_COLS = [
   { key: 'grade', label: 'Grade & status' },
+  // Payments: Tier column offered only when the flag is on (flag off = directory unchanged).
+  ...(PAYMENTS_ENABLED ? [{ key: 'tier', label: 'Tier (plan)' }] : []),
   { key: 'readiness', label: 'Readiness' },
   { key: 'progress', label: 'Progress' },
   { key: 'email', label: 'Parent email' },
@@ -112,8 +119,8 @@ export function Students() {
   };
 
   const exportCsv = () => {
-    const head = ['Username', 'Name', 'Grade', 'Status', 'Readiness %', 'XP', 'Coins', 'Sets', 'Parent email', 'Parent phone', 'Devices'];
-    const lines = items.map(r => [r.username, r.display_name, r.grade_number, r.display_status, r.readiness_pct ?? '', r.xp_total, r.coins, r.sets_completed ?? '', r.guardian_email ?? '', r.guardian_phone ?? '', `${r.device_active}/${r.device_total}`]
+    const head = ['Username', 'Name', 'Grade', 'Status', ...(PAYMENTS_ENABLED ? ['Tier'] : []), 'Readiness %', 'XP', 'Coins', 'Sets', 'Parent email', 'Parent phone', 'Devices'];
+    const lines = items.map(r => [r.username, r.display_name, r.grade_number, r.display_status, ...(PAYMENTS_ENABLED ? [tierLabel(r.membership_tier)] : []), r.readiness_pct ?? '', r.xp_total, r.coins, r.sets_completed ?? '', r.guardian_email ?? '', r.guardian_phone ?? '', `${r.device_active}/${r.device_total}`]
       .map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
     const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -208,6 +215,7 @@ export function Students() {
             <thead><tr>
               <th>Student</th>
               {cols.has('grade') && <th>Grade &amp; status</th>}
+              {cols.has('tier') && <th>Tier</th>}
               {cols.has('readiness') && <th>Readiness</th>}
               {cols.has('progress') && <th>Progress</th>}
               {cols.has('email') && <th>Parent email</th>}
@@ -227,6 +235,7 @@ export function Students() {
                   </div>
                 </td>
                 {cols.has('grade') && <td><div className="gradestk"><div className="g">Grade {r.grade_number}</div><StatusChip s={r.display_status} /></div></td>}
+                {cols.has('tier') && <td>{r.membership_tier ? <span className="tag">{tierLabel(r.membership_tier)}</span> : <span className="muted">—</span>}</td>}
                 {cols.has('readiness') && <td><Readiness pct={r.readiness_pct} band={r.readiness_band} insufficient={r.readiness_insufficient} /></td>}
                 {cols.has('progress') && <td><div className="progx"><span className="xp tabnum">{r.xp_total.toLocaleString()} XP</span><div className="sub tabnum">🪙 {r.coins}{r.streak_current > 0 ? ` · 🔥 ${r.streak_current}d` : ''} · {r.sets_completed ?? 0} sets</div></div></td>}
                 {cols.has('email') && <td>{r.guardian_email || <span className="muted">—</span>}</td>}
