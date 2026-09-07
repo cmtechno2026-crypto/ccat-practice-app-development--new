@@ -148,7 +148,7 @@ function GradeChangeCard() {
       <label className="field" style={{ marginTop: 10 }}><span>New grade</span>
         <select className="input" value={gradeId} onChange={(e) => setGradeId(e.target.value)}>
           <option value="">Choose a grade…</option>
-          {options.map((g) => <option key={g.id} value={g.id}>Grade {g.grade_number}{g.name ? ` — ${g.name}` : ''}</option>)}
+          {options.map((g) => <option key={g.id} value={g.id}>{g.name || `Grade ${g.grade_number}`}</option>)}
         </select>
       </label>
       <label className="field" style={{ marginTop: 10 }}><span>Why? (optional)</span>

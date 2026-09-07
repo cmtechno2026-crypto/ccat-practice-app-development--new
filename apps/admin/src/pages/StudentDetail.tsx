@@ -194,7 +194,7 @@ export function StudentDetail() {
           <label>Grade</label>
           <select value={editForm.grade_id} onChange={e => setEditForm({ ...editForm, grade_id: e.target.value })}>
             {grades.length === 0 && <option value="">Loading grades…</option>}
-            {grades.map((g) => <option key={g.id} value={g.id}>Grade {g.grade_number}{g.name ? ` — ${g.name}` : ''}</option>)}
+            {grades.map((g) => <option key={g.id} value={g.id}>{g.name || `Grade ${g.grade_number}`}</option>)}
           </select>
           {editErr && <div className="err" style={{ marginTop: 8 }}>{editErr}</div>}
         </Modal>

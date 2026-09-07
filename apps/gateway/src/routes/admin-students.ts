@@ -169,6 +169,43 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     return { status: 'rejected' };
   });
 
+  // Aggregated pending requests across every kind the caller is authorised to act on — powers the
+  // admin notification bell and the Students-directory row highlighting. Each kind is gated by its own
+  // permission (super_admin holds all, since its permission set is the full catalog). Sorted newest-first.
+  app.get('/v1/admin/notifications', guard, async (req) => {
+    const perms = req.admin!.permissions;
+    const out: Array<{ kind: string; id: string; student_id: string; student_name: string; created_at: string; summary: string }> = [];
+    if (perms.has('student.update')) {
+      const g = await db.query(
+        `select r.id, r.student_id, s.display_name as student_name, r.created_at,
+                cg.grade_number as current_grade_number, rg.grade_number as requested_grade_number
+           from ccat.grade_change_requests r
+           join ccat.students s on s.id=r.student_id
+           join ccat.grades cg on cg.id=r.current_grade_id
+           join ccat.grades rg on rg.id=r.requested_grade_id
+          where r.status='pending'`);
+      for (const x of g.rows) out.push({ kind: 'grade_change', id: x.id, student_id: x.student_id, student_name: x.student_name, created_at: x.created_at, summary: `Grade ${x.current_grade_number} → Grade ${x.requested_grade_number}` });
+    }
+    if (perms.has('deletion.support')) {
+      const d = await db.query(
+        `select dr.id, dr.student_id, s.display_name as student_name, dr.created_at, dr.reference
+           from ccat.deletion_requests dr
+           join ccat.students s on s.id=dr.student_id
+          where dr.state='pending_deletion'`);
+      for (const x of d.rows) out.push({ kind: 'deletion', id: x.id, student_id: x.student_id, student_name: x.student_name, created_at: x.created_at, summary: 'Account deletion — 30-day window' + (x.reference ? ` (${x.reference})` : '') });
+    }
+    if (perms.has('device.break_glass')) {
+      const b = await db.query(
+        `select r.id, r.student_id, s.display_name as student_name, r.created_at
+           from ccat.student_break_glass_requests r
+           join ccat.students s on s.id=r.student_id
+          where r.status='pending'`);
+      for (const x of b.rows) out.push({ kind: 'break_glass', id: x.id, student_id: x.student_id, student_name: x.student_name, created_at: x.created_at, summary: 'Break-glass device co-sign' });
+    }
+    out.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return { items: out, count: out.length };
+  });
+
   // Break-glass device enrollment (§5.2) — bypasses guardian OTP, so it needs a Super-Admin signature.
   // Super signs directly; a non-super holder of device.break_glass files a co-sign request instead.
   const bgSchema = z.object({
