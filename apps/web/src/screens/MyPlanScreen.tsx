@@ -4,7 +4,7 @@ import type { EntitlementTier } from '@ccat/api-client';
 import { useApp } from '../lib/store';
 import { AppBar, Card, Loader } from '../components/ui';
 import {
-  PAYMENTS_ENABLED, TIER_CATALOG, MEMBERSHIP_URL, eligibleUpgradeTiers, tierIndex,
+  PAYMENTS_ENABLED, TIER_CATALOG, membershipUrlFor, eligibleUpgradeTiers, tierIndex,
 } from '../lib/entitlements';
 
 // My Plan. Shows the student's current membership + what each higher plan unlocks. The CCAT app does NOT
@@ -59,7 +59,7 @@ export function MyPlanScreen() {
     if (tier === 'free') return;
     // The CCAT app does not take payment. Send the grown-up to the Concept Mastery membership page.
     setBusyTier(tier);
-    window.location.href = MEMBERSHIP_URL;
+    window.location.href = membershipUrlFor(tier);
   }
 
   const current: EntitlementTier = entitlements?.tier ?? 'free';

@@ -5,9 +5,21 @@ import type { EntitlementCapabilities, EntitlementsMe } from '@ccat/api-client';
 export const PAYMENTS_ENABLED: boolean =
   (import.meta.env.VITE_PAYMENTS_ENABLED as string | undefined) === 'true';
 
-// Where the Upgrade button sends a grown-up. PLACEHOLDER — set the real conceptmastery.com membership
-// URL later. The CCAT app NEVER collects card/payment details; it only links OUT to this page.
+// Where the Upgrade button sends a grown-up. The CCAT app NEVER collects card/payment details; it only
+// links OUT to a Concept Mastery page. MEMBERSHIP_URL is the generic fallback; per-tier product pages
+// override it where set (see MEMBERSHIP_URL_BY_TIER / membershipUrlFor).
 export const MEMBERSHIP_URL = 'https://conceptmastery.com/ccat/';
+
+// Per-tier product/checkout pages on the Concept Mastery site. A tier not listed falls back to
+// MEMBERSHIP_URL. Set t250/t500 to their real product pages when available.
+export const MEMBERSHIP_URL_BY_TIER: Partial<Record<EntitlementTier, string>> = {
+  t50: 'https://conceptmastery.com/store/ccat-practice-library-access/',
+};
+
+// The URL the Upgrade button for `tier` should open.
+export function membershipUrlFor(tier: EntitlementTier): string {
+  return MEMBERSHIP_URL_BY_TIER[tier] ?? MEMBERSHIP_URL;
+}
 
 // Capabilities used when payments is OFF: everything unlocked, so the experience is identical to today.
 // Mirrors the gateway's CAPABILITIES_UNLOCKED_ALL.
