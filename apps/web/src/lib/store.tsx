@@ -18,6 +18,9 @@ interface AppState {
   // paymentsEnabled mirrors the build flag so screens can branch without importing the env directly.
   paymentsEnabled: boolean;
   entitlements: EntitlementsMe | null;
+  // false until the first /v1/entitlements/me call settles (success or error). While false the UI shows
+  // LOCKED caps so premium never flashes unlocked before snapping to locked.
+  entitlementsLoaded: boolean;
   setProfile: (p: StudentProfile | null) => void;
   refreshProfile: () => Promise<StudentProfile | null>;
   refreshEntitlements: () => Promise<void>;
@@ -29,10 +32,13 @@ const Ctx = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [profile, setProfileState] = useState<StudentProfile | null>(null);
   const [appConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG); // flag-ready; see client-core note
   const [toast, setToast] = useState<string | null>(null);
   const [entitlements, setEntitlements] = useState<EntitlementsMe | null>(null);
+  // Payments ON: loaded=false until the first /me settles → capsOf renders locked meanwhile (no flash).
+  // Payments OFF: nothing to load, so start loaded=true.
+  const [entitlementsLoaded, setEntLoaded] = useState<boolean>(!PAYMENTS_ENABLED);
 
   const flash = useCallback((msg: string) => {
     setToast(msg);
@@ -43,24 +49,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Payments Phase 2 — fetch the student's entitlement once (flag ON only). A failure degrades to null
   // (screens then treat capabilities as unlocked; the server gate still protects content).
   const refreshEntitlements = useCallback(async () => {
-    if (!PAYMENTS_ENABLED) { setEntitlements(null); return; }
+    if (!PAYMENTS_ENABLED) { setEntitlements(null); setEntLoaded(true); return; }
     try { setEntitlements(await client.entitlementsMe()); }
     catch { setEntitlements(null); }
+    finally { setEntLoaded(true); }
   }, []);
+
+  // Exposed setProfile: when a profile is set with payments ON (e.g. right after login), kick an
+  // entitlement fetch and mark it loading so the UI renders LOCKED until /me resolves — this closes the
+  // login flash where the app briefly showed everything unlocked before the entitlement arrived.
+  const setProfile = useCallback((p: StudentProfile | null) => {
+    setProfileState(p);
+    if (p && PAYMENTS_ENABLED) { setEntLoaded(false); void refreshEntitlements(); }
+  }, [refreshEntitlements]);
 
   const refreshProfile = useCallback(async () => {
     try {
       const me = await client.profile();
-      setProfile(me);
+      setProfileState(me);
       if (PAYMENTS_ENABLED) await refreshEntitlements();
       return me;
-    } catch { setProfile(null); return null; }
+    } catch { setProfileState(null); return null; }
   }, [refreshEntitlements]);
 
   const signOut = useCallback(async () => {
     try { await client.logout(); } catch { /* ignore */ }
-    setProfile(null);
+    setProfileState(null);
     setEntitlements(null);
+    setEntLoaded(!PAYMENTS_ENABLED);
   }, []);
 
   // Resume from a stored token on load.
@@ -70,7 +86,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const tok = await client.tokens.getAccess();
       if (tok) {
         try {
-          setProfile(await client.profile());
+          setProfileState(await client.profile());
           if (PAYMENTS_ENABLED) await refreshEntitlements();
         } catch { /* invalid */ }
       }
@@ -81,7 +97,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={{
       ready, profile, appConfig, toast,
-      paymentsEnabled: PAYMENTS_ENABLED, entitlements,
+      paymentsEnabled: PAYMENTS_ENABLED, entitlements, entitlementsLoaded,
       setProfile, refreshProfile, refreshEntitlements, signOut, flash,
     }}>
       {children}

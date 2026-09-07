@@ -43,8 +43,8 @@ function loadPrefs(): Prefs {
 
 export function PracticeScreen() {
   const nav = useNavigate();
-  const { flash, entitlements } = useApp();
-  const caps = capsOf(entitlements);
+  const { flash, entitlements, entitlementsLoaded } = useApp();
+  const caps = capsOf(entitlements, entitlementsLoaded);
   const [upgrade, setUpgrade] = useState<UpgradeFeature | null>(null);
   const openUpgrade = (f: UpgradeFeature) => setUpgrade(f);
   const upgradeEl = <UpgradePanel open={!!upgrade} feature={upgrade ?? 'practice'} onClose={() => setUpgrade(null)} />;

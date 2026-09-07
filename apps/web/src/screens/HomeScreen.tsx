@@ -57,10 +57,10 @@ function mascotLine(streak: number, completion: number | null): string {
 
 export function HomeScreen() {
   const nav = useNavigate();
-  const { profile, entitlements } = useApp();
+  const { profile, entitlements, entitlementsLoaded } = useApp();
   // Payments Phase 2: when the flag is off, capsOf() unlocks everything, so examLocked is always false
   // and the exam entry tile renders exactly as today.
-  const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements).exam;
+  const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements, entitlementsLoaded).exam;
   const { loading, error, data, reload } = useAsync(async () => {
     const [summary, readiness, progress, announcements, active, achievements, analytics] = await Promise.all([
       client.rewardsSummary(), client.readiness(), client.progress(), client.announcements(),

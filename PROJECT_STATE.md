@@ -50,6 +50,10 @@ DEPLOY ORDER when ready: apply 0043 → deploy gateway (reads app_settings/grant
 
 
 ## Update 2026-09-07 (later)
+- Web caps flash fixed: while /v1/entitlements/me is loading the UI now renders LOCKED (was unlock-all),
+  so premium no longer flashes unlocked before snapping to locked. Login/register/device-verify now fetch
+  entitlements too (previously only the token-resume path did). Store adds entitlementsLoaded; capsOf takes
+  it (payments off → unlock; loading → locked; settled → real caps, fail-open on error). Server still enforces.
 - Migration 0043 is now APPLIED to PROD (wazutprwrhnabjfggghp) + ledger row inserted. (It was applied to fix a
   /v1/catalog 500 caused by deploying the grant_reason resolver before the migration — deploy order lesson.)
 - Student web My Plan: Stripe checkout REMOVED. Upgrade buttons ($50/$250/$500) now redirect OUT to

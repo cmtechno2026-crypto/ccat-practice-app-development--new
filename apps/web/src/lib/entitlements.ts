@@ -9,13 +9,21 @@ export const PAYMENTS_ENABLED: boolean =
 // URL later. The CCAT app NEVER collects card/payment details; it only links OUT to this page.
 export const MEMBERSHIP_URL = 'https://conceptmastery.com/ccat/';
 
-// Capabilities used when payments is OFF or entitlements haven't loaded yet: everything unlocked, so the
-// experience is identical to today. Mirrors the gateway's CAPABILITIES_UNLOCKED_ALL.
+// Capabilities used when payments is OFF: everything unlocked, so the experience is identical to today.
+// Mirrors the gateway's CAPABILITIES_UNLOCKED_ALL.
 export const CAPS_UNLOCKED_ALL: EntitlementCapabilities = { practice: 'all', combine: true, exam: true, weekly: true };
+// Most-restrictive caps, used WHILE the entitlement is still loading so premium never flashes unlocked
+// before snapping to locked. Same as the free tier.
+export const CAPS_LOCKED: EntitlementCapabilities = { practice: 'demo', combine: false, exam: false, weekly: false };
 
-// Effective capabilities for the UI. Off / not-loaded → unlock all (never lock production by accident).
-export function capsOf(ent: EntitlementsMe | null | undefined): EntitlementCapabilities {
+// Effective capabilities for the UI:
+//  - payments OFF → unlock all (identical to today).
+//  - payments ON, entitlement NOT yet loaded → LOCKED (no flash-of-unlocked-content).
+//  - payments ON, loaded → the real capabilities; if the fetch settled with no data (error), fail OPEN
+//    (unlock) so a transient /me failure can't lock a paying user out — the server still enforces.
+export function capsOf(ent: EntitlementsMe | null | undefined, loaded: boolean = true): EntitlementCapabilities {
   if (!PAYMENTS_ENABLED) return CAPS_UNLOCKED_ALL;
+  if (!loaded) return CAPS_LOCKED;
   return ent?.capabilities ?? CAPS_UNLOCKED_ALL;
 }
 
