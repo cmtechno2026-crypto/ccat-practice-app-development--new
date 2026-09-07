@@ -21,6 +21,12 @@ export function membershipUrlFor(tier: EntitlementTier): string {
   return MEMBERSHIP_URL_BY_TIER[tier] ?? MEMBERSHIP_URL;
 }
 
+// Whether a tier's Upgrade button should be active. Only tiers with an explicit product page in
+// MEMBERSHIP_URL_BY_TIER are clickable; others render disabled (no action) until a URL is set.
+export function isUpgradeLinkable(tier: EntitlementTier): boolean {
+  return MEMBERSHIP_URL_BY_TIER[tier] != null;
+}
+
 // Capabilities used when payments is OFF: everything unlocked, so the experience is identical to today.
 // Mirrors the gateway's CAPABILITIES_UNLOCKED_ALL.
 export const CAPS_UNLOCKED_ALL: EntitlementCapabilities = { practice: 'all', combine: true, exam: true, weekly: true };

@@ -4,7 +4,7 @@ import type { EntitlementTier } from '@ccat/api-client';
 import { useApp } from '../lib/store';
 import { AppBar, Card, Loader } from '../components/ui';
 import {
-  PAYMENTS_ENABLED, TIER_CATALOG, membershipUrlFor, eligibleUpgradeTiers, tierIndex,
+  PAYMENTS_ENABLED, TIER_CATALOG, membershipUrlFor, isUpgradeLinkable, eligibleUpgradeTiers, tierIndex,
 } from '../lib/entitlements';
 
 // My Plan. Shows the student's current membership + what each higher plan unlocks. The CCAT app does NOT
@@ -57,6 +57,7 @@ export function MyPlanScreen() {
 
   function upgrade(tier: EntitlementTier) {
     if (tier === 'free') return;
+    if (!isUpgradeLinkable(tier)) return; // no product page yet → button is inert
     // The CCAT app does not take payment. Send the grown-up to the Concept Mastery membership page.
     setBusyTier(tier);
     window.location.href = membershipUrlFor(tier);
@@ -129,7 +130,12 @@ export function MyPlanScreen() {
                   <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                     {info.features.map((f) => <li key={f} className="muted" style={{ fontSize: 13 }}>{f}</li>)}
                   </ul>
-                  <button className="btn" disabled={busyTier === t} onClick={() => upgrade(t)}>
+                  <button
+                    className="btn"
+                    disabled={busyTier === t || !isUpgradeLinkable(t)}
+                    aria-disabled={!isUpgradeLinkable(t)}
+                    onClick={() => upgrade(t)}
+                  >
                     {busyTier === t ? 'Opening…' : `Upgrade to ${info.label}`}
                   </button>
                 </Card>
