@@ -316,6 +316,26 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     return { id: r.rows[0]!.id, state: 'pending_deletion' };
   });
 
+  // Cancel a pending deletion — restore the account to active within the 30-day window. Same authority
+  // as recording a deletion (deletion.support). Errors if the account is not pending_deletion.
+  app.post('/v1/admin/students/:id/restore', guard, async (req) => {
+    requirePermission(req, 'deletion.support');
+    const id = (req.params as any).id;
+    const out = await withTransaction(db, async (c) => {
+      const s = await c.query('select status from ccat.students where id=$1 for update', [id]);
+      if (s.rows.length === 0) throw Errors.notFound('Student not found');
+      if (s.rows[0]!.status !== 'pending_deletion') throw Errors.validation('Account is not pending deletion');
+      await c.query('update ccat.students set status=$2, version=version+1, updated_at=now() where id=$1', [id, 'active']);
+      const dr = await c.query(`update ccat.deletion_requests set state='restored', restored_at=now() where student_id=$1 and state='pending_deletion' returning id`, [id]);
+      await c.query(
+        `insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value)
+         values ($1,'admin','student.deletion.cancelled','student',$2,'{"status":"pending_deletion"}'::jsonb,'{"status":"active"}'::jsonb)`,
+        [req.admin!.adminId, id]);
+      return { deletionRequestId: dr.rows[0]?.id ?? null };
+    });
+    return { status: 'active', restored: true, deletionRequestId: out.deletionRequestId };
+  });
+
   // Purge / finalize deletion (§7.2 override path) — ADMIN-2.
   // A true hard-DELETE of the student row is IMPOSSIBLE by design: xp_transactions, coin_transactions,
   // student_achievements, student_status_events and consents are append-only (tg_forbid_mutation) yet

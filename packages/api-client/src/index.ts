@@ -108,8 +108,10 @@ export class CcatClient {
   }
 
   // ---- auth (§4.4, §5) ------------------------------------------------------
-  async login(username: string, pin: string, deviceHash: string): Promise<TokenPair> {
-    const t = await this.request<TokenPair>('POST', '/v1/auth/login', { body: { username, pin, device_hash: deviceHash } });
+  // `restore: true` cancels a pending account deletion and signs in (self-restore); the PIN is still
+  // verified server-side. Harmless (ignored) when the account is already active.
+  async login(username: string, pin: string, deviceHash: string, restore = false): Promise<TokenPair> {
+    const t = await this.request<TokenPair>('POST', '/v1/auth/login', { body: { username, pin, device_hash: deviceHash, restore } });
     await this.tokens.set(t);
     return t;
   }

@@ -45,6 +45,11 @@ export function StudentDetail() {
     try { await api.requestDeletion(id!, delRef.trim() || undefined); setDel(false); toast('Deletion requested — 30-day restore window opened.'); reload(); }
     catch (e) { setDelErr((e as Error).message); }
   };
+  // Cancel a pending deletion — restore the account to active (within the 30-day window).
+  const cancelDeletion = async () => {
+    try { await api.restoreStudent(id!); toast('Deletion cancelled — account restored to active.'); reload(); }
+    catch (e) { toast((e as Error).message); }
+  };
   // Purge (§7.2 override): anonymize + tombstone. Irreversible; append-only ledgers/audit are kept.
   const doPurge = async () => {
     setPurgeErr(''); setPurging(true);
@@ -101,6 +106,7 @@ export function StudentDetail() {
         </div></div>
       {d.status === 'pending_deletion' && <div className="aihint" style={{ background: 'var(--tint, #FDECE6)', color: '#C2321C', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <span style={{ flex: 1 }}>🗑️ Deletion requested — the account is in the 30-day restore window before permanent purge.</span>
+        {can('deletion.support') && <button className="btn sm" onClick={cancelDeletion}>♻️ Cancel deletion</button>}
         {can('student.deletion.override') && <button className="btn danger sm" onClick={() => { setPurgeRef(''); setPurgeErr(''); setPurge(true); }}>Purge now (permanent)</button>}
       </div>}
       {d.grade_change_request && <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

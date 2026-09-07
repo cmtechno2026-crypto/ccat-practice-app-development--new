@@ -68,6 +68,8 @@ export const api = {
   denyBreakGlass: (id: string, reqId: string) => req<any>('POST', `/v1/admin/students/${id}/device/break-glass/${reqId}/deny`),
   requestDeletion: (id: string, reference?: string) => req<any>('POST', `/v1/admin/students/${id}/deletion`, { reference }),
   purgeStudent: (id: string, reference?: string) => req<{ purged: boolean; status: string }>('POST', `/v1/admin/students/${id}/purge`, { reference }),
+  // Cancel a pending deletion — restore the account to active (within the 30-day window).
+  restoreStudent: (id: string) => req<{ status: string; restored: boolean }>('POST', `/v1/admin/students/${id}/restore`),
   rewardAdjust: (student_id: string, kind: string, delta: number, reason: string, reference: string) =>
     req<any>('POST', '/v1/admin/rewards/adjust', { student_id, kind, delta, reason, reference }),
   // content
