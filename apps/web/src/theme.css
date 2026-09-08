@@ -872,3 +872,5 @@ p { line-height: 1.5; }
   .auth-brand .b-quote { font-size: 24px; margin: 18px 0 8px; }
   .auth-form { padding: 30px 22px 44px; }
 }
+
+.auth-form .field { margin-bottom: 18px; }
