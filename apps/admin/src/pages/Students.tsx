@@ -4,10 +4,15 @@ import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Modal, ErrorBox, useToast } from '../components/ui';
 import { PAYMENTS_ENABLED } from '../lib/payments';
+import { NOTIF_META } from '../components/Layout';
 
 // Membership tier label for the directory column (Payments). Shown only when VITE_PAYMENTS_ENABLED.
 const tierLabel = (t?: string | null) =>
   t === 't50' ? '$50' : t === 't250' ? '$250' : t === 't500' ? '$500' : t === 'free' ? 'Free' : '—';
+
+// Row-tint per pending-request kind (paired with the left colour bar + dots). Colours match the
+// notification bell (NOTIF_META) so the directory and the bell read as one system.
+const REQ_TINT: Record<string, string> = { grade_change: '#eef4fc', deletion: '#fdece9', break_glass: '#fdf6e6' };
 
 // ---- helpers ---------------------------------------------------------------
 const AVATARS = ['🦊', '🐢', '🦋', '🦖', '🐝', '🦉', '🐬', '🐼', '🦁', '🐧'];
@@ -89,6 +94,16 @@ export function Students() {
 
   const [pending, setPending] = useState<any>(null);
   const [reason, setReason] = useState(''); const [detail, setDetail] = useState(''); const [merr, setMerr] = useState('');
+
+  // Pending requests keyed by student, for row highlighting (grade-change / deletion / break-glass).
+  const [reqMap, setReqMap] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    api.notifications().then(r => {
+      const m: Record<string, string[]> = {};
+      for (const n of r.items || []) { (m[n.student_id] ||= []).push(n.kind); }
+      setReqMap(m);
+    }).catch(() => { /* ignore — highlighting is best-effort */ });
+  }, []);
 
   const debounce = useRef<any>(null);
   const [debouncedQ, setDebouncedQ] = useState('');
@@ -223,13 +238,23 @@ export function Students() {
               {cols.has('devices') && <th>Devices</th>}
               <th></th>
             </tr></thead>
-            <tbody>{items.map(r => (
-              <tr key={r.id}>
+            <tbody>{items.map(r => {
+              const kinds = reqMap[r.id];
+              const rowStyle = kinds && kinds.length
+                ? { background: REQ_TINT[kinds[0]] || undefined, boxShadow: `inset 4px 0 0 ${NOTIF_META[kinds[0]]?.color || 'var(--amber)'}` }
+                : undefined;
+              return (
+              <tr key={r.id} style={rowStyle}>
                 <td>
                   <div className="stud">
                     <span className="av">{avatarFor(r.id)}</span>
                     <span>
                       <span className="nm" onClick={() => nav(`/students/${r.id}`)}>{r.username}</span>
+                      {kinds && kinds.length > 0 && (
+                        <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6, verticalAlign: 'middle' }}>
+                          {kinds.map(k => <span key={k} title={`${NOTIF_META[k]?.label || k} requested`} aria-label={`${NOTIF_META[k]?.label || k} requested`} style={{ width: 8, height: 8, borderRadius: 8, background: NOTIF_META[k]?.color || 'var(--amber)', display: 'inline-block' }} />)}
+                        </span>
+                      )}
                       <div className="un">{r.display_name}</div>
                     </span>
                   </div>
@@ -249,7 +274,8 @@ export function Students() {
                   <button className="btn ghost sm" onClick={() => nav(`/students/${r.id}`)}>View</button>
                 </div></td>
               </tr>
-            ))}</tbody>
+              );
+            })}</tbody>
           </table></div>
           {items.length === 0 && !loading && <div className="empty">No students match that — try a different search or clear the filters.</div>}
           {loading && items.length === 0 && <div className="empty">Loading…</div>}

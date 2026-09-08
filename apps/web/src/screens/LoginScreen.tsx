@@ -13,19 +13,29 @@ export function LoginScreen() {
   const [showPin, setShowPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Shown when a correct login is blocked because the account is scheduled for deletion — lets the
+  // learner cancel the deletion and sign back in (the PIN they just entered is re-verified server-side).
+  const [canRestore, setCanRestore] = useState(false);
 
-  async function submit() {
+  async function submit(restore = false) {
     setBusy(true); setErr(null);
     try {
-      await client.login(username, pin, getDeviceHash());
+      await client.login(username, pin, getDeviceHash(), restore);
       const me = await client.profile();
       setProfile(me);
-      flash('Welcome back! 👋');
+      flash(restore ? 'Your account is restored — welcome back! 🎉' : 'Welcome back! 👋');
+      setCanRestore(false);
       // Always land on Home after a fresh sign-in — ignore any attempted/previous URL (history replace so
       // the login page and the old protected page are not left in the back-stack).
       nav('/home', { replace: true });
     } catch (e) {
-      setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username or PIN.' : e.message) : (e as Error).message);
+      if (e instanceof ApiError && e.code === 'ACCOUNT_NOT_ACTIVE' && /pending_deletion/i.test(e.message)) {
+        setCanRestore(true);
+        setErr('This account is scheduled for deletion. You can cancel the deletion and sign back in.');
+      } else {
+        setCanRestore(false);
+        setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username or PIN.' : e.message) : (e as Error).message);
+      }
     } finally { setBusy(false); }
   }
 
@@ -45,7 +55,12 @@ export function LoginScreen() {
               </button>
             </div>
           </Field>
-          <button className="btn" disabled={!username || pin.length !== 4 || busy} onClick={submit}>Let me in! 🔓</button>
+          <button className="btn" disabled={!username || pin.length !== 4 || busy} onClick={() => submit(false)}>Let me in! 🔓</button>
+          {canRestore && (
+            <button className="btn" disabled={busy} onClick={() => submit(true)} style={{ background: 'var(--green, #2ea86f)' }}>
+              Cancel deletion & sign in ♻️
+            </button>
+          )}
           <div className="between">
             <Link className="hint" to="/recovery">Forgot PIN?</Link>
             <Link className="hint" to="/device">New device?</Link>

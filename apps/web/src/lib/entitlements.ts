@@ -2,8 +2,12 @@ import type { EntitlementCapabilities, EntitlementsMe } from '@ccat/api-client';
 
 // Payments Phase 2 (student web). The flag is read ONCE from the build-time env. When it is false the
 // app must render EXACTLY as today — no locks, no Upgrade UI, and no /v1/entitlements/me call.
+// Tolerant parse: trims whitespace, strips accidental surrounding quotes, lowercases — so a value saved
+// as `true `, `"true"`, or `TRUE` still enables it. Anything else (including unset) = off.
+const rawPaymentsFlag = String((import.meta.env.VITE_PAYMENTS_ENABLED as string | undefined) ?? '')
+  .trim().replace(/^['"]+|['"]+$/g, '').toLowerCase();
 export const PAYMENTS_ENABLED: boolean =
-  (import.meta.env.VITE_PAYMENTS_ENABLED as string | undefined) === 'true';
+  rawPaymentsFlag === 'true' || rawPaymentsFlag === '1' || rawPaymentsFlag === 'yes' || rawPaymentsFlag === 'on';
 
 // Where the Upgrade button sends a grown-up. The CCAT app NEVER collects card/payment details; it only
 // links OUT to a Concept Mastery page. MEMBERSHIP_URL is the generic fallback; per-tier product pages

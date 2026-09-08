@@ -22,6 +22,10 @@ export function StudentDetail() {
   const [purgeRef, setPurgeRef] = useState('');
   const [purgeErr, setPurgeErr] = useState('');
   const [purging, setPurging] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const [editForm, setEditForm] = useState({ display_name: '', grade_id: '' });
+  const [editErr, setEditErr] = useState('');
+  const [grades, setGrades] = useState<{ id: string; grade_number: number; name: string }[]>([]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox e={error} />;
@@ -42,12 +46,46 @@ export function StudentDetail() {
     try { await api.requestDeletion(id!, delRef.trim() || undefined); setDel(false); toast('Deletion requested — 30-day restore window opened.'); reload(); }
     catch (e) { setDelErr((e as Error).message); }
   };
+  // Cancel a pending deletion — restore the account to active (within the 30-day window).
+  const cancelDeletion = async () => {
+    try { await api.restoreStudent(id!); toast('Deletion cancelled — account restored to active.'); reload(); }
+    catch (e) { toast((e as Error).message); }
+  };
   // Purge (§7.2 override): anonymize + tombstone. Irreversible; append-only ledgers/audit are kept.
   const doPurge = async () => {
     setPurgeErr(''); setPurging(true);
     try { await api.purgeStudent(id!, purgeRef.trim() || undefined); setPurge(false); toast('Account purged — PII erased; audit history retained.'); reload(); }
     catch (e) { setPurgeErr((e as Error).message); } finally { setPurging(false); }
   };
+
+  // Open the edit modal, prefilling from the current record and loading the grade catalog once.
+  const openEdit = async () => {
+    setEditErr('');
+    setEditForm({ display_name: d.display_name, grade_id: '' });
+    setEdit(true);
+    try {
+      const g = await api.grades();
+      const items = (g.items || []).map((x: any) => ({ id: x.id, grade_number: x.grade_number, name: x.name }));
+      setGrades(items);
+      // Prefill grade_id from the student's current grade_number (detail carries the number, not the id).
+      const cur = items.find((x) => x.grade_number === d.grade_number);
+      setEditForm((f) => ({ ...f, grade_id: cur?.id ?? '' }));
+    } catch (e) { setEditErr((e as Error).message); }
+  };
+  const saveEdit = async () => {
+    setEditErr('');
+    const name = editForm.display_name.trim();
+    if (!name) { setEditErr('Name is required.'); return; }
+    const patch: { display_name?: string; grade_id?: string } = {};
+    if (name !== d.display_name) patch.display_name = name;
+    const curGrade = grades.find((x) => x.grade_number === d.grade_number);
+    if (editForm.grade_id && editForm.grade_id !== curGrade?.id) patch.grade_id = editForm.grade_id;
+    if (patch.display_name === undefined && patch.grade_id === undefined) { setEdit(false); return; }
+    try { await api.editStudent(id!, d.version, patch); setEdit(false); toast('Student updated — audited. Progress and history are unchanged.'); reload(); }
+    catch (e) { setEditErr((e as Error).message); }
+  };
+  const approveGrade = async (reqId: string) => { try { await api.approveGradeRequest(id!, reqId); toast('Grade change approved — grade updated, history preserved.'); reload(); } catch (e) { toast((e as Error).message); } };
+  const rejectGrade = async (reqId: string) => { try { await api.rejectGradeRequest(id!, reqId); toast('Grade change rejected — grade unchanged.'); reload(); } catch (e) { toast((e as Error).message); } };
 
   const revoke = async () => { if (!confirm('Revoke this device and end the student\'s sessions?')) return; try { await api.revokeDevice(id!, 'admin console'); toast('Device revoked'); reload(); } catch (e) { toast((e as Error).message); } };
   const approveBg = async (reqId: string) => { try { await api.approveBreakGlass(id!, reqId); toast('Device enrolled — audited'); reload(); } catch (e) { toast((e as Error).message); } };
@@ -62,13 +100,22 @@ export function StudentDetail() {
     <>
       <div className="toolbar"><h2>{d.display_name} <span className="muted" style={{ fontSize: 15 }}>@{d.username}</span></h2>
         <div className="rowactions">
+          {can('student.update') && <button className="btn sm" onClick={openEdit}>✎ Edit student</button>}
           {can('deletion.support') && <button className="btn ghost sm" onClick={exportDsar}>⬇ Export data (DSAR)</button>}
           {can('deletion.support') && d.status !== 'pending_deletion' && <button className="btn danger sm" onClick={() => { setDelRef(''); setDelErr(''); setDel(true); }}>Request deletion</button>}
           <button className="btn ghost sm" onClick={() => nav('/students')}>← Directory</button>
         </div></div>
       {d.status === 'pending_deletion' && <div className="aihint" style={{ background: 'var(--tint, #FDECE6)', color: '#C2321C', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <span style={{ flex: 1 }}>🗑️ Deletion requested — the account is in the 30-day restore window before permanent purge.</span>
+        {can('deletion.support') && <button className="btn sm" onClick={cancelDeletion}>♻️ Cancel deletion</button>}
         {can('student.deletion.override') && <button className="btn danger sm" onClick={() => { setPurgeRef(''); setPurgeErr(''); setPurge(true); }}>Purge now (permanent)</button>}
+      </div>}
+      {d.grade_change_request && <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ flex: 1 }}>🎓 Grade-change requested — Grade {d.grade_change_request.current_grade_number} → <b>Grade {d.grade_change_request.requested_grade_number}</b>{d.grade_change_request.reason ? ` · “${d.grade_change_request.reason}”` : ''}. Approving updates the grade and keeps all progress and history.</span>
+        {can('student.update') && <>
+          <button className="btn sm" onClick={() => approveGrade(d.grade_change_request.id)}>Approve</button>
+          <button className="btn ghost sm" onClick={() => rejectGrade(d.grade_change_request.id)}>Reject</button>
+        </>}
       </div>}
       <div className="stats">
         <Stat n={<StatusPill status={d.status} />} label="Status" />
@@ -145,6 +192,20 @@ export function StudentDetail() {
           <label>Reason</label><input value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} />
           <label>Reference (support/case)</label><input value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} />
           <div className="err">{err}</div>
+        </Modal>
+      )}
+      {edit && (
+        <Modal title={`Edit student — ${d.display_name}`} onClose={() => setEdit(false)}
+          footer={<><button className="btn ghost grow" onClick={() => setEdit(false)}>Cancel</button><button className="btn grow" onClick={saveEdit}>Save changes</button></>}>
+          <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Editing the grade re-levels the student's catalog only — it never deletes sessions, results, achievements or streaks. Changes are audited.</div>
+          <label>Display name</label>
+          <input value={editForm.display_name} maxLength={40} onChange={e => setEditForm({ ...editForm, display_name: e.target.value })} />
+          <label>Grade</label>
+          <select value={editForm.grade_id} onChange={e => setEditForm({ ...editForm, grade_id: e.target.value })}>
+            {grades.length === 0 && <option value="">Loading grades…</option>}
+            {grades.map((g) => <option key={g.id} value={g.id}>{g.name || `Grade ${g.grade_number}`}</option>)}
+          </select>
+          {editErr && <div className="err" style={{ marginTop: 8 }}>{editErr}</div>}
         </Modal>
       )}
       {bg && <BreakGlassModal studentName={d.display_name} isSuper={isSuper} onClose={() => setBg(false)}

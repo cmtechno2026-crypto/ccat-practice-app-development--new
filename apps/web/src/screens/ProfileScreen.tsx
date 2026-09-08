@@ -90,6 +90,78 @@ function GuardianEditor({ account, onSaved }: { account: AccountInfo; onSaved: (
   );
 }
 
+// Request a grade change. No direct grade update — this files a request an admin reviews. While one is
+// pending, resubmission is blocked (mirrors the account-deletion request flow). Approved/rejected show
+// the outcome; the student can file a fresh request only after the current one is decided.
+function GradeChangeCard() {
+  const { flash } = useApp();
+  const { loading, error, data, reload } = useAsync(async () => {
+    const [status, grades] = await Promise.all([client.gradeChangeStatus(), client.grades()]);
+    return { status, grades };
+  });
+  const [editing, setEditing] = useState(false);
+  const [gradeId, setGradeId] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  if (loading) return <Card><div className="muted">Loading grade…</div></Card>;
+  if (error || !data) return <Card><div><h3>Grade</h3><div className="muted">Couldn't load grade info.</div></div></Card>;
+
+  const { status, grades } = data;
+  const pending = status.request && status.request.status === 'pending' ? status.request : null;
+  const last = status.request && status.request.status !== 'pending' ? status.request : null;
+  const options = grades.filter((g) => g.id !== status.current_grade_id);
+
+  async function submit() {
+    if (!gradeId) { flash('Pick a grade to request.'); return; }
+    setBusy(true);
+    try {
+      await client.requestGradeChange(gradeId, reason.trim() || undefined);
+      flash('Grade change requested — a teacher will review it.');
+      setEditing(false); setGradeId(''); setReason('');
+      await reload();
+    } catch (e) { flash((e as Error).message); } finally { setBusy(false); }
+  }
+
+  if (pending) {
+    return (
+      <Card>
+        <div className="between"><div><h3>Grade</h3><div className="muted">Currently Grade {status.current_grade_number}</div></div><span className="pill">Pending</span></div>
+        <div className="hint" style={{ marginTop: 8 }}>You asked to move to Grade {pending.requested_grade_number}. A teacher is reviewing it — you'll stay in Grade {status.current_grade_number} until then.</div>
+      </Card>
+    );
+  }
+  if (!editing) {
+    return (
+      <Card onClick={() => { setGradeId(''); setReason(''); setEditing(true); }}>
+        <div className="between">
+          <div><h3>Grade</h3><div className="muted">Currently Grade {status.current_grade_number}{last ? ` · last request ${last.status}` : ''}</div></div>
+          <span className="pill">Request change</span>
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <div className="eyebrow">🎓 Request a grade change</div>
+      <div className="hint" style={{ marginTop: 6 }}>This asks a teacher to move you to a different grade. Your progress and rewards stay exactly as they are.</div>
+      <label className="field" style={{ marginTop: 10 }}><span>New grade</span>
+        <select className="input" value={gradeId} onChange={(e) => setGradeId(e.target.value)}>
+          <option value="">Choose a grade…</option>
+          {options.map((g) => <option key={g.id} value={g.id}>{g.name || `Grade ${g.grade_number}`}</option>)}
+        </select>
+      </label>
+      <label className="field" style={{ marginTop: 10 }}><span>Why? (optional)</span>
+        <input className="input" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="e.g. The questions feel too easy" />
+      </label>
+      <div className="row" style={{ marginTop: 10, justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn small secondary" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
+        <button className="btn small" disabled={busy} onClick={submit}>{busy ? 'Sending…' : 'Send request'}</button>
+      </div>
+    </Card>
+  );
+}
+
 function DeleteAccount() {
   const { flash, signOut } = useApp();
   const nav = useNavigate();
@@ -163,6 +235,7 @@ export function ProfileScreen() {
           <>
             <div className="eyebrow">Account</div>
             <NameEditor current={shownName} onSaved={setName} />
+            <GradeChangeCard />
             <GuardianEditor account={account} onSaved={setGuardian} />
           </>
         )}

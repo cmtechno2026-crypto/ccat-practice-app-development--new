@@ -2,6 +2,62 @@ import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { PAYMENTS_ENABLED } from '../lib/payments';
+import { api } from '../lib/api';
+
+// Request kinds surfaced in the bell + Students highlighting, each with its own colour so the two
+// surfaces read consistently (grade-change = blue, deletion = coral, break-glass = amber).
+export const NOTIF_META: Record<string, { label: string; color: string; icon: string }> = {
+  grade_change: { label: 'Grade change', color: '#2f6fd0', icon: '🎓' },
+  deletion: { label: 'Deletion', color: 'var(--coral, #e0533d)', icon: '🗑️' },
+  break_glass: { label: 'Break-glass', color: 'var(--amber, #e0a030)', icon: '🔑' },
+};
+
+// Notification bell — aggregated pending requests the admin can act on. Polls every 60s and refreshes
+// on open. Each row is colour-coded by kind and deep-links to the student. Empty for admins with none
+// of the relevant permissions (the endpoint self-filters), so the badge simply never appears for them.
+function NotificationBell() {
+  const nav = useNavigate();
+  const [items, setItems] = useState<any[]>([]);
+  const [open, setOpen] = useState(false);
+  const load = () => { api.notifications().then(r => setItems(r.items || [])).catch(() => { /* ignore */ }); };
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
+  const count = items.length;
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className="iconbtn" onClick={() => { const willOpen = !open; setOpen(willOpen); if (willOpen) load(); }} title="Requests" aria-label={`Requests${count ? ` (${count})` : ''}`} style={{ position: 'relative' }}>
+        🔔
+        {count > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 9, background: 'var(--coral, #e0533d)', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center', fontWeight: 700, boxSizing: 'border-box' }}>{count > 99 ? '99+' : count}</span>}
+      </button>
+      {open && (
+        <>
+          <button onClick={() => setOpen(false)} aria-label="Close requests" style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 40, cursor: 'default' }} />
+          <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 340, maxHeight: 440, overflowY: 'auto', background: 'var(--card, #fff)', color: 'var(--ink, #1a1a2e)', border: '1px solid var(--line, #e6e6ef)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.18)', zIndex: 41 }}>
+            <div style={{ padding: '12px 14px', fontWeight: 700, borderBottom: '1px solid var(--line, #e6e6ef)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Requests</span><span className="muted" style={{ fontWeight: 600 }}>{count}</span>
+            </div>
+            {count === 0
+              ? <div className="muted" style={{ padding: '18px 14px' }}>Nothing pending.</div>
+              : items.map((n) => {
+                const m = NOTIF_META[n.kind] || { label: n.kind, color: 'var(--amber, #e0a030)', icon: '•' };
+                return (
+                  <button key={`${n.kind}:${n.id}`} role="menuitem" onClick={() => { setOpen(false); nav(`/students/${n.student_id}`); }}
+                    style={{ display: 'flex', gap: 10, width: '100%', textAlign: 'left', padding: '10px 14px', background: 'transparent', border: 0, borderLeft: `4px solid ${m.color}`, borderBottom: '1px solid var(--line, #eee)', cursor: 'pointer' }}>
+                    <span aria-hidden style={{ fontSize: 16 }}>{m.icon}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13 }}>{n.student_name}</span>
+                      <span style={{ display: 'block', fontSize: 12, color: m.color, fontWeight: 600 }}>{m.label}</span>
+                      <span className="muted" style={{ display: 'block', fontSize: 12 }}>{n.summary}</span>
+                      <span className="muted" style={{ display: 'block', fontSize: 11 }}>{new Date(n.created_at).toLocaleString()}</span>
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 interface Tab { to: string; label: string; perm?: string; }
 interface RailItem { to: string; label: string; ic: string; perm?: string; match: string; tabs?: Tab[]; }
@@ -106,6 +162,7 @@ export function Layout() {
             <span className="title">{title}</span>
           </span>
           <div className="who">
+            <NotificationBell />
             <button className="iconbtn" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">◐</button>
             <button className="btn ghost sm" onClick={signOut}>Sign out</button>
           </div>

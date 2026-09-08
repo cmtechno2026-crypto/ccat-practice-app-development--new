@@ -115,6 +115,21 @@ export interface AccountGuardian { email: string | null; phone: string | null; r
 export interface AccountInfo { display_name: string; username: string; guardian: AccountGuardian | null; }
 export interface DeletionResult { state: string; reference: string | null; restore_deadline: string | null; already: boolean; }
 
+export type GradeChangeRequestStatus = 'pending' | 'approved' | 'rejected';
+export interface GradeChangeRequest {
+  id: string; status: GradeChangeRequestStatus; reason: string | null; created_at: string;
+}
+// Full status view for the web Profile: the student's current grade plus the newest request (if any).
+export interface GradeChangeStatus {
+  current_grade_id: string;
+  current_grade_number: number;
+  request: {
+    id: string; status: GradeChangeRequestStatus; reason: string | null;
+    created_at: string; decided_at: string | null;
+    current_grade_number: number; requested_grade_number: number;
+  } | null;
+}
+
 export interface SupportCase { reference: string; summary: string; state: string; created_at: string; }
 export interface SupportCaseCreated { reference: string; state: string; created_at: string; }
 
