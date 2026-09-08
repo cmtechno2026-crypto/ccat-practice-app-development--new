@@ -16,10 +16,9 @@ const TIERS: { value: Tier; label: string }[] = [
   { value: 't250', label: 't250 ($250) — practice + Exam + Combine (Weekly locked)' },
   { value: 't500', label: 't500 ($500) — everything incl. Weekly' },
 ];
-const STATUSES = ['active', 'canceled', 'expired', 'pending'] as const;
-// Admins grant only NON-paid reasons; 'paid' is reserved for the Stripe webhook.
 const REASONS: { value: string; label: string }[] = [
   { value: 'comp', label: 'Comp (free access)' },
+  { value: 'paid', label: 'Paid' },
   { value: 'sale', label: 'Sale' },
   { value: 'discount', label: 'Discount' },
   { value: 'trial', label: 'Trial' },
@@ -40,8 +39,7 @@ export function Membership() {
   const [email, setEmail] = useState('');
   const [tier, setTier] = useState<Tier>('t50');
   const [reason, setReason] = useState<string>('comp');
-  const [status, setStatus] = useState<string>('active');
-  const [expiry, setExpiry] = useState<string>(''); // datetime-local; empty = no expiry
+  const [expiry, setExpiry] = useState<string>(''); // date (YYYY-MM-DD); empty = no expiry. Saved as 00:00 IST.
   const [current, setCurrent] = useState<any | null>(null);
   const [students, setStudents] = useState<LinkedStudent[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -60,13 +58,10 @@ export function Membership() {
       setLastLoadedEmail(e);
       if (r.item) {
         setTier((['free', 't50', 't250', 't500'] as const).includes(r.item.tier) ? r.item.tier : 'free');
-        setStatus(r.item.status ?? 'active');
-        setExpiry(r.item.current_period_end ? toLocalInput(r.item.current_period_end) : '');
-        // Preselect the stored reason if it's an admin-grantable one; a 'paid' row stays paid unless the
-        // admin deliberately changes it (the dropdown only offers non-paid reasons).
+        setExpiry(r.item.current_period_end ? toISTDate(r.item.current_period_end) : '');
         setReason(REASONS.some((x) => x.value === r.item.grant_reason) ? r.item.grant_reason : 'comp');
       } else {
-        setTier('t50'); setStatus('active'); setExpiry(''); setReason('comp');
+        setTier('t50'); setExpiry(''); setReason('comp');
       }
     } catch (err) { if (!opts.silent) toast((err as Error).message); }
     finally { setBusy(false); }
@@ -83,8 +78,8 @@ export function Membership() {
       await api.setEntitlement({
         guardian_email: e,
         tier,
-        status,
-        current_period_end: expiry ? new Date(expiry).toISOString() : null,
+        status: 'active',
+        current_period_end: istMidnightIso(expiry),
         grant_reason: reason,
       });
       // Refresh so the "Current" line + linked students reflect the saved state consistently.
@@ -171,20 +166,14 @@ export function Membership() {
               {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
             <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-              Manual grants are non-paying access. "Paid" is set only by a confirmed Stripe payment.
+              "Paid" records a real payment (normally set by Stripe); the rest are non-paying access.
             </div>
           </label>
 
           <label>
-            <div className="muted" style={{ marginBottom: 4 }}>Status</div>
-            <select className="input" value={status} disabled={!editable} onChange={(e) => setStatus(e.target.value)}>
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-
-          <label>
             <div className="muted" style={{ marginBottom: 4 }}>Expiry (optional — blank = no expiry)</div>
-            <input className="input" type="datetime-local" value={expiry} disabled={!editable} onChange={(e) => setExpiry(e.target.value)} />
+            <input className="input" type="date" value={expiry} disabled={!editable} onChange={(e) => setExpiry(e.target.value)} />
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Expires at 12:00 am IST on this date.</div>
           </label>
 
           <div className="row" style={{ gap: 8 }}>
@@ -213,7 +202,7 @@ function DefaultPlanPanel({ editable }: { editable: boolean }) {
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    try { const r = await api.getDefaultPlan(); setCurrent(r); setTier((['free', 't50', 't250', 't500'] as const).includes(r.default_tier as Tier) ? (r.default_tier as Tier) : 'free'); setUntil(r.default_until ? toLocalInput(r.default_until) : ''); }
+    try { const r = await api.getDefaultPlan(); setCurrent(r); setTier((['free', 't50', 't250', 't500'] as const).includes(r.default_tier as Tier) ? (r.default_tier as Tier) : 'free'); setUntil(r.default_until ? toISTDate(r.default_until) : ''); }
     catch (e) { toast((e as Error).message); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -221,7 +210,7 @@ function DefaultPlanPanel({ editable }: { editable: boolean }) {
   const save = async () => {
     setBusy(true);
     try {
-      const r = await api.setDefaultPlan({ tier, until: until ? new Date(until).toISOString() : null });
+      const r = await api.setDefaultPlan({ tier, until: istMidnightIso(until) });
       setCurrent(r);
       toast(`Default plan → ${r.default_tier}${r.default_until ? ` until ${new Date(r.default_until).toLocaleString()}` : ' (no expiry)'}`);
     } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
@@ -245,7 +234,8 @@ function DefaultPlanPanel({ editable }: { editable: boolean }) {
         </label>
         <label>
           <div className="muted" style={{ marginBottom: 4 }}>Until (optional — blank = no expiry)</div>
-          <input className="input" type="datetime-local" value={until} disabled={!editable} onChange={(e) => setUntil(e.target.value)} />
+          <input className="input" type="date" value={until} disabled={!editable} onChange={(e) => setUntil(e.target.value)} />
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Ends at 12:00 am IST on this date.</div>
         </label>
         {tier === 'free' && (
           <div className="muted" style={{ fontSize: 12.5, color: 'var(--amber, #a15c00)' }}>
@@ -260,11 +250,19 @@ function DefaultPlanPanel({ editable }: { editable: boolean }) {
   );
 }
 
-// Convert an ISO timestamp to a value the <input type="datetime-local"> accepts (local wall-clock,
-// no timezone, minute precision).
-function toLocalInput(iso: string): string {
+// Expiry is entered as a date only; it means 12:00 am IST (Asia/Kolkata, UTC+5:30) on that date.
+// istMidnightIso turns a YYYY-MM-DD value into the matching UTC ISO timestamp (empty → null).
+const IST_OFFSET = '+05:30';
+export function istMidnightIso(date: string): string | null {
+  if (!date) return null;
+  const d = new Date(`${date}T00:00:00${IST_OFFSET}`);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+// Convert a stored UTC ISO timestamp back to the IST calendar date for the <input type="date">.
+export function toISTDate(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
+  const ist = new Date(d.getTime() + 5.5 * 3600 * 1000); // shift to IST wall clock, read UTC parts
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())}`;
 }

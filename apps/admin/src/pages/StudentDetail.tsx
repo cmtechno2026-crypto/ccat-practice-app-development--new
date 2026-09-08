@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useAsync, Panel, StatusPill, Stat, Modal, Loading, ErrorBox, useToast } from '../components/ui';
 import { PAYMENTS_ENABLED } from '../lib/payments';
+import { istMidnightIso, toISTDate } from './Membership';
 
 export function StudentDetail() {
   const { id } = useParams();
@@ -127,46 +128,71 @@ export function StudentDetail() {
         <Stat n={d.streak ? `🔥 ${d.streak.current}d` : '—'} label={`Streak · best ${d.streak?.longest ?? 0}d`} color="var(--amber)" />
       </div>
 
-      {PAYMENTS_ENABLED && <MembershipSection studentId={id!} canEdit={can('config.global')} />}
-
-      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <Panel title="Guardians">
-          {d.guardians.length === 0 ? <div className="muted">None on file.</div> : d.guardians.map((g: any, i: number) => (
-            <div key={i} className="kvs" style={{ marginBottom: 8 }}>
-              <span className="k">Email</span><span>{g.email || '—'} {g.email_verified_at && <span className="tag">verified</span>}</span>
-              <span className="k">Phone</span><span>{g.phone || '—'} {g.phone_verified_at && <span className="tag">verified</span>}</span>
-              <span className="k">Relationship</span><span>{g.relationship || '—'}{g.is_primary ? ' · primary' : ''}</span>
+      {(() => {
+        const guardiansPanel = (
+          <Panel title="Guardians">
+            {d.guardians.length === 0 ? <div className="muted">None on file.</div> : d.guardians.map((g: any, i: number) => (
+              <div key={i} className="kvs" style={{ marginBottom: 8 }}>
+                <span className="k">Email</span><span>{g.email || '—'} {g.email_verified_at && <span className="tag">verified</span>}</span>
+                <span className="k">Phone</span><span>{g.phone || '—'} {g.phone_verified_at && <span className="tag">verified</span>}</span>
+                <span className="k">Relationship</span><span>{g.relationship || '—'}{g.is_primary ? ' · primary' : ''}</span>
+              </div>
+            ))}
+          </Panel>
+        );
+        const devicesPanel = (
+          <Panel title="Devices" right={<div className="rowactions">
+            {can('device.break_glass') && <button className="btn gold sm" onClick={() => setBg(true)} title="Enroll a device out-of-band when guardian channels are unreachable">🔑 {isSuper ? 'Break-glass enroll' : 'Request break-glass'}</button>}
+            {can('device.revoke') && d.devices.some((x: any) => x.status === 'active') ? <button className="btn danger sm" onClick={revoke}>Revoke active device</button> : null}
+          </div>}>
+            {d.devices.length === 0 ? <div className="muted">No devices.</div> : (
+              <div className="tablewrap"><table><thead><tr><th>Platform</th><th>Status</th><th>Enrolled</th></tr></thead>
+                <tbody>{d.devices.map((v: any) => (<tr key={v.id}><td>{v.platform || 'device'}</td><td><StatusPill status={v.status} /></td>
+                  <td className="muted">{v.enrolled_at ? new Date(v.enrolled_at).toLocaleDateString() : '—'}</td></tr>))}</tbody></table></div>
+            )}
+            {(d.break_glass_requests?.length ?? 0) > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div className="muted" style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>Pending break-glass co-sign</div>
+                {d.break_glass_requests.map((r: any) => (
+                  <div className="minirow" key={r.id} style={{ background: 'var(--tint, #FFF3DB)' }}>
+                    <div className="grow"><div style={{ fontSize: 13 }}>{r.platform || 'device'} · <span style={{ fontFamily: 'ui-monospace,Menlo,monospace' }}>{String(r.device_hash).slice(0, 10)}…</span></div>
+                      <div className="muted" style={{ fontSize: 12 }}>by {r.requested_by} · {r.verification_note}</div></div>
+                    {isSuper ? <><button className="btn sm" onClick={() => approveBg(r.id)}>Approve &amp; enroll</button><button className="btn ghost sm" onClick={() => denyBg(r.id)}>Deny</button></>
+                      : <span className="tag">awaits Super-Admin</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Panel>
+        );
+        const rewardsPanel = (
+          <Panel title="Rewards" right={can('reward.adjust') ? <button className="btn sm" onClick={() => { setForm({ kind: 'coins', delta: '10', reason: '', reference: '' }); setErr(''); setAdjust(true); }}>Adjust reward</button> : undefined}>
+            <div className="muted">XP {d.xp_total} · Coins {d.coins}. Adjustments create compensating ledger entries (§19.3), never overwrites.</div>
+          </Panel>
+        );
+        // Payments ON: Membership fills the left, Guardians takes the space that used to sit empty on its
+        // right; Devices drops to a half-width row paired with Rewards. Payments OFF: original layout.
+        return PAYMENTS_ENABLED ? (
+          <>
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', alignItems: 'start' }}>
+              <MembershipSection studentId={id!} canEdit={can('config.global')} />
+              {guardiansPanel}
             </div>
-          ))}
-        </Panel>
-        <Panel title="Devices" right={<div className="rowactions">
-          {can('device.break_glass') && <button className="btn gold sm" onClick={() => setBg(true)} title="Enroll a device out-of-band when guardian channels are unreachable">🔑 {isSuper ? 'Break-glass enroll' : 'Request break-glass'}</button>}
-          {can('device.revoke') && d.devices.some((x: any) => x.status === 'active') ? <button className="btn danger sm" onClick={revoke}>Revoke active device</button> : null}
-        </div>}>
-          {d.devices.length === 0 ? <div className="muted">No devices.</div> : (
-            <div className="tablewrap"><table><thead><tr><th>Platform</th><th>Status</th><th>Enrolled</th></tr></thead>
-              <tbody>{d.devices.map((v: any) => (<tr key={v.id}><td>{v.platform || 'device'}</td><td><StatusPill status={v.status} /></td>
-                <td className="muted">{v.enrolled_at ? new Date(v.enrolled_at).toLocaleDateString() : '—'}</td></tr>))}</tbody></table></div>
-          )}
-          {(d.break_glass_requests?.length ?? 0) > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div className="muted" style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>Pending break-glass co-sign</div>
-              {d.break_glass_requests.map((r: any) => (
-                <div className="minirow" key={r.id} style={{ background: 'var(--tint, #FFF3DB)' }}>
-                  <div className="grow"><div style={{ fontSize: 13 }}>{r.platform || 'device'} · <span style={{ fontFamily: 'ui-monospace,Menlo,monospace' }}>{String(r.device_hash).slice(0, 10)}…</span></div>
-                    <div className="muted" style={{ fontSize: 12 }}>by {r.requested_by} · {r.verification_note}</div></div>
-                  {isSuper ? <><button className="btn sm" onClick={() => approveBg(r.id)}>Approve &amp; enroll</button><button className="btn ghost sm" onClick={() => denyBg(r.id)}>Deny</button></>
-                    : <span className="tag">awaits Super-Admin</span>}
-                </div>
-              ))}
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', alignItems: 'start' }}>
+              {devicesPanel}
+              {rewardsPanel}
             </div>
-          )}
-        </Panel>
-      </div>
-
-      <Panel title="Rewards" right={can('reward.adjust') ? <button className="btn sm" onClick={() => { setForm({ kind: 'coins', delta: '10', reason: '', reference: '' }); setErr(''); setAdjust(true); }}>Adjust reward</button> : undefined}>
-        <div className="muted">XP {d.xp_total} · Coins {d.coins}. Adjustments create compensating ledger entries (§19.3), never overwrites.</div>
-      </Panel>
+          </>
+        ) : (
+          <>
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              {guardiansPanel}
+              {devicesPanel}
+            </div>
+            {rewardsPanel}
+          </>
+        );
+      })()}
 
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <Panel title="Recent sessions">
@@ -283,16 +309,12 @@ const M_TIERS: { value: string; label: string }[] = [
 ];
 const M_REASONS: { value: string; label: string }[] = [
   { value: 'comp', label: 'Comp (free access)' },
+  { value: 'paid', label: 'Paid' },
   { value: 'sale', label: 'Sale' },
   { value: 'discount', label: 'Discount' },
   { value: 'trial', label: 'Trial' },
   { value: 'other', label: 'Other' },
 ];
-function mLocalInput(iso: string): string {
-  const d = new Date(iso); if (isNaN(d.getTime())) return '';
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 
 function MembershipSection({ studentId, canEdit }: { studentId: string; canEdit: boolean }) {
   const toast = useToast();
@@ -311,7 +333,7 @@ function MembershipSection({ studentId, canEdit }: { studentId: string; canEdit:
       const it = r.item;
       setTier(it && ['free', 't50', 't250', 't500'].includes(it.tier) ? it.tier : 'free');
       setReason(it && M_REASONS.some((x) => x.value === it.grant_reason) ? it.grant_reason : 'comp');
-      setUntil(it?.current_period_end ? mLocalInput(it.current_period_end) : '');
+      setUntil(it?.current_period_end ? toISTDate(it.current_period_end) : '');
     } catch (e) { setLoadErr((e as Error).message); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [studentId]);
@@ -319,7 +341,7 @@ function MembershipSection({ studentId, canEdit }: { studentId: string; canEdit:
   const save = async () => {
     setBusy(true);
     try {
-      await api.setStudentMembership(studentId, { tier: tier as any, grant_reason: reason, until: until ? new Date(until).toISOString() : null });
+      await api.setStudentMembership(studentId, { tier: tier as any, grant_reason: reason, until: istMidnightIso(until) });
       toast('Membership updated');
       await load();
     } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
@@ -359,7 +381,8 @@ function MembershipSection({ studentId, canEdit }: { studentId: string; canEdit:
           </label>
           <label>
             <div className="muted" style={{ marginBottom: 4 }}>Until (optional — blank = no expiry)</div>
-            <input className="input" type="datetime-local" value={until} disabled={!canEdit} onChange={(e) => setUntil(e.target.value)} />
+            <input className="input" type="date" value={until} disabled={!canEdit} onChange={(e) => setUntil(e.target.value)} />
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Ends at 12:00 am IST on this date.</div>
           </label>
           <div className="row" style={{ gap: 8 }}>
             <button className="btn" onClick={save} disabled={!canEdit || busy}>{busy ? 'Saving…' : 'Save membership'}</button>

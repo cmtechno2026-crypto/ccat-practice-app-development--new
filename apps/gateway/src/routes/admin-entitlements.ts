@@ -13,17 +13,18 @@ import { sendEmail } from '../lib/email.js';
 // governs. NEW this task: a site-wide default-plan lever, a grant_reason on every grant, and a per-student
 // membership view/edit scoped by student id.
 //
-// grant_reason rule: admins may ONLY grant NON-paid reasons (comp/sale/discount/trial/other); 'paid' is
-// reserved for the Stripe webhook (a real, confirmed payment). Default is 'comp' — an omitted reason is
-// never treated as a payment.
-const ADMIN_GRANT_REASONS = ['sale', 'discount', 'comp', 'trial', 'other'] as const;
+// grant_reason: default is 'comp' — an omitted reason is never treated as a payment. 'paid' is normally
+// set by the Stripe webhook (a real, confirmed payment), but admins may also set it manually (e.g. to
+// record a payment taken outside Stripe). A manual 'paid' grant is indistinguishable from a webhook one
+// in the audit trail, so use it only for genuine payments.
+const ADMIN_GRANT_REASONS = ['paid', 'sale', 'discount', 'comp', 'trial', 'other'] as const;
 
 const upsertSchema = z.object({
   guardian_email: z.string().email(),
   tier: z.enum(['free', 't50', 't250', 't500']),
   status: z.enum(['active', 'canceled', 'expired', 'pending']).default('active'),
   current_period_end: z.string().datetime().nullable().optional(),
-  // Non-paid reasons only; defaults to 'comp'. 'paid' is rejected (webhook-only).
+  // Defaults to 'comp'. 'paid' is accepted (manual payment record); still defaults to comp when omitted.
   grant_reason: z.enum(ADMIN_GRANT_REASONS).default('comp'),
 });
 
