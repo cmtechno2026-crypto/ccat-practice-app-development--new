@@ -30,6 +30,16 @@ export interface Config {
   stripeSecretKey: string;
   stripeWebhookSecret: string;
   stripePriceIds: { t50: string; t250: string; t500: string };
+  // PayPal (active processor). All SERVER-ONLY. env selects the API base (sandbox vs live). prices are
+  // server-owned amounts per tier in CAD (e.g. '50.00'); a client-supplied amount is never accepted.
+  // webhookId verifies inbound webhook signatures via PayPal's verify-webhook-signature API.
+  paypal: {
+    env: 'sandbox' | 'live';
+    clientId: string;
+    secret: string;
+    webhookId: string;
+    prices: { t50: string; t250: string; t500: string };
+  };
   webAppOrigin: string;
   // Service abstractions (Blueprint §36). Drivers are pluggable; local is the dev default.
   storageDriver: string;      // local | s3 | supabase | gcs
@@ -101,6 +111,17 @@ export function loadConfig(): Config {
       t50: process.env.STRIPE_PRICE_T50 ?? '',
       t250: process.env.STRIPE_PRICE_T250 ?? '',
       t500: process.env.STRIPE_PRICE_T500 ?? '',
+    },
+    paypal: {
+      env: (process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox'),
+      clientId: process.env.PAYPAL_CLIENT_ID ?? '',
+      secret: process.env.PAYPAL_SECRET ?? '',
+      webhookId: process.env.PAYPAL_WEBHOOK_ID ?? '',
+      prices: {
+        t50: process.env.PAYPAL_PRICE_T50 ?? '',
+        t250: process.env.PAYPAL_PRICE_T250 ?? '',
+        t500: process.env.PAYPAL_PRICE_T500 ?? '',
+      },
     },
     // First origin of WEB_APP_ORIGIN (may be a comma-separated CORS list). Trailing slash trimmed.
     webAppOrigin: (process.env.WEB_APP_ORIGIN ?? '').split(',')[0]!.trim().replace(/\/$/, ''),

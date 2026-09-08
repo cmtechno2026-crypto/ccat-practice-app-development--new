@@ -145,6 +145,15 @@ export class CcatClient {
   checkoutSession(tier: 't50' | 't250' | 't500') {
     return this.request<{ url: string | null; id: string }>('POST', '/v1/checkout/session', { auth: true, body: { tier } });
   }
+  // Payments (PayPal, in-app) — create an order for a tier UPGRADE. The client sends ONLY the tier; the
+  // gateway owns the amount, eligibility, and return URLs. Returns the PayPal approval URL to redirect to.
+  paypalCreateOrder(tier: 't50' | 't250' | 't500') {
+    return this.request<{ url: string; id: string }>('POST', '/v1/checkout/paypal/order', { auth: true, body: { tier } });
+  }
+  // Capture an approved PayPal order on return. The gateway grants the tier (idempotent with the webhook).
+  paypalCapture(orderId: string) {
+    return this.request<{ status: string; granted: boolean; tier?: string }>('POST', '/v1/checkout/paypal/capture', { auth: true, body: { order_id: orderId } });
+  }
   rewardsSummary() { return this.request<RewardsSummary>('GET', '/v1/rewards/summary', { auth: true }); }
   coins() { return this.request<CoinsPanel>('GET', '/v1/rewards/coins', { auth: true }); }
   readiness() { return this.request<Readiness>('GET', '/v1/readiness', { auth: true }); }

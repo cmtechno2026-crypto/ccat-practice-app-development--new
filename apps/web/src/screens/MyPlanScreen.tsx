@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import type { EntitlementTier } from '@ccat/api-client';
 import { useApp } from '../lib/store';
+import { client } from '../lib/api';
 import { AppBar, Card, Loader } from '../components/ui';
 import {
-  PAYMENTS_ENABLED, TIER_CATALOG, membershipUrlFor, isUpgradeLinkable, eligibleUpgradeTiers, tierIndex,
+  PAYMENTS_ENABLED, TIER_CATALOG, eligibleUpgradeTiers, tierIndex,
 } from '../lib/entitlements';
 
-// My Plan. Shows the student's current membership + what each higher plan unlocks. The CCAT app does NOT
-// process payments: clicking Upgrade sends the grown-up OUT to the Concept Mastery membership page
-// (MEMBERSHIP_URL). Entitlements are granted server-side (manual admin grant, or a future webhook), so on
-// return the page POLLs /v1/entitlements/me until the new tier unlocks.
+// My Plan. Shows the student's current membership + what each higher plan unlocks. Upgrades run through
+// PayPal in-app: clicking Upgrade creates a PayPal order on the gateway and redirects to PayPal to pay.
+// On return (?checkout=success&token=<orderId>) the page captures the order; the gateway grants the tier
+// (idempotent with the webhook). The page then POLLs /v1/entitlements/me until the new tier unlocks.
 
 const POLL_INTERVAL_MS = 1800;
 const POLL_MAX_TRIES = 12; // ~22s
@@ -19,7 +20,7 @@ export function MyPlanScreen() {
   // Flag OFF → no My Plan (true no-op). Route guard mirrors the sidebar visibility.
   if (!PAYMENTS_ENABLED) return <Navigate to="/home" replace />;
 
-  const { entitlements, refreshEntitlements } = useApp();
+  const { entitlements, refreshEntitlements, flash } = useApp();
   const [params] = useSearchParams();
   const checkout = params.get('checkout'); // 'success' | 'cancel' | null
 
@@ -31,6 +32,18 @@ export function MyPlanScreen() {
 
   // Load the entitlement if we don't have it yet.
   useEffect(() => { if (!entitlements) refreshEntitlements(); }, [entitlements, refreshEntitlements]);
+
+  // On return from PayPal approval, capture the order (PayPal appends ?token=<orderId>). The gateway
+  // grants on a COMPLETED capture; the poll below then confirms. Runs once.
+  const captured = useRef(false);
+  useEffect(() => {
+    if (checkout !== 'success' || captured.current) return;
+    const orderId = params.get('token');
+    if (!orderId) return;
+    captured.current = true;
+    client.paypalCapture(orderId).catch(() => { /* poll still runs; webhook is the backstop */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkout]);
 
   // On return from a successful Checkout, poll the entitlement until the tier goes up (webhook applied).
   useEffect(() => {
@@ -55,12 +68,16 @@ export function MyPlanScreen() {
     }
   }, [entitlements, phase]);
 
-  function upgrade(tier: EntitlementTier) {
-    if (tier === 'free') return;
-    if (!isUpgradeLinkable(tier)) return; // no product page yet → button is inert
-    // The CCAT app does not take payment. Send the grown-up to the Concept Mastery membership page.
+  async function upgrade(tier: EntitlementTier) {
+    if (tier === 'free' || busyTier) return;
     setBusyTier(tier);
-    window.location.href = membershipUrlFor(tier);
+    try {
+      const order = await client.paypalCreateOrder(tier as 't50' | 't250' | 't500');
+      window.location.href = order.url; // redirect to PayPal approval
+    } catch (e) {
+      setBusyTier(null);
+      flash((e as Error).message || 'Could not start checkout. Please try again.');
+    }
   }
 
   const current: EntitlementTier = entitlements?.tier ?? 'free';
@@ -132,17 +149,16 @@ export function MyPlanScreen() {
                   </ul>
                   <button
                     className="btn"
-                    disabled={busyTier === t || !isUpgradeLinkable(t)}
-                    aria-disabled={!isUpgradeLinkable(t)}
+                    disabled={busyTier != null}
                     onClick={() => upgrade(t)}
                   >
-                    {busyTier === t ? 'Opening…' : `Upgrade to ${info.label}`}
+                    {busyTier === t ? 'Opening PayPal…' : `Upgrade to ${info.label}`}
                   </button>
                 </Card>
               );
             })}
             <div className="muted" style={{ fontSize: 12.5 }}>
-              Upgrades are completed on the Concept Mastery website — the app never takes payment. Ask a grown-up to complete it.
+              Payment is handled securely by PayPal. Ask a grown-up to complete the purchase — your plan unlocks automatically once it's paid.
             </div>
           </>
         )}

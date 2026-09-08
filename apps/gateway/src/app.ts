@@ -25,6 +25,8 @@ import { registerReferralRoutes } from './routes/referrals.js';
 import { registerEntitlementsRoutes } from './routes/entitlements.js';
 import { registerCheckoutRoutes } from './routes/checkout.js';
 import { registerStripeWebhookRoutes } from './routes/stripe-webhook.js';
+import { registerPaypalCheckoutRoutes } from './routes/paypal-checkout.js';
+import { registerPaypalWebhookRoutes } from './routes/paypal-webhook.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAdminDashboardRoutes } from './routes/admin-dashboard.js';
 import { registerAdminContentRoutes } from './routes/admin-content.js';
@@ -157,6 +159,8 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerEntitlementsRoutes(app, db, cfg);
   registerCheckoutRoutes(app, db, cfg);
   registerStripeWebhookRoutes(app, db, cfg);
+  registerPaypalCheckoutRoutes(app, db, cfg);
+  registerPaypalWebhookRoutes(app, db, cfg);
   registerAdminRoutes(app, db, cfg);
   registerAdminDashboardRoutes(app, db, cfg);
   registerAdminStudentDetailRoutes(app, db, cfg);
