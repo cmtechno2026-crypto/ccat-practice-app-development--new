@@ -5,6 +5,7 @@ import type {
   AvatarsResponse, Theme, Announcement, Book, AdultChallenge, RetailerHandoff, PracticeAttemptResult,
   SupportCase, SupportCaseCreated, AccountInfo, AccountGuardian, DeletionResult, ReferralInfo,
   ContactValidated, ProgressSummary, ProgressBreakdownCategory, ProgressQuery, ProgressSetsQuery, ProgressSetRow, ProgressSetReview,
+  EntitlementsMe,
   GradeChangeStatus, GradeChangeRequest,
 } from './types.js';
 
@@ -136,6 +137,14 @@ export class CcatClient {
   // ---- catalog / profile / home ---------------------------------------------
   catalog() { return this.request<CatalogItem[]>('GET', '/v1/catalog', { auth: true }); }
   profile() { return this.request<StudentProfile>('GET', '/v1/profile', { auth: true }); }
+  // Payments Phase 2 — the student's effective membership + capabilities. paymentsEnabled:false when the
+  // gateway flag is off (capabilities unlock everything). Web calls this only when VITE_PAYMENTS_ENABLED.
+  entitlementsMe() { return this.request<EntitlementsMe>('GET', '/v1/entitlements/me', { auth: true }); }
+  // Payments Phase 1 — start a Stripe Checkout for a tier UPGRADE. The client sends ONLY the tier; the
+  // gateway owns the price, eligibility, and redirect URLs. Returns the hosted Checkout URL to redirect to.
+  checkoutSession(tier: 't50' | 't250' | 't500') {
+    return this.request<{ url: string | null; id: string }>('POST', '/v1/checkout/session', { auth: true, body: { tier } });
+  }
   rewardsSummary() { return this.request<RewardsSummary>('GET', '/v1/rewards/summary', { auth: true }); }
   coins() { return this.request<CoinsPanel>('GET', '/v1/rewards/coins', { auth: true }); }
   readiness() { return this.request<Readiness>('GET', '/v1/readiness', { auth: true }); }

@@ -13,9 +13,25 @@ export interface Config {
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
   untimedPracticeInactivityHours: number;
+  // Payments Phase 2 master switch. Default FALSE — when off, the gateway serves content exactly as
+  // today (a true no-op): no entitlement resolution, no locked flags, no upgrade_required gating.
+  // Turn on only for the payments preview/branch. See PAYMENTS_ENABLED in .env.example.
+  paymentsEnabled: boolean;
+  // Payments Phase 1 (Stripe Checkout). All server-owned; the client never sees a secret or a price.
+  // Empty when unset — the checkout/webhook routes fail closed and report a clear config error rather
+  // than guessing. Price IDs map tier -> Stripe Price; the gateway builds Checkout line_items from THIS
+  // map only (never a client-supplied price). webAppOrigin is the CCAT web app base for success/cancel.
+  stripeSecretKey: string;
+  stripeWebhookSecret: string;
+  stripePriceIds: { t50: string; t250: string; t500: string };
+  webAppOrigin: string;
   // Service abstractions (Blueprint §36). Drivers are pluggable; local is the dev default.
   storageDriver: string;      // local | s3 | supabase | gcs
   uploadsDir: string;         // local-disk asset root
+  // Outbound email (SMTP via nodemailer). SERVER-ONLY secrets, never in a browser bundle. When host is
+  // empty, sendEmail is a logging no-op so dev/prod without SMTP configured never crashes — all callers
+  // treat email as fire-and-forget. See EMAIL_* in .env.example.
+  email: { host: string; port: number; user: string; pass: string; from: string };
   // Supabase Storage (used only when STORAGE_DRIVER=supabase). Service-role key is SERVER-ONLY and never
   // reaches a browser bundle. Read from env; empty in local/dev where the local-disk driver is used.
   supabaseUrl: string;
@@ -56,8 +72,26 @@ export function loadConfig(): Config {
     accessTokenTtlSeconds: Number(process.env.ACCESS_TTL_SECONDS ?? 900),
     refreshTokenTtlSeconds: Number(process.env.REFRESH_TTL_SECONDS ?? 60 * 60 * 24 * 30),
     untimedPracticeInactivityHours: Number(process.env.UNTIMED_INACTIVITY_HOURS ?? 24),
+    // Default OFF. Only the literal string 'true' enables it, so any other value keeps production free.
+    paymentsEnabled: process.env.PAYMENTS_ENABLED === 'true',
+    stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? '',
+    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+    stripePriceIds: {
+      t50: process.env.STRIPE_PRICE_T50 ?? '',
+      t250: process.env.STRIPE_PRICE_T250 ?? '',
+      t500: process.env.STRIPE_PRICE_T500 ?? '',
+    },
+    // First origin of WEB_APP_ORIGIN (may be a comma-separated CORS list). Trailing slash trimmed.
+    webAppOrigin: (process.env.WEB_APP_ORIGIN ?? '').split(',')[0]!.trim().replace(/\/$/, ''),
     storageDriver: process.env.STORAGE_DRIVER ?? 'local',
     uploadsDir: process.env.UPLOADS_DIR ?? '.uploads',
+    email: {
+      host: process.env.EMAIL_HOST ?? '',
+      port: Number(process.env.EMAIL_PORT ?? 587),
+      user: process.env.EMAIL_USER ?? '',
+      pass: process.env.EMAIL_PASS ?? '',
+      from: process.env.EMAIL_FROM ?? '',
+    },
     supabaseUrl: (process.env.SUPABASE_URL ?? '').replace(/\/$/, ''),
     supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
     storageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? 'assets',

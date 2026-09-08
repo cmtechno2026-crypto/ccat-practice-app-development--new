@@ -1,8 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { StudentProfile } from '@ccat/api-client';
+import type { StudentProfile, EntitlementsMe } from '@ccat/api-client';
 import { DEFAULT_APP_CONFIG, type AppConfig } from '@ccat/client-core';
 import { client } from './api';
 import { applyStoredPalette } from './theme-apply';
+import { PAYMENTS_ENABLED } from './entitlements';
 
 // App-level state shared across screens: auth/profile + app-config (channel gate) + a toast.
 // Screen NAVIGATION uses react-router (URLs); this store holds cross-cutting state only, so web and
@@ -13,8 +14,16 @@ interface AppState {
   profile: StudentProfile | null;
   appConfig: AppConfig;
   toast: string | null;
+  // Payments Phase 2. entitlements is null unless VITE_PAYMENTS_ENABLED is on AND a profile is loaded.
+  // paymentsEnabled mirrors the build flag so screens can branch without importing the env directly.
+  paymentsEnabled: boolean;
+  entitlements: EntitlementsMe | null;
+  // false until the first /v1/entitlements/me call settles (success or error). While false the UI shows
+  // LOCKED caps so premium never flashes unlocked before snapping to locked.
+  entitlementsLoaded: boolean;
   setProfile: (p: StudentProfile | null) => void;
   refreshProfile: () => Promise<StudentProfile | null>;
+  refreshEntitlements: () => Promise<void>;
   signOut: () => Promise<void>;
   flash: (msg: string) => void;
 }
@@ -23,9 +32,13 @@ const Ctx = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [profile, setProfileState] = useState<StudentProfile | null>(null);
   const [appConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG); // flag-ready; see client-core note
   const [toast, setToast] = useState<string | null>(null);
+  const [entitlements, setEntitlements] = useState<EntitlementsMe | null>(null);
+  // Payments ON: loaded=false until the first /me settles → capsOf renders locked meanwhile (no flash).
+  // Payments OFF: nothing to load, so start loaded=true.
+  const [entitlementsLoaded, setEntLoaded] = useState<boolean>(!PAYMENTS_ENABLED);
 
   const flash = useCallback((msg: string) => {
     setToast(msg);
@@ -33,14 +46,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (flash as any)._t = window.setTimeout(() => setToast(null), 1800);
   }, []);
 
-  const refreshProfile = useCallback(async () => {
-    try { const me = await client.profile(); setProfile(me); return me; }
-    catch { setProfile(null); return null; }
+  // Payments Phase 2 — fetch the student's entitlement once (flag ON only). A failure degrades to null
+  // (screens then treat capabilities as unlocked; the server gate still protects content).
+  const refreshEntitlements = useCallback(async () => {
+    if (!PAYMENTS_ENABLED) { setEntitlements(null); setEntLoaded(true); return; }
+    try { setEntitlements(await client.entitlementsMe()); }
+    catch { setEntitlements(null); }
+    finally { setEntLoaded(true); }
   }, []);
+
+  // Exposed setProfile: when a profile is set with payments ON (e.g. right after login), kick an
+  // entitlement fetch and mark it loading so the UI renders LOCKED until /me resolves — this closes the
+  // login flash where the app briefly showed everything unlocked before the entitlement arrived.
+  const setProfile = useCallback((p: StudentProfile | null) => {
+    setProfileState(p);
+    if (p && PAYMENTS_ENABLED) { setEntLoaded(false); void refreshEntitlements(); }
+  }, [refreshEntitlements]);
+
+  const refreshProfile = useCallback(async () => {
+    try {
+      const me = await client.profile();
+      setProfileState(me);
+      if (PAYMENTS_ENABLED) await refreshEntitlements();
+      return me;
+    } catch { setProfileState(null); return null; }
+  }, [refreshEntitlements]);
 
   const signOut = useCallback(async () => {
     try { await client.logout(); } catch { /* ignore */ }
-    setProfile(null);
+    setProfileState(null);
+    setEntitlements(null);
+    setEntLoaded(!PAYMENTS_ENABLED);
   }, []);
 
   // Resume from a stored token on load.
@@ -48,13 +84,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     applyStoredPalette(); // paint the last-equipped theme before any fetch, so no flash of base colors
     (async () => {
       const tok = await client.tokens.getAccess();
-      if (tok) { try { setProfile(await client.profile()); } catch { /* invalid */ } }
+      if (tok) {
+        try {
+          setProfileState(await client.profile());
+          if (PAYMENTS_ENABLED) await refreshEntitlements();
+        } catch { /* invalid */ }
+      }
       setReady(true);
     })();
-  }, []);
+  }, [refreshEntitlements]);
 
   return (
-    <Ctx.Provider value={{ ready, profile, appConfig, toast, setProfile, refreshProfile, signOut, flash }}>
+    <Ctx.Provider value={{
+      ready, profile, appConfig, toast,
+      paymentsEnabled: PAYMENTS_ENABLED, entitlements, entitlementsLoaded,
+      setProfile, refreshProfile, refreshEntitlements, signOut, flash,
+    }}>
       {children}
     </Ctx.Provider>
   );

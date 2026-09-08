@@ -2,10 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
-import { Errors } from '../errors.js';
+import { Errors, AppError } from '../errors.js';
 import { checkIdempotency, saveIdempotency } from '../lib/idempotency.js';
 import { finalizeSession } from '../lib/finalize.js';
 import { seededShuffle } from '../lib/shuffle.js';
+import { resolveEntitlement, computeDemoSetIds, isCombineSubcategory } from '../lib/entitlements.js';
 
 // Extract the ready-to-use image URL from a block array (question prompt or option content). Blocks
 // store an image as { type:'image', url, asset_id, ... }; the url is the asset's public URL (absolute
@@ -61,16 +62,45 @@ function seedFrom(...parts: string[]): number {
   return (h >>> 0);
 }
 
-export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config) {
+export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config) {
+  // Payments Phase 2 — the HARD gate. Server-side enforcement that cannot be bypassed by the client.
+  // Throws 403 { code:'upgrade_required', details:{ requiredTier, feature } } when the student's
+  // effective entitlement does not permit starting/serving this set. Only called when cfg.paymentsEnabled
+  // is true, so the flag-off path is completely unchanged.
+  async function assertSetAllowed(
+    studentId: string,
+    ctx: { mode: 'practice' | 'exam'; setVersionId: string; gradeId: string; subcategoryKey: string | null; maxQuestionsPerSet: number | null },
+  ): Promise<void> {
+    const { capabilities: caps } = await resolveEntitlement(db, studentId);
+    if (ctx.mode === 'exam') {
+      if (!caps.exam) throw new AppError(403, 'upgrade_required', 'This exam is part of a membership', { requiredTier: 't250', feature: 'exam' });
+      return;
+    }
+    // practice mode
+    const isCombine = isCombineSubcategory(ctx.subcategoryKey, ctx.maxQuestionsPerSet);
+    if (isCombine) {
+      if (!caps.combine) throw new AppError(403, 'upgrade_required', 'Battery Combine is part of a membership', { requiredTier: 't250', feature: 'combine' });
+      return;
+    }
+    if (caps.practice !== 'all') {
+      const demoSetIds = await computeDemoSetIds(db, ctx.gradeId);
+      if (!demoSetIds.has(ctx.setVersionId)) {
+        throw new AppError(403, 'upgrade_required', 'Unlock all practice with a membership', { requiredTier: 't50', feature: 'practice' });
+      }
+    }
+  }
+
   // POST /v1/sessions/start — one active session per student (§9.1, §9.2)
   app.post('/v1/sessions/start', { preHandler: [app.authenticateStudent] }, async (req, reply) => {
     const body = startSchema.parse(req.body);
     const { studentId, deviceId } = req.student!;
 
     const sv = await db.query(
-      `select sv.id, sv.allowed_practice, sv.allowed_exam, sv.state, sv.ruleset_version_id, qs.grade_id
+      `select sv.id, sv.allowed_practice, sv.allowed_exam, sv.state, sv.ruleset_version_id, qs.grade_id,
+              sub.key as subcategory_key
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.subcategories sub on sub.id = qs.subcategory_id
         where sv.id = $1`,
       [body.set_version_id],
     );
@@ -97,6 +127,21 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
     if (body.mode === 'practice' && !set.allowed_practice) throw Errors.validation('Practice not allowed', { code: 'MODE_NOT_ALLOWED' });
     if (body.mode === 'exam' && !set.allowed_exam) throw Errors.validation('Exam not allowed', { code: 'MODE_NOT_ALLOWED' });
     if (body.timer_type === 'timed' && !body.duration_seconds) throw Errors.validation('duration_seconds required for timed');
+
+    // Payments Phase 2 hard gate (flag-gated). A locked set MUST NOT start a session. Placed after the
+    // existing grade/published/mode checks so error precedence (non-leaking 404 for cross-grade) is
+    // preserved. Flag OFF → skipped entirely (unchanged behavior).
+    if (cfg.paymentsEnabled) {
+      await assertSetAllowed(studentId, {
+        mode: body.mode,
+        setVersionId: body.set_version_id,
+        gradeId: String(set.grade_id),
+        subcategoryKey: set.subcategory_key ?? null,
+        // Combine is detected from the subcategory KEY (a committed column); max_questions_per_set is
+        // deliberately not selected here so this path does not depend on that out-of-band column.
+        maxQuestionsPerSet: null,
+      });
+    }
 
     const deadline = body.timer_type === 'timed'
       ? new Date(Date.now() + (body.duration_seconds ?? 0) * 1000)
@@ -165,6 +210,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
     const s = await db.query(
       `select s.id, s.set_version_id, s.mode, s.timer_type, s.duration_seconds, s.state, s.session_version, s.started_at, s.deadline_at,
               s.question_order_seed, s.option_order_seed, sv.preserve_order,
+              qs.grade_id, sub.key as subcategory_key,
               qs.name as set_name, cat.key as category_key, sub.name as subcategory, d.key as difficulty
          from ccat.sessions s
          join ccat.question_set_versions sv on sv.id = s.set_version_id
@@ -177,6 +223,17 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
     );
     if (s.rows.length === 0) throw Errors.notFound('Session not found');
     const sess = s.rows[0]!;
+    // Payments Phase 2 defense-in-depth (flag-gated): a locked set MUST NOT return its questions, even
+    // if a session row exists. Re-checks the CURRENT entitlement. Flag OFF → skipped (unchanged).
+    if (cfg.paymentsEnabled) {
+      await assertSetAllowed(req.student!.studentId, {
+        mode: sess.mode,
+        setVersionId: sess.set_version_id,
+        gradeId: String(sess.grade_id),
+        subcategoryKey: sess.subcategory_key ?? null,
+        maxQuestionsPerSet: null, // combine detected from subcategory key; avoids the out-of-band column
+      });
+    }
     const qs = await db.query(
       `select svq.position, qv.id as question_version_id, qv.logical_question_id, qv.question_type, qv.prompt_blocks, qv.option_blocks,
               (coalesce(array_length(qv.correct_option_ids, 1), 1) > 1) as multi,
@@ -194,7 +251,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, _cfg: Config
     // Server-controlled deterministic shuffle by the session's stored seeds (§9.2, §17.3), unless the
     // set fixes authoring order (CONTENT-3 preserve_order), in which case serve by position.
     const orderedQuestions = sess.preserve_order ? qs.rows : seededShuffle(qs.rows, Number(sess.question_order_seed));
-    const { question_order_seed, option_order_seed, preserve_order, ...sessionOut } = sess;
+    const { question_order_seed, option_order_seed, preserve_order, grade_id, subcategory_key, ...sessionOut } = sess;
     return {
       ...sessionOut,
       questions: orderedQuestions.map((r, i) => ({

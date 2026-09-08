@@ -123,6 +123,15 @@ export const api = {
   patchGrade: (id: string, b: any) => req<any>('PATCH', `/v1/admin/config/grades/${id}`, b),
   flags: () => req<{ items: any[] }>('GET', '/v1/admin/config/flags'),
   setFlag: (key: string, value: boolean, reason?: string) => req<any>('POST', '/v1/admin/config/flags', { key, value, reason }),
+  // Payments Phase 2 — manual membership grant (Super-Admin, gated by config.global). Keyed by lower(email).
+  getEntitlement: (email: string) => req<{ item: any; students: any[]; allowed_tiers: string[]; grant_reasons: string[] }>('GET', `/v1/admin/entitlements?email=${encodeURIComponent(email)}`),
+  setEntitlement: (b: { guardian_email: string; tier: 'free' | 't50' | 't250' | 't500'; status?: string; current_period_end?: string | null; grant_reason?: string }) => req<{ item: any }>('POST', '/v1/admin/entitlements', b),
+  // Site-wide default plan (promo lever) — Payments admin control.
+  getDefaultPlan: () => req<{ default_tier: string; default_until: string | null }>('GET', '/v1/admin/settings/default-plan'),
+  setDefaultPlan: (b: { tier: 'free' | 't50' | 't250' | 't500'; until?: string | null }) => req<{ default_tier: string; default_until: string | null }>('PUT', '/v1/admin/settings/default-plan', b),
+  // Per-student membership (guardian resolved server-side from the student id).
+  getStudentMembership: (id: string) => req<{ guardian_email: string | null; effective: { tier: string; source: string; current_period_end: string | null; promo_active: boolean; default_tier: string }; item: any; allowed_tiers: string[]; grant_reasons: string[] }>('GET', `/v1/admin/students/${id}/membership`),
+  setStudentMembership: (id: string, b: { tier: 'free' | 't50' | 't250' | 't500'; grant_reason?: string; until?: string | null }) => req<{ item: any; guardian_email: string }>('POST', `/v1/admin/students/${id}/membership`, b),
   // rewards
   achievements: () => req<{ items: any[] }>('GET', '/v1/admin/rewards/achievements'),
   createAchievement: (b: any) => req<any>('POST', '/v1/admin/rewards/achievements', b),

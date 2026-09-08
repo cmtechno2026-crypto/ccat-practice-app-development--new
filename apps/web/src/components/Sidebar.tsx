@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/store';
+import { PAYMENTS_ENABLED } from '../lib/entitlements';
 import { Avatar } from './Avatar';
 
 // Primary navigation — persistent LEFT sidebar (desktop + tablet). PUSH model: this panel sits in the
@@ -20,6 +21,9 @@ const NAV: NavItem[] = [
   // { label: 'Customize', icon: '🎨', to: '/customize', match: (l) => l.pathname === '/customize' },
   { label: 'Rewards', icon: '🏅', to: '/rewards', match: (l) => l.pathname === '/rewards' },
   { label: 'Bookmark', icon: '🔖', to: '/bookmarks', match: (l) => l.pathname === '/bookmarks' },
+  // Payments Phase 1 — My Plan (membership + upgrades). Shown only when payments is enabled; flag OFF
+  // keeps the sidebar exactly as today.
+  ...(PAYMENTS_ENABLED ? [{ label: 'My Plan', icon: '💳', to: '/plan', match: (l: { pathname: string }) => l.pathname === '/plan' }] : []),
   // Profile removed from the nav list — it's now reached via the user's NAME row in the sidebar footer (below).
   // { label: 'Profile', icon: '👤', to: '/profile', match: (l) => l.pathname === '/profile' },
 ];

@@ -163,6 +163,11 @@ export interface CatalogItem {
   // A set this student played that has since been RETIRED — kept visible for their history, shown greyed
   // at the bottom of the list and not startable.
   retired?: boolean;
+  // Payments Phase 2 — present ONLY when the gateway PAYMENTS_ENABLED flag is ON. `locked` marks a
+  // practice set the student's tier cannot play (demo tier: every non-demo set; t50: combine sets).
+  // Cosmetic hint mirroring the server gate; the hard gate is /v1/sessions/start.
+  locked?: boolean;
+  is_combine?: boolean;
   progress?: CatalogSetProgress;
 }
 

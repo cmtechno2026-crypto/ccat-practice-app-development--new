@@ -8,6 +8,7 @@ import { verifySecret } from '../security/crypto.js';
 import { signAdminToken } from '../security/token.js';
 import { makeAuthenticateAdmin, loadAdminPermissions, requirePermission } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
+import { computeEffective, loadDefaultPlan, isPromoActive } from '../lib/entitlements.js';
 
 // Audit event categories (mockup: Content / Student accounts / Economy / Governance). Each maps to
 // a set of event_type prefixes; used for the category filter chips and the colored row grouping.
@@ -154,6 +155,37 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
       [status, band, search, limit, offset],
     );
     const matched = rows.length ? Number(rows[0]!.matched) : 0;
+
+    // Payments: attach each student's EFFECTIVE membership tier (via primary guardian email + default plan).
+    // Defensive + flag-gated: only when PAYMENTS_ENABLED, and wrapped so a missing app_settings/grant_reason
+    // (migration 0043 not yet applied) can NEVER break the directory — it just leaves tier null.
+    let pay: { dp: Awaited<ReturnType<typeof loadDefaultPlan>>; byEmail: Map<string, string> } | null = null;
+    if (cfg.paymentsEnabled) {
+      try {
+        const dp = await loadDefaultPlan(db);
+        const emails = [...new Set(rows.map((r) => (r.guardian_email ? String(r.guardian_email).toLowerCase() : null)).filter(Boolean) as string[])];
+        const byEmail = new Map<string, string>();
+        if (emails.length) {
+          const ent = await db.query(
+            `select lower(guardian_email) as email, tier, status, current_period_end, grant_reason
+               from ccat.entitlements where lower(guardian_email) = any($1::text[])`,
+            [emails],
+          );
+          for (const e of ent.rows) {
+            const notExpired = e.current_period_end == null || new Date(e.current_period_end) > new Date();
+            const rowActive = e.status === 'active' && notExpired;
+            byEmail.set(String(e.email), computeEffective({ rowActive, rowTier: e.tier, grantReason: e.grant_reason ?? null, promo: dp }).rawTier);
+          }
+        }
+        pay = { dp, byEmail };
+      } catch { pay = null; }
+    }
+    const tierFor = (email: string | null): string | null => {
+      if (!pay) return null;
+      const em = email ? email.toLowerCase() : null;
+      return (em && pay.byEmail.get(em)) || (isPromoActive(pay.dp) ? pay.dp.defaultTier : 'free');
+    };
+
     return {
       matched,
       items: rows.map((r) => {
@@ -171,6 +203,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           device_total: total, device_active: active, last_active: r.last_active,
           streak_current: r.current_streak == null ? 0 : Number(r.current_streak),
           streak_longest: r.longest_streak == null ? 0 : Number(r.longest_streak),
+          membership_tier: tierFor(r.guardian_email ? String(r.guardian_email) : null),
         };
       }),
       next_cursor: rows.length === limit ? String(offset + limit) : null,
