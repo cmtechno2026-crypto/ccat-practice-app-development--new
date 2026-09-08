@@ -1,10 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useAsync, Panel, StatusPill, Stat, Modal, Loading, ErrorBox, useToast } from '../components/ui';
-import { PAYMENTS_ENABLED } from '../lib/payments';
-import { istMidnightIso, toISTDate } from './Membership';
+import { useAsync, StatusPill, Stat, Modal, Loading, ErrorBox, useToast } from '../components/ui';
 
 export function StudentDetail() {
   const { id } = useParams();
@@ -27,6 +25,8 @@ export function StudentDetail() {
   const [editForm, setEditForm] = useState({ display_name: '', grade_id: '' });
   const [editErr, setEditErr] = useState('');
   const [grades, setGrades] = useState<{ id: string; grade_number: number; name: string }[]>([]);
+  // Redesigned lower panels: fixed tiles, exactly one expanded at a time (keeps a gap-free 4×2 block).
+  const [openPanel, setOpenPanel] = useState<'sessions' | 'guardians' | 'devices' | 'rewards' | 'history'>('sessions');
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox e={error} />;
@@ -128,86 +128,140 @@ export function StudentDetail() {
         <Stat n={d.streak ? `🔥 ${d.streak.current}d` : '—'} label={`Streak · best ${d.streak?.longest ?? 0}d`} color="var(--amber)" />
       </div>
 
-      {(() => {
-        const guardiansPanel = (
-          <Panel title="Guardians">
-            {d.guardians.length === 0 ? <div className="muted">None on file.</div> : d.guardians.map((g: any, i: number) => (
-              <div key={i} className="kvs" style={{ marginBottom: 8 }}>
-                <span className="k">Email</span><span>{g.email || '—'} {g.email_verified_at && <span className="tag">verified</span>}</span>
-                <span className="k">Phone</span><span>{g.phone || '—'} {g.phone_verified_at && <span className="tag">verified</span>}</span>
-                <span className="k">Relationship</span><span>{g.relationship || '—'}{g.is_primary ? ' · primary' : ''}</span>
+      <style>{`
+        .sdbento{--sd-card:#fff;--sd-line:#e7e8f2;--sd-card2:#f7f7fb;display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:190px;gap:14px;grid-auto-flow:row dense;margin-top:16px}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdbento{--sd-card:#1c1e2b;--sd-line:#2b2e40;--sd-card2:#181a25}}
+        :root[data-theme="dark"] .sdbento{--sd-card:#1c1e2b;--sd-line:#2b2e40;--sd-card2:#181a25}
+        .sdtile{background:var(--sd-card);border:1px solid var(--sd-line);border-radius:16px;box-shadow:0 1px 2px rgba(31,35,64,.05),0 8px 22px rgba(31,35,64,.06);padding:15px;display:flex;flex-direction:column;overflow:hidden}
+        .sdtile.sdbig{grid-column:span 2;grid-row:span 2;box-shadow:0 6px 30px rgba(31,35,64,.13)}
+        .sdhead{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+        .sdhead .sdic{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;font-size:14px;flex:none;color:#fff}
+        .sdhead h3{font-size:12.5px;font-weight:800;letter-spacing:.03em;flex:1;margin:0}
+        .sdbody{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:7px}
+        .sdfoot{margin-top:11px;display:flex;align-items:center;gap:8px}
+        .sdexp{margin-left:auto;border:1px solid var(--sd-line);background:var(--sd-card2);color:var(--purple,#6d4dd6);font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;cursor:pointer}
+        .sdexp[disabled]{cursor:default;opacity:.75}
+        .sd-green .sdic{background:var(--green,#1f9d6b)} .sd-blue .sdic{background:#2f6fd0}
+        .sd-amber .sdic{background:var(--amber,#c9820e)} .sd-purple .sdic{background:var(--purple,#6d4dd6)} .sd-coral .sdic{background:var(--coral,#e0533d)}
+        .sdbignum{font-weight:800;font-size:26px;line-height:1}
+        @media (max-width:900px){.sdbento{grid-template-columns:repeat(2,1fr)}.sdtile.sdbig{grid-column:span 2}}
+        @media (max-width:560px){.sdbento{grid-template-columns:1fr;grid-auto-rows:auto}.sdtile,.sdtile.sdbig{grid-column:span 1;grid-row:auto}.sdbody{overflow:visible}}
+      `}</style>
+      <div className="sdbento">
+        {(() => {
+          const ExpBtn = ({ k }: { k: typeof openPanel }) => (
+            <button className="sdexp" disabled={openPanel === k} onClick={() => setOpenPanel(k)}>{openPanel === k ? '● Expanded' : '⤢ Expand'}</button>
+          );
+          const O = (k: typeof openPanel) => openPanel === k;
+          const s0 = d.recent_sessions[0];
+          const g0 = d.guardians[0];
+          const h0 = d.status_history[0];
+          const activeDev = d.devices.find((x: any) => x.status === 'active');
+          const bgCount = d.break_glass_requests?.length ?? 0;
+          return <>
+            {/* Recent sessions */}
+            <div className={`sdtile sd-blue ${O('sessions') ? 'sdbig' : ''}`}>
+              <div className="sdhead"><span className="sdic">🎯</span><h3>RECENT SESSIONS</h3></div>
+              <div className="sdbody">
+                {d.recent_sessions.length === 0 ? <div className="muted">None yet.</div> : O('sessions') ? (
+                  <div className="tablewrap"><table><thead><tr><th>Mode</th><th>State</th><th>Score</th><th>XP</th></tr></thead>
+                    <tbody>{d.recent_sessions.map((s: any) => (<tr key={s.id}><td>{s.mode}</td><td><StatusPill status={s.state} /></td>
+                      <td className="tabnum">{s.score_total != null ? `${s.score_correct}/${s.score_total}` : '—'}</td><td className="tabnum">{s.xp_awarded ?? '—'}</td></tr>))}</tbody></table></div>
+                ) : (
+                  <div><div style={{ fontSize: 13 }}>Last: {s0 ? `${s0.mode} · ${s0.score_total != null ? `${s0.score_correct}/${s0.score_total}` : '—'}` : 'None yet'}</div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>{d.recent_sessions.length} recent</div></div>
+                )}
               </div>
-            ))}
-          </Panel>
-        );
-        const devicesPanel = (
-          <Panel title="Devices" right={<div className="rowactions">
-            {can('device.break_glass') && <button className="btn gold sm" onClick={() => setBg(true)} title="Enroll a device out-of-band when guardian channels are unreachable">🔑 {isSuper ? 'Break-glass enroll' : 'Request break-glass'}</button>}
-            {can('device.revoke') && d.devices.some((x: any) => x.status === 'active') ? <button className="btn danger sm" onClick={revoke}>Revoke active device</button> : null}
-          </div>}>
-            {d.devices.length === 0 ? <div className="muted">No devices.</div> : (
-              <div className="tablewrap"><table><thead><tr><th>Platform</th><th>Status</th><th>Enrolled</th></tr></thead>
-                <tbody>{d.devices.map((v: any) => (<tr key={v.id}><td>{v.platform || 'device'}</td><td><StatusPill status={v.status} /></td>
-                  <td className="muted">{v.enrolled_at ? new Date(v.enrolled_at).toLocaleDateString() : '—'}</td></tr>))}</tbody></table></div>
-            )}
-            {(d.break_glass_requests?.length ?? 0) > 0 && (
-              <div style={{ marginTop: 10 }}>
-                <div className="muted" style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>Pending break-glass co-sign</div>
-                {d.break_glass_requests.map((r: any) => (
-                  <div className="minirow" key={r.id} style={{ background: 'var(--tint, #FFF3DB)' }}>
-                    <div className="grow"><div style={{ fontSize: 13 }}>{r.platform || 'device'} · <span style={{ fontFamily: 'ui-monospace,Menlo,monospace' }}>{String(r.device_hash).slice(0, 10)}…</span></div>
-                      <div className="muted" style={{ fontSize: 12 }}>by {r.requested_by} · {r.verification_note}</div></div>
-                    {isSuper ? <><button className="btn sm" onClick={() => approveBg(r.id)}>Approve &amp; enroll</button><button className="btn ghost sm" onClick={() => denyBg(r.id)}>Deny</button></>
-                      : <span className="tag">awaits Super-Admin</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        );
-        const rewardsPanel = (
-          <Panel title="Rewards" right={can('reward.adjust') ? <button className="btn sm" onClick={() => { setForm({ kind: 'coins', delta: '10', reason: '', reference: '' }); setErr(''); setAdjust(true); }}>Adjust reward</button> : undefined}>
-            <div className="muted">XP {d.xp_total} · Coins {d.coins}. Adjustments create compensating ledger entries (§19.3), never overwrites.</div>
-          </Panel>
-        );
-        // Payments ON: Membership fills the left, Guardians takes the space that used to sit empty on its
-        // right; Devices drops to a half-width row paired with Rewards. Payments OFF: original layout.
-        return PAYMENTS_ENABLED ? (
-          <>
-            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', alignItems: 'start' }}>
-              <MembershipSection studentId={id!} canEdit={can('config.global')} />
-              {guardiansPanel}
+              <div className="sdfoot"><ExpBtn k="sessions" /></div>
             </div>
-            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', alignItems: 'start' }}>
-              {devicesPanel}
-              {rewardsPanel}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              {guardiansPanel}
-              {devicesPanel}
-            </div>
-            {rewardsPanel}
-          </>
-        );
-      })()}
 
-      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <Panel title="Recent sessions">
-          {d.recent_sessions.length === 0 ? <div className="muted">None yet.</div> : (
-            <div className="tablewrap"><table><thead><tr><th>Mode</th><th>State</th><th>Score</th><th>XP</th></tr></thead>
-              <tbody>{d.recent_sessions.map((s: any) => (<tr key={s.id}><td>{s.mode}</td><td><StatusPill status={s.state} /></td>
-                <td className="tabnum">{s.score_total != null ? `${s.score_correct}/${s.score_total}` : '—'}</td><td className="tabnum">{s.xp_awarded ?? '—'}</td></tr>))}</tbody></table></div>
-          )}
-        </Panel>
-        <Panel title="Status history">
-          {d.status_history.length === 0 ? <div className="muted">No changes.</div> : (
-            <div className="tablewrap"><table><thead><tr><th>Change</th><th>Reason</th><th>By</th></tr></thead>
-              <tbody>{d.status_history.map((h: any, i: number) => (<tr key={i}><td>{h.from_status}→{h.to_status}</td><td className="muted">{h.reason_code}</td><td>{h.actor || 'system'}</td></tr>))}</tbody></table></div>
-          )}
-        </Panel>
+            {/* Guardians */}
+            <div className={`sdtile sd-amber ${O('guardians') ? 'sdbig' : ''}`}>
+              <div className="sdhead"><span className="sdic">👪</span><h3>GUARDIANS</h3></div>
+              <div className="sdbody">
+                {d.guardians.length === 0 ? <div className="muted">None on file.</div> : O('guardians') ? (
+                  d.guardians.map((g: any, i: number) => (
+                    <div key={i} className="kvs" style={{ marginBottom: 8 }}>
+                      <span className="k">Email</span><span>{g.email || '—'} {g.email_verified_at && <span className="tag">verified</span>}</span>
+                      <span className="k">Phone</span><span>{g.phone || '—'} {g.phone_verified_at && <span className="tag">verified</span>}</span>
+                      <span className="k">Relationship</span><span>{g.relationship || '—'}{g.is_primary ? ' · primary' : ''}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div><div style={{ fontSize: 13 }}>{g0.email || g0.phone || '—'}</div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>{g0.relationship || 'guardian'}{g0.is_primary ? ' · primary' : ''}</div></div>
+                )}
+              </div>
+              <div className="sdfoot"><ExpBtn k="guardians" /></div>
+            </div>
+
+            {/* Devices */}
+            <div className={`sdtile sd-purple ${O('devices') ? 'sdbig' : ''}`}>
+              <div className="sdhead"><span className="sdic">📱</span><h3>DEVICES</h3></div>
+              <div className="sdbody">
+                {O('devices') ? (<>
+                  {d.devices.length === 0 ? <div className="muted">No devices.</div> : (
+                    <div className="tablewrap"><table><thead><tr><th>Platform</th><th>Status</th><th>Enrolled</th></tr></thead>
+                      <tbody>{d.devices.map((v: any) => (<tr key={v.id}><td>{v.platform || 'device'}</td><td><StatusPill status={v.status} /></td>
+                        <td className="muted">{v.enrolled_at ? new Date(v.enrolled_at).toLocaleDateString() : '—'}</td></tr>))}</tbody></table></div>
+                  )}
+                  {bgCount > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div className="muted" style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>Pending break-glass co-sign</div>
+                      {d.break_glass_requests.map((r: any) => (
+                        <div className="minirow" key={r.id} style={{ background: 'var(--tint, #FFF3DB)' }}>
+                          <div className="grow"><div style={{ fontSize: 13 }}>{r.platform || 'device'} · <span style={{ fontFamily: 'ui-monospace,Menlo,monospace' }}>{String(r.device_hash).slice(0, 10)}…</span></div>
+                            <div className="muted" style={{ fontSize: 12 }}>by {r.requested_by} · {r.verification_note}</div></div>
+                          {isSuper ? <><button className="btn sm" onClick={() => approveBg(r.id)}>Approve &amp; enroll</button><button className="btn ghost sm" onClick={() => denyBg(r.id)}>Deny</button></>
+                            : <span className="tag">awaits Super-Admin</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="rowactions" style={{ marginTop: 10 }}>
+                    {can('device.break_glass') && <button className="btn gold sm" onClick={() => setBg(true)}>🔑 {isSuper ? 'Break-glass enroll' : 'Request break-glass'}</button>}
+                    {can('device.revoke') && d.devices.some((x: any) => x.status === 'active') ? <button className="btn danger sm" onClick={revoke}>Revoke active device</button> : null}
+                  </div>
+                </>) : (
+                  <div><div style={{ fontSize: 13 }}>{activeDev ? `${activeDev.platform || 'device'} · active` : (d.devices.length ? `${d.devices.length} device(s)` : 'No devices')}</div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>{bgCount > 0 ? `${bgCount} co-sign pending` : 'No pending requests'}</div></div>
+                )}
+              </div>
+              <div className="sdfoot"><ExpBtn k="devices" /></div>
+            </div>
+
+            {/* Rewards */}
+            <div className={`sdtile sd-green ${O('rewards') ? 'sdbig' : ''}`}>
+              <div className="sdhead"><span className="sdic">✦</span><h3>REWARDS</h3></div>
+              <div className="sdbody">
+                <div style={{ display: 'flex', gap: 18 }}>
+                  <div><div className="sdbignum" style={{ color: 'var(--green)' }}>{d.xp_total}</div><div className="muted" style={{ fontSize: 11, letterSpacing: '.06em' }}>XP</div></div>
+                  <div><div className="sdbignum" style={{ color: 'var(--purple)' }}>{d.coins}</div><div className="muted" style={{ fontSize: 11, letterSpacing: '.06em' }}>COINS</div></div>
+                </div>
+                {O('rewards') && (<>
+                  <div className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>Adjustments create compensating ledger entries (§19.3), never overwrites.</div>
+                  {can('reward.adjust') && <button className="btn sm" style={{ marginTop: 10, alignSelf: 'flex-start' }} onClick={() => { setForm({ kind: 'coins', delta: '10', reason: '', reference: '' }); setErr(''); setAdjust(true); }}>Adjust reward</button>}
+                </>)}
+              </div>
+              <div className="sdfoot"><ExpBtn k="rewards" /></div>
+            </div>
+
+            {/* Status history */}
+            <div className={`sdtile sd-coral ${O('history') ? 'sdbig' : ''}`}>
+              <div className="sdhead"><span className="sdic">🧾</span><h3>STATUS HISTORY</h3></div>
+              <div className="sdbody">
+                {d.status_history.length === 0 ? <div className="muted">No changes.</div> : O('history') ? (
+                  <div className="tablewrap"><table><thead><tr><th>Change</th><th>Reason</th><th>By</th></tr></thead>
+                    <tbody>{d.status_history.map((h: any, i: number) => (<tr key={i}><td>{h.from_status}→{h.to_status}</td><td className="muted">{h.reason_code}</td><td>{h.actor || 'system'}</td></tr>))}</tbody></table></div>
+                ) : (
+                  <div><div style={{ fontSize: 13 }}>{h0.from_status}→{h0.to_status}</div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>{h0.reason_code}</div></div>
+                )}
+              </div>
+              <div className="sdfoot"><ExpBtn k="history" /></div>
+            </div>
+          </>;
+        })()}
       </div>
 
       {adjust && (
@@ -295,101 +349,5 @@ function BreakGlassModal({ studentName, isSuper, onClose, onDone, submit }: { st
       <label className="pickrow"><input type="checkbox" checked={c3} onChange={e => setC3(e.target.checked)} /><span>I understand this enrollment is audited and reviewed.</span></label>
       {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
     </Modal>
-  );
-}
-
-// Payments — per-student Membership. Shows the guardian's EFFECTIVE tier + source + expiry and lets a
-// Super-Admin set it with the same tier + reason + period controls as the Membership page, scoped by the
-// student id (no email field). Rendered only when VITE_PAYMENTS_ENABLED (see caller).
-const M_TIERS: { value: string; label: string }[] = [
-  { value: 'free', label: 'free — demo sets only' },
-  { value: 't50', label: 't50 ($50) — all practice' },
-  { value: 't250', label: 't250 ($250) — practice + Exam + Combine' },
-  { value: 't500', label: 't500 ($500) — everything incl. Weekly' },
-];
-const M_REASONS: { value: string; label: string }[] = [
-  { value: 'comp', label: 'Comp (free access)' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'sale', label: 'Sale' },
-  { value: 'discount', label: 'Discount' },
-  { value: 'trial', label: 'Trial' },
-  { value: 'other', label: 'Other' },
-];
-
-function MembershipSection({ studentId, canEdit }: { studentId: string; canEdit: boolean }) {
-  const toast = useToast();
-  const [data, setData] = useState<any | null>(null);
-  const [tier, setTier] = useState('free');
-  const [reason, setReason] = useState('comp');
-  const [until, setUntil] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [loadErr, setLoadErr] = useState('');
-
-  const load = async () => {
-    setLoadErr('');
-    try {
-      const r = await api.getStudentMembership(studentId);
-      setData(r);
-      const it = r.item;
-      setTier(it && ['free', 't50', 't250', 't500'].includes(it.tier) ? it.tier : 'free');
-      setReason(it && M_REASONS.some((x) => x.value === it.grant_reason) ? it.grant_reason : 'comp');
-      setUntil(it?.current_period_end ? toISTDate(it.current_period_end) : '');
-    } catch (e) { setLoadErr((e as Error).message); }
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [studentId]);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      await api.setStudentMembership(studentId, { tier: tier as any, grant_reason: reason, until: istMidnightIso(until) });
-      toast('Membership updated');
-      await load();
-    } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
-  };
-
-  const eff = data?.effective;
-  return (
-    <Panel title="Membership">
-      {loadErr && <div className="err" style={{ marginBottom: 8 }}>{loadErr}</div>}
-      {!data ? <div className="muted">Loading…</div> : !data.guardian_email ? (
-        <div className="muted">No guardian email on file — a membership can't be set for this student until a guardian email exists.</div>
-      ) : (
-        <div className="stack" style={{ display: 'grid', gap: 12, maxWidth: 560 }}>
-          <div className="muted" style={{ fontSize: 13 }}>
-            Effective plan: <strong>{eff?.tier}</strong> · source {eff?.source}
-            {eff?.current_period_end ? ` · expires ${new Date(eff.current_period_end).toLocaleString()}` : ' · no expiry'}
-            {eff?.promo_active ? ` · promo active (default ${eff.default_tier})` : ''}
-            <br />Guardian: {data.guardian_email}
-            {data.item?.grant_reason === 'paid' && <> · <span className="tag">paid (Stripe)</span></>}
-          </div>
-          {data.item?.grant_reason === 'paid' && (
-            <div className="muted" style={{ fontSize: 12.5, color: 'var(--amber, #a15c00)' }}>
-              ⚠ This is a paid (Stripe) entitlement. Saving here overrides it with a non-paid grant — do this only to correct a mistake.
-            </div>
-          )}
-          <label>
-            <div className="muted" style={{ marginBottom: 4 }}>Tier</div>
-            <select className="input" value={tier} disabled={!canEdit} onChange={(e) => setTier(e.target.value)}>
-              {M_TIERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-          </label>
-          <label>
-            <div className="muted" style={{ marginBottom: 4 }}>Reason</div>
-            <select className="input" value={reason} disabled={!canEdit} onChange={(e) => setReason(e.target.value)}>
-              {M_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </label>
-          <label>
-            <div className="muted" style={{ marginBottom: 4 }}>Until (optional — blank = no expiry)</div>
-            <input className="input" type="date" value={until} disabled={!canEdit} onChange={(e) => setUntil(e.target.value)} />
-            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Ends at 12:00 am IST on this date.</div>
-          </label>
-          <div className="row" style={{ gap: 8 }}>
-            <button className="btn" onClick={save} disabled={!canEdit || busy}>{busy ? 'Saving…' : 'Save membership'}</button>
-          </div>
-          {!canEdit && <div className="muted" style={{ fontSize: 12 }}>Read-only — needs Super-Admin.</div>}
-        </div>
-      )}
-    </Panel>
   );
 }
