@@ -3,7 +3,8 @@ import type Stripe from 'stripe';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { getStripe, priceIdForTier } from '../lib/stripe.js';
-import { SELLABLE_TIERS, type Tier } from '../lib/entitlements.js';
+import { SELLABLE_TIERS, tierRank, tierUnlocksText, TIER_LABELS, type Tier } from '../lib/entitlements.js';
+import { sendEmail } from '../lib/email.js';
 
 // CCAT Payments Phase 1 — Stripe webhook. The ONLY thing that grants a paid entitlement.
 //
@@ -131,6 +132,23 @@ export function registerStripeWebhookRoutes(app: FastifyInstance, db: DB, cfg: C
         'insert into ccat.payment_events (stripe_event_id, type) values ($1, $2) on conflict (stripe_event_id) do nothing',
         [event.id, event.type],
       );
+
+      // Tier-upgrade confirmation email (the CCAT "plan active" message — Stripe already sent the receipt).
+      // Only on a real upgrade vs the prior row; fire-and-forget so it can never affect the 200 to Stripe.
+      // Skip on a deduped redelivery (handled earlier by the idempotency guard, which returns before here).
+      const pr = prev.rows[0];
+      const prevActive = pr && pr.status === 'active' && (pr.current_period_end == null || new Date(pr.current_period_end) > new Date());
+      const prevRank = prevActive ? tierRank(pr.tier as Tier) : 0;
+      if (tierRank(tier) > prevRank) {
+        const label = TIER_LABELS[tier] ?? tier;
+        const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
+          <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT plan is active 🎉</h2>
+          <p>Thank you! Your account is now on the <strong>${label}</strong>.</p>
+          <p>This unlocks: ${tierUnlocksText(tier)}.</p>
+          <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
+        </div>`;
+        void sendEmail(cfg, { to: guardianEmail, subject: 'Your CCAT plan is active', html }, req.log);
+      }
 
       return reply.code(200).send({ received: true, tier });
     });

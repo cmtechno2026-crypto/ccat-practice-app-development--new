@@ -5,6 +5,7 @@ import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { hashSecret } from '../security/crypto.js';
+import { sendEmail } from '../lib/email.js';
 import { signGrant, verifyGrant, grantValidated, type RegistrationGrant } from '../security/token.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { grantReferralMilestone } from '../lib/referrals.js';
@@ -39,6 +40,10 @@ const studentSchema = z.object({
   device_hash: z.string().min(3),
   referral_code: z.string().trim().min(4).max(16).optional(), // optional invite code (Gate 2B)
 });
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
 
 export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // Validate + persist the SINGLE guardian contact (name + email + phone). No OTP is generated, sent,
@@ -181,6 +186,19 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Co
         }
         return { studentId, age };
       });
+      // Welcome email to the GUARDIAN (fire-and-forget; a failed send never affects signup). Kid-safe,
+      // addressed to the grown-up. sendEmail is a no-op when SMTP isn't configured.
+      if (grant.guardianEmail) {
+        const childName = body.display_name;
+        const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
+          <h2 style="color:#5b3ff0;margin:0 0 8px">Welcome to CCAT Practice 🦊</h2>
+          <p>Hi ${escapeHtml(grant.guardianName || 'there')},</p>
+          <p><strong>${escapeHtml(childName)}</strong>'s account is ready. They can log in with their username and 4-digit PIN and start practising right away.</p>
+          <p>You're the account's parent contact — we'll only email you for account and security matters (like a PIN reset). No ads, no selling data.</p>
+          <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
+        </div>`;
+        void sendEmail(cfg, { to: grant.guardianEmail, subject: 'Welcome to CCAT Practice 🦊', html }, app.log);
+      }
       reply.code(201);
       return {
         id: result.studentId,

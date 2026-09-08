@@ -4,7 +4,8 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
-import { ALLOWED_TIERS, resolveEntitlement, resolveGuardianEmail } from '../lib/entitlements.js';
+import { ALLOWED_TIERS, resolveEntitlement, resolveGuardianEmail, tierRank, tierUnlocksText, TIER_LABELS, type Tier } from '../lib/entitlements.js';
+import { sendEmail } from '../lib/email.js';
 
 // Payments — MANUAL admin membership control. Upserts one ccat.entitlements row per guardian email
 // (source='manual'), keyed case-insensitively. Protected by the EXISTING admin auth; gated to Super-Admin
@@ -89,6 +90,25 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
         JSON.stringify({ guardian_email: email, tier, status, current_period_end: currentPeriodEnd, grant_reason: grantReason }),
       ],
     );
+
+    // Tier-upgrade confirmation email (behind PAYMENTS_ENABLED; fire-and-forget). Only when the tier moved
+    // UP and the new row is active — not on downgrade, cancel, or a same-tier re-save. This is the CCAT
+    // "plan active" message (Stripe sends its own receipt separately).
+    if (cfg.paymentsEnabled && status === 'active') {
+      const p = prev.rows[0];
+      const prevActive = p && p.status === 'active' && (p.current_period_end == null || new Date(p.current_period_end) > new Date());
+      const prevRank = prevActive ? tierRank(p.tier as Tier) : 0; // inactive/none ⇒ free
+      if (tierRank(tier as Tier) > prevRank) {
+        const label = TIER_LABELS[tier as Tier] ?? tier;
+        const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
+          <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT plan is active 🎉</h2>
+          <p>Your account is now on the <strong>${label}</strong>.</p>
+          <p>This unlocks: ${tierUnlocksText(tier as Tier)}.</p>
+          <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
+        </div>`;
+        void sendEmail(cfg, { to: email, subject: 'Your CCAT plan is active', html }, app.log);
+      }
+    }
     return rows[0];
   }
 

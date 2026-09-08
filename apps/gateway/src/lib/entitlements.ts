@@ -46,6 +46,17 @@ export function checkoutRejectReason(current: Tier, requested: Tier): null | 'no
   return null;
 }
 
+// Human-facing plan name + what each tier unlocks — used in the tier-upgrade confirmation email.
+export const TIER_LABELS: Record<Tier, string> = { free: 'Free', t50: '$50 Plan', t250: '$250 Plan', t500: '$500 Plan' };
+export function tierUnlocksText(t: Tier): string {
+  const c = CAPABILITY_MAP[t];
+  const parts: string[] = [c.practice === 'all' ? 'all practice sets' : 'the free demo sets'];
+  if (c.combine) parts.push('battery-combine sets');
+  if (c.exam) parts.push('timed exams');
+  if (c.weekly) parts.push('weekly tests');
+  return parts.join(', ');
+}
+
 export interface Capabilities {
   practice: 'demo' | 'all';
   combine: boolean;

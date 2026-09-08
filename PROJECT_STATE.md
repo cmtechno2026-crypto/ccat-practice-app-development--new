@@ -1,6 +1,46 @@
 # CCAT Project State
 
-_Last updated: 2026-09-07 — Admin membership control AUTHORED + verified in cloud checkout; RESOLVER CORRECTED so active comp grants stay usable (only canceled/expired fall back to Free; default plan is a floor, not a revoker). prod parentd@gmail.com set to status=canceled (kept for audit). NOT committed/pushed/deployed; migration 0043 NOT applied. See "Admin membership control" below. (Prior: Payments Phase 1 Stripe — committed 53c28de, deployed to preview on sandbox Stripe.)_
+_Last updated: 2026-09-07 (later²) — Gateway EMAIL service + 3 triggers AUTHORED (welcome, PIN-reset OTP, tier-upgrade). Reused the existing guardian-OTP recovery flow instead of a new table/endpoints (see below). NOT committed/pushed/deployed; no new migration; nodemailer added (run pnpm install before build). Prior entry:_
+
+## Update 2026-09-07 (email: welcome + PIN-reset OTP + tier-upgrade) — AUTHORED, not committed/deployed
+EMAIL SERVICE (add-once): `apps/gateway/src/lib/email.ts` — `sendEmail(cfg, {to,subject,html,text?})` via nodemailer
+  SMTP. When `EMAIL_HOST` is blank it's a LOGGING NO-OP; it NEVER throws (returns bool), so every caller is
+  fire-and-forget and a failed send can't break the request. Only `to`+`subject` are logged — never the body,
+  so OTP codes never hit logs. Config: `apps/gateway/src/config.ts` gains `email:{host,port,user,pass,from}`
+  from `EMAIL_HOST/EMAIL_PORT/EMAIL_USER/EMAIL_PASS/EMAIL_FROM`. `.env.example` documents them (blank) + the
+  SPF/DKIM/DMARC deliverability note. Dep: `nodemailer` + `@types/nodemailer` added to gateway package.json
+  → **run `pnpm install` before building** (lockfile needs it).
+TRIGGER 1 — Welcome (flag-independent): `routes/registration.ts` POST /v1/registration/student — after the tx
+  commits, fire-and-forget welcome to the GUARDIAN email (from the signed grant). Never blocks/fails signup.
+TRIGGER 2 — PIN-reset OTP (flag-independent): **REUSED the existing flow** rather than building the specced
+  `pin_reset_otp` table + `/v1/auth/pin-reset/*`. `routes/recovery.ts` (`/v1/recovery/pin/start` + `/complete`,
+  table `ccat.verification_challenges` purpose='pin_reset') already did hashed-only OTP, single-use
+  (consumed_at), short expiry, attempts cap, no-enumeration, username→guardian resolution, PIN re-hash, session
+  revoke. GAP fixed: it generated the code but never SENT it. Upgrade to /start: (a) join guardian_contacts →
+  email the 6-digit code to the GUARDIAN via sendEmail (fire-and-forget, never the child); (b) per-IP rate
+  limit (5/15min prod) + per-student throttle (≤3 unconsumed/15min, over cap → uniform 202, no send) +
+  invalidate prior unconsumed codes so only the newest is valid; (c) stopped logging the code. /complete
+  unchanged (already spec-compliant). NO new migration. Web already has "Forgot PIN?" on Login → /recovery →
+  RecoveryScreen (username→code→new PIN), so NO web change — the specced UI is satisfied by the reused flow.
+TRIGGER 3 — Tier-upgrade confirmation (behind PAYMENTS_ENABLED): guardian "plan active" email on an UP move
+  only. `routes/admin-entitlements.ts` `upsertGrant()` (covers BOTH POST /v1/admin/entitlements AND POST
+  /v1/admin/students/:id/membership) and `routes/stripe-webhook.ts` (paid grant). Upgrade = new status active
+  AND tierRank(new) > tierRank(prev-active-else-free); skipped on downgrade/cancel/same-tier and when flag off.
+  Names the plan + unlocks via new `TIER_LABELS`/`tierUnlocksText` in `lib/entitlements.ts`. Stripe still sends
+  its own receipt; this is the CCAT plan-active message.
+SECURITY (unchanged guarantees): OTP hashed-only (scrypt+pepper via crypto.ts), single-use, short expiry,
+  rate-limited on request; verify caps attempts; generic errors, no enumeration, no OTP in logs. Admin
+  reset-PIN backstop untouched.
+FILES: NEW lib/email.ts; EDIT config.ts, .env.example, gateway package.json, routes/registration.ts,
+  routes/recovery.ts, routes/admin-entitlements.ts, routes/stripe-webhook.ts, lib/entitlements.ts. No web, no
+  migration, no schema change.
+BUILD CHECK: pending on the user's machine (device shell unavailable this session): `pnpm install` then
+  `pnpm@10 --filter @ccat/gateway build` + `--filter @ccat/web build`. NOT committed/pushed.
+SPF/DKIM: before real sends, publish SPF + DKIM (and DMARC) DNS records for the EMAIL_FROM domain
+  (conceptmastery.ca) or guardian inboxes will spam/reject.
+
+---
+_Prior: 2026-09-07 — Admin membership control AUTHORED + verified in cloud checkout; RESOLVER CORRECTED so active comp grants stay usable (only canceled/expired fall back to Free; default plan is a floor, not a revoker). prod parentd@gmail.com set to status=canceled (kept for audit). NOT committed/pushed/deployed; migration 0043 NOT applied. See "Admin membership control" below. (Prior: Payments Phase 1 Stripe — committed 53c28de, deployed to preview on sandbox Stripe.)_
 
 ## Admin membership control (default plan + paid/comp flag + per-student) — AUTHORED, not committed/deployed
 DATA (migration NOT applied — path: packages/contracts/migrations/0043_app_settings_grant_reason.sql):

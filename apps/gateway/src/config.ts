@@ -28,6 +28,10 @@ export interface Config {
   // Service abstractions (Blueprint §36). Drivers are pluggable; local is the dev default.
   storageDriver: string;      // local | s3 | supabase | gcs
   uploadsDir: string;         // local-disk asset root
+  // Outbound email (SMTP via nodemailer). SERVER-ONLY secrets, never in a browser bundle. When host is
+  // empty, sendEmail is a logging no-op so dev/prod without SMTP configured never crashes — all callers
+  // treat email as fire-and-forget. See EMAIL_* in .env.example.
+  email: { host: string; port: number; user: string; pass: string; from: string };
   // Supabase Storage (used only when STORAGE_DRIVER=supabase). Service-role key is SERVER-ONLY and never
   // reaches a browser bundle. Read from env; empty in local/dev where the local-disk driver is used.
   supabaseUrl: string;
@@ -81,6 +85,13 @@ export function loadConfig(): Config {
     webAppOrigin: (process.env.WEB_APP_ORIGIN ?? '').split(',')[0]!.trim().replace(/\/$/, ''),
     storageDriver: process.env.STORAGE_DRIVER ?? 'local',
     uploadsDir: process.env.UPLOADS_DIR ?? '.uploads',
+    email: {
+      host: process.env.EMAIL_HOST ?? '',
+      port: Number(process.env.EMAIL_PORT ?? 587),
+      user: process.env.EMAIL_USER ?? '',
+      pass: process.env.EMAIL_PASS ?? '',
+      from: process.env.EMAIL_FROM ?? '',
+    },
     supabaseUrl: (process.env.SUPABASE_URL ?? '').replace(/\/$/, ''),
     supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
     storageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? 'assets',
