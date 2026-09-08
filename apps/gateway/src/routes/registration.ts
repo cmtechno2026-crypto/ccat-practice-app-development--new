@@ -49,8 +49,8 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Co
   // Validate + persist the SINGLE guardian contact (name + email + phone). No OTP is generated, sent,
   // or checked — contacts are VALIDATED, not verified. Email must be a valid format (normalized to
   // lowercase by the schema); phone must parse to a valid E.164 number WITH a country code (real lib,
-  // not a regex) and is stored normalized. Invalid email/phone → 422. Repeat email/phone is allowed
-  // (siblings). Resubmitting with the grant updates the same guardian row (guardian editing).
+  // not a regex) and is stored normalized. Invalid email/phone → 422. Repeat PHONE is allowed; a repeat EMAIL already tied to a
+  // live account is rejected (one account per email). Resubmitting with the grant updates the same guardian row (guardian editing).
   app.post('/v1/registration/contact/start', async (req, reply) => {
     const body = contactSchema.parse(req.body);
     const email = body.email; // schema already trimmed + lowercased + format-checked
@@ -60,16 +60,40 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Co
     }
     const phoneE164 = parsed.number; // normalized E.164, e.g. +14165551234
 
+    // ONE ACCOUNT PER GUARDIAN EMAIL. Block an email already tied to a LIVE student account (any
+    // status except purged). Orphan guardian rows left by abandoned registrations (no student linked
+    // yet) don't count, so retrying a registration with the same email still works. The web funnel
+    // shows this message and stays on the details step until a different email is entered.
+    const emailInUse = async (exceptGuardianId?: string) => {
+      const r = await db.query(
+        `select 1 from ccat.guardian_contacts gc
+           join ccat.student_guardians sg on sg.guardian_id = gc.id
+           join ccat.students s on s.id = sg.student_id
+          where gc.email = $1 and s.status <> 'purged'
+            and ($2::uuid is null or gc.id <> $2)
+          limit 1`,
+        [email, exceptGuardianId ?? null],
+      );
+      return r.rows.length > 0;
+    };
+    const emailTakenError = () => Errors.conflict(
+      'EMAIL_IN_USE',
+      'This email is already registered to an account. Please enter a different email to continue.',
+      { field: 'email' },
+    );
+
     let guardianId: string;
     if (body.registration_grant) {
       const prev = verifyGrant(body.registration_grant, cfg.hmacSecret);
       if (!prev) throw Errors.unauthorized('Invalid or expired registration grant');
       guardianId = prev.guardianId;
+      if (await emailInUse(guardianId)) throw emailTakenError();
       await db.query(
         `update ccat.guardian_contacts set name = $2, email = $3, phone = $4, updated_at = now() where id = $1`,
         [guardianId, body.guardian_name, email, phoneE164],
       );
     } else {
+      if (await emailInUse()) throw emailTakenError();
       const gc = await db.query(
         `insert into ccat.guardian_contacts(name, email, phone) values ($1, $2, $3) returning id`,
         [body.guardian_name, email, phoneE164],
