@@ -5,6 +5,7 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { verifySecret, hashToken } from '../security/crypto.js';
 import { signToken, newRefreshToken } from '../security/token.js';
+import { DEVICE_CUTOVER_REASON } from '../config.js';
 
 const loginSchema = z.object({
   username: z.string(),
@@ -65,8 +66,57 @@ export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
       `select id from ccat.student_devices where student_id = $1 and status = 'active'`,
       [s.id],
     );
-    if (dev.rows.length === 0) throw Errors.forbidden('NO_ENROLLED_DEVICE', 'No enrolled device; complete device replacement');
-    const enrolled = dev.rows[0]!;
+    let enrolled = dev.rows[0] ?? null;
+    if (!enrolled) {
+      // One-time DOMAIN CUTOVER enroll-on-first-login. Strictly bounded — all must hold:
+      //   • a cutover window is open (DEVICE_CUTOVER_DEADLINE is a future UTC instant),
+      //   • this is a real student (never preview),
+      //   • the student was part of the cutover (has a device revoked with DEVICE_CUTOVER_REASON),
+      //   • and they have ZERO active devices right now.
+      // Then the requesting browser becomes their one active device. This is NOT unrestricted
+      // password-only replacement: outside the window, or for a normal device loss (no cutover marker),
+      // the usual NO_ENROLLED_DEVICE stands and OTP replacement is required. Fails CLOSED on any error.
+      const cutoverOpen = cfg.deviceCutoverDeadline != null && cfg.deviceCutoverDeadline.getTime() > Date.now();
+      if (cutoverOpen && !s.is_preview) {
+        const marked = await db.query(
+          `select 1 from ccat.student_devices where student_id = $1 and revoked_reason = $2 limit 1`,
+          [s.id, DEVICE_CUTOVER_REASON],
+        );
+        if (marked.rows.length > 0) {
+          try {
+            // The partial unique index student_devices_one_active (re-added at cutover) guarantees at most
+            // one active row per student, so a concurrent double-submit can enroll only once — the loser
+            // hits a unique violation, which we recover by reusing the row that won.
+            const ins = await db.query(
+              `insert into ccat.student_devices (student_id, device_hash, status, enrolled_at)
+               select $1, $2, 'active', now()
+                where not exists (
+                  select 1 from ccat.student_devices where student_id = $1 and status = 'active')
+               returning id`,
+              [s.id, body.device_hash],
+            );
+            if (ins.rows.length > 0) {
+              enrolled = ins.rows[0]!;
+              await db.query(
+                `insert into ccat.audit_log(actor_kind,event_type,target_kind,target_id,new_value,reason)
+                 values ('student','device.enrolled.cutover','device',$1,$2,$3)`,
+                [enrolled.id, JSON.stringify({ status: 'active', device_hash_prefix: String(body.device_hash).slice(0, 8) }), DEVICE_CUTOVER_REASON],
+              );
+            } else {
+              // A concurrent enroll won the race — reuse whatever is now the single active device.
+              const again = await db.query(
+                `select id from ccat.student_devices where student_id = $1 and status = 'active'`,
+                [s.id],
+              );
+              enrolled = again.rows[0] ?? null;
+            }
+          } catch {
+            enrolled = null; // fail closed — never enroll on an unexpected error
+          }
+        }
+      }
+    }
+    if (!enrolled) throw Errors.forbidden('NO_ENROLLED_DEVICE', 'No enrolled device; complete device replacement');
     // PREVIEW WAIVER (is_preview only): several teammates share one preview id from their own
     // browsers, so the device_hash match is skipped and the session binds to the shared preview
     // device. Real students keep strict single-device enforcement — this branch never runs for them.

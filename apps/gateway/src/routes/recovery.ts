@@ -4,7 +4,7 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { generateOtp, hashSecret, verifySecret } from '../security/crypto.js';
-import { sendEmail } from '../lib/email.js';
+import { sendEmail, emailConfigured } from '../lib/email.js';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -25,6 +25,11 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
   const startMax = cfg.env === 'production' ? 5 : 2000;
   app.post('/v1/recovery/pin/start', { config: { rateLimit: { max: startMax, timeWindow: '15 minutes' } } }, async (req, reply) => {
     const body = startSchema.parse(req.body);
+    // Fail CLOSED and uniformly (before any user lookup, so no enumeration) when the OTP channel can't
+    // deliver: never return a "code sent" envelope when it wasn't. Only 'email' is a real channel today.
+    // Local dev is exempt because it returns the code inline (_dev_code) instead of emailing it.
+    if (body.channel !== 'email') throw Errors.emailUnavailable();
+    if (cfg.env !== 'local' && !emailConfigured(cfg)) throw Errors.emailUnavailable();
     const st = await db.query(
       // is_preview excluded: preview accounts are synthetic and MUST trigger no outbound OTP/email.
       `select s.id as student_id, s.display_name, sg.guardian_id, gc.email as guardian_email, gc.name as guardian_name
@@ -73,7 +78,9 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
             <p>This code expires in ${mins} minutes. If you didn't request this, you can ignore this email — nothing changes until the code is used.</p>
             <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
           </div>`;
-          void sendEmail(cfg, { to: s.guardian_email, subject: 'Your CCAT PIN reset code', html }, req.log);
+          const sent = await sendEmail(cfg, { to: s.guardian_email, subject: 'Your CCAT PIN reset code', html }, req.log);
+          // Configured envs must actually deliver; a failed send returns the explicit error, never 202.
+          if (!sent && cfg.env !== 'local') throw Errors.emailUnavailable();
         }
       }
     }

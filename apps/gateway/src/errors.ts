@@ -36,6 +36,10 @@ export const Errors = {
     new AppError(409, 'SESSION_VERSION_CONFLICT', 'Expected session version mismatch'),
   deviceNotEnrolled: () =>
     new AppError(403, 'DEVICE_NOT_ENROLLED', 'Request device is not the enrolled device'),
+  // OTP delivery channel is unavailable (SMTP not configured, or a send failed). Returned INSTEAD of a
+  // success envelope so the caller is never told a code was sent when it wasn't.
+  emailUnavailable: (msg = 'Email delivery is unavailable; the code was not sent. Try again later or contact support.') =>
+    new AppError(503, 'EMAIL_UNAVAILABLE', msg),
   idempotencyReuse: () =>
     new AppError(422, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency key reused with a different body'),
 };

@@ -6,6 +6,11 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { generateOtp, hashSecret, verifySecret, hashToken } from '../security/crypto.js';
 import { signToken, newRefreshToken } from '../security/token.js';
+import { sendEmail, emailConfigured } from '../lib/email.js';
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
 
 const startSchema = z.object({
   username: z.string(),
@@ -19,9 +24,13 @@ const verifySchema = z.object({ challenge_id: z.string().uuid(), code: z.string(
 export function registerDeviceRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   app.post('/v1/devices/replacement/start', async (req, reply) => {
     const body = startSchema.parse(req.body);
+    // Fail CLOSED and uniformly (pre-lookup, no enumeration): never return a "code sent" envelope when
+    // the channel can't deliver. Local dev returns the code inline (_dev_code) instead of emailing.
+    if (body.channel !== 'email') throw Errors.emailUnavailable();
+    if (cfg.env !== 'local' && !emailConfigured(cfg)) throw Errors.emailUnavailable();
     const st = await db.query(
       // is_preview excluded: preview accounts are synthetic and MUST trigger no outbound OTP/email.
-      `select s.id as student_id, sg.guardian_id, gc.email, gc.phone
+      `select s.id as student_id, s.display_name, sg.guardian_id, gc.email, gc.phone, gc.name as guardian_name
          from ccat.students s
          join ccat.student_guardians sg on sg.student_id = s.id and sg.is_primary = true
          join ccat.guardian_contacts gc on gc.id = sg.guardian_id
@@ -47,6 +56,23 @@ export function registerDeviceRoutes(app: FastifyInstance, db: DB, cfg: Config) 
         [s.student_id, body.new_device_hash],
       );
       if (cfg.env === 'local') req.log.info({ otp: code }, 'dev otp (device replacement)');
+      // Email the code to the GUARDIAN (never the child). Configured envs must deliver; a failed/no-op
+      // send returns the explicit error rather than a 202 that falsely claims the code went out.
+      if (s.email) {
+        const mins = Math.round(cfg.otpTtlSeconds / 60);
+        const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
+          <h2 style="color:#5b3ff0;margin:0 0 8px">CCAT device change code</h2>
+          <p>Hi ${escapeHtml(s.guardian_name || 'there')},</p>
+          <p>A request to sign in on a new device was made for <strong>${escapeHtml(s.display_name || 'your child')}</strong>. Enter this code to approve it:</p>
+          <p style="font-size:30px;font-weight:800;letter-spacing:4px;color:#5b3ff0;margin:12px 0">${code}</p>
+          <p>This code expires in ${mins} minutes. If you didn't request this, you can ignore this email — the new device stays blocked until the code is used.</p>
+          <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
+        </div>`;
+        const sent = await sendEmail(cfg, { to: s.email, subject: 'Your CCAT device change code', html }, req.log);
+        if (!sent && cfg.env !== 'local') throw Errors.emailUnavailable();
+      } else if (cfg.env !== 'local') {
+        throw Errors.emailUnavailable();
+      }
     }
     reply.code(202);
     return { challenge_id: challengeId, expires_at: expires.toISOString(), _dev_code: cfg.env === 'local' ? code : undefined };

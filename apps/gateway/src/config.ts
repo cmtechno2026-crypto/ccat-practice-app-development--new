@@ -13,6 +13,12 @@ export interface Config {
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
   untimedPracticeInactivityHours: number;
+  // One-time device-enrollment cutover (new-domain migration). When set to a FUTURE UTC instant, a valid
+  // credential login by a NON-preview student who (a) has ZERO active devices and (b) has a device that
+  // was revoked with reason DEVICE_CUTOVER_REASON will enroll the requesting browser as its one active
+  // device. null / past = disabled (normal NO_ENROLLED_DEVICE). Bounded, single-enrollment, fail-closed —
+  // NOT unrestricted password-only device replacement. See DEVICE_CUTOVER_DEADLINE in .env.example.
+  deviceCutoverDeadline: Date | null;
   // Payments Phase 2 master switch. Default FALSE — when off, the gateway serves content exactly as
   // today (a true no-op): no entitlement resolution, no locked flags, no upgrade_required gating.
   // Turn on only for the payments preview/branch. See PAYMENTS_ENABLED in .env.example.
@@ -37,6 +43,19 @@ export interface Config {
   supabaseUrl: string;
   supabaseServiceKey: string;
   storageBucket: string;      // Supabase Storage bucket name (default 'assets')
+}
+
+// Shared marker for the one-time cutover: the revoke stamps this on every device it revokes, and the
+// login enroll-on-cutover path only fires for a student who has at least one device revoked with it.
+export const DEVICE_CUTOVER_REASON = 'domain_cutover_2026_09';
+
+// Parse DEVICE_CUTOVER_DEADLINE (RFC3339, treated as UTC). Returns null when unset, unparseable, or in
+// the past — so a stale/garbled value can never leave the enroll window open.
+function parseCutoverDeadline(raw: string | undefined): Date | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return null;
+  return d.getTime() > Date.now() ? d : null;
 }
 
 function required(name: string, fallback?: string): string {
@@ -72,6 +91,8 @@ export function loadConfig(): Config {
     accessTokenTtlSeconds: Number(process.env.ACCESS_TTL_SECONDS ?? 900),
     refreshTokenTtlSeconds: Number(process.env.REFRESH_TTL_SECONDS ?? 60 * 60 * 24 * 30),
     untimedPracticeInactivityHours: Number(process.env.UNTIMED_INACTIVITY_HOURS ?? 24),
+    // Parsed once. An unparseable or past value disables the cutover window (fail closed).
+    deviceCutoverDeadline: parseCutoverDeadline(process.env.DEVICE_CUTOVER_DEADLINE),
     // Default OFF. Only the literal string 'true' enables it, so any other value keeps production free.
     paymentsEnabled: process.env.PAYMENTS_ENABLED === 'true',
     stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? '',

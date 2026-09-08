@@ -24,6 +24,12 @@ function transporterFor(e: Config['email']): Transporter | null {
   return cached;
 }
 
+// True when SMTP is configured enough to actually send (a host and a usable From). Callers that must
+// NOT claim success on a silent no-op (e.g. OTP delivery) check this up front and fail explicitly.
+export function emailConfigured(cfg: Config): boolean {
+  return !!(cfg.email.host && (cfg.email.from || cfg.email.user));
+}
+
 export interface EmailMessage { to: string; subject: string; html: string; text?: string; }
 interface MiniLog { info?: (...a: any[]) => void; warn?: (...a: any[]) => void }
 
