@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Channel } from '@ccat/api-client';
 import { ApiError } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
@@ -11,7 +10,6 @@ export function RecoveryScreen() {
   const { flash } = useApp();
   const [step, setStep] = useState<'start' | 'complete'>('start');
   const [username, setUsername] = useState('');
-  const [channel, setChannel] = useState<Channel>('email');
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [code, setCode] = useState('');
@@ -23,9 +21,19 @@ export function RecoveryScreen() {
     setBusy(true); setErr(null);
     try { return await fn(); } catch (e) { setErr(e instanceof ApiError ? e.message : (e as Error).message); return null; } finally { setBusy(false); }
   }
+  // The reset code is always emailed to the parent on file. SMS is temporarily disabled — when it
+  // returns, restore the Email/SMS toggle and pass the chosen channel to pinResetStart.
   async function start() {
-    const r = await guard(() => client.pinResetStart(username, channel));
-    if (r) { setChallengeId(r.challenge_id); setDevCode((r as any)._dev_code ?? null); setStep('complete'); }
+    setBusy(true); setErr(null);
+    try {
+      const r = await client.pinResetStart(username, 'email');
+      setChallengeId(r.challenge_id); setDevCode((r as any)._dev_code ?? null); setStep('complete');
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : '';
+      setErr(code === 'RATE_LIMITED'
+        ? "Too many requests. Please wait a few minutes and try again."
+        : "We couldn't email your reset code right now. Please try again in a few minutes, or contact support.");
+    } finally { setBusy(false); }
   }
   async function complete() {
     if (!challengeId) return;
@@ -41,10 +49,7 @@ export function RecoveryScreen() {
         {step === 'start' && (
           <>
             <Field label="Username"><input className="input" value={username} autoCapitalize="none" onChange={(e) => setUsername(e.target.value.toLowerCase())} /></Field>
-            <div className="row">
-              <button className={`btn small ${channel === 'email' ? '' : 'secondary'}`} onClick={() => setChannel('email')}>Email</button>
-              <button className={`btn small ${channel === 'sms' ? '' : 'secondary'}`} onClick={() => setChannel('sms')}>SMS</button>
-            </div>
+            <p className="hint">We'll email a reset code to the parent on file.</p>
             <button className="btn" disabled={!username || busy} onClick={start}>Send reset code</button>
           </>
         )}
