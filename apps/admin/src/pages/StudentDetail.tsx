@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -27,6 +27,12 @@ export function StudentDetail() {
   const [grades, setGrades] = useState<{ id: string; grade_number: number; name: string }[]>([]);
   // Redesigned lower panels: fixed tiles, exactly one expanded at a time (keeps a gap-free 4×2 block).
   const [openPanel, setOpenPanel] = useState<'sessions' | 'guardians' | 'devices' | 'rewards' | 'history'>('sessions');
+  // Membership (per-student; guardian tier resolved server-side). Same model as the Membership page.
+  const [membership, setMembership] = useState<any>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planForm, setPlanForm] = useState<{ tier: string; reason: string; until: string }>({ tier: 't50', reason: 'comp', until: '' });
+  const loadMembership = () => api.getStudentMembership(id!).then(setMembership).catch(() => { /* non-super or unavailable → free fallback */ });
+  useEffect(() => { loadMembership(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox e={error} />;
@@ -34,11 +40,38 @@ export function StudentDetail() {
   const isSuper = me?.role === 'super_admin';
   // Membership panel — reads whatever the detail payload carries (membership/entitlement); falls back
   // to the free plan when the payments feature isn't wired on this environment yet.
-  const mem: any = (d as any).membership || (d as any).entitlement || null;
-  const PLAN_LABEL: Record<string, string> = { free: 'Free plan', t50: 'Membership · $50', t250: 'Membership · $250', t500: 'Membership · $500' };
-  const planLabel = mem?.tier ? (PLAN_LABEL[String(mem.tier)] || String(mem.tier)) : (mem?.plan || 'Free plan');
-  const memStatus = mem?.status ? String(mem.status) : 'Active';
-  const memRenews = mem?.current_period_end || mem?.renews_at || null;
+  const TIER_LABEL: Record<string, string> = { free: 'Free plan', t50: '$50 · Practice', t250: '$250 · +Exam', t500: '$500 · All access' };
+  const TIER_FULL: Record<string, string> = {
+    free: 'free — demo sets only',
+    t50: 't50 ($50) — all practice (Exam/Combine locked)',
+    t250: 't250 ($250) — practice + Exam + Combine (Weekly locked)',
+    t500: 't500 ($500) — everything incl. Weekly',
+  };
+  const REASON_LABEL: Record<string, string> = { comp: 'Comp (free access)', paid: 'Paid', sale: 'Sale', discount: 'Discount', trial: 'Trial', other: 'Other' };
+  const eff = membership?.effective;
+  const memItem = membership?.item;
+  const effTier = eff?.tier || 'free';
+  const planLabel = TIER_LABEL[effTier] || effTier;
+  const memStatus = memItem?.status || (effTier === 'free' ? 'Free' : 'Active');
+  const memRenews = eff?.current_period_end || null;
+  const memSource = eff?.source || null;
+  const allowedTiers: string[] = membership?.allowed_tiers?.length ? membership.allowed_tiers : ['free', 't50', 't250', 't500'];
+  const grantReasons: string[] = membership?.grant_reasons?.length ? membership.grant_reasons : ['comp', 'paid', 'sale', 'discount', 'trial', 'other'];
+  // Expiry is a date meaning 12:00 am IST on that day (mirrors the Membership page).
+  const istMidnight = (date: string): string | null => { if (!date) return null; const t = new Date(`${date}T00:00:00+05:30`); return isNaN(t.getTime()) ? null : t.toISOString(); };
+  const toDateInput = (iso?: string | null): string => { if (!iso) return ''; const t = new Date(iso); if (isNaN(t.getTime())) return ''; const x = new Date(t.getTime() + 5.5 * 3600 * 1000); const p = (n: number) => String(n).padStart(2, '0'); return `${x.getUTCFullYear()}-${p(x.getUTCMonth() + 1)}-${p(x.getUTCDate())}`; };
+  const openPlan = () => {
+    setPlanForm({
+      tier: allowedTiers.includes(effTier) ? effTier : (allowedTiers[0] || 'free'),
+      reason: memItem?.grant_reason && grantReasons.includes(memItem.grant_reason) ? memItem.grant_reason : 'comp',
+      until: toDateInput(memRenews),
+    });
+    setPlanOpen(true);
+  };
+  const savePlan = async () => {
+    try { await api.setStudentMembership(id!, { tier: planForm.tier as any, grant_reason: planForm.reason, until: istMidnight(planForm.until) }); setPlanOpen(false); toast('Membership updated.'); loadMembership(); }
+    catch (e) { toast((e as Error).message); }
+  };
 
   const exportDsar = () => {
     try {
@@ -163,8 +196,10 @@ export function StudentDetail() {
       <div className="sdmember">
         <span className="sdm-badge">⭐</span>
         <div><div className="sdm-l">Membership</div><div className="sdm-v">{planLabel}</div></div>
-        <div><div className="sdm-l">Status</div><div className="sdm-v" style={{ fontSize: 14, color: memStatus.toLowerCase() === 'active' ? 'var(--green)' : undefined }}>{memStatus}</div></div>
-        <div><div className="sdm-l">Renews</div><div className="sdm-v" style={{ fontSize: 14 }}>{memRenews ? new Date(memRenews).toLocaleDateString() : '—'}</div></div>
+        <div><div className="sdm-l">Status</div><div className="sdm-v" style={{ fontSize: 14, color: String(memStatus).toLowerCase() === 'active' ? 'var(--green)' : undefined }}>{memStatus}</div></div>
+        <div><div className="sdm-l">{memRenews ? 'Expires' : 'Renews'}</div><div className="sdm-v" style={{ fontSize: 14 }}>{memRenews ? new Date(memRenews).toLocaleDateString() : '—'}</div></div>
+        {memSource && <div><div className="sdm-l">Source</div><div className="sdm-v" style={{ fontSize: 14, textTransform: 'capitalize' }}>{memSource}</div></div>}
+        {can('config.global') && <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={openPlan}>Change plan</button>}
       </div>
 
       <div className="sdbento">
@@ -306,6 +341,24 @@ export function StudentDetail() {
             {grades.map((g) => <option key={g.id} value={g.id}>{g.name || `Grade ${g.grade_number}`}</option>)}
           </select>
           {editErr && <div className="err" style={{ marginTop: 8 }}>{editErr}</div>}
+        </Modal>
+      )}
+      {planOpen && (
+        <Modal title={`Change membership — ${d.display_name}`} onClose={() => setPlanOpen(false)}
+          footer={<><button className="btn ghost grow" onClick={() => setPlanOpen(false)}>Cancel</button><button className="btn grow" onClick={savePlan}>Save grant</button></>}>
+          <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Sets the membership tier for this student's guardian{membership?.guardian_email ? ` (${membership.guardian_email})` : ''}. Manual grant — same as the Membership page; it applies to every child on that guardian.</div>
+          <label>Tier</label>
+          <select value={planForm.tier} onChange={e => setPlanForm({ ...planForm, tier: e.target.value })}>
+            {allowedTiers.map((t) => <option key={t} value={t}>{TIER_FULL[t] || t}</option>)}
+          </select>
+          <label>Reason</label>
+          <select value={planForm.reason} onChange={e => setPlanForm({ ...planForm, reason: e.target.value })}>
+            {grantReasons.map((r) => <option key={r} value={r}>{REASON_LABEL[r] || r}</option>)}
+          </select>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>“Paid” records a real payment (normally set by Stripe); the rest are non-paying access.</div>
+          <label>Expiry (optional — blank = no expiry)</label>
+          <input type="date" value={planForm.until} onChange={e => setPlanForm({ ...planForm, until: e.target.value })} />
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Expires at 12:00 am IST on this date.</div>
         </Modal>
       )}
       {bg && <BreakGlassModal studentName={d.display_name} isSuper={isSuper} onClose={() => setBg(false)}
