@@ -8,7 +8,8 @@ each student re-enrolls the browser they use on the new domain (one active devic
 
 1. **Deploy the code** (gateway) at the approved SHA with `DEVICE_CUTOVER_DEADLINE` **unset** — pure code,
    no behavior change yet. Confirm Render deployed that exact commit.
-2. **Configure + test SMTP** (`EMAIL_*` on Render). Send a real PIN-reset and confirm delivery.
+2. **Configure + test SMTP** (`EMAIL_*` on Render). Verify with `apps/gateway/scripts/smtp-test.mjs`
+   (reads the same env vars; secrets stay in your shell), then send a real PIN-reset and confirm delivery.
 3. **Set `DEVICE_CUTOVER_DEADLINE`** to a short future UTC instant (e.g. +48h) and redeploy.
 4. **Maintenance window (do 5a + 5b together, short):**
    - 5a. Redirect the old student domain → `https://ccat.conceptmastery.com`, and set `WEB_APP_ORIGIN`
