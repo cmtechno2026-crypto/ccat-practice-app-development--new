@@ -1,6 +1,23 @@
 # CCAT Project State
 
-_Last updated: 2026-09-07 (later²) — Gateway EMAIL service + 3 triggers AUTHORED (welcome, PIN-reset OTP, tier-upgrade). Reused the existing guardian-OTP recovery flow instead of a new table/endpoints (see below). NOT committed/pushed/deployed; no new migration; nodemailer added (run pnpm install before build). Prior entry:_
+_Last updated: 2026-09-08 — feature/payments (payments + email) MERGED INTO master locally (--no-ff). Flag stays OFF. NOT pushed — operator reviews + pushes. See "Integration merge 2026-09-08" below._
+
+## Integration merge 2026-09-08 (feature/payments → master, LOCAL only — not pushed)
+Scope: master gains ALL payment + email code, behind PAYMENTS_ENABLED / VITE_PAYMENTS_ENABLED (default false; no hardcoded true). Production stays byte-for-byte today's FREE site with the flag off.
+SEQUENCE: (1) email feature committed to feature/payments as cee1b94 (was uncommitted on the operator's machine — email.ts + config + nodemailer + recovery/registration/stripe-webhook/admin-entitlements + .env.example EMAIL_*). (2) merged master INTO feature/payments (commit 0c0b7b0) + env.example domain edit. (3) merged feature/payments INTO master (--no-ff). master tree byte-identical to feature/payments.
+CONFLICTS (5) — resolved keep-both: web/admin PAYMENTS_ENABLED → master's tolerant parse; web entitlements.ts → kept per-tier MEMBERSHIP_URL map + flash-fix capsOf(ent,loaded); api-client index.ts → export EntitlementsMe + GradeChangeStatus/GradeChangeRequest; admin Layout.tsx → PAYMENTS_ENABLED import + NotificationBell/NOTIF_META; admin Students.tsx → Tier column + request-highlighting. Email files had ZERO conflicts (master touches none of them).
+MIGRATIONS: two 0043 files coexist (0043_app_settings_grant_reason + 0043_grade_change_requests; distinct filenames, runner keys by filename, idempotent — no renumber). Email feature adds NO migration.
+PROD MIGRATIONS PENDING: NONE. Ledger (wazutprwrhnabjfggghp) already has 0040/0041/0042/0043_app_settings_grant_reason/0043_grade_change_requests. Deploy-before-migrate concern is moot.
+DOMAINS: CORS env-driven (ADMIN_WEB_ORIGIN/WEB_APP_ORIGIN). .env.example placeholders → admin.conceptmastery.com / ccat.conceptmastery.com. Checkout success/cancel derive from WEB_APP_ORIGIN. VITE_GATEWAY_URL unchanged. Set real origins in Render + Vercel at deploy.
+EMAIL DEP: nodemailer added — run `pnpm install` before building the gateway. sendEmail is a no-op when EMAIL_HOST blank (never throws); set EMAIL_* in Render only when ready to send. Publish SPF/DKIM/DMARC for the EMAIL_FROM domain before real sends.
+CATALOG CONTRACT: /v1/catalog returns a top-level ARRAY; flag OFF → no `locked` field (true no-op).
+VERIFY (local PG16, migrations 0000–0043 incl. both; pnpm install with nodemailer): gateway + api-client typecheck clean; web + admin builds clean. Gateway vitest: 6 fail / 200 pass — identical with or without the email code (email is a no-op in tests). All 6 are long-documented pre-existing failures (subset of both branch baselines: pre-merge feature/payments 9, master-alone 33) → ZERO regressions; the merge carries feature/payments' 27 fixes into master.
+OPEN DECISION: MEMBERSHIP_URL holds this-week's REAL values ($50 → conceptmastery.com/store/ccat-practice-library-access/; fallback conceptmastery.com/ccat/; $250/$500 buttons disabled). Kept as newest decision (not a placeholder).
+DELIVERY: operator pushed the email commit to origin/feature/payments (cee1b94); integration handed back as a git bundle (both branches). Claude does not push/merge to remote.
+
+---
+
+_Prior — 2026-09-07 (later²): Gateway EMAIL service + 3 triggers AUTHORED (welcome, PIN-reset OTP, tier-upgrade). Reused the existing guardian-OTP recovery flow instead of a new table/endpoints (see below). Now committed (cee1b94) + merged. Prior entry:_
 
 ## Update 2026-09-07 (email: welcome + PIN-reset OTP + tier-upgrade) — AUTHORED, not committed/deployed
 EMAIL SERVICE (add-once): `apps/gateway/src/lib/email.ts` — `sendEmail(cfg, {to,subject,html,text?})` via nodemailer
