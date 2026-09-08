@@ -32,6 +32,13 @@ export function StudentDetail() {
   if (error) return <ErrorBox e={error} />;
   const d = data!;
   const isSuper = me?.role === 'super_admin';
+  // Membership panel — reads whatever the detail payload carries (membership/entitlement); falls back
+  // to the free plan when the payments feature isn't wired on this environment yet.
+  const mem: any = (d as any).membership || (d as any).entitlement || null;
+  const PLAN_LABEL: Record<string, string> = { free: 'Free plan', t50: 'Membership · $50', t250: 'Membership · $250', t500: 'Membership · $500' };
+  const planLabel = mem?.tier ? (PLAN_LABEL[String(mem.tier)] || String(mem.tier)) : (mem?.plan || 'Free plan');
+  const memStatus = mem?.status ? String(mem.status) : 'Active';
+  const memRenews = mem?.current_period_end || mem?.renews_at || null;
 
   const exportDsar = () => {
     try {
@@ -144,9 +151,22 @@ export function StudentDetail() {
         .sd-green .sdic{background:var(--green,#1f9d6b)} .sd-blue .sdic{background:#2f6fd0}
         .sd-amber .sdic{background:var(--amber,#c9820e)} .sd-purple .sdic{background:var(--purple,#6d4dd6)} .sd-coral .sdic{background:var(--coral,#e0533d)}
         .sdbignum{font-weight:800;font-size:26px;line-height:1}
+        .sdmember{--m-card:#fff;--m-line:#e7e8f2;display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:15px 18px;border:1px solid var(--m-line);border-radius:16px;background:var(--m-card);box-shadow:0 1px 2px rgba(31,35,64,.05);margin-top:16px}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdmember{--m-card:#1c1e2b;--m-line:#2b2e40}}
+        :root[data-theme="dark"] .sdmember{--m-card:#1c1e2b;--m-line:#2b2e40}
+        .sdmember .sdm-badge{width:42px;height:42px;border-radius:12px;background:var(--purple,#6d4dd6);color:#fff;display:grid;place-items:center;font-size:19px;flex:none}
+        .sdmember .sdm-l{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#6b6f8a);font-weight:700}
+        .sdmember .sdm-v{font-weight:800;font-size:16px}
         @media (max-width:900px){.sdbento{grid-template-columns:repeat(2,1fr)}.sdtile.sdbig{grid-column:span 2}}
         @media (max-width:560px){.sdbento{grid-template-columns:1fr;grid-auto-rows:auto}.sdtile,.sdtile.sdbig{grid-column:span 1;grid-row:auto}.sdbody{overflow:visible}}
       `}</style>
+      <div className="sdmember">
+        <span className="sdm-badge">⭐</span>
+        <div><div className="sdm-l">Membership</div><div className="sdm-v">{planLabel}</div></div>
+        <div><div className="sdm-l">Status</div><div className="sdm-v" style={{ fontSize: 14, color: memStatus.toLowerCase() === 'active' ? 'var(--green)' : undefined }}>{memStatus}</div></div>
+        <div><div className="sdm-l">Renews</div><div className="sdm-v" style={{ fontSize: 14 }}>{memRenews ? new Date(memRenews).toLocaleDateString() : '—'}</div></div>
+      </div>
+
       <div className="sdbento">
         {(() => {
           const ExpBtn = ({ k }: { k: typeof openPanel }) => (
