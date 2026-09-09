@@ -4,6 +4,11 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useAsync, StatusPill, Stat, Modal, Loading, ErrorBox, useToast } from '../components/ui';
 
+// Expiry is entered as a date meaning 12:00 am IST on that day (mirrors the Membership page). These
+// live at module scope so both the fetch (prefill) and the save can use them safely.
+const istMidnightIso = (date: string): string | null => { if (!date) return null; const t = new Date(`${date}T00:00:00+05:30`); return isNaN(t.getTime()) ? null : t.toISOString(); };
+const toDateInputIST = (iso?: string | null): string => { if (!iso) return ''; const t = new Date(iso); if (isNaN(t.getTime())) return ''; const x = new Date(t.getTime() + 5.5 * 3600 * 1000); const p = (n: number) => String(n).padStart(2, '0'); return `${x.getUTCFullYear()}-${p(x.getUTCMonth() + 1)}-${p(x.getUTCDate())}`; };
+
 export function StudentDetail() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -29,9 +34,19 @@ export function StudentDetail() {
   const [openPanel, setOpenPanel] = useState<'sessions' | 'guardians' | 'devices' | 'rewards' | 'history'>('sessions');
   // Membership (per-student; guardian tier resolved server-side). Same model as the Membership page.
   const [membership, setMembership] = useState<any>(null);
-  const [planOpen, setPlanOpen] = useState(false);
   const [planForm, setPlanForm] = useState<{ tier: string; reason: string; until: string }>({ tier: 't50', reason: 'comp', until: '' });
-  const loadMembership = () => api.getStudentMembership(id!).then(setMembership).catch(() => { /* non-super or unavailable → free fallback */ });
+  const loadMembership = () => api.getStudentMembership(id!).then((r: any) => {
+    setMembership(r);
+    // Prefill the inline controls to reflect the current grant.
+    const t = r?.effective?.tier || 'free';
+    const allowed: string[] = r?.allowed_tiers?.length ? r.allowed_tiers : ['free', 't50', 't250', 't500'];
+    const reasons: string[] = r?.grant_reasons?.length ? r.grant_reasons : ['comp', 'paid', 'sale', 'discount', 'trial', 'other'];
+    setPlanForm({
+      tier: allowed.includes(t) ? t : (allowed[0] || 'free'),
+      reason: r?.item?.grant_reason && reasons.includes(r.item.grant_reason) ? r.item.grant_reason : 'comp',
+      until: toDateInputIST(r?.effective?.current_period_end),
+    });
+  }).catch(() => { /* non-super or unavailable → free fallback */ });
   useEffect(() => { loadMembership(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
   if (loading) return <Loading />;
@@ -57,19 +72,8 @@ export function StudentDetail() {
   const memSource = eff?.source || null;
   const allowedTiers: string[] = membership?.allowed_tiers?.length ? membership.allowed_tiers : ['free', 't50', 't250', 't500'];
   const grantReasons: string[] = membership?.grant_reasons?.length ? membership.grant_reasons : ['comp', 'paid', 'sale', 'discount', 'trial', 'other'];
-  // Expiry is a date meaning 12:00 am IST on that day (mirrors the Membership page).
-  const istMidnight = (date: string): string | null => { if (!date) return null; const t = new Date(`${date}T00:00:00+05:30`); return isNaN(t.getTime()) ? null : t.toISOString(); };
-  const toDateInput = (iso?: string | null): string => { if (!iso) return ''; const t = new Date(iso); if (isNaN(t.getTime())) return ''; const x = new Date(t.getTime() + 5.5 * 3600 * 1000); const p = (n: number) => String(n).padStart(2, '0'); return `${x.getUTCFullYear()}-${p(x.getUTCMonth() + 1)}-${p(x.getUTCDate())}`; };
-  const openPlan = () => {
-    setPlanForm({
-      tier: allowedTiers.includes(effTier) ? effTier : (allowedTiers[0] || 'free'),
-      reason: memItem?.grant_reason && grantReasons.includes(memItem.grant_reason) ? memItem.grant_reason : 'comp',
-      until: toDateInput(memRenews),
-    });
-    setPlanOpen(true);
-  };
   const savePlan = async () => {
-    try { await api.setStudentMembership(id!, { tier: planForm.tier as any, grant_reason: planForm.reason, until: istMidnight(planForm.until) }); setPlanOpen(false); toast('Membership updated.'); loadMembership(); }
+    try { await api.setStudentMembership(id!, { tier: planForm.tier as any, grant_reason: planForm.reason, until: istMidnightIso(planForm.until) }); toast('Membership updated.'); loadMembership(); }
     catch (e) { toast((e as Error).message); }
   };
 
@@ -190,17 +194,49 @@ export function StudentDetail() {
         .sdmember .sdm-badge{width:42px;height:42px;border-radius:12px;background:var(--purple,#6d4dd6);color:#fff;display:grid;place-items:center;font-size:19px;flex:none}
         .sdmember .sdm-l{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#6b6f8a);font-weight:700}
         .sdmember .sdm-v{font-weight:800;font-size:16px}
+        .sdmember .sdm-sub{font-size:12px;color:var(--muted,#6b6f8a);margin-top:3px}
+        .sdmember .sdm-controls{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-left:auto}
+        .sdmember .sdm-fld{display:flex;flex-direction:column;gap:3px}
+        .sdmember .sdm-fld > span{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#6b6f8a)}
+        .sdmember .sdm-controls .input{font-size:13px}
+        .sdmember .sdm-controls select.input{min-width:150px}
         @media (max-width:900px){.sdbento{grid-template-columns:repeat(2,1fr)}.sdtile.sdbig{grid-column:span 2}}
         @media (max-width:560px){.sdbento{grid-template-columns:1fr;grid-auto-rows:auto}.sdtile,.sdtile.sdbig{grid-column:span 1;grid-row:auto}.sdbody{overflow:visible}}
       `}</style>
       <div className="sdmember">
         <span className="sdm-badge">⭐</span>
-        <div><div className="sdm-l">Membership</div><div className="sdm-v">{planLabel}</div></div>
-        <div><div className="sdm-l">Status</div><div className="sdm-v" style={{ fontSize: 14, color: String(memStatus).toLowerCase() === 'active' ? 'var(--green)' : undefined }}>{memStatus}</div></div>
-        <div><div className="sdm-l">{memRenews ? 'Expires' : 'Renews'}</div><div className="sdm-v" style={{ fontSize: 14 }}>{memRenews ? new Date(memRenews).toLocaleDateString() : '—'}</div></div>
-        {memSource && <div><div className="sdm-l">Source</div><div className="sdm-v" style={{ fontSize: 14, textTransform: 'capitalize' }}>{memSource}</div></div>}
-        {can('config.global') && <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={openPlan}>Change plan</button>}
+        <div>
+          <div className="sdm-l">Membership</div>
+          <div className="sdm-v">{planLabel}</div>
+          <div className="sdm-sub">
+            <span style={{ color: String(memStatus).toLowerCase() === 'active' ? 'var(--green)' : undefined, fontWeight: 700 }}>{memStatus}</span>
+            {memSource ? ` · source ${memSource}` : ''} · {memRenews ? `expires ${new Date(memRenews).toLocaleDateString()}` : 'no expiry'}
+          </div>
+        </div>
+        {can('config.global') ? (
+          <div className="sdm-controls">
+            <label className="sdm-fld"><span>Tier</span>
+              <select className="input" value={planForm.tier} onChange={e => setPlanForm({ ...planForm, tier: e.target.value })}>
+                {allowedTiers.map((t) => <option key={t} value={t}>{TIER_FULL[t] || t}</option>)}
+              </select>
+            </label>
+            <label className="sdm-fld"><span>Reason</span>
+              <select className="input" value={planForm.reason} onChange={e => setPlanForm({ ...planForm, reason: e.target.value })}>
+                {grantReasons.map((r) => <option key={r} value={r}>{REASON_LABEL[r] || r}</option>)}
+              </select>
+            </label>
+            <label className="sdm-fld"><span>Expiry</span>
+              <input className="input" type="date" value={planForm.until} onChange={e => setPlanForm({ ...planForm, until: e.target.value })} />
+            </label>
+            <button className="btn" onClick={savePlan}>Save grant</button>
+          </div>
+        ) : (
+          <div className="sdm-controls" style={{ alignItems: 'center', color: 'var(--muted)', fontSize: 12.5 }}>Membership is set by a Super-Admin.</div>
+        )}
       </div>
+      {can('config.global') && membership?.guardian_email && (
+        <div className="muted" style={{ fontSize: 11.5, margin: '6px 2px 0' }}>Applies to the guardian ({membership.guardian_email}) — all children on that guardian. Expiry blank = no expiry (12:00 am IST). “Paid” records a real payment; the rest are non-paying access.</div>
+      )}
 
       <div className="sdbento">
         {(() => {
@@ -341,24 +377,6 @@ export function StudentDetail() {
             {grades.map((g) => <option key={g.id} value={g.id}>{g.name || `Grade ${g.grade_number}`}</option>)}
           </select>
           {editErr && <div className="err" style={{ marginTop: 8 }}>{editErr}</div>}
-        </Modal>
-      )}
-      {planOpen && (
-        <Modal title={`Change membership — ${d.display_name}`} onClose={() => setPlanOpen(false)}
-          footer={<><button className="btn ghost grow" onClick={() => setPlanOpen(false)}>Cancel</button><button className="btn grow" onClick={savePlan}>Save grant</button></>}>
-          <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Sets the membership tier for this student's guardian{membership?.guardian_email ? ` (${membership.guardian_email})` : ''}. Manual grant — same as the Membership page; it applies to every child on that guardian.</div>
-          <label>Tier</label>
-          <select value={planForm.tier} onChange={e => setPlanForm({ ...planForm, tier: e.target.value })}>
-            {allowedTiers.map((t) => <option key={t} value={t}>{TIER_FULL[t] || t}</option>)}
-          </select>
-          <label>Reason</label>
-          <select value={planForm.reason} onChange={e => setPlanForm({ ...planForm, reason: e.target.value })}>
-            {grantReasons.map((r) => <option key={r} value={r}>{REASON_LABEL[r] || r}</option>)}
-          </select>
-          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>“Paid” records a real payment (normally set by Stripe); the rest are non-paying access.</div>
-          <label>Expiry (optional — blank = no expiry)</label>
-          <input type="date" value={planForm.until} onChange={e => setPlanForm({ ...planForm, until: e.target.value })} />
-          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Expires at 12:00 am IST on this date.</div>
         </Modal>
       )}
       {bg && <BreakGlassModal studentName={d.display_name} isSuper={isSuper} onClose={() => setBg(false)}
