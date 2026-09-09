@@ -28,6 +28,7 @@ function Login() {
   const nav = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [fails, setFails] = useState(0);
@@ -74,7 +75,13 @@ function Login() {
           <label>Work email</label>
           <input type="email" name="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" placeholder="you@conceptmastery.com" disabled={locked} />
           <label>Password</label>
-          <input type="password" name="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" disabled={locked} />
+          <div style={{ position: 'relative' }}>
+            <input type={showPw ? 'text' : 'password'} name="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" disabled={locked} style={{ paddingRight: 40 }} />
+            <button type="button" onClick={() => setShowPw(v => !v)} aria-pressed={showPw} aria-label={showPw ? 'Hide password' : 'Show password'} title={showPw ? 'Hide password' : 'Show password'}
+              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 0, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 4 }}>
+              {showPw ? '🙈' : '👁️'}
+            </button>
+          </div>
 
           <button className="btn" style={{ width: '100%', marginTop: 18, justifyContent: 'center' }} disabled={busy || locked}>
             {locked ? 'Account locked' : busy ? 'Signing in…' : 'Continue'}

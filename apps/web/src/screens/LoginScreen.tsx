@@ -15,6 +15,7 @@ export function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const pinRef = useRef<HTMLInputElement>(null);
+  const [showPin, setShowPin] = useState(false);
 
   async function submit() {
     setBusy(true); setErr(null);
@@ -52,26 +53,32 @@ export function LoginScreen() {
           </div>
           <div className="field">
             <label>Secret PIN</label>
-            <div className="pin-entry" onClick={() => pinRef.current?.focus()}>
-              <div className="boxes">
-                {[0, 1, 2, 3].map((i) => (
-                  <div key={i} className={`pin-box${pin.length > i ? ' filled' : ''}${pin.length === i ? ' active' : ''}`}>{pin[i] ? '•' : ''}</div>
-                ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="pin-entry" onClick={() => pinRef.current?.focus()}>
+                <div className="boxes">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className={`pin-box${pin.length > i ? ' filled' : ''}${pin.length === i ? ' active' : ''}`}>{pin[i] ? (showPin ? pin[i] : '•') : ''}</div>
+                  ))}
+                </div>
+                <input
+                  ref={pinRef}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={4}
+                  value={pin}
+                  aria-label="4-digit PIN"
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) submit(); }}
+                />
               </div>
-              <input
-                ref={pinRef}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={4}
-                value={pin}
-                aria-label="4-digit PIN"
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) submit(); }}
-              />
+              <button type="button" onClick={() => setShowPin((v) => !v)} aria-pressed={showPin} aria-label={showPin ? 'Hide PIN' : 'Show PIN'} title={showPin ? 'Hide PIN' : 'Show PIN'}
+                style={{ background: 'transparent', border: 0, cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 6 }}>
+                {showPin ? '🙈' : '👁️'}
+              </button>
             </div>
           </div>
           <button className="btn primary" disabled={!canSubmit} onClick={submit}>Let me in! 🔓</button>
-          <div className="auth-links"><Link to="/recovery">Forgot PIN?</Link><Link to="/device">New device?</Link></div>
+          <div className="auth-links"><Link to="/recovery">Forgot PIN?</Link></div>
           <div className="auth-foot">New here? <Link to="/register">Create an account</Link></div>
         </div>
       </div>
