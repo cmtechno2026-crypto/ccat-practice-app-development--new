@@ -10,111 +10,140 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
-const startSchema = z.object({ username: z.string(), channel: z.enum(['email', 'sms']) });
+const startSchema = z.object({ email: z.string().email() });
 const completeSchema = z.object({
-  challenge_id: z.string().uuid(),
+  username: z.string().min(1),
   code: z.string(),
   new_pin: z.string().regex(/^\d{4}$/),
 });
 
-// PIN recovery (Blueprint §4.4): guardian OTP → choose new PIN → revoke existing app sessions →
-// fresh login required. Does NOT authorize a new device (§4.4).
+// PIN recovery (Blueprint §4.4): a parent enters their REGISTERED email; we email the child username(s)
+// + a one-time reset code to that address; the parent then enters username + code + new PIN. The start
+// response is UNIFORM and never reveals whether the email is registered (no enumeration). Complete is
+// generic on every mismatch for the same reason. Does NOT authorize a new device (§4.4).
 export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config) {
-  // Rate limit per IP (tight in prod, relaxed for the vitest suite / smoke scripts). Combined with the
-  // per-student throttle below and the uniform response, this blocks OTP hammering + enumeration.
   const startMax = cfg.env === 'production' ? 5 : 2000;
+  const completeMax = cfg.env === 'production' ? 10 : 2000;
+
   app.post('/v1/recovery/pin/start', { config: { rateLimit: { max: startMax, timeWindow: '15 minutes' } } }, async (req, reply) => {
     const body = startSchema.parse(req.body);
-    // Fail CLOSED and uniformly (before any user lookup, so no enumeration) when the OTP channel can't
-    // deliver: never return a "code sent" envelope when it wasn't. Only 'email' is a real channel today.
-    // Local dev is exempt because it returns the code inline (_dev_code) instead of emailing it.
-    if (body.channel !== 'email') throw Errors.emailUnavailable();
+    const email = body.email.trim();
+    // Fail CLOSED + uniformly when email cannot be delivered (never claim a code was sent when it was not).
+    // Local dev is exempt: it returns the codes inline as _dev_codes instead of emailing them.
     if (cfg.env !== 'local' && !emailConfigured(cfg)) throw Errors.emailUnavailable();
+
+    // Every non-preview student whose PRIMARY guardian is this email (one parent may have several kids).
     const st = await db.query(
-      // is_preview excluded: preview accounts are synthetic and MUST trigger no outbound OTP/email.
-      `select s.id as student_id, s.display_name, sg.guardian_id, gc.email as guardian_email, gc.name as guardian_name
-         from ccat.students s
-         join ccat.student_guardians sg on sg.student_id = s.id and sg.is_primary = true
-         join ccat.guardian_contacts gc on gc.id = sg.guardian_id
-        where s.username_normalized = $1 and s.is_preview = false`,
-      [body.username],
+      `select s.id as student_id, s.username_normalized as username, s.display_name,
+              sg.guardian_id, gc.email as guardian_email, gc.name as guardian_name
+         from ccat.guardian_contacts gc
+         join ccat.student_guardians sg on sg.guardian_id = gc.id and sg.is_primary = true
+         join ccat.students s on s.id = sg.student_id and s.is_preview = false
+        where gc.email = $1
+        limit 10`,
+      [email],
     );
-    const code = generateOtp();
-    const codeHash = await hashSecret(code, cfg.pinPepper);
+
     const expires = new Date(Date.now() + cfg.otpTtlSeconds * 1000);
-    let challengeId: string | null = null;
-    if (st.rows.length > 0) {
-      const s = st.rows[0]!;
-      // Per-student throttle: at most 3 unconsumed reset codes / 15 min. Over the cap → respond
-      // uniformly WITHOUT creating or sending anything (no oracle, no abuse).
+    const mins = Math.round(cfg.otpTtlSeconds / 60);
+    const devCodes: { username: string; code: string }[] = [];
+    const rows: string[] = [];
+    let guardianName = '';
+    let guardianEmail = '';
+
+    for (const s of st.rows) {
+      guardianName = s.guardian_name || guardianName;
+      guardianEmail = s.guardian_email || guardianEmail;
+      // Per-student throttle: at most 3 unconsumed reset codes / 15 min. Over the cap -> skip this child.
       const recent = await db.query(
         `select count(*)::int as n from ccat.verification_challenges
           where student_id=$1 and purpose='pin_reset' and consumed_at is null
             and created_at > now() - interval '15 minutes'`,
         [s.student_id],
       );
-      if ((recent.rows[0]?.n ?? 0) < 3) {
-        // Invalidate prior unconsumed reset codes so only the newest OTP is ever valid.
-        await db.query(
-          `update ccat.verification_challenges set consumed_at = now()
-            where student_id=$1 and purpose='pin_reset' and consumed_at is null`,
-          [s.student_id],
-        );
-        const ch = await db.query(
-          `insert into ccat.verification_challenges(purpose, student_id, guardian_id, channel, code_hash, expires_at)
-           values ('pin_reset',$1,$2,$3,$4,$5) returning id`,
-          [s.student_id, s.guardian_id, body.channel, codeHash, expires],
-        );
-        challengeId = ch.rows[0]!.id;
-        if (cfg.env === 'local') req.log.info('pin-reset code generated (dev)'); // never log the code itself
-        // Email the code to the GUARDIAN only (never the child). Fire-and-forget; no-op if SMTP unset.
-        if (s.guardian_email) {
-          const mins = Math.round(cfg.otpTtlSeconds / 60);
-          const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-            <h2 style="color:#5b3ff0;margin:0 0 8px">CCAT PIN reset code</h2>
-            <p>Hi ${escapeHtml(s.guardian_name || 'there')},</p>
-            <p>A PIN reset was requested for <strong>${escapeHtml(s.display_name || 'your child')}</strong>. Enter this code to set a new PIN:</p>
-            <p style="font-size:30px;font-weight:800;letter-spacing:4px;color:#5b3ff0;margin:12px 0">${code}</p>
-            <p>This code expires in ${mins} minutes. If you didn't request this, you can ignore this email — nothing changes until the code is used.</p>
-            <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
-          </div>`;
-          const sent = await sendEmail(cfg, { to: s.guardian_email, subject: 'Your CCAT PIN reset code', html }, req.log);
-          // Configured envs must actually deliver; a failed send returns the explicit error, never 202.
-          if (!sent && cfg.env !== 'local') throw Errors.emailUnavailable();
-        }
-      }
+      if ((recent.rows[0]?.n ?? 0) >= 3) continue;
+      const code = generateOtp();
+      const codeHash = await hashSecret(code, cfg.pinPepper);
+      // Only the newest code per child stays valid.
+      await db.query(
+        `update ccat.verification_challenges set consumed_at = now()
+          where student_id=$1 and purpose='pin_reset' and consumed_at is null`,
+        [s.student_id],
+      );
+      await db.query(
+        `insert into ccat.verification_challenges(purpose, student_id, guardian_id, channel, code_hash, expires_at)
+         values ('pin_reset',$1,$2,'email',$3,$4)`,
+        [s.student_id, s.guardian_id, codeHash, expires],
+      );
+      devCodes.push({ username: s.username, code });
+      rows.push(
+        `<tr><td style="padding:6px 12px;border:1px solid #e7eaf3">${escapeHtml(s.display_name || 'Your child')}</td>` +
+        `<td style="padding:6px 12px;border:1px solid #e7eaf3"><strong>${escapeHtml(s.username)}</strong></td>` +
+        `<td style="padding:6px 12px;border:1px solid #e7eaf3;font-size:20px;font-weight:800;letter-spacing:3px;color:#1A5EAB">${code}</td></tr>`,
+      );
     }
+
+    // One email to the guardian listing every child's username + code. Response is uniform regardless.
+    if (rows.length > 0 && guardianEmail && cfg.env !== 'local') {
+      const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
+        <h2 style="color:#1A5EAB;margin:0 0 8px">CCAT PIN reset</h2>
+        <p>Hi ${escapeHtml(guardianName || 'there')},</p>
+        <p>A PIN reset was requested for your CCAT Practice account. Use the username and code below to set a new PIN:</p>
+        <table style="border-collapse:collapse;margin:12px 0">
+          <thead><tr>
+            <th style="padding:6px 12px;border:1px solid #e7eaf3;text-align:left">Child</th>
+            <th style="padding:6px 12px;border:1px solid #e7eaf3;text-align:left">Username</th>
+            <th style="padding:6px 12px;border:1px solid #e7eaf3;text-align:left">Reset code</th>
+          </tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>
+        <p>This code expires in ${mins} minutes. If you didn't request this, you can ignore this email — nothing changes until a code is used.</p>
+        <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
+      </div>`;
+      const sent = await sendEmail(cfg, { to: guardianEmail, subject: 'Your CCAT PIN reset code', html }, req.log);
+      if (!sent) throw Errors.emailUnavailable();
+    }
+
     reply.code(202);
-    return { challenge_id: challengeId, expires_at: expires.toISOString(), _dev_code: cfg.env === 'local' ? code : undefined };
+    return { ok: true, _dev_codes: cfg.env === 'local' ? devCodes : undefined };
   });
 
-  app.post('/v1/recovery/pin/complete', async (req) => {
+  app.post('/v1/recovery/pin/complete', { config: { rateLimit: { max: completeMax, timeWindow: '15 minutes' } } }, async (req) => {
     const body = completeSchema.parse(req.body);
+    const username = body.username.trim().toLowerCase();
+    // Generic failure for every mismatch (unknown username / no code / wrong / expired) -> no enumeration.
+    const invalid = () => Errors.unauthorized('Invalid or expired code');
+
+    const su = await db.query('select id from ccat.students where username_normalized=$1 and is_preview=false', [username]);
+    if (su.rows.length === 0) throw invalid();
+    const studentId = su.rows[0]!.id;
+
     const ch = await db.query(
-      `select id, student_id, code_hash, attempts, max_attempts, expires_at, consumed_at
-         from ccat.verification_challenges where id = $1 and purpose = 'pin_reset'`,
-      [body.challenge_id],
+      `select id, code_hash, attempts, max_attempts, expires_at
+         from ccat.verification_challenges
+        where student_id=$1 and purpose='pin_reset' and consumed_at is null
+        order by created_at desc limit 1`,
+      [studentId],
     );
-    if (ch.rows.length === 0) throw Errors.notFound('Challenge not found');
+    if (ch.rows.length === 0) throw invalid();
     const c = ch.rows[0]!;
-    if (c.consumed_at) throw Errors.unauthorized('Challenge already used');
-    if (new Date(c.expires_at) < new Date()) throw Errors.unauthorized('Challenge expired');
-    if (c.attempts >= c.max_attempts) throw Errors.unauthorized('Too many attempts');
+    if (new Date(c.expires_at) < new Date()) throw invalid();
+    if (c.attempts >= c.max_attempts) throw invalid();
     const ok = await verifySecret(body.code, cfg.pinPepper, c.code_hash);
     if (!ok) {
       await db.query('update ccat.verification_challenges set attempts = attempts + 1 where id = $1', [c.id]);
-      throw Errors.unauthorized('Invalid code');
+      throw invalid();
     }
     const pinHash = await hashSecret(body.new_pin, cfg.pinPepper);
     await db.query('update ccat.verification_challenges set consumed_at = now() where id = $1', [c.id]);
     await db.query(
       'update ccat.student_credentials set pin_hash=$2, failed_attempts=0, locked_until=null where student_id=$1',
-      [c.student_id, pinHash],
+      [studentId, pinHash],
     );
     // Revoke existing application sessions; fresh login required (§4.4).
     await db.query(
       `update ccat.auth_sessions set revoked_at=now(), revoked_reason='pin_reset' where student_id=$1 and revoked_at is null`,
-      [c.student_id],
+      [studentId],
     );
     return { status: 'pin_reset', message: 'PIN reset. Please log in again.' };
   });

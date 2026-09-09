@@ -13,7 +13,8 @@ export type GrantOutcome = 'granted' | 'deduped' | 'ignored' | 'amount_mismatch'
 // exactly once regardless of which path arrives first (or if both do). Mirrors the Stripe webhook grant:
 // grant_reason='paid' (overrides any prior comp/sale/etc.), one-time -> active with no expiry, audited.
 export async function grantPaidEntitlementPaypal(
-  db: DB,
+  // Only needs a queryable (Pool in prod, a Client in tests / a tx handle) — not the full Pool surface.
+  db: Pick<DB, 'query'>,
   cfg: Config,
   args: { captureId: string; orderId: string; tier: string; guardianEmail: string; amount: string | null; eventType: string; log?: MiniLog },
 ): Promise<GrantOutcome> {

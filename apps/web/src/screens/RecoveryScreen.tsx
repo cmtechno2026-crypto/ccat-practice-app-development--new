@@ -9,56 +9,62 @@ export function RecoveryScreen() {
   const nav = useNavigate();
   const { flash } = useApp();
   const [step, setStep] = useState<'start' | 'complete'>('start');
+  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [devCode, setDevCode] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [newPin, setNewPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [devCodes, setDevCodes] = useState<{ username: string; code: string }[]>([]);
 
-  async function guard<T>(fn: () => Promise<T>) {
-    setBusy(true); setErr(null);
-    try { return await fn(); } catch (e) { setErr(e instanceof ApiError ? e.message : (e as Error).message); return null; } finally { setBusy(false); }
-  }
-  // The reset code is always emailed to the parent on file. SMS is temporarily disabled — when it
-  // returns, restore the Email/SMS toggle and pass the chosen channel to pinResetStart.
   async function start() {
     setBusy(true); setErr(null);
     try {
-      const r = await client.pinResetStart(username, 'email');
-      setChallengeId(r.challenge_id); setDevCode((r as any)._dev_code ?? null); setStep('complete');
+      const r = await client.pinResetStart(email.trim());
+      setDevCodes(((r as any)?._dev_codes as { username: string; code: string }[] | undefined) ?? []);
+      setStep('complete');
     } catch (e) {
-      const code = e instanceof ApiError ? e.code : '';
-      setErr(code === 'RATE_LIMITED'
+      const c = e instanceof ApiError ? e.code : '';
+      setErr(c === 'RATE_LIMITED'
         ? "Too many requests. Please wait a few minutes and try again."
         : "We couldn't email your reset code right now. Please try again in a few minutes, or contact support.");
     } finally { setBusy(false); }
   }
+
   async function complete() {
-    if (!challengeId) return;
-    const r = await guard(() => client.pinResetComplete(challengeId, code, newPin));
-    if (r) { flash('PIN reset — log in with your new PIN.'); nav('/login', { replace: true }); }
+    setBusy(true); setErr(null);
+    try {
+      await client.pinResetComplete(username.trim(), code.trim(), newPin);
+      flash('PIN reset — log in with your new PIN.');
+      nav('/login', { replace: true });
+    } catch (e) {
+      const c = e instanceof ApiError ? e.code : '';
+      setErr(c === 'RATE_LIMITED'
+        ? "Too many attempts. Please wait a few minutes and try again."
+        : "That code didn't work. Check the username and code from your email — they expire after a few minutes.");
+    } finally { setBusy(false); }
   }
 
   return (
     <>
-      <AppBar title="Recover PIN" sub="Verify with a parent code" back />
+      <AppBar title="Recover PIN" sub="Reset with a code emailed to the parent" back />
       <div className="content center-narrow stack">
         {err && <div className="err" role="alert">{err}</div>}
         {step === 'start' && (
           <>
-            <Field label="Username"><input className="input" value={username} autoCapitalize="none" onChange={(e) => setUsername(e.target.value.toLowerCase())} /></Field>
-            <p className="hint">We'll email a reset code to the parent on file.</p>
-            <button className="btn" disabled={!username || busy} onClick={start}>Send reset code</button>
+            <Field label="Parent email"><input className="input" type="email" value={email} autoCapitalize="none" onChange={(e) => setEmail(e.target.value)} /></Field>
+            <p className="hint">Enter the parent email on the account. If it's registered, we'll email the username and a reset code.</p>
+            <button className="btn" disabled={!email || busy} onClick={start}>Send reset code</button>
           </>
         )}
         {step === 'complete' && (
           <>
-            <p className="muted">Enter the code sent to the parent.{devCode ? ` (dev code: ${devCode})` : ''}</p>
-            <Field label="Code"><input className="input" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} /></Field>
+            <p className="muted">If that email is registered, we've emailed the username and a reset code. Enter them below.</p>
+            {devCodes.length > 0 && <div className="hint">dev codes: {devCodes.map((d) => `${d.username}:${d.code}`).join(', ')}</div>}
+            <Field label="Username"><input className="input" value={username} autoCapitalize="none" onChange={(e) => setUsername(e.target.value.toLowerCase())} /></Field>
+            <Field label="Reset code"><input className="input" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} /></Field>
             <Field label="New PIN"><input className="input" value={newPin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
-            <button className="btn" disabled={code.length < 4 || newPin.length !== 4 || busy} onClick={complete}>Set new PIN</button>
+            <button className="btn" disabled={!username || code.length < 4 || newPin.length !== 4 || busy} onClick={complete}>Set new PIN</button>
           </>
         )}
       </div>

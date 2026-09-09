@@ -19,6 +19,9 @@ function transporterFor(e: Config['email']): Transporter | null {
     port: e.port,
     secure: e.port === 465,                       // implicit TLS on 465; STARTTLS on 587/25
     auth: e.user ? { user: e.user, pass: e.pass } : undefined,
+    connectionTimeout: 10000, // fail fast instead of hanging the whole request when SMTP will not connect
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
   cachedKey = key;
   return cached;
