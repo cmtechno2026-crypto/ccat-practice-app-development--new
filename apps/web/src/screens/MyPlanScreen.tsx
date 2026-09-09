@@ -9,7 +9,8 @@ import {
 } from '../lib/entitlements';
 
 // My Plan. Shows the student's current membership + what each higher plan unlocks. Upgrades run through
-// PayPal in-app: clicking Upgrade creates a PayPal order on the gateway and redirects to PayPal to pay.
+// PayPal in-app: clicking Upgrade opens a confirm modal (pay with the REGISTERED email so the grant lands
+// on this account), then creates a PayPal order on the gateway and redirects to PayPal to pay.
 // On return (?checkout=success&token=<orderId>) the page captures the order; the gateway grants the tier
 // (idempotent with the webhook). The page then POLLs /v1/entitlements/me until the new tier unlocks.
 
@@ -28,6 +29,8 @@ export function MyPlanScreen() {
     checkout === 'success' ? 'activating' : checkout === 'cancel' ? 'canceled' : 'idle',
   );
   const [busyTier, setBusyTier] = useState<EntitlementTier | null>(null);
+  const [confirmTier, setConfirmTier] = useState<EntitlementTier | null>(null);
+  const [acctEmail, setAcctEmail] = useState<string | null | undefined>(undefined); // undefined = not loaded yet
   const baseline = useRef<number | null>(null);
 
   // Load the entitlement if we don't have it yet.
@@ -68,14 +71,27 @@ export function MyPlanScreen() {
     }
   }, [entitlements, phase]);
 
-  async function upgrade(tier: EntitlementTier) {
+  // Open the confirm modal for a tier; lazily fetch the account email to show in it (best-effort).
+  async function openConfirm(tier: EntitlementTier) {
     if (tier === 'free' || busyTier) return;
+    setConfirmTier(tier);
+    if (acctEmail === undefined) {
+      try { const a = await client.account(); setAcctEmail(a.guardian?.email ?? null); }
+      catch { setAcctEmail(null); }
+    }
+  }
+
+  // Pay → create the PayPal order and redirect to PayPal approval.
+  async function proceedToPayPal() {
+    const tier = confirmTier;
+    if (!tier || tier === 'free' || busyTier) return;
     setBusyTier(tier);
     try {
       const order = await client.paypalCreateOrder(tier as 't50' | 't250' | 't500');
       window.location.href = order.url; // redirect to PayPal approval
     } catch (e) {
       setBusyTier(null);
+      setConfirmTier(null);
       flash((e as Error).message || 'Could not start checkout. Please try again.');
     }
   }
@@ -83,6 +99,7 @@ export function MyPlanScreen() {
   const current: EntitlementTier = entitlements?.tier ?? 'free';
   const cur = TIER_CATALOG[current];
   const upgrades = eligibleUpgradeTiers(current);
+  const confirmInfo = confirmTier ? TIER_CATALOG[confirmTier] : null;
 
   return (
     <>
@@ -150,9 +167,9 @@ export function MyPlanScreen() {
                   <button
                     className="btn"
                     disabled={busyTier != null}
-                    onClick={() => upgrade(t)}
+                    onClick={() => openConfirm(t)}
                   >
-                    {busyTier === t ? 'Opening PayPal…' : `Upgrade to ${info.label}`}
+                    {busyTier === t ? 'Redirecting…' : `Upgrade to ${info.label}`}
                   </button>
                 </Card>
               );
@@ -163,6 +180,56 @@ export function MyPlanScreen() {
           </>
         )}
       </div>
+
+      {/* Confirm-email modal (shown between Upgrade and PayPal). */}
+      {confirmTier && confirmInfo && (
+        <div
+          role="dialog" aria-modal="true" aria-label="Confirm payment email"
+          onClick={() => { if (!busyTier) setConfirmTier(null); }}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(20,24,40,.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: 'relative', width: 'min(400px,92%)', background: '#fff', borderRadius: 18,
+              boxShadow: '0 24px 60px -24px rgba(42,46,67,.55)', padding: '24px 22px' }}
+          >
+            <button aria-label="Close" onClick={() => { if (!busyTier) setConfirmTier(null); }}
+              style={{ position: 'absolute', right: 12, top: 8, background: 'transparent', border: 'none',
+                color: '#8a90a6', fontSize: 18, fontWeight: 800, cursor: 'pointer' }}>✕</button>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: '#eaf0ff', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', fontSize: 30, margin: '0 auto 12px' }}>💳</div>
+            <h3 style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 21, margin: '0 0 8px', textAlign: 'center' }}>One quick check</h3>
+            <p style={{ fontSize: 14, fontWeight: 700, color: '#4a4f66', lineHeight: 1.55, margin: '0 0 14px', textAlign: 'center' }}>
+              On the next screen, pay with the same email you registered with
+              {acctEmail ? <> — <strong style={{ color: '#3e7bee' }}>{acctEmail}</strong></> : ' '}
+              {' '}so the plan unlocks on <strong>this</strong> account. A different PayPal email won't upgrade you here.
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: '#eaf0ff', borderRadius: 12, padding: '11px 14px', marginBottom: 16 }}>
+              <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 14, color: '#2a2e43' }}>{confirmInfo.name}</span>
+              <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 14, color: '#3e7bee' }}>{confirmInfo.priceLabel}</span>
+            </div>
+            <div className="stack" style={{ gap: 9 }}>
+              <button
+                onClick={proceedToPayPal}
+                disabled={busyTier != null}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 16, border: 'none',
+                  borderRadius: 14, padding: '13px 18px', width: '100%', cursor: 'pointer',
+                  background: '#ffc439', color: '#003087', opacity: busyTier ? 0.7 : 1 }}
+              >
+                {busyTier ? 'Redirecting…' : 'Pay with PayPal'}
+              </button>
+              <button onClick={() => { if (!busyTier) setConfirmTier(null); }}
+                style={{ background: 'transparent', border: 'none', color: '#8a90a6',
+                  fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 15, padding: 10, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

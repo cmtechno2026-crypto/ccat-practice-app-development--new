@@ -47,7 +47,7 @@ export interface Config {
   // Outbound email (SMTP via nodemailer). SERVER-ONLY secrets, never in a browser bundle. When host is
   // empty, sendEmail is a logging no-op so dev/prod without SMTP configured never crashes — all callers
   // treat email as fire-and-forget. See EMAIL_* in .env.example.
-  email: { host: string; port: number; user: string; pass: string; from: string };
+  email: { host: string; port: number; user: string; pass: string; from: string; apiKey: string; apiUrl: string };
   // Supabase Storage (used only when STORAGE_DRIVER=supabase). Service-role key is SERVER-ONLY and never
   // reaches a browser bundle. Read from env; empty in local/dev where the local-disk driver is used.
   supabaseUrl: string;
@@ -133,6 +133,9 @@ export function loadConfig(): Config {
       user: process.env.EMAIL_USER ?? '',
       pass: process.env.EMAIL_PASS ?? '',
       from: process.env.EMAIL_FROM ?? '',
+      // HTTPS email API (ZeptoMail-compatible). Set EMAIL_API_KEY to send over 443 where SMTP is blocked.
+      apiKey: process.env.EMAIL_API_KEY ?? '',
+      apiUrl: process.env.EMAIL_API_URL ?? 'https://api.zeptomail.com/v1.1/email',
     },
     supabaseUrl: (process.env.SUPABASE_URL ?? '').replace(/\/$/, ''),
     supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
