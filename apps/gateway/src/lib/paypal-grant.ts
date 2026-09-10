@@ -11,7 +11,8 @@ export type GrantOutcome = 'granted' | 'deduped' | 'ignored' | 'amount_mismatch'
 // The ONE place a PayPal-paid entitlement is written. Called by BOTH the return-time capture endpoint and
 // the PAYMENT.CAPTURE.COMPLETED webhook — keyed on the SAME PayPal capture id, so the grant happens
 // exactly once regardless of which path arrives first (or if both do). Mirrors the Stripe webhook grant:
-// grant_reason='paid' (overrides any prior comp/sale/etc.), one-time -> active with no expiry, audited.
+// grant_reason='paid' (overrides any prior comp/sale/etc.), 1-year plan -> active, expires 1 year from
+// purchase (current_period_end = now + 1 year); a later re-purchase resets a fresh year. Audited.
 export async function grantPaidEntitlementPaypal(
   // Only needs a queryable (Pool in prod, a Client in tests / a tx handle) — not the full Pool surface.
   db: Pick<DB, 'query'>,
@@ -45,11 +46,11 @@ export async function grantPaidEntitlementPaypal(
 
   const up = await db.query(
     `insert into ccat.entitlements (guardian_email, guardian_id, tier, status, current_period_end, source, external_ref, grant_reason)
-     values ($1, $2, $3, 'active', null, 'webhook', $4, 'paid')
+     values ($1, $2, $3, 'active', now() + interval '1 year', 'webhook', $4, 'paid')
      on conflict (lower(guardian_email)) do update
        set tier = excluded.tier,
            status = 'active',
-           current_period_end = null,
+           current_period_end = now() + interval '1 year',
            guardian_id = coalesce(excluded.guardian_id, ccat.entitlements.guardian_id),
            source = 'webhook',
            external_ref = excluded.external_ref,
