@@ -47,7 +47,7 @@ export function checkoutRejectReason(current: Tier, requested: Tier): null | 'no
 }
 
 // Human-facing plan name + what each tier unlocks — used in the tier-upgrade confirmation email.
-export const TIER_LABELS: Record<Tier, string> = { free: 'Free', t50: '$50 Plan', t250: '$250 Plan', t500: '$500 Plan' };
+export const TIER_LABELS: Record<Tier, string> = { free: 'Free', t50: 'Standard', t250: 'Plus', t500: 'Premium' };
 export function tierUnlocksText(t: Tier): string {
   const c = CAPABILITY_MAP[t];
   const parts: string[] = [c.practice === 'all' ? 'all practice sets' : 'the free demo sets'];

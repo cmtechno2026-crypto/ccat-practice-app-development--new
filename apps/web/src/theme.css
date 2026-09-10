@@ -884,3 +884,39 @@ p { line-height: 1.5; }
 .otp-entry input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; font-size: 16px; }
 .verify-panel { background: var(--card); border: 1.5px solid var(--tint-blue); border-radius: var(--radius-md); padding: 13px; }
 .verify-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--tint-green); color: var(--green); font-weight: 800; font-size: 13px; border-radius: var(--radius-pill); padding: 8px 13px; }
+
+/* ===== Home hero: Grade + plan chip ===== */
+.gp-chip { display: inline-flex; align-items: center; border-radius: 999px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.28); font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 14px; text-decoration: none; }
+.gp-chip .seg { padding: 9px 14px; color: #fff; background: rgba(255,255,255,.18); white-space: nowrap; }
+.gp-chip .seg.plan { background: rgba(255,255,255,.30); }
+.gp-chip .seg.plan.gold { background: #ffe6b0; color: #7a4d00; }
+
+/* ===== My Plan pricing page (namespaced 'pp-') ===== */
+.planpage { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1f2937; }
+.pp-header { text-align: center; margin: 6px 0 30px; }
+.pp-eyebrow { display: inline-block; margin-bottom: 12px; padding: 8px 14px; border-radius: 999px; background: #eef2ff; color: #4f46e5; font-size: 14px; font-weight: 800; }
+.pp-h1 { margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.03em; color: #1f2937; }
+.pp-subtitle { max-width: 720px; margin: 12px auto 0; color: #6b7280; font-size: 16px; line-height: 1.6; }
+.pp-plans { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 20px; align-items: stretch; }
+.pp-card { position: relative; display: flex; flex-direction: column; padding: 26px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; box-shadow: 0 4px 18px rgba(17,24,39,.04); }
+.pp-card.premium { border: 2px solid #4f46e5; box-shadow: 0 16px 42px rgba(79,70,229,.14); }
+.pp-badge { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; background: #4f46e5; color: #fff; font-size: 12px; font-weight: 900; letter-spacing: .04em; white-space: nowrap; }
+.pp-name { margin-bottom: 12px; font-size: 22px; font-weight: 800; }
+.pp-price-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.pp-price { font-size: 40px; font-weight: 900; letter-spacing: -0.03em; }
+.pp-currency { color: #6b7280; font-size: 14px; font-weight: 700; }
+.pp-term { margin: 0 0 12px; color: #4f46e5; font-size: 14px; font-weight: 800; }
+.pp-desc { min-height: 44px; margin: 0 0 22px; color: #6b7280; font-size: 15px; line-height: 1.5; }
+.pp-divider { height: 1px; margin-bottom: 20px; background: #e5e7eb; }
+.pp-list { flex: 1; display: grid; gap: 13px; list-style: none; padding: 0; margin: 0 0 26px; }
+.pp-li { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.45; color: #1f2937; }
+.pp-check { flex: 0 0 auto; display: grid; place-items: center; width: 21px; height: 21px; margin-top: 1px; border-radius: 50%; background: #ecfdf3; color: #16a34a; font-size: 13px; font-weight: 900; }
+.pp-btn { width: 100%; min-height: 48px; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 16px; font-size: 15px; font-weight: 800; cursor: pointer; }
+.pp-btn.secondary { background: #f9fafb; color: #6b7280; }
+.pp-btn.primary { border-color: #4f46e5; background: #4f46e5; color: #fff; }
+.pp-btn.primary:hover { background: #4338ca; border-color: #4338ca; }
+.pp-btn:disabled { cursor: default; opacity: .75; }
+.pp-foot { margin-top: 24px; text-align: center; color: #6b7280; font-size: 13px; }
+@media (max-width: 1050px) { .pp-plans { grid-template-columns: repeat(2, minmax(0,1fr)); max-width: 620px; margin: 0 auto; } }
+@media (max-width: 700px) { .pp-plans { grid-template-columns: 1fr; } }

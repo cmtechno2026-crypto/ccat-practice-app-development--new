@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { Grade } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AvatarControl } from './AvatarControl';
 import { resolveAssetUrl } from './Avatar';
+import { PAYMENTS_ENABLED, TIER_CATALOG } from '../lib/entitlements';
 
 // Grades rarely change, so load the list once per app session and reuse it to resolve the student's
 // grade_id → a friendly "Grade N" label for the header pill (no gateway change; a small existing lookup).
@@ -35,6 +36,24 @@ export function GradePill() {
   const gradeLabel = useGradeLabel(profile?.grade_id);
   if (!profile || !gradeLabel) return null;
   return <span className="grade-pill">🎓 {gradeLabel}</span>;
+}
+
+// Home hero: Grade + membership plan in one two-tone chip that taps through to My Plan. Paid tiers show
+// gold; falls back to just the grade pill when payments is off.
+export function GradePlanChip() {
+  const { profile, entitlements } = useApp();
+  const gradeLabel = useGradeLabel(profile?.grade_id);
+  if (!profile || !gradeLabel) return null;
+  if (!PAYMENTS_ENABLED) return <span className="grade-pill">🎓 {gradeLabel}</span>;
+  const tier = entitlements?.tier ?? 'free';
+  const planName = TIER_CATALOG[tier]?.name ?? 'Free';
+  const paid = tier !== 'free';
+  return (
+    <Link className="gp-chip" to="/plan" aria-label={`Grade ${gradeLabel}, plan ${planName}`}>
+      <span className="seg">🎓 {gradeLabel}</span>
+      <span className={`seg plan${paid ? ' gold' : ''}`}>⭐ {planName}</span>
+    </Link>
+  );
 }
 
 // ---- content figures (question/option images) -----------------------------

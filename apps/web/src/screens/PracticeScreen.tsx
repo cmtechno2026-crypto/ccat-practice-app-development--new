@@ -46,7 +46,9 @@ export function PracticeScreen() {
   const { flash, entitlements, entitlementsLoaded } = useApp();
   const caps = capsOf(entitlements, entitlementsLoaded);
   const [upgrade, setUpgrade] = useState<UpgradeFeature | null>(null);
-  const openUpgrade = (f: UpgradeFeature) => setUpgrade(f);
+  // Membership-locked clicks go straight to the plan page (no interstitial popup) when payments is on;
+  // the UpgradePanel modal remains only as the payments-off fallback (external membership link).
+  const openUpgrade = (f: UpgradeFeature) => { if (PAYMENTS_ENABLED) { nav('/plan'); return; } setUpgrade(f); };
   const upgradeEl = <UpgradePanel open={!!upgrade} feature={upgrade ?? 'practice'} onClose={() => setUpgrade(null)} />;
   // A practice set is locked only when the flag is on AND the server marked it locked.
   const isLocked = (s: CatalogItem) => PAYMENTS_ENABLED && s.locked === true;

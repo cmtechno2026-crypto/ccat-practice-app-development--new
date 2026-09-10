@@ -4,21 +4,19 @@ import type { EntitlementTier } from '@ccat/api-client';
 import { useApp } from '../lib/store';
 import { client } from '../lib/api';
 import { AppBar, Card, Loader } from '../components/ui';
-import {
-  PAYMENTS_ENABLED, TIER_CATALOG, eligibleUpgradeTiers, tierIndex,
-} from '../lib/entitlements';
+import { PAYMENTS_ENABLED, TIER_CATALOG, TIER_SEQUENCE, tierIndex } from '../lib/entitlements';
 
-// My Plan. Shows the student's current membership + what each higher plan unlocks. Upgrades run through
-// PayPal in-app: clicking Upgrade opens a confirm modal (pay with the REGISTERED email so the grant lands
-// on this account), then creates a PayPal order on the gateway and redirects to PayPal to pay.
-// On return (?checkout=success&token=<orderId>) the page captures the order; the gateway grants the tier
-// (idempotent with the webhook). The page then POLLs /v1/entitlements/me until the new tier unlocks.
+// My Plan — 4-tier pricing page (Free / Standard / Plus / Premium). Upgrades run through PayPal in-app:
+// a plan's button opens the confirm modal (pay with the registered email), which creates a PayPal order
+// on the gateway and redirects to PayPal. On return (?checkout=success&token=<orderId>) the page captures
+// the order; the gateway grants the tier (idempotent with the webhook). The page then POLLs
+// /v1/entitlements/me until the new tier unlocks. Prices here are display-only; the gateway owns the
+// real PayPal amount + the eligibility decision.
 
 const POLL_INTERVAL_MS = 1800;
 const POLL_MAX_TRIES = 12; // ~22s
 
 export function MyPlanScreen() {
-  // Flag OFF → no My Plan (true no-op). Route guard mirrors the sidebar visibility.
   if (!PAYMENTS_ENABLED) return <Navigate to="/home" replace />;
 
   const { entitlements, refreshEntitlements, flash } = useApp();
@@ -30,14 +28,11 @@ export function MyPlanScreen() {
   );
   const [busyTier, setBusyTier] = useState<EntitlementTier | null>(null);
   const [confirmTier, setConfirmTier] = useState<EntitlementTier | null>(null);
-  const [acctEmail, setAcctEmail] = useState<string | null | undefined>(undefined); // undefined = not loaded yet
+  const [acctEmail, setAcctEmail] = useState<string | null | undefined>(undefined);
   const baseline = useRef<number | null>(null);
 
-  // Load the entitlement if we don't have it yet.
   useEffect(() => { if (!entitlements) refreshEntitlements(); }, [entitlements, refreshEntitlements]);
 
-  // On return from PayPal approval, capture the order (PayPal appends ?token=<orderId>). The gateway
-  // grants on a COMPLETED capture; the poll below then confirms. Runs once.
   const captured = useRef(false);
   useEffect(() => {
     if (checkout !== 'success' || captured.current) return;
@@ -48,7 +43,6 @@ export function MyPlanScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkout]);
 
-  // On return from a successful Checkout, poll the entitlement until the tier goes up (webhook applied).
   useEffect(() => {
     if (phase !== 'activating') return;
     if (baseline.current == null) baseline.current = tierIndex(entitlements?.tier ?? 'free');
@@ -63,7 +57,6 @@ export function MyPlanScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  // Detect the unlock: the effective tier rose above where it was when we returned.
   useEffect(() => {
     if (phase === 'activating' && baseline.current != null && entitlements
         && tierIndex(entitlements.tier) > baseline.current) {
@@ -71,7 +64,6 @@ export function MyPlanScreen() {
     }
   }, [entitlements, phase]);
 
-  // Open the confirm modal for a tier; lazily fetch the account email to show in it (best-effort).
   async function openConfirm(tier: EntitlementTier) {
     if (tier === 'free' || busyTier) return;
     setConfirmTier(tier);
@@ -81,14 +73,13 @@ export function MyPlanScreen() {
     }
   }
 
-  // Pay → create the PayPal order and redirect to PayPal approval.
   async function proceedToPayPal() {
     const tier = confirmTier;
     if (!tier || tier === 'free' || busyTier) return;
     setBusyTier(tier);
     try {
       const order = await client.paypalCreateOrder(tier as 't50' | 't250' | 't500');
-      window.location.href = order.url; // redirect to PayPal approval
+      window.location.href = order.url;
     } catch (e) {
       setBusyTier(null);
       setConfirmTier(null);
@@ -97,8 +88,7 @@ export function MyPlanScreen() {
   }
 
   const current: EntitlementTier = entitlements?.tier ?? 'free';
-  const cur = TIER_CATALOG[current];
-  const upgrades = eligibleUpgradeTiers(current);
+  const curIdx = tierIndex(current);
   const confirmInfo = confirmTier ? TIER_CATALOG[confirmTier] : null;
 
   return (
@@ -116,75 +106,71 @@ export function MyPlanScreen() {
           </Card>
         )}
         {phase === 'done' && (
-          <Card className="stack">
-            <strong>🎉 You're upgraded!</strong>
+          <Card className="stack"><strong>🎉 You're upgraded!</strong>
             <div className="muted" style={{ fontSize: 13 }}>Your new plan is active. Enjoy your unlocked practice.</div>
           </Card>
         )}
         {phase === 'timeout' && (
-          <Card className="stack">
-            <strong>Almost there…</strong>
+          <Card className="stack"><strong>Almost there…</strong>
             <div className="muted" style={{ fontSize: 13 }}>Your payment is being confirmed. This can take a moment.</div>
             <button className="btn small secondary" onClick={() => { baseline.current = null; setPhase('activating'); }}>Check again</button>
           </Card>
         )}
         {phase === 'canceled' && (
-          <Card className="stack">
-            <strong>Checkout canceled</strong>
+          <Card className="stack"><strong>Checkout canceled</strong>
             <div className="muted" style={{ fontSize: 13 }}>No payment was made. You can pick a plan again whenever you're ready.</div>
           </Card>
         )}
 
-        {/* Current plan */}
-        <Card className="stack">
-          <div className="muted" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>Current plan</div>
-          <div className="row" style={{ alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-            <strong style={{ fontSize: 20 }}>{cur.name}</strong>
-            <span className="pill">{cur.priceLabel}</span>
-          </div>
-          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-            {cur.features.map((f) => <li key={f} className="muted" style={{ fontSize: 13 }}>{f}</li>)}
-          </ul>
-        </Card>
+        {/* Pricing page (indigo/Inter design, namespaced 'pp-'). */}
+        <div className="planpage">
+          <header className="pp-header">
+            <div className="pp-eyebrow">Concept Mastery Membership</div>
+            <h1 className="pp-h1">Choose the right plan for your child</h1>
+            <p className="pp-subtitle">Start free, choose Standard for individual practice, upgrade to Plus for full battery tests and timed exams, or choose Premium for everything plus live 1-on-1 mentoring.</p>
+          </header>
 
-        {/* Upgrades */}
-        {upgrades.length === 0 ? (
-          <Card><div className="muted">You're on the top plan — everything is unlocked. 🎉</div></Card>
-        ) : (
-          <>
-            <div className="muted" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>Upgrade</div>
-            {upgrades.map((t) => {
+          <section className="pp-plans" aria-label="Membership plans">
+            {TIER_SEQUENCE.map((t) => {
               const info = TIER_CATALOG[t];
+              const ti = tierIndex(t);
+              const isCurrent = t === current;
+              const isUpgrade = ti > curIdx;
               return (
-                <Card key={t} className="stack">
-                  <div className="row" style={{ alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                    <strong style={{ fontSize: 18 }}>{info.name}</strong>
-                    <span className="pill">{info.priceLabel}</span>
-                  </div>
-                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                    {info.features.map((f) => <li key={f} className="muted" style={{ fontSize: 13 }}>{f}</li>)}
+                <article key={t} className={`pp-card${info.badge ? ' premium' : ''}`}>
+                  {info.badge && <div className="pp-badge">{info.badge}</div>}
+                  <div className="pp-name">{info.name}</div>
+                  <div className="pp-price-row"><span className="pp-price">{info.price}</span><span className="pp-currency">CAD</span></div>
+                  {info.accessTerm && <p className="pp-term">{info.accessTerm}</p>}
+                  {info.desc && <p className="pp-desc">{info.desc}</p>}
+                  <div className="pp-divider" />
+                  <ul className="pp-list">
+                    {info.features.map((f) => (
+                      <li key={f} className="pp-li"><span className="pp-check">✓</span><span>{f}</span></li>
+                    ))}
                   </ul>
-                  <button
-                    className="btn"
-                    disabled={busyTier != null}
-                    onClick={() => openConfirm(t)}
-                  >
-                    {busyTier === t ? 'Redirecting…' : `Upgrade to ${info.label}`}
-                  </button>
-                </Card>
+                  {isCurrent ? (
+                    <button className="pp-btn secondary" type="button" disabled>Current Plan</button>
+                  ) : isUpgrade ? (
+                    <button className="pp-btn primary" type="button" disabled={busyTier != null} onClick={() => openConfirm(t)}>
+                      {busyTier === t ? 'Redirecting…' : `Get ${info.name} — ${info.priceLabel}`}
+                    </button>
+                  ) : (
+                    <button className="pp-btn secondary" type="button" disabled>Included</button>
+                  )}
+                </article>
               );
             })}
-            <div className="muted" style={{ fontSize: 12.5 }}>
-              Payment is handled securely by PayPal. Ask a grown-up to complete the purchase — your plan unlocks automatically once it's paid.
-            </div>
-          </>
-        )}
+          </section>
+
+          <p className="pp-foot">Prices shown in CAD. Standard, Plus and Premium include 12 months of access from the date of purchase. Mentoring sessions are scheduled separately by Concept Mastery.</p>
+        </div>
       </div>
 
-      {/* Confirm-email modal (shown between Upgrade and PayPal). */}
+      {/* Confirm-email modal (between a plan click and PayPal). */}
       {confirmTier && confirmInfo && (
         <div
-          role="dialog" aria-modal="true" aria-label="Confirm payment email"
+          role="dialog" aria-modal="true" aria-label="Confirm your plan"
           onClick={() => { if (!busyTier) setConfirmTier(null); }}
           style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(20,24,40,.5)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
@@ -199,11 +185,9 @@ export function MyPlanScreen() {
                 color: '#8a90a6', fontSize: 18, fontWeight: 800, cursor: 'pointer' }}>✕</button>
             <div style={{ width: 56, height: 56, borderRadius: 16, background: '#eaf0ff', display: 'flex',
               alignItems: 'center', justifyContent: 'center', fontSize: 30, margin: '0 auto 12px' }}>💳</div>
-            <h3 style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 21, margin: '0 0 8px', textAlign: 'center' }}>One quick check</h3>
+            <h3 style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 21, margin: '0 0 8px', textAlign: 'center' }}>Confirm your plan</h3>
             <p style={{ fontSize: 14, fontWeight: 700, color: '#4a4f66', lineHeight: 1.55, margin: '0 0 14px', textAlign: 'center' }}>
-              On the next screen, pay with the same email you registered with
-              {acctEmail ? <> — <strong style={{ color: '#3e7bee' }}>{acctEmail}</strong></> : ' '}
-              {' '}so the plan unlocks on <strong>this</strong> account. A different PayPal email won't upgrade you here.
+              You're purchasing this plan for{acctEmail ? <> <strong style={{ color: '#3e7bee' }}>{acctEmail}</strong></> : ' your account'}.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               background: '#eaf0ff', borderRadius: 12, padding: '11px 14px', marginBottom: 16 }}>
@@ -219,7 +203,7 @@ export function MyPlanScreen() {
                   borderRadius: 14, padding: '13px 18px', width: '100%', cursor: 'pointer',
                   background: '#ffc439', color: '#003087', opacity: busyTier ? 0.7 : 1 }}
               >
-                {busyTier ? 'Redirecting…' : 'Pay with PayPal'}
+                {busyTier ? 'Redirecting…' : 'Pay Now'}
               </button>
               <button onClick={() => { if (!busyTier) setConfirmTier(null); }}
                 style={{ background: 'transparent', border: 'none', color: '#8a90a6',

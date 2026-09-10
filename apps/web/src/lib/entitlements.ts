@@ -59,23 +59,31 @@ import type { EntitlementTier } from '@ccat/api-client';
 export interface TierInfo {
   tier: EntitlementTier;
   label: string;        // short ($50)
-  name: string;         // full name
-  priceLabel: string;   // display price
-  features: string[];   // what it unlocks (kid-readable)
+  name: string;         // full name (Standard / Plus / Premium)
+  price: string;        // big price, e.g. '$100'
+  priceLabel: string;   // price with currency, e.g. '$100 CAD' (used on buttons)
+  accessTerm?: string;  // e.g. '1-year access'
+  desc?: string;        // one-line plan description
+  badge?: string;       // e.g. 'BEST VALUE'
+  features: string[];   // what it unlocks
 }
 
 export const TIER_SEQUENCE: EntitlementTier[] = ['free', 't50', 't250', 't500'];
 export const SELLABLE_TIERS: EntitlementTier[] = ['t50', 't250', 't500'];
 
 export const TIER_CATALOG: Record<EntitlementTier, TierInfo> = {
-  free: { tier: 'free', label: 'Free', name: 'Free', priceLabel: '$0',
-    features: ['One demo practice set per battery'] },
-  t50: { tier: 't50', label: '$50', name: 'All Practice', priceLabel: '$50 CAD',
-    features: ['All practice sets unlocked'] },
-  t250: { tier: 't250', label: '$250', name: 'Practice + Exam + Combine', priceLabel: '$250 CAD',
-    features: ['All practice sets', 'Full timed Exam papers', 'Battery Combine'] },
-  t500: { tier: 't500', label: '$500', name: 'Everything + Weekly', priceLabel: '$500 CAD',
-    features: ['All practice sets', 'Full timed Exam papers', 'Battery Combine', 'Weekly test'] },
+  free: { tier: 'free', label: 'Free', name: 'Free', price: '$0', priceLabel: '$0 CAD',
+    desc: 'Explore the platform before choosing a paid plan.',
+    features: ['1 demo practice set for each battery'] },
+  t50: { tier: 't50', label: '$50', name: 'Standard', price: '$50', priceLabel: '$50 CAD', accessTerm: '1-year access',
+    desc: 'Ideal for students who want full access to practice material.',
+    features: ['Unlimited access to all individual practice sets'] },
+  t250: { tier: 't250', label: '$100', name: 'Plus', price: '$100', priceLabel: '$100 CAD', accessTerm: '1-year access',
+    desc: 'Expanded practice access, including full battery tests and timed exams.',
+    features: ['Unlimited access to all individual practice sets', 'Unlimited access to full battery tests', 'Full-length timed exam papers'] },
+  t500: { tier: 't500', label: '$200', name: 'Premium', price: '$200', priceLabel: '$200 CAD', accessTerm: '1-year access', badge: 'BEST VALUE',
+    desc: 'Complete preparation with practice, exams, and personal mentoring.',
+    features: ['Unlimited access to all individual practice sets', 'Full-length timed exam papers', 'Unlimited access to full battery tests', 'Weekly test', '5 live 1-on-1 mentoring sessions'] },
 };
 
 export function tierIndex(t: EntitlementTier): number {
