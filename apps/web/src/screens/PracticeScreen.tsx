@@ -100,10 +100,14 @@ export function PracticeScreen() {
     if (isLocked(item)) { openUpgrade(setFeature(item)); return; }
     setStarting(true);
     try {
+      // Exam sets are always timed with the paper's own duration; practice uses the student's timer pref.
+      const isExam = mode === 'exam';
       const min = timerMin;
-      const timerType = min == null ? 'untimed' : 'timed';
-      const durationSeconds = min == null ? undefined : Math.max(60, min * 60);
-      const session = await client.sessionStart(item.set_version_id, 'practice', timerType, durationSeconds);
+      const timerType = isExam ? 'timed' : (min == null ? 'untimed' : 'timed');
+      const durationSeconds = isExam
+        ? Math.max(60, (item.duration_minutes ?? 30) * 60)
+        : (min == null ? undefined : Math.max(60, min * 60));
+      const session = await client.sessionStart(item.set_version_id, isExam ? 'exam' : 'practice', timerType, durationSeconds);
       nav(`/session/${session.id}`);
     } catch (e) {
       // Payments Phase 2: a locked set caught at the server surfaces the Upgrade panel, not an error toast.
