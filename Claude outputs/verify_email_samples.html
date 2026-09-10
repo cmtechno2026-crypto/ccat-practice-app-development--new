@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCAT — Verify Email (register) · 3 samples</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --primary:#3e7bee; --primary-dark:#2c5fd0; --ink:#2a2e43; --ink-soft:#4a4f66; --muted:#8a90a6;
+    --line:#e7eaf3; --tint-blue:#eaf0ff; --green:#22a06b; --green-tint:#e8f7f1; --teal:#22c3a6;
+    --amber:#f6a821; --amber-tint:#fff6e2; --amber-ink:#9a6a12; --coral:#ef5b6b;
+    --radius:16px; --shadow:0 8px 24px -10px rgba(42,46,67,.18);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Nunito,system-ui,sans-serif;color:var(--ink);
+    background:radial-gradient(1200px 700px at 20% -5%,#eef3ff,#e7ecf7 60%);padding:28px 20px 60px}
+  .head{max-width:1120px;margin:0 auto 26px}
+  .head h1{font-family:'Baloo 2';font-weight:800;font-size:25px;margin:0 0 8px}
+  .head p{margin:0;color:var(--ink-soft);font-weight:700;font-size:14px;line-height:1.55;max-width:840px}
+  .head .tag{display:inline-block;font-family:'Baloo 2';font-weight:800;font-size:11px;letter-spacing:.6px;
+    text-transform:uppercase;color:var(--primary);background:var(--tint-blue);padding:5px 11px;border-radius:999px;margin-bottom:12px}
+  .grid{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px}
+  @media(max-width:960px){.grid{grid-template-columns:1fr;max-width:460px}}
+  .cell{display:flex;flex-direction:column;gap:12px}
+  .clabel{display:flex;align-items:center;gap:10px}
+  .clabel .n{width:26px;height:26px;border-radius:8px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-weight:800;font-size:14px;flex:none}
+  .clabel b{font-family:'Baloo 2';font-weight:800;font-size:16px}
+  .clabel .d{color:var(--muted);font-weight:700;font-size:12px}
+
+  .form{background:#f4f6fc;border:1px solid #e6e9f4;border-radius:16px;padding:20px 18px}
+  .eyebrow{font-family:'Baloo 2';font-weight:800;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;margin:0 0 12px}
+  label{display:block;font-weight:800;font-size:13px;color:var(--ink-soft);margin:0 0 6px}
+  .input{width:100%;padding:12px 13px;border:2px solid var(--line);border-radius:14px;font:inherit;font-weight:700;background:#fff;color:var(--ink)}
+  .input.ok{border-color:var(--teal)}
+  .hint{font-size:12px;font-weight:800;margin:5px 0 0}
+  .hint.ok{color:var(--green)}
+  .field{margin-bottom:14px}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;font-family:'Baloo 2';font-weight:800;font-size:15px;border:none;border-radius:14px;padding:12px 16px;cursor:pointer;width:100%}
+  .btn.primary{background:var(--primary);color:#fff}
+  .btn.soft{background:var(--tint-blue);color:var(--primary)}
+  .btn.sm{width:auto;padding:9px 16px;font-size:13px;border-radius:11px}
+  .btn.disabled{background:#c7d0e6;color:#fff}
+  .verified{display:inline-flex;align-items:center;gap:7px;background:var(--green-tint);color:var(--green);font-weight:800;font-size:13px;border-radius:999px;padding:7px 13px}
+  .notyet{display:inline-flex;align-items:center;gap:6px;background:var(--amber-tint);color:var(--amber-ink);font-weight:800;font-size:12px;border-radius:999px;padding:5px 11px}
+  .panel{background:#fff;border:1.5px solid var(--tint-blue);border-radius:14px;padding:13px 13px;margin-top:8px}
+  .panel .p-h{font-weight:800;font-size:12.5px;color:var(--ink-soft);line-height:1.45;margin:0 0 10px}
+  .row{display:flex;gap:8px;align-items:center}
+  .otp{display:flex;gap:7px;justify-content:space-between;margin-bottom:10px}
+  .otp .box{width:38px;height:46px;border:2px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-weight:800;font-size:20px;color:var(--ink);background:#fff}
+  .otp .box.on{border-color:var(--primary);background:#f5f9ff}
+  .link{color:var(--primary);font-weight:800;font-size:12.5px;background:none;border:none;cursor:pointer;padding:0}
+  .muted-sm{color:var(--muted);font-weight:700;font-size:12px}
+  .continue{margin-top:14px}
+
+  /* modal (sample 3) */
+  .stage{position:relative;background:#f4f6fc;border:1px solid #e6e9f4;border-radius:16px;overflow:hidden;min-height:360px}
+  .stage .bgform{padding:20px 18px;filter:blur(1.5px);opacity:.55}
+  .scrim{position:absolute;inset:0;background:rgba(20,24,40,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+  .modal{background:#fff;border-radius:16px;box-shadow:0 24px 60px -24px rgba(42,46,67,.55);padding:20px 18px;width:100%}
+  .modal h3{font-family:'Baloo 2';font-weight:800;font-size:18px;margin:0 0 6px;text-align:center}
+  .modal p{font-size:12.5px;font-weight:700;color:var(--ink-soft);line-height:1.5;margin:0 0 12px;text-align:center}
+  .x{position:absolute;right:10px;top:8px;color:#fff;font-size:16px;font-weight:800}
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="tag">CCAT · register · verify parent email</span>
+    <h1>Verify-email step — 3 samples</h1>
+    <p>Added after the parent email validates. Parent clicks <b>Verify email</b> → a 6-digit code is emailed → they enter it here → the field shows <b>✓ Email verified</b> and <b>Continue</b> unlocks. Each sample shows the code-entry state; the small green chip shows the done state. <b>Reply with a sample number.</b></p>
+  </div>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="cell">
+      <div class="clabel"><span class="n">1</span><b>Inline single input</b><span class="d">simplest — one code box</span></div>
+      <div class="form">
+        <p class="eyebrow">Parent</p>
+        <div class="field">
+          <label>Parent email</label>
+          <input class="input ok" value="parentA274001@gmail.com" readonly>
+          <div class="hint ok">✓ Looks good</div>
+        </div>
+        <div class="panel">
+          <p class="p-h">We emailed a 6-digit code to <b>parentA274001@gmail.com</b>. Enter it to verify:</p>
+          <div class="row">
+            <input class="input" style="letter-spacing:4px;text-align:center" placeholder="______" value="93•••" readonly>
+            <button class="btn primary sm">Verify</button>
+          </div>
+          <div style="margin-top:9px"><button class="link">Didn't get it? Resend code</button></div>
+        </div>
+        <div style="margin-top:10px"><span class="verified">✓ Email verified</span> <span class="muted-sm">← after success</span></div>
+        <button class="btn disabled continue">Continue →</button>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="cell">
+      <div class="clabel"><span class="n">2</span><b>OTP boxes + resend timer</b><span class="d">app-style, clearest</span></div>
+      <div class="form">
+        <p class="eyebrow">Parent</p>
+        <div class="field">
+          <label>Parent email</label>
+          <input class="input ok" value="parentA274001@gmail.com" readonly>
+          <div class="hint ok">✓ Looks good</div>
+        </div>
+        <div class="panel">
+          <p class="p-h">Enter the code we emailed to <b>parentA274001@gmail.com</b></p>
+          <div class="otp">
+            <span class="box on">9</span><span class="box on">3</span><span class="box on">2</span>
+            <span class="box">·</span><span class="box">·</span><span class="box">·</span>
+          </div>
+          <button class="btn primary" style="margin-bottom:8px">Verify code</button>
+          <div class="row" style="justify-content:space-between">
+            <span class="muted-sm">Resend in 0:42</span>
+            <button class="link" style="opacity:.5">Resend</button>
+          </div>
+        </div>
+        <div style="margin-top:10px"><span class="verified">✓ Email verified</span> <span class="muted-sm">← after success</span></div>
+        <button class="btn disabled continue">Continue →</button>
+      </div>
+    </div>
+
+    <!-- 3 -->
+    <div class="cell">
+      <div class="clabel"><span class="n">3</span><b>Button → modal</b><span class="d">keeps the form short</span></div>
+      <div class="stage">
+        <div class="bgform">
+          <p class="eyebrow">Parent</p>
+          <div class="field"><label>Parent email</label><input class="input ok" value="parentA274001@gmail.com" readonly><div class="hint ok">✓ Looks good</div></div>
+          <div class="row" style="justify-content:space-between;margin-top:4px">
+            <span class="notyet">● Not verified</span>
+            <button class="btn soft sm">Verify email</button>
+          </div>
+          <button class="btn disabled continue">Continue →</button>
+        </div>
+        <div class="scrim">
+          <div class="modal" style="position:relative">
+            <span class="x">✕</span>
+            <h3>Verify your email</h3>
+            <p>We sent a 6-digit code to<br><b>parentA274001@gmail.com</b></p>
+            <div class="otp">
+              <span class="box on">9</span><span class="box on">3</span><span class="box on">2</span>
+              <span class="box">·</span><span class="box">·</span><span class="box">·</span>
+            </div>
+            <button class="btn primary" style="margin-bottom:8px">Verify</button>
+            <div style="text-align:center"><button class="link">Resend code</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

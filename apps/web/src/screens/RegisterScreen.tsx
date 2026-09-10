@@ -6,22 +6,21 @@ import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AppBar, Field } from '../components/ui';
 
-// Registration funnel (Blueprint §4), mockup: CCAT Onboarding.dc.html. Minors-only product → the
-// account is ALWAYS guardian-owned: a guardian enters name + email + phone, which are VALIDATED
-// server-side (email format + E.164 phone with a country code) — NO OTP is generated, sent, or
-// verified. Then consent, then the child's userID + PIN create the student. Child-safety gating
-// (consent) preserved; the gateway is authoritative and re-validates the contact.
+// Registration funnel (Blueprint §4). Minors-only product → the account is ALWAYS guardian-owned: a
+// guardian enters name + email + phone (validated server-side). When VITE_EMAIL_VERIFY_ENABLED is on the
+// guardian must ALSO verify the email with a 6-digit code before Continue (server enforces via a signed
+// token when EMAIL_VERIFY_REQUIRED is on). Then consent, then the child's userID + PIN create the student.
 //
-// Steps: details (child + guardian, with inline email/phone validation) → consent → userID + PIN →
-// create + login.
+// Steps: details (child + guardian, with inline validation + optional email verify) → consent → account.
 
 type Step = 'details' | 'consent' | 'account' | 'success';
 const FUNNEL: Step[] = ['details', 'consent', 'account'];
 const STEP_LABEL: Record<Step, string> = { details: 'Details', consent: 'Consent', account: 'Account', success: 'Done' };
 const POLICY_VERSION = '2026-01';
+// Off by default. Turn on (with the gateway's EMAIL_VERIFY_REQUIRED and migration 0045 applied) once
+// email delivery is live.
+const EMAIL_VERIFY_ENABLED = (import.meta as any).env?.VITE_EMAIL_VERIFY_ENABLED === 'true';
 
-// Common country calling codes for the phone selector (ISO country → dial code + flag). The full
-// E.164 validation is done by libphonenumber-js against the chosen country, then re-checked server-side.
 const COUNTRIES: { iso: CountryCode; label: string; dial: string; flag: string }[] = [
   { iso: 'CA', label: 'Canada', dial: '+1', flag: '🇨🇦' },
   { iso: 'US', label: 'United States', dial: '+1', flag: '🇺🇸' },
@@ -35,9 +34,6 @@ const COUNTRIES: { iso: CountryCode; label: string; dial: string; flag: string }
   { iso: 'ZA', label: 'South Africa', dial: '+27', flag: '🇿🇦' },
 ];
 
-// Country-code picker. A native <select> shows the same text collapsed and open, but we want the
-// COLLAPSED control to show only the dial code (e.g. "+1") while the OPEN list shows flag + dial + name
-// so users can still pick by country. So this is a small custom listbox (close on outside-click / Esc).
 function CountrySelect({ value, onChange }: { value: CountryCode; onChange: (c: CountryCode) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -99,18 +95,12 @@ export function RegisterScreen() {
   const [gradeId, setGradeId] = useState('');
   const [gradeList, setGradeList] = useState<{ id: string; grade_number: number; name: string }[]>([]);
   const [gradesLoading, setGradesLoading] = useState(true);
-  // Load grades once, after mount, in a real effect (NOT useMemo — a memo is a render-phase perf hint
-  // React may discard/re-run, so firing an async fetch + setState from it left the list intermittently
-  // empty → the native <select> opened with zero options and "wouldn't scroll"). The ignore flag drops
-  // a late resolution if the component unmounts first.
   useEffect(() => {
     let ignore = false;
     setGradesLoading(true);
     client.grades()
       .then((g: any) => {
         if (ignore) return;
-        // Grades 5 & 6 are hidden at registration for now (content not ready) — re-enable by removing
-        // this filter when those grades launch.
         const list = (Array.isArray(g) ? g : []).filter((x: any) => Number(x?.grade_number) <= 4);
         setGradeList(list);
         if (list[0]) setGradeId((cur) => cur || list[0].id);
@@ -127,6 +117,15 @@ export function RegisterScreen() {
   const [phoneNational, setPhoneNational] = useState('');
   const [grant, setGrant] = useState('');
 
+  // email verification (flag-gated)
+  const [otp, setOtp] = useState('');
+  const [verifyStage, setVerifyStage] = useState<'idle' | 'sent' | 'verified'>('idle');
+  const [emailVerifyToken, setEmailVerifyToken] = useState('');
+  const [resendIn, setResendIn] = useState(0);
+  const [vBusy, setVBusy] = useState(false);
+  const [vErr, setVErr] = useState<string | null>(null);
+  const otpRef = useRef<HTMLInputElement>(null);
+
   // consent + account
   const [consentChecked, setConsentChecked] = useState(false);
   const [username, setUsername] = useState('');
@@ -136,14 +135,47 @@ export function RegisterScreen() {
   const age = ageFrom(birthYear, birthMonth, birthDay);
   const usernameValid = /^[a-z][a-z0-9_]{2,19}$/.test(username);
 
-  // Phone: validate the national number against the selected country → E.164 (isomorphic with the server).
   const phoneObj = useMemo(() => {
     const p = parsePhone(phoneNational, phoneCountry);
     return p && p.isValid() ? p : null;
   }, [phoneNational, phoneCountry]);
   const phoneE164 = phoneObj?.number ?? '';
   const emailOk = emailValid(guardianEmail);
-  const detailsValid = displayName.trim().length > 0 && !!gradeId && guardianName.trim().length > 0 && emailOk && !!phoneObj;
+  const emailVerifiedOk = !EMAIL_VERIFY_ENABLED || verifyStage === 'verified';
+  const detailsValid = displayName.trim().length > 0 && !!gradeId && guardianName.trim().length > 0 && emailOk && !!phoneObj && emailVerifiedOk;
+
+  // Changing the email invalidates any prior verification.
+  function onEmailChange(v: string) {
+    setGuardianEmail(v);
+    if (verifyStage !== 'idle' || emailVerifyToken) { setVerifyStage('idle'); setEmailVerifyToken(''); setOtp(''); setVErr(null); }
+  }
+
+  // Resend countdown.
+  useEffect(() => {
+    if (verifyStage !== 'sent' || resendIn <= 0) return;
+    const id = window.setInterval(() => setResendIn((n) => (n <= 1 ? 0 : n - 1)), 1000);
+    return () => window.clearInterval(id);
+  }, [verifyStage, resendIn]);
+
+  async function requestCode() {
+    setVBusy(true); setVErr(null);
+    try {
+      await client.registrationEmailRequest(guardianEmail.trim().toLowerCase());
+      setVerifyStage('sent'); setOtp(''); setResendIn(45);
+      setTimeout(() => otpRef.current?.focus(), 50);
+    } catch (e) {
+      setVErr(e instanceof ApiError ? (e.code === 'RATE_LIMITED' ? 'Too many requests — wait a few minutes.' : "Couldn't send the code right now. Try again shortly.") : (e as Error).message);
+    } finally { setVBusy(false); }
+  }
+  async function confirmCode() {
+    setVBusy(true); setVErr(null);
+    try {
+      const r = await client.registrationEmailConfirm(guardianEmail.trim().toLowerCase(), otp.trim());
+      setEmailVerifyToken(r.token); setVerifyStage('verified');
+    } catch (e) {
+      setVErr(e instanceof ApiError ? (e.code === 'RATE_LIMITED' ? 'Too many attempts — wait a few minutes.' : 'That code is wrong or expired. Check your email or resend.') : (e as Error).message);
+    } finally { setVBusy(false); }
+  }
 
   async function guard<T>(fn: () => Promise<T>) {
     setBusy(true); setErr(null);
@@ -152,10 +184,9 @@ export function RegisterScreen() {
     finally { setBusy(false); }
   }
 
-  // Step 1 → validate + persist the guardian contact (server re-validates), then straight to consent.
   async function submitDetails() {
     if (!phoneE164) { setErr('Enter a valid phone number including its country code.'); return; }
-    const r = await guard(() => client.registrationContact({ guardianName, email: guardianEmail.trim().toLowerCase(), phone: phoneE164, grant: grant || undefined }));
+    const r = await guard(() => client.registrationContact({ guardianName, email: guardianEmail.trim().toLowerCase(), phone: phoneE164, grant: grant || undefined, emailVerifyToken: emailVerifyToken || undefined }));
     if (r) { setGrant(r.registration_grant); setStep('consent'); }
   }
   async function acceptConsent() {
@@ -195,7 +226,6 @@ export function RegisterScreen() {
           )}
           {err && <div className="err" role="alert">{err}</div>}
 
-          {/* STEP 1 — child details + guardian contact (validated, no OTP) */}
           {step === 'details' && (
             <>
               <div className="card" style={{ background: 'var(--tint-blue)' }}>
@@ -229,8 +259,39 @@ export function RegisterScreen() {
               <Field label="Parent name"><input className="input" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="Parent full name" /></Field>
               <Field label="Parent email" hint={guardianEmail ? (emailOk ? '✓ Looks good' : 'Enter a valid email address') : undefined} hintKind={guardianEmail ? (emailOk ? 'ok' : 'bad') : undefined}>
                 <input className={`input ${guardianEmail ? (emailOk ? 'ok' : 'bad') : ''}`} type="email" inputMode="email"
-                  value={guardianEmail} onChange={(e) => setGuardianEmail(e.target.value)} placeholder="parent@email.com" />
+                  value={guardianEmail} onChange={(e) => onEmailChange(e.target.value)} placeholder="parent@email.com" />
               </Field>
+
+              {EMAIL_VERIFY_ENABLED && emailOk && (
+                <div className="stack" style={{ gap: 8 }}>
+                  {vErr && <div className="err" role="alert">{vErr}</div>}
+                  {verifyStage === 'idle' && (
+                    <button type="button" className="btn secondary" disabled={vBusy} onClick={requestCode}>{vBusy ? 'Sending…' : 'Verify email'}</button>
+                  )}
+                  {verifyStage === 'sent' && (
+                    <div className="verify-panel stack" style={{ gap: 10 }}>
+                      <div className="hint">Enter the code we emailed to <strong>{guardianEmail.trim().toLowerCase()}</strong></div>
+                      <div className="otp-entry" onClick={() => otpRef.current?.focus()}>
+                        <div className="otp-boxes">
+                          {[0, 1, 2, 3, 4, 5].map((i) => (
+                            <div key={i} className={`otp-box${otp.length > i ? ' on' : ''}${otp.length === i ? ' active' : ''}`}>{otp[i] ?? ''}</div>
+                          ))}
+                        </div>
+                        <input ref={otpRef} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp}
+                          aria-label="6-digit code" onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+                      </div>
+                      <button type="button" className="btn" disabled={otp.length !== 6 || vBusy} onClick={confirmCode}>{vBusy ? 'Verifying…' : 'Verify code'}</button>
+                      <div className="between">
+                        <span className="hint">{resendIn > 0 ? `Resend in 0:${String(resendIn).padStart(2, '0')}` : "Didn't get it?"}</span>
+                        <button type="button" disabled={resendIn > 0 || vBusy} onClick={requestCode}
+                          style={{ background: 'none', border: 'none', fontWeight: 800, fontSize: 12, color: resendIn > 0 ? 'var(--muted)' : 'var(--primary)', cursor: resendIn > 0 ? 'default' : 'pointer' }}>Resend</button>
+                      </div>
+                    </div>
+                  )}
+                  {verifyStage === 'verified' && <span className="verify-chip">✓ Email verified</span>}
+                </div>
+              )}
+
               <Field label="Parent phone (with country code)"
                 hint={phoneNational ? (phoneObj ? `✓ ${phoneE164}` : 'Enter a valid number for the selected country') : 'Pick a country, then enter the number'}
                 hintKind={phoneNational ? (phoneObj ? 'ok' : 'bad') : undefined}>
@@ -245,7 +306,6 @@ export function RegisterScreen() {
             </>
           )}
 
-          {/* STEP 2 — CONSENT */}
           {step === 'consent' && (
             <>
               <h2>Parent consent 📝</h2>
@@ -262,7 +322,6 @@ export function RegisterScreen() {
             </>
           )}
 
-          {/* STEP 3 — userID + PIN */}
           {step === 'account' && (
             <>
               <h2>Create the sign-in 🔐</h2>
@@ -276,7 +335,6 @@ export function RegisterScreen() {
             </>
           )}
 
-          {/* STEP 4 — SUCCESS */}
           {step === 'success' && (
             <div className="stack" style={{ textAlign: 'center', gap: 16, paddingTop: 12 }}>
               <div style={{ fontSize: 72 }}>🎉</div>

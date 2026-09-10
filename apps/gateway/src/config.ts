@@ -23,6 +23,7 @@ export interface Config {
   // today (a true no-op): no entitlement resolution, no locked flags, no upgrade_required gating.
   // Turn on only for the payments preview/branch. See PAYMENTS_ENABLED in .env.example.
   paymentsEnabled: boolean;
+  emailVerifyRequired: boolean;
   // PayPal (active processor). All SERVER-ONLY. env selects the API base (sandbox vs live). prices are
   // server-owned amounts per tier in CAD (e.g. '50.00'); a client-supplied amount is never accepted.
   // webhookId verifies inbound webhook signatures via PayPal's verify-webhook-signature API.
@@ -98,6 +99,7 @@ export function loadConfig(): Config {
     deviceCutoverDeadline: parseCutoverDeadline(process.env.DEVICE_CUTOVER_DEADLINE),
     // Default OFF. Only the literal string 'true' enables it, so any other value keeps production free.
     paymentsEnabled: process.env.PAYMENTS_ENABLED === 'true',
+    emailVerifyRequired: process.env.EMAIL_VERIFY_REQUIRED === 'true',
     paypal: {
       env: (process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox'),
       clientId: process.env.PAYPAL_CLIENT_ID ?? '',

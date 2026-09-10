@@ -8,6 +8,7 @@ import { AppError, toEnvelope } from './errors.js';
 import { ZodError } from 'zod';
 import { makeAuthenticateStudent, type StudentContext } from './plugins/auth.js';
 import { registerRegistrationRoutes } from './routes/registration.js';
+import { registerEmailVerifyRoutes } from './routes/email-verify.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerCatalogRoutes, registerHealthRoutes } from './routes/catalog.js';
@@ -140,6 +141,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerHealthRoutes(app, db);
   registerCatalogRoutes(app, db, cfg);
   registerRegistrationRoutes(app, db, cfg);
+  registerEmailVerifyRoutes(app, db, cfg);
   registerAuthRoutes(app, db, cfg);
   registerRecoveryRoutes(app, db, cfg);
   registerSessionRoutes(app, db, cfg);

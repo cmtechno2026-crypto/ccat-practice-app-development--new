@@ -874,3 +874,13 @@ p { line-height: 1.5; }
 }
 
 .auth-form .field { margin-bottom: 18px; }
+
+/* ===== Email-verify OTP boxes (registration) ===== */
+.otp-entry { position: relative; }
+.otp-entry .otp-boxes { display: flex; gap: 8px; }
+.otp-entry .otp-box { flex: 1; height: 48px; border: 2px solid var(--line); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; color: var(--ink); background: var(--card); }
+.otp-entry .otp-box.on { border-color: var(--primary); background: #f5f9ff; }
+.otp-entry .otp-box.active { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(62,123,238,.12); }
+.otp-entry input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; font-size: 16px; }
+.verify-panel { background: var(--card); border: 1.5px solid var(--tint-blue); border-radius: var(--radius-md); padding: 13px; }
+.verify-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--tint-green); color: var(--green); font-weight: 800; font-size: 13px; border-radius: var(--radius-pill); padding: 8px 13px; }

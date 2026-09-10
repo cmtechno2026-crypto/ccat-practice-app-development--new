@@ -7,6 +7,7 @@ import { Errors } from '../errors.js';
 import { hashSecret } from '../security/crypto.js';
 import { sendEmail } from '../lib/email.js';
 import { signGrant, verifyGrant, grantValidated, type RegistrationGrant } from '../security/token.js';
+import { verifyEmailToken } from './email-verify.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { grantReferralMilestone } from '../lib/referrals.js';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
@@ -23,6 +24,7 @@ const contactSchema = z.object({
   email: z.string().trim().toLowerCase().email('A valid email is required'),
   phone: z.string().trim().min(4),          // full validation (E.164 + country code) done below
   registration_grant: z.string().optional(), // present when the guardian edits + resubmits
+  email_verify_token: z.string().optional(), // present when email OTP verification is on
 });
 const consentSchema = z.object({
   registration_grant: z.string(),
@@ -59,6 +61,13 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Co
       throw Errors.validation('Enter a valid phone number including its country code (e.g. +14165551234).', { field: 'phone' });
     }
     const phoneE164 = parsed.number; // normalized E.164, e.g. +14165551234
+
+    // Email verification (flag-gated). When EMAIL_VERIFY_REQUIRED is on, a valid short-lived token from
+    // /v1/registration/email/confirm (for THIS email) is required before the guardian contact is accepted.
+    const emailVerified = verifyEmailToken(body.email_verify_token, email, cfg.hmacSecret);
+    if (cfg.emailVerifyRequired && !emailVerified) {
+      throw Errors.validation('Please verify your email before continuing.', { field: 'email' });
+    }
 
     // ONE ACCOUNT PER GUARDIAN EMAIL. Block an email already tied to a LIVE student account (any
     // status except purged). Orphan guardian rows left by abandoned registrations (no student linked
@@ -101,7 +110,10 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Co
       guardianId = gc.rows[0]!.id;
     }
 
-    // NOTE: email_verified_at / phone_verified_at are intentionally left NULL — the contact is
+    if (emailVerified) {
+      await db.query(`update ccat.guardian_contacts set email_verified_at = now() where id = $1`, [guardianId]);
+    }
+    // NOTE: phone_verified_at is intentionally left NULL — the contact is
     // validated, not OTP-verified, and the data stays truthful.
     const grant: RegistrationGrant = {
       guardianId, guardianName: body.guardian_name,

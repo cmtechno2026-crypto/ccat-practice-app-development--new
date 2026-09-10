@@ -82,7 +82,7 @@ export async function grantPaidEntitlementPaypal(
     const label = TIER_LABELS[tier] ?? tier;
     const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
       <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT plan is active 🎉</h2>
-      <p>Thank you! Your account is now on the <strong>${label}</strong>.</p>
+      <p>Congratulations! Your account is now on the <strong>${label}</strong>.</p>
       <p>This unlocks: ${tierUnlocksText(tier)}.</p>
       <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
     </div>`;

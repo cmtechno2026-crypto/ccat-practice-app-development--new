@@ -92,9 +92,9 @@ export class CcatClient {
   // ---- registration (§4) ----------------------------------------------------
   // Validate + persist the unified guardian contact (name + email + E.164 phone). No OTP. Returns a
   // grant carrying the validated contact. Pass `grant` to update the same contact on a resubmit.
-  registrationContact(input: { guardianName: string; email: string; phone: string; grant?: string }) {
+  registrationContact(input: { guardianName: string; email: string; phone: string; grant?: string; emailVerifyToken?: string }) {
     return this.request<ContactValidated>('POST', '/v1/registration/contact/start', {
-      body: { guardian_name: input.guardianName, email: input.email, phone: input.phone, registration_grant: input.grant },
+      body: { guardian_name: input.guardianName, email: input.email, phone: input.phone, registration_grant: input.grant, email_verify_token: input.emailVerifyToken },
     });
   }
   registrationConsent(grant: string, policyVersion: string, consentHash: string) {
@@ -106,6 +106,12 @@ export class CcatClient {
     referral_code?: string;
   }) {
     return this.request<StudentProfile>('POST', '/v1/registration/student', { body: input });
+  }
+  registrationEmailRequest(email: string) {
+    return this.request<{ ok: boolean; _dev_code?: string }>('POST', '/v1/registration/email/request', { body: { email } });
+  }
+  registrationEmailConfirm(email: string, code: string) {
+    return this.request<{ email: string; token: string }>('POST', '/v1/registration/email/confirm', { body: { email, code } });
   }
 
   // ---- auth (§4.4, §5) ------------------------------------------------------
