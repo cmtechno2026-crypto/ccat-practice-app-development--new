@@ -164,7 +164,9 @@ export function RegisterScreen() {
       setVerifyStage('sent'); setOtp(''); setResendIn(45);
       setTimeout(() => otpRef.current?.focus(), 50);
     } catch (e) {
-      setVErr(e instanceof ApiError ? (e.code === 'RATE_LIMITED' ? 'Too many requests — wait a few minutes.' : "Couldn't send the code right now. Try again shortly.") : (e as Error).message);
+      // Already-registered email: show the standard banner and do NOT proceed to the code step.
+      if (e instanceof ApiError && e.code === 'EMAIL_IN_USE') { setErr(e.message); setVErr(null); setVerifyStage('idle'); }
+      else setVErr(e instanceof ApiError ? (e.code === 'RATE_LIMITED' ? 'Too many requests — wait a few minutes.' : "Couldn't send the code right now. Try again shortly.") : (e as Error).message);
     } finally { setVBusy(false); }
   }
   async function confirmCode() {

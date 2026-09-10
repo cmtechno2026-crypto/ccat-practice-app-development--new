@@ -37,6 +37,18 @@ export function registerEmailVerifyRoutes(app: FastifyInstance, db: DB, cfg: Con
 
   app.post('/v1/registration/email/request', { config: { rateLimit: { max: reqMax, timeWindow: '15 minutes' } } }, async (req, reply) => {
     const { email } = requestSchema.parse(req.body);
+    // Do not send a code for an email already tied to a LIVE account — the parent must use a different
+    // email (mirrors contact/start's one-account-per-email rule). Verification never proceeds for it.
+    const inUse = await db.query(
+      `select 1 from ccat.guardian_contacts gc
+         join ccat.student_guardians sg on sg.guardian_id = gc.id
+         join ccat.students s on s.id = sg.student_id
+        where gc.email = $1 and s.status <> 'purged' limit 1`,
+      [email],
+    );
+    if (inUse.rows.length > 0) {
+      throw Errors.conflict('EMAIL_IN_USE', 'This email is already registered to an account. Please enter a different email to continue.', { field: 'email' });
+    }
     if (cfg.env !== 'local' && !emailConfigured(cfg)) throw Errors.emailUnavailable();
     const recent = await db.query(
       `select count(*)::int as n from ccat.email_verifications
