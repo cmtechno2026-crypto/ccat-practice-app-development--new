@@ -8,7 +8,7 @@ import { NOTIF_META } from '../components/Layout';
 
 // Membership tier label for the directory column (Payments). Shown only when VITE_PAYMENTS_ENABLED.
 const tierLabel = (t?: string | null) =>
-  t === 't50' ? '$50' : t === 't250' ? '$250' : t === 't500' ? '$500' : t === 'free' ? 'Free' : '—';
+  t === 't50' ? '$50' : t === 't250' ? '$100' : t === 't500' ? '$200' : t === 'free' ? 'Free' : '—';
 
 // Row-tint per pending-request kind (paired with the left colour bar + dots). Colours match the
 // notification bell (NOTIF_META) so the directory and the bell read as one system.

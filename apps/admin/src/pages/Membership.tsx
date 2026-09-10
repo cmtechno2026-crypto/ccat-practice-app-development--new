@@ -6,15 +6,15 @@ import { Panel, useToast } from '../components/ui';
 // Payments Phase 2 — MANUAL membership grant (temporary bridge until Stripe/webhook exist). Set a
 // guardian's tier by email so both states can be tested today with no payment: free (demo-only) vs
 // t50 (all practice; Exam/Combine still locked). Super-Admin only (server enforces config.global).
-// Only tiers reachable this phase are offered (free / t50) — $250/$500 have no grant path yet.
+// All four tiers are grantable here (free / $50 / $100 / $200) — prices match the web CCAT plans.
 // Entering an email also shows the student(s) linked to that guardian so you grant the right family.
 
 type Tier = 'free' | 't50' | 't250' | 't500';
 const TIERS: { value: Tier; label: string }[] = [
   { value: 'free', label: 'free — demo sets only' },
-  { value: 't50', label: 't50 ($50) — all practice (Exam/Combine locked)' },
-  { value: 't250', label: 't250 ($250) — practice + Exam + Combine (Weekly locked)' },
-  { value: 't500', label: 't500 ($500) — everything incl. Weekly' },
+  { value: 't50', label: '$50 (Standard) — all practice (Exam/Combine locked)' },
+  { value: 't250', label: '$100 (Plus) — practice + Exam + Combine (Weekly locked)' },
+  { value: 't500', label: '$200 (Premium) — everything incl. Weekly' },
 ];
 const REASONS: { value: string; label: string }[] = [
   { value: 'comp', label: 'Comp (free access)' },
