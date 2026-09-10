@@ -100,8 +100,8 @@ export function Membership() {
     <>
       <h2>Membership</h2>
       <p className="lead">
-        Manually set a guardian's membership tier by email. This is a temporary bridge for testing until
-        Stripe is connected. {editable ? '' : 'Read-only — needs Super-Admin.'}
+        Manually set a guardian's membership tier by email. Real purchases flow through PayPal; use this to
+        grant or adjust access manually. {editable ? '' : 'Read-only — needs Super-Admin.'}
       </p>
 
       <Panel title="Set a guardian's tier">
@@ -166,7 +166,7 @@ export function Membership() {
               {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
             <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-              "Paid" records a real payment (normally set by Stripe); the rest are non-paying access.
+              "Paid" records a real payment (normally set by PayPal); the rest are non-paying access.
             </div>
           </label>
 
@@ -181,7 +181,7 @@ export function Membership() {
           </div>
           <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
             All tiers are grantable (free / t50 / t250 / t500). t250 unlocks Exam + Battery Combine; t500 adds
-            Weekly. Manual grants are for testing; real purchases flow through Stripe Checkout and the webhook.
+            Weekly. Manual grants are for admin use; real purchases flow through PayPal checkout and the webhook.
           </p>
         </div>
       </Panel>

@@ -5,7 +5,6 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { verifySecret, hashToken } from '../security/crypto.js';
 import { signToken, newRefreshToken } from '../security/token.js';
-import { DEVICE_CUTOVER_REASON } from '../config.js';
 
 const loginSchema = z.object({
   username: z.string(),
@@ -61,72 +60,58 @@ export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
       }
     }
 
-    // Single-device enforcement (§5.1, §5.4): login only from the enrolled active device.
-    const dev = await db.query(
-      `select id from ccat.student_devices where student_id = $1 and status = 'active'`,
+    // Device model: FREE SWITCHING, one active device at a time. A valid credential login always binds to
+    // the presenting device — no OTP, no admin. Real students: if a DIFFERENT device is active, sign it out
+    // (revoke that device + this student's live sessions) and enroll this browser, so exactly one device is
+    // active at a time. The per-request middleware then rejects the old device (device_status != active),
+    // which is how "logged in elsewhere" signs the previous browser out. Preview ids are shared by teammates
+    // from many browsers, so they REUSE the one active preview device and never revoke each other. The
+    // partial unique index student_devices_one_active keeps "one active row" race-safe.
+    const enrollActive = async (): Promise<{ id: string } | null> => {
+      const ins = await db.query(
+        `insert into ccat.student_devices (student_id, device_hash, status, enrolled_at)
+         select $1, $2, 'active', now()
+          where not exists (select 1 from ccat.student_devices where student_id = $1 and status = 'active')
+         returning id`,
+        [s.id, body.device_hash],
+      );
+      if (ins.rows.length > 0) {
+        await db.query(
+          `insert into ccat.audit_log(actor_kind,event_type,target_kind,target_id,new_value)
+           values ('student','device.enrolled','device',$1,$2)`,
+          [ins.rows[0]!.id, JSON.stringify({ status: 'active', device_hash_prefix: String(body.device_hash).slice(0, 8) })],
+        );
+        return ins.rows[0]!;
+      }
+      // A concurrent login won the race — reuse whatever is now the single active device.
+      const again = await db.query(
+        `select id from ccat.student_devices where student_id = $1 and status = 'active'`,
+        [s.id],
+      );
+      return again.rows[0] ?? null;
+    };
+
+    const active = await db.query(
+      `select id, device_hash from ccat.student_devices where student_id = $1 and status = 'active'`,
       [s.id],
     );
-    let enrolled = dev.rows[0] ?? null;
-    if (!enrolled) {
-      // One-time DOMAIN CUTOVER enroll-on-first-login. Strictly bounded — all must hold:
-      //   • a cutover window is open (DEVICE_CUTOVER_DEADLINE is a future UTC instant),
-      //   • this is a real student (never preview),
-      //   • the student was part of the cutover (has a device revoked with DEVICE_CUTOVER_REASON),
-      //   • and they have ZERO active devices right now.
-      // Then the requesting browser becomes their one active device. This is NOT unrestricted
-      // password-only replacement: outside the window, or for a normal device loss (no cutover marker),
-      // the usual NO_ENROLLED_DEVICE stands and OTP replacement is required. Fails CLOSED on any error.
-      const cutoverOpen = cfg.deviceCutoverDeadline != null && cfg.deviceCutoverDeadline.getTime() > Date.now();
-      if (cutoverOpen && !s.is_preview) {
-        const marked = await db.query(
-          `select 1 from ccat.student_devices where student_id = $1 and revoked_reason = $2 limit 1`,
-          [s.id, DEVICE_CUTOVER_REASON],
-        );
-        if (marked.rows.length > 0) {
-          try {
-            // The partial unique index student_devices_one_active (re-added at cutover) guarantees at most
-            // one active row per student, so a concurrent double-submit can enroll only once — the loser
-            // hits a unique violation, which we recover by reusing the row that won.
-            const ins = await db.query(
-              `insert into ccat.student_devices (student_id, device_hash, status, enrolled_at)
-               select $1, $2, 'active', now()
-                where not exists (
-                  select 1 from ccat.student_devices where student_id = $1 and status = 'active')
-               returning id`,
-              [s.id, body.device_hash],
-            );
-            if (ins.rows.length > 0) {
-              enrolled = ins.rows[0]!;
-              await db.query(
-                `insert into ccat.audit_log(actor_kind,event_type,target_kind,target_id,new_value,reason)
-                 values ('student','device.enrolled.cutover','device',$1,$2,$3)`,
-                [enrolled.id, JSON.stringify({ status: 'active', device_hash_prefix: String(body.device_hash).slice(0, 8) }), DEVICE_CUTOVER_REASON],
-              );
-            } else {
-              // A concurrent enroll won the race — reuse whatever is now the single active device.
-              const again = await db.query(
-                `select id from ccat.student_devices where student_id = $1 and status = 'active'`,
-                [s.id],
-              );
-              enrolled = again.rows[0] ?? null;
-            }
-          } catch {
-            enrolled = null; // fail closed — never enroll on an unexpected error
-          }
-        }
-      }
-    }
-    if (!enrolled) throw Errors.forbidden('NO_ENROLLED_DEVICE', 'No enrolled device; complete device replacement');
-    // PREVIEW WAIVER (is_preview only): several teammates share one preview id from their own
-    // browsers, so the device_hash match is skipped and the session binds to the shared preview
-    // device. Real students keep strict single-device enforcement — this branch never runs for them.
-    if (!s.is_preview) {
-      const match = await db.query(
-        `select 1 from ccat.student_devices where id = $1 and device_hash = $2`,
-        [enrolled.id, body.device_hash],
+    let enrolled: { id: string } | null = active.rows[0] ? { id: active.rows[0].id } : null;
+
+    if (!s.is_preview && active.rows[0] && active.rows[0].device_hash !== body.device_hash) {
+      // Switch to a new device: sign out the previously active device and all of this student's live
+      // sessions, then enroll the presenting browser below as the new single active device.
+      await db.query(
+        `update ccat.student_devices set status='revoked', revoked_at=now(), revoked_reason=$2 where id=$1`,
+        [active.rows[0].id, 'device_switch'],
       );
-      if (match.rows.length === 0) throw Errors.deviceNotEnrolled();
+      await db.query(
+        `update ccat.auth_sessions set revoked_at=now(), revoked_reason=$2 where student_id=$1 and revoked_at is null`,
+        [s.id, 'device_switch'],
+      );
+      enrolled = null;
     }
+    if (!enrolled) enrolled = await enrollActive();
+    if (!enrolled) throw Errors.forbidden('DEVICE_ENROLL_FAILED', 'Could not register this device; please try again');
 
     await db.query('update ccat.student_credentials set failed_attempts = 0, locked_until = null where student_id = $1', [s.id]);
 

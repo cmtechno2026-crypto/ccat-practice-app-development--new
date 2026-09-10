@@ -9,7 +9,6 @@ import { WelcomeScreen } from './screens/WelcomeScreen';
 import { RegisterScreen } from './screens/RegisterScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { RecoveryScreen } from './screens/RecoveryScreen';
-import { DeviceReplaceScreen } from './screens/DeviceReplaceScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { PracticeScreen } from './screens/PracticeScreen';
 import { SessionScreen } from './screens/SessionScreen';
@@ -26,8 +25,8 @@ import { HelpScreen } from './screens/HelpScreen';
 import { ReferralScreen } from './screens/ReferralScreen';
 import { MyPlanScreen } from './screens/MyPlanScreen';
 
-// Routes without the app chrome (pre-auth): welcome/login/register/recovery/device.
-const AUTH_ROUTES = ['/', '/login', '/register', '/recovery', '/device'];
+// Routes without the app chrome (pre-auth): welcome/login/register/recovery.
+const AUTH_ROUTES = ['/', '/login', '/register', '/recovery'];
 
 function Protected({ children }: { children: JSX.Element }) {
   const { profile } = useApp();
@@ -43,7 +42,6 @@ const RoutesTree = ({ profile }: { profile: unknown }) => (
     <Route path="/register" element={<RegisterScreen />} />
     <Route path="/login" element={<LoginScreen />} />
     <Route path="/recovery" element={<RecoveryScreen />} />
-    <Route path="/device" element={<DeviceReplaceScreen />} />
     <Route path="/home" element={<Protected><HomeScreen /></Protected>} />
     <Route path="/practice" element={<Protected><PracticeScreen /></Protected>} />
     <Route path="/session/:id" element={<Protected><SessionScreen /></Protected>} />

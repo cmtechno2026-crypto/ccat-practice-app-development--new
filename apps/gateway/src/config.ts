@@ -23,13 +23,6 @@ export interface Config {
   // today (a true no-op): no entitlement resolution, no locked flags, no upgrade_required gating.
   // Turn on only for the payments preview/branch. See PAYMENTS_ENABLED in .env.example.
   paymentsEnabled: boolean;
-  // Payments Phase 1 (Stripe Checkout). All server-owned; the client never sees a secret or a price.
-  // Empty when unset — the checkout/webhook routes fail closed and report a clear config error rather
-  // than guessing. Price IDs map tier -> Stripe Price; the gateway builds Checkout line_items from THIS
-  // map only (never a client-supplied price). webAppOrigin is the CCAT web app base for success/cancel.
-  stripeSecretKey: string;
-  stripeWebhookSecret: string;
-  stripePriceIds: { t50: string; t250: string; t500: string };
   // PayPal (active processor). All SERVER-ONLY. env selects the API base (sandbox vs live). prices are
   // server-owned amounts per tier in CAD (e.g. '50.00'); a client-supplied amount is never accepted.
   // webhookId verifies inbound webhook signatures via PayPal's verify-webhook-signature API.
@@ -105,13 +98,6 @@ export function loadConfig(): Config {
     deviceCutoverDeadline: parseCutoverDeadline(process.env.DEVICE_CUTOVER_DEADLINE),
     // Default OFF. Only the literal string 'true' enables it, so any other value keeps production free.
     paymentsEnabled: process.env.PAYMENTS_ENABLED === 'true',
-    stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? '',
-    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
-    stripePriceIds: {
-      t50: process.env.STRIPE_PRICE_T50 ?? '',
-      t250: process.env.STRIPE_PRICE_T250 ?? '',
-      t500: process.env.STRIPE_PRICE_T500 ?? '',
-    },
     paypal: {
       env: (process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox'),
       clientId: process.env.PAYPAL_CLIENT_ID ?? '',

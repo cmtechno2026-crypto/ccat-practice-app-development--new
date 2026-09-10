@@ -116,29 +116,26 @@ describe('timed session auto-finalization (§14)', () => {
   });
 });
 
-describe('device replacement (§5.2)', () => {
-  it('revokes the old device + session and enrolls the new sole device', async () => {
+describe('device switching (free, one active at a time)', () => {
+  it('login on a new device revokes the old device + session and enrolls the new sole device', async () => {
     const { tokens } = await registerAndLogin('lc_dev', 'dev-old');
     const oldToken = tokens.access_token;
     // old token works now
     expect((await json('GET', '/v1/profile', { token: oldToken })).status).toBe(200);
 
-    const start = await json('POST', '/v1/devices/replacement/start', { body: { username: 'lc_dev', new_device_hash: 'dev-new', channel: 'email' } });
-    expect(start.status).toBe(202);
-    const verify = await json('POST', '/v1/devices/replacement/verify', { body: { challenge_id: start.body.challenge_id, code: start.body._dev_code } });
-    expect(verify.status).toBe(200);
-    const newToken = verify.body.access_token;
-
-    // old token now rejected (session + device revoked)
-    expect((await json('GET', '/v1/profile', { token: oldToken })).status).toBe(401);
-    // new token works
-    expect((await json('GET', '/v1/profile', { token: newToken })).status).toBe(200);
-    // login on old device now rejected
-    const oldLogin = await json('POST', '/v1/auth/login', { body: { username: 'lc_dev', pin: '1234', device_hash: 'dev-old' } });
-    expect(oldLogin.status).toBe(403);
-    // login on new device works
+    // Just log in on the new device — no code, no admin. This switches the active device.
     const newLogin = await json('POST', '/v1/auth/login', { body: { username: 'lc_dev', pin: '1234', device_hash: 'dev-new' } });
     expect(newLogin.status).toBe(200);
+    const newToken = newLogin.body.access_token;
+
+    // old token now rejected (session + device revoked on switch)
+    expect([401, 403]).toContain((await json('GET', '/v1/profile', { token: oldToken })).status);
+    // new token works
+    expect((await json('GET', '/v1/profile', { token: newToken })).status).toBe(200);
+    // logging back in on the OLD device switches again (free switching), and the new token is then rejected
+    const backOld = await json('POST', '/v1/auth/login', { body: { username: 'lc_dev', pin: '1234', device_hash: 'dev-old' } });
+    expect(backOld.status).toBe(200);
+    expect([401, 403]).toContain((await json('GET', '/v1/profile', { token: newToken })).status);
   });
 });
 

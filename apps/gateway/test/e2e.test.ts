@@ -91,11 +91,19 @@ describe('registration + identity', () => {
     expect(student.body.error.code).toBe('USERNAME_TAKEN');
   });
 
-  it('rejects login from a non-enrolled device (single-device, §5)', async () => {
-    await registerAndLogin('kid_two', 'device-B');
-    const bad = await json('POST', '/v1/auth/login', { body: { username: 'kid_two', pin: '1234', device_hash: 'device-OTHER' } });
-    expect(bad.status).toBe(403);
-    expect(bad.body.error.code).toBe('DEVICE_NOT_ENROLLED');
+  it('login on a new device switches to it and signs out the old one (free switching, one active)', async () => {
+    const { tokens } = await registerAndLogin('kid_two', 'device-B');
+    const oldToken = tokens.access_token;
+    // A login from a different device succeeds (switch) — no code, no admin.
+    const other = await json('POST', '/v1/auth/login', { body: { username: 'kid_two', pin: '1234', device_hash: 'device-OTHER' } });
+    expect(other.status).toBe(200);
+    expect(other.body.access_token).toBeTruthy();
+    // The old device is now signed out (its device was revoked on the switch).
+    const oldReq = await json('GET', '/v1/profile', { token: oldToken });
+    expect([401, 403]).toContain(oldReq.status);
+    // The new device works.
+    const newReq = await json('GET', '/v1/profile', { token: other.body.access_token });
+    expect(newReq.status).toBe(200);
   });
 
   it('rejects wrong PIN', async () => {

@@ -69,15 +69,16 @@ describe('Onboarding — validate-only (no OTP)', () => {
     expect(created.status).toBe(201);
   });
 
-  it('logs in with userID + PIN; wrong PIN 401; a different device is rejected (single-device)', async () => {
+  it('logs in with userID + PIN; wrong PIN 401; a different device switches (free switching)', async () => {
     await onboard('loginval', 'dev-loginval-1', 'loginval@x.test', '+14165550001');
     const good = await json('POST', '/v1/auth/login', { username: 'loginval', pin: '1234', device_hash: 'dev-loginval-1' });
     expect(good.status).toBe(200);
     expect(good.body.access_token).toBeTruthy();
     const wrong = await json('POST', '/v1/auth/login', { username: 'loginval', pin: '9999', device_hash: 'dev-loginval-1' });
     expect(wrong.status).toBe(401);
+    // A valid login from a different device switches to it (no OTP, no admin) — returns tokens, not 403.
     const otherDevice = await json('POST', '/v1/auth/login', { username: 'loginval', pin: '1234', device_hash: 'a-different-device' });
-    expect(otherDevice.status).toBe(403);
-    expect(otherDevice.body.error.code).toBe('DEVICE_NOT_ENROLLED');
+    expect(otherDevice.status).toBe(200);
+    expect(otherDevice.body.access_token).toBeTruthy();
   });
 });

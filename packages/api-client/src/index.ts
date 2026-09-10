@@ -125,14 +125,8 @@ export class CcatClient {
   pinResetComplete(email: string, code: string, newPin: string) {
     return this.request<{ status: string }>('POST', '/v1/recovery/pin/complete', { body: { email, code, new_pin: newPin } });
   }
-  deviceReplacementStart(username: string, newDeviceHash: string, channel: Channel) {
-    return this.request<ChallengeStarted>('POST', '/v1/devices/replacement/start', { body: { username, new_device_hash: newDeviceHash, channel } });
-  }
-  async deviceReplacementVerify(challengeId: string, code: string): Promise<TokenPair> {
-    const t = await this.request<TokenPair>('POST', '/v1/devices/replacement/verify', { body: { challenge_id: challengeId, code } });
-    await this.tokens.set(t);
-    return t;
-  }
+  // Device model: free switching, one active device at a time. A normal login on a new device auto-enrolls
+  // it and signs out the old one — there is no separate device-replacement flow.
 
   // ---- catalog / profile / home ---------------------------------------------
   catalog() { return this.request<CatalogItem[]>('GET', '/v1/catalog', { auth: true }); }
@@ -140,11 +134,6 @@ export class CcatClient {
   // Payments Phase 2 — the student's effective membership + capabilities. paymentsEnabled:false when the
   // gateway flag is off (capabilities unlock everything). Web calls this only when VITE_PAYMENTS_ENABLED.
   entitlementsMe() { return this.request<EntitlementsMe>('GET', '/v1/entitlements/me', { auth: true }); }
-  // Payments Phase 1 — start a Stripe Checkout for a tier UPGRADE. The client sends ONLY the tier; the
-  // gateway owns the price, eligibility, and redirect URLs. Returns the hosted Checkout URL to redirect to.
-  checkoutSession(tier: 't50' | 't250' | 't500') {
-    return this.request<{ url: string | null; id: string }>('POST', '/v1/checkout/session', { auth: true, body: { tier } });
-  }
   // Payments (PayPal, in-app) — create an order for a tier UPGRADE. The client sends ONLY the tier; the
   // gateway owns the amount, eligibility, and return URLs. Returns the PayPal approval URL to redirect to.
   paypalCreateOrder(tier: 't50' | 't250' | 't500') {
