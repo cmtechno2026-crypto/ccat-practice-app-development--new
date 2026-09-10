@@ -70,7 +70,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   // Per-set question cap for this set's subcategory (45 for a "… Battery Combine", 15 otherwise) — from the
   // catalog via subcategory.maxQuestionsPerSet; never hard-coded. Shown in the header so the admin sees the
   // real ceiling. A Battery Combine set may hold up to 45 questions; every other subcategory stays at 15.
-  const maxPerSet = maxQuestionsForSub((subs as any[]).find((s: any) => s.id === set?.subcategory_id));
+  const maxPerSet = set?.allowed_exam ? 45 : maxQuestionsForSub((subs as any[]).find((s: any) => s.id === set?.subcategory_id));
   const scopeCat = scopeCategoryId;
   const subForCat = useMemo(() => subs.filter((s: any) => s.category_id === (scopeCat || set?.category_id)), [subs, scopeCat, set]);
   // The per-question TYPE field was removed from the card UI (it is redundant — every question inherits

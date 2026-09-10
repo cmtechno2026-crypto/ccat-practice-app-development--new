@@ -52,7 +52,7 @@ export function ExamPapers() {
     if (!detail) return;
     const cur = detail.questions.map((q: any) => q.id);
     const ids = [...new Set([...cur, ...newIds])];
-    if (ids.length > 20) { toast('An exam paper holds at most 20 questions'); return; }
+    if (ids.length > 45) { toast('An exam paper holds at most 45 questions'); return; }
     await act(api.setMembership(detail.id, ids), 'Questions added');
     setPickSection(null);
   };

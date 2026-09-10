@@ -484,12 +484,13 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (cnt.rows[0]!.a < 5) throw Errors.validation('A set needs at least 5 active questions before it can be published (§18)');
     // Enforce this subcategory's max questions per set (45 for Combine, 15 otherwise) at publish, too.
     const capRow = await db.query(
-      `select coalesce(sub.max_questions_per_set, 15) as maxq
+      `select sv.allowed_exam, coalesce(sub.max_questions_per_set, 15) as maxq
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id = sv.question_set_id
          join ccat.subcategories sub on sub.id = qs.subcategory_id
         where sv.id = $1`, [id]);
-    const maxq = Number(capRow.rows[0]?.maxq ?? 15);
+    // Exam papers span three batteries; the whole-paper cap is 45 regardless of the anchor subcategory.
+    const maxq = capRow.rows[0]?.allowed_exam ? 45 : Number(capRow.rows[0]?.maxq ?? 15);
     if (cnt.rows[0]!.n > maxq) throw Errors.validation(`This subcategory allows up to ${maxq} questions per set`, { code: 'SET_TOO_LARGE' });
     // Validate every ACTIVE member card is complete before publish (blocks an invalid publish):
     // a stem, ≥2 options, ≥1 correct answer, no empty option content.

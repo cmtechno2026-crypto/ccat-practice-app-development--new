@@ -115,7 +115,8 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     const b = createSetSchema.parse(req.body);
     // Enforce the target subcategory's max questions per set (45 for Combine, 15 otherwise).
     const capRow = await db.query('select coalesce(max_questions_per_set, 15) as maxq from ccat.subcategories where id = $1', [b.subcategory_id]);
-    const maxq = Number(capRow.rows[0]?.maxq ?? 15);
+    // Exam papers span three batteries; the whole-paper cap is 45 regardless of the anchor subcategory.
+    const maxq = b.allowed_exam ? 45 : Number(capRow.rows[0]?.maxq ?? 15);
     if (b.question_version_ids.length > maxq)
       throw Errors.validation(`This subcategory allows up to ${maxq} questions per set`, { code: 'SET_TOO_LARGE' });
     const timers = b.allowed_timers ?? (b.allowed_exam ? ['timed'] : ['untimed']);
@@ -215,12 +216,13 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     if (cur.rows[0]!.state !== 'draft') throw Errors.validation('Only draft sets can change membership');
     // Enforce this subcategory's max questions per set (45 for Combine, 15 otherwise).
     const capRow = await db.query(
-      `select coalesce(sub.max_questions_per_set, 15) as maxq
+      `select sv.allowed_exam, coalesce(sub.max_questions_per_set, 15) as maxq
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id = sv.question_set_id
          join ccat.subcategories sub on sub.id = qs.subcategory_id
         where sv.id = $1`, [id]);
-    const maxq = Number(capRow.rows[0]?.maxq ?? 15);
+    // Exam papers span three batteries; the whole-paper cap is 45 regardless of the anchor subcategory.
+    const maxq = capRow.rows[0]?.allowed_exam ? 45 : Number(capRow.rows[0]?.maxq ?? 15);
     if (b.question_version_ids.length > maxq)
       throw Errors.validation(`This subcategory allows up to ${maxq} questions per set`, { code: 'SET_TOO_LARGE' });
     await withTransaction(db, async (c) => {
