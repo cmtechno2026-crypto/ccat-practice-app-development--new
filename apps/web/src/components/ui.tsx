@@ -106,8 +106,8 @@ export function AppBar({ title, sub, back, right, wide }: { title: string; sub?:
           {sub && <div className="sub">{sub}</div>}
         </div>
         {right}
-        {/* Student's grade, resolved from grade_id → "Grade N", shown as a pill just left of the avatar. */}
-        <GradePill />
+        {/* Grade + membership plan (single chip, links to /plan), just left of the avatar — on every in-app page. */}
+        <GradePlanChip />
         {/* Top-right avatar is a control: opens the avatar + theme management panel. Only on in-app pages (has profile). */}
         {profile ? <AvatarControl /> : <div className="avatar-chip" aria-hidden>🦊</div>}
       </div>

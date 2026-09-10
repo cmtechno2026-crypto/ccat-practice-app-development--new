@@ -891,7 +891,7 @@ p { line-height: 1.5; }
 .verify-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--tint-green); color: var(--green); font-weight: 800; font-size: 13px; border-radius: var(--radius-pill); padding: 8px 13px; }
 
 /* ===== Home hero: Grade + plan chip ===== */
-.gp-chip { display: inline-flex; align-items: center; gap: 8px; flex: none;
+.gp-chip { display: inline-flex; align-items: center; gap: 8px; flex: none; cursor: pointer;
   padding: 7px 8px 7px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.28);
   background: rgba(255,255,255,.18); color: #fff; text-decoration: none; white-space: nowrap;
   font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 14px; }
