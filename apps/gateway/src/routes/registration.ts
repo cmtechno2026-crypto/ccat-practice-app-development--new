@@ -227,13 +227,13 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Co
       if (grant.guardianEmail) {
         const childName = body.display_name;
         const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-          <h2 style="color:#5b3ff0;margin:0 0 8px">Welcome to CCAT Practice 🦊</h2>
-          <p>Hi ${escapeHtml(grant.guardianName || 'there')},</p>
-          <p><strong>${escapeHtml(childName)}</strong>'s account is ready. They can log in with their username and 4-digit PIN and start practising right away.</p>
-          <p>You're the account's parent contact — we'll only email you for account and security matters (like a PIN reset). No ads, no selling data.</p>
+          <h2 style="color:#5b3ff0;margin:0 0 8px">Welcome to CCAT Practice</h2>
+          <p>Hello ${escapeHtml(grant.guardianName || 'there')},</p>
+          <p><strong>${escapeHtml(childName)}</strong>'s account is ready. They can sign in using their username and four-digit PIN and begin practising right away.</p>
+          <p>You are listed as the parent or guardian contact for this account. We will only contact you about important account and security matters, such as PIN resets. We do not send promotional emails or sell your personal information.</p>
           <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
         </div>`;
-        void sendEmail(cfg, { to: grant.guardianEmail, subject: 'Welcome to CCAT Practice 🦊', html }, app.log);
+        void sendEmail(cfg, { to: grant.guardianEmail, subject: 'Welcome to CCAT Practice', html }, app.log);
       }
       reply.code(201);
       return {

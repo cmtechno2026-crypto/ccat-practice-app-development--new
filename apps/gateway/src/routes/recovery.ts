@@ -82,9 +82,10 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
 
     if (rows.length > 0 && guardianEmail && cfg.env !== 'local') {
       const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-        <h2 style="color:#1A5EAB;margin:0 0 8px">CCAT PIN reset</h2>
-        <p>Hi ${escapeHtml(guardianName || 'there')},</p>
-        <p>A PIN reset was requested for your CCAT Practice account. Use the reset code below to set a new PIN (your username is shown for reference):</p>
+        <h2 style="color:#1A5EAB;margin:0 0 8px">Reset a CCAT Practice PIN</h2>
+        <p>Hello ${escapeHtml(guardianName || 'there')},</p>
+        <p>We received a request to reset the PIN for a CCAT Practice account connected to this email address.</p>
+        <p>Use the appropriate reset code below to create a new PIN:</p>
         <table style="border-collapse:collapse;margin:12px 0">
           <thead><tr>
             <th style="padding:6px 12px;border:1px solid #e7eaf3;text-align:left">Child</th>
@@ -93,10 +94,11 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
           </tr></thead>
           <tbody>${rows.join('')}</tbody>
         </table>
-        <p>This code expires in ${mins} minutes. If you didn't request this, you can ignore this email — nothing changes until a code is used.</p>
+        <p>Each code expires in ${mins} minutes.</p>
+        <p>If you did not request a PIN reset, you can safely ignore this email. The current PIN will remain unchanged unless a reset code is used.</p>
         <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
       </div>`;
-      const sent = await sendEmail(cfg, { to: guardianEmail, subject: 'Your CCAT PIN reset code', html }, req.log);
+      const sent = await sendEmail(cfg, { to: guardianEmail, subject: 'Reset a CCAT Practice PIN', html }, req.log);
       if (!sent) throw Errors.emailUnavailable();
     }
 

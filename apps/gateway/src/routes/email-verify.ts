@@ -63,12 +63,13 @@ export function registerEmailVerifyRoutes(app: FastifyInstance, db: DB, cfg: Con
       await db.query(`insert into ccat.email_verifications(email, code_hash, expires_at) values ($1,$2,$3)`, [email, codeHash, expires]);
       const mins = Math.round(cfg.otpTtlSeconds / 60);
       const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-        <h2 style="color:#1A5EAB;margin:0 0 8px">Verify your email</h2>
-        <p>Use this code to verify your email for CCAT Practice:</p>
+        <h2 style="color:#1A5EAB;margin:0 0 8px">Verify your email address</h2>
+        <p>Enter the following code to verify your email address for CCAT Practice:</p>
         <p style="font-size:30px;font-weight:800;letter-spacing:4px;color:#1A5EAB;margin:12px 0">${code}</p>
-        <p>This code expires in ${mins} minutes. If you didn't request this, you can ignore this email.</p>
+        <p>This code expires in ${mins} minutes.</p>
+        <p>If you did not request this code, you can safely ignore this email.</p>
         <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p></div>`;
-      const sent = await sendEmail(cfg, { to: email, subject: 'Your CCAT verification code', html }, req.log);
+      const sent = await sendEmail(cfg, { to: email, subject: 'Verify your email address', html }, req.log);
       if (!sent && cfg.env !== 'local') throw Errors.emailUnavailable();
     }
     reply.code(202);

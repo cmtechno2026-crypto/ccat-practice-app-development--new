@@ -4,6 +4,10 @@ import { SELLABLE_TIERS, tierRank, tierUnlocksText, TIER_LABELS, type Tier } fro
 import { amountForTier } from './paypal.js';
 import { sendEmail } from './email.js';
 
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
 interface MiniLog { info?: (...a: any[]) => void; warn?: (...a: any[]) => void; error?: (...a: any[]) => void }
 
 export type GrantOutcome = 'granted' | 'deduped' | 'ignored' | 'amount_mismatch';
@@ -37,8 +41,9 @@ export async function grantPaidEntitlementPaypal(
   const seen = await db.query('select 1 from ccat.paypal_payment_events where capture_id = $1', [args.captureId]);
   if (seen.rowCount && seen.rowCount > 0) return 'deduped';
 
-  const gc = await db.query('select id from ccat.guardian_contacts where lower(email::text) = $1 limit 1', [guardianEmail]);
+  const gc = await db.query('select id, name from ccat.guardian_contacts where lower(email::text) = $1 limit 1', [guardianEmail]);
   const guardianId = gc.rows[0]?.id ?? null;
+  const guardianName = gc.rows[0]?.name ?? '';
   const prev = await db.query(
     'select tier, status, current_period_end from ccat.entitlements where lower(guardian_email) = $1 limit 1',
     [guardianEmail],
@@ -82,12 +87,15 @@ export async function grantPaidEntitlementPaypal(
   if (tierRank(tier) > prevRank) {
     const label = TIER_LABELS[tier] ?? tier;
     const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-      <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT plan is active 🎉</h2>
-      <p>Congratulations! Your account is now on the <strong>${label}</strong>.</p>
-      <p>This unlocks: ${tierUnlocksText(tier)}.</p>
+      <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT Practice plan is active</h2>
+      <p>Hello ${escapeHtml(guardianName || 'there')},</p>
+      <p>Your payment has been confirmed, and the <strong>${label}</strong> plan is now active on your CCAT Practice account.</p>
+      <p>Your plan includes:</p>
+      <p>${tierUnlocksText(tier)}</p>
+      <p>You can sign in and begin using these features immediately.</p>
       <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
     </div>`;
-    void sendEmail(cfg, { to: guardianEmail, subject: 'Your CCAT plan is active', html }, args.log as any);
+    void sendEmail(cfg, { to: guardianEmail, subject: 'Your CCAT Practice plan is active', html }, args.log as any);
   }
 
   return 'granted';

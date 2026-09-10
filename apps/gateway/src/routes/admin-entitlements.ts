@@ -7,6 +7,10 @@ import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.j
 import { ALLOWED_TIERS, resolveEntitlement, resolveGuardianEmail, tierRank, tierUnlocksText, TIER_LABELS, type Tier } from '../lib/entitlements.js';
 import { sendEmail } from '../lib/email.js';
 
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
 // Payments — MANUAL admin membership control. Upserts one ccat.entitlements row per guardian email
 // (source='manual'), keyed case-insensitively. Protected by the EXISTING admin auth; gated to Super-Admin
 // via 'config.global'. Writing rows is safe regardless of PAYMENTS_ENABLED — enforcement is what the flag
@@ -56,10 +60,11 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
     grantReason: string,
   ) {
     const gc = await db.query(
-      `select id from ccat.guardian_contacts where lower(email::text) = $1 limit 1`,
+      `select id, name from ccat.guardian_contacts where lower(email::text) = $1 limit 1`,
       [email],
     );
     const guardianId = gc.rows[0]?.id ?? null;
+    const guardianName = gc.rows[0]?.name ?? '';
 
     const prev = await db.query(
       `select tier, status, current_period_end, grant_reason from ccat.entitlements where lower(guardian_email) = $1 limit 1`,
@@ -102,12 +107,15 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
       if (tierRank(tier as Tier) > prevRank) {
         const label = TIER_LABELS[tier as Tier] ?? tier;
         const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-          <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT plan is active 🎉</h2>
-          <p>Your account is now on the <strong>${label}</strong>.</p>
-          <p>This unlocks: ${tierUnlocksText(tier as Tier)}.</p>
+          <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT Practice plan has been updated</h2>
+          <p>Hello ${escapeHtml(guardianName || 'there')},</p>
+          <p>Your CCAT Practice account has been upgraded to the <strong>${label}</strong> plan.</p>
+          <p>Your plan now includes:</p>
+          <p>${tierUnlocksText(tier as Tier)}</p>
+          <p>The upgraded features are available immediately.</p>
           <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
         </div>`;
-        void sendEmail(cfg, { to: email, subject: 'Your CCAT plan is active', html }, app.log);
+        void sendEmail(cfg, { to: email, subject: 'Your CCAT Practice plan has been updated', html }, app.log);
       }
     }
     return rows[0];
