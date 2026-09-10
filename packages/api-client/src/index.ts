@@ -122,8 +122,8 @@ export class CcatClient {
   pinResetStart(email: string) {
     return this.request<{ ok: boolean }>('POST', '/v1/recovery/pin/start', { body: { email } });
   }
-  pinResetComplete(username: string, code: string, newPin: string) {
-    return this.request<{ status: string }>('POST', '/v1/recovery/pin/complete', { body: { username, code, new_pin: newPin } });
+  pinResetComplete(email: string, code: string, newPin: string) {
+    return this.request<{ status: string }>('POST', '/v1/recovery/pin/complete', { body: { email, code, new_pin: newPin } });
   }
   deviceReplacementStart(username: string, newDeviceHash: string, channel: Channel) {
     return this.request<ChallengeStarted>('POST', '/v1/devices/replacement/start', { body: { username, new_device_hash: newDeviceHash, channel } });

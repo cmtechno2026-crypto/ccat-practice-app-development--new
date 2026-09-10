@@ -10,9 +10,9 @@ export function RecoveryScreen() {
   const { flash } = useApp();
   const [step, setStep] = useState<'start' | 'complete'>('start');
   const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
   const [code, setCode] = useState('');
   const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [devCodes, setDevCodes] = useState<{ username: string; code: string }[]>([]);
@@ -32,18 +32,23 @@ export function RecoveryScreen() {
   }
 
   async function complete() {
+    // Step 2 reuses the email from step 1 (kept in memory). If it's gone (e.g. page reload), start over.
+    if (!email.trim()) { setErr('Please start again and enter your parent email.'); setStep('start'); return; }
+    if (newPin !== confirmPin) { setErr("Those PINs don't match — please re-enter."); return; }
     setBusy(true); setErr(null);
     try {
-      await client.pinResetComplete(username.trim(), code.trim(), newPin);
+      await client.pinResetComplete(email.trim(), code.trim(), newPin);
       flash('PIN reset — log in with your new PIN.');
       nav('/login', { replace: true });
     } catch (e) {
       const c = e instanceof ApiError ? e.code : '';
       setErr(c === 'RATE_LIMITED'
         ? "Too many attempts. Please wait a few minutes and try again."
-        : "That code didn't work. Check the username and code from your email — they expire after a few minutes.");
+        : "That code didn't work. Check the code from your email — codes expire after a few minutes.");
     } finally { setBusy(false); }
   }
+
+  const pinOk = newPin.length === 4 && confirmPin.length === 4;
 
   return (
     <>
@@ -59,12 +64,12 @@ export function RecoveryScreen() {
         )}
         {step === 'complete' && (
           <>
-            <p className="muted">If that email is registered, we've emailed the username and a reset code. Enter them below.</p>
+            <p className="muted">If that email is registered, we've emailed the username and a reset code. Enter the code and choose a new PIN.</p>
             {devCodes.length > 0 && <div className="hint">dev codes: {devCodes.map((d) => `${d.username}:${d.code}`).join(', ')}</div>}
-            <Field label="Username"><input className="input" value={username} autoCapitalize="none" onChange={(e) => setUsername(e.target.value.toLowerCase())} /></Field>
             <Field label="Reset code"><input className="input" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} /></Field>
-            <Field label="New PIN"><input className="input" value={newPin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
-            <button className="btn" disabled={!username || code.length < 4 || newPin.length !== 4 || busy} onClick={complete}>Set new PIN</button>
+            <Field label="Create new PIN"><input className="input" value={newPin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
+            <Field label="Confirm new PIN"><input className="input" value={confirmPin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
+            <button className="btn" disabled={code.trim().length < 4 || !pinOk || busy} onClick={complete}>Set new PIN</button>
           </>
         )}
       </div>

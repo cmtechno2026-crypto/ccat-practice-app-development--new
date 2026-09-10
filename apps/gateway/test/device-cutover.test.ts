@@ -43,7 +43,7 @@ beforeAll(async () => {
   const base = loadConfig();
   appOpen = await buildApp({ ...base, deviceCutoverDeadline: new Date(Date.now() + 3600_000) });
   appClosed = await buildApp({ ...base, deviceCutoverDeadline: null });
-  appProd = await buildApp({ ...base, env: 'production', email: { host: '', port: 587, user: '', pass: '', from: '' } });
+  appProd = await buildApp({ ...base, env: 'production', email: { host: '', port: 587, user: '', pass: '', from: '', apiKey: '', apiUrl: '' } });
   await Promise.all([appOpen.ready(), appClosed.ready(), appProd.ready()]);
   db = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
   await db.connect(); await db.query('set search_path = ccat, public');

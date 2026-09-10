@@ -12,15 +12,15 @@ function escapeHtml(s: string): string {
 
 const startSchema = z.object({ email: z.string().email() });
 const completeSchema = z.object({
-  username: z.string().min(1),
+  email: z.string().email(),
   code: z.string(),
   new_pin: z.string().regex(/^\d{4}$/),
 });
 
 // PIN recovery (Blueprint §4.4): a parent enters their REGISTERED email; we email the child username(s)
-// + a one-time reset code to that address; the parent then enters username + code + new PIN. The start
-// response is UNIFORM and never reveals whether the email is registered (no enumeration). Complete is
-// generic on every mismatch for the same reason. Does NOT authorize a new device (§4.4).
+// + a one-time reset code to that address; the parent then enters the code + a new PIN (no username to
+// type — step 2 reuses the email from step 1, so the code check is SCOPED to that account). The start
+// response is UNIFORM and never reveals whether the email is registered. Does NOT authorize a new device.
 export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const startMax = cfg.env === 'production' ? 5 : 2000;
   const completeMax = cfg.env === 'production' ? 10 : 2000;
@@ -29,7 +29,6 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
     const body = startSchema.parse(req.body);
     const email = body.email.trim();
     // Fail CLOSED + uniformly when email cannot be delivered (never claim a code was sent when it was not).
-    // Local dev is exempt: it returns the codes inline as _dev_codes instead of emailing them.
     if (cfg.env !== 'local' && !emailConfigured(cfg)) throw Errors.emailUnavailable();
 
     // Every non-preview student whose PRIMARY guardian is this email (one parent may have several kids).
@@ -54,7 +53,6 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
     for (const s of st.rows) {
       guardianName = s.guardian_name || guardianName;
       guardianEmail = s.guardian_email || guardianEmail;
-      // Per-student throttle: at most 3 unconsumed reset codes / 15 min. Over the cap -> skip this child.
       const recent = await db.query(
         `select count(*)::int as n from ccat.verification_challenges
           where student_id=$1 and purpose='pin_reset' and consumed_at is null
@@ -64,7 +62,6 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
       if ((recent.rows[0]?.n ?? 0) >= 3) continue;
       const code = generateOtp();
       const codeHash = await hashSecret(code, cfg.pinPepper);
-      // Only the newest code per child stays valid.
       await db.query(
         `update ccat.verification_challenges set consumed_at = now()
           where student_id=$1 and purpose='pin_reset' and consumed_at is null`,
@@ -83,12 +80,11 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
       );
     }
 
-    // One email to the guardian listing every child's username + code. Response is uniform regardless.
     if (rows.length > 0 && guardianEmail && cfg.env !== 'local') {
       const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
         <h2 style="color:#1A5EAB;margin:0 0 8px">CCAT PIN reset</h2>
         <p>Hi ${escapeHtml(guardianName || 'there')},</p>
-        <p>A PIN reset was requested for your CCAT Practice account. Use the username and code below to set a new PIN:</p>
+        <p>A PIN reset was requested for your CCAT Practice account. Use the reset code below to set a new PIN (your username is shown for reference):</p>
         <table style="border-collapse:collapse;margin:12px 0">
           <thead><tr>
             <th style="padding:6px 12px;border:1px solid #e7eaf3;text-align:left">Child</th>
@@ -110,40 +106,53 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
 
   app.post('/v1/recovery/pin/complete', { config: { rateLimit: { max: completeMax, timeWindow: '15 minutes' } } }, async (req) => {
     const body = completeSchema.parse(req.body);
-    const username = body.username.trim().toLowerCase();
-    // Generic failure for every mismatch (unknown username / no code / wrong / expired) -> no enumeration.
+    const email = body.email.trim();
     const invalid = () => Errors.unauthorized('Invalid or expired code');
 
-    const su = await db.query('select id from ccat.students where username_normalized=$1 and is_preview=false', [username]);
-    if (su.rows.length === 0) throw invalid();
-    const studentId = su.rows[0]!.id;
-
-    const ch = await db.query(
-      `select id, code_hash, attempts, max_attempts, expires_at
-         from ccat.verification_challenges
-        where student_id=$1 and purpose='pin_reset' and consumed_at is null
-        order by created_at desc limit 1`,
-      [studentId],
+    // Active reset challenges for the children under this guardian email. Scoping the code check to the
+    // email the requester named (kept from step 1) means: no global code guessing, no username needed.
+    const chs = await db.query(
+      `select vc.id, vc.code_hash, vc.attempts, vc.max_attempts, vc.expires_at, vc.student_id
+         from ccat.guardian_contacts gc
+         join ccat.student_guardians sg on sg.guardian_id = gc.id and sg.is_primary = true
+         join ccat.students s on s.id = sg.student_id and s.is_preview = false
+         join ccat.verification_challenges vc on vc.student_id = s.id and vc.purpose='pin_reset' and vc.consumed_at is null
+        where gc.email = $1
+        order by vc.created_at desc`,
+      [email],
     );
-    if (ch.rows.length === 0) throw invalid();
-    const c = ch.rows[0]!;
-    if (new Date(c.expires_at) < new Date()) throw invalid();
-    if (c.attempts >= c.max_attempts) throw invalid();
-    const ok = await verifySecret(body.code, cfg.pinPepper, c.code_hash);
-    if (!ok) {
-      await db.query('update ccat.verification_challenges set attempts = attempts + 1 where id = $1', [c.id]);
+    if (chs.rows.length === 0) throw invalid();
+
+    let match: { id: string; student_id: string } | null = null;
+    for (const c of chs.rows) {
+      if (new Date(c.expires_at) < new Date()) continue;
+      if (c.attempts >= c.max_attempts) continue;
+      if (await verifySecret(body.code, cfg.pinPepper, c.code_hash)) { match = { id: c.id, student_id: c.student_id }; break; }
+    }
+    if (!match) {
+      // Count the miss against every active challenge for this email so guessing is bounded per account.
+      await db.query(
+        `update ccat.verification_challenges set attempts = attempts + 1
+          where purpose='pin_reset' and consumed_at is null and student_id in (
+            select s.id from ccat.guardian_contacts gc
+            join ccat.student_guardians sg on sg.guardian_id = gc.id and sg.is_primary = true
+            join ccat.students s on s.id = sg.student_id
+            where gc.email = $1)`,
+        [email],
+      );
       throw invalid();
     }
+
     const pinHash = await hashSecret(body.new_pin, cfg.pinPepper);
-    await db.query('update ccat.verification_challenges set consumed_at = now() where id = $1', [c.id]);
+    await db.query('update ccat.verification_challenges set consumed_at = now() where id = $1', [match.id]);
     await db.query(
       'update ccat.student_credentials set pin_hash=$2, failed_attempts=0, locked_until=null where student_id=$1',
-      [studentId, pinHash],
+      [match.student_id, pinHash],
     );
     // Revoke existing application sessions; fresh login required (§4.4).
     await db.query(
       `update ccat.auth_sessions set revoked_at=now(), revoked_reason='pin_reset' where student_id=$1 and revoked_at is null`,
-      [studentId],
+      [match.student_id],
     );
     return { status: 'pin_reset', message: 'PIN reset. Please log in again.' };
   });
