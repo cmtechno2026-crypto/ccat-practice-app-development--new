@@ -113,6 +113,9 @@ export class CcatClient {
   registrationEmailConfirm(email: string, code: string) {
     return this.request<{ email: string; token: string }>('POST', '/v1/registration/email/confirm', { body: { email, code } });
   }
+  registrationEmailAvailable(email: string) {
+    return this.request<{ available: boolean }>('GET', `/v1/registration/email/available?email=${encodeURIComponent(email)}`);
+  }
 
   // ---- auth (§4.4, §5) ------------------------------------------------------
   // `restore: true` cancels a pending account deletion and signs in (self-restore); the PIN is still

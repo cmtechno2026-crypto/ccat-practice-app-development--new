@@ -92,4 +92,19 @@ export function registerEmailVerifyRoutes(app: FastifyInstance, db: DB, cfg: Con
     await db.query(`update ccat.email_verifications set consumed_at=now() where id=$1`, [c.id]);
     return { email, token: signEmailToken(email, cfg.hmacSecret) };
   });
+
+  // Lightweight availability check for the register form (debounced). Reveals only whether an email is
+  // already tied to a live account (same info the funnel shows) — no code sent, no side effects.
+  app.get('/v1/registration/email/available', async (req) => {
+    const parsed = z.string().trim().toLowerCase().email().safeParse((req.query as any)?.email);
+    if (!parsed.success) return { available: false };
+    const inUse = await db.query(
+      `select 1 from ccat.guardian_contacts gc
+         join ccat.student_guardians sg on sg.guardian_id = gc.id
+         join ccat.students s on s.id = sg.student_id
+        where gc.email = $1 and s.status <> 'purged' limit 1`,
+      [parsed.data],
+    );
+    return { available: inUse.rows.length === 0 };
+  });
 }

@@ -124,6 +124,7 @@ export function RegisterScreen() {
   const [resendIn, setResendIn] = useState(0);
   const [vBusy, setVBusy] = useState(false);
   const [vErr, setVErr] = useState<string | null>(null);
+  const [emailTaken, setEmailTaken] = useState<boolean | null>(null); // null = unknown/checking
   const otpRef = useRef<HTMLInputElement>(null);
 
   // consent + account
@@ -142,11 +143,21 @@ export function RegisterScreen() {
   const phoneE164 = phoneObj?.number ?? '';
   const emailOk = emailValid(guardianEmail);
   const emailVerifiedOk = !EMAIL_VERIFY_ENABLED || verifyStage === 'verified';
-  const detailsValid = displayName.trim().length > 0 && !!gradeId && guardianName.trim().length > 0 && emailOk && !!phoneObj && emailVerifiedOk;
+  const emailHint: string | undefined = !guardianEmail ? undefined
+    : !emailOk ? 'Enter a valid email address'
+    : emailTaken === true ? '⚠ Email already registered. Try a different one.'
+    : emailTaken === null ? 'Checking…'
+    : '✓ Looks good';
+  const emailHintKind: 'ok' | 'bad' | undefined = !guardianEmail ? undefined
+    : (!emailOk || emailTaken === true) ? 'bad' : emailTaken === false ? 'ok' : undefined;
+  const emailBadVisual = !!guardianEmail && (!emailOk || emailTaken === true);
+  const emailOkVisual = !!guardianEmail && emailOk && emailTaken === false;
+  const detailsValid = displayName.trim().length > 0 && !!gradeId && guardianName.trim().length > 0 && emailOk && !!phoneObj && emailVerifiedOk && emailTaken !== true;
 
   // Changing the email invalidates any prior verification.
   function onEmailChange(v: string) {
     setGuardianEmail(v);
+    setEmailTaken(null);
     if (verifyStage !== 'idle' || emailVerifyToken) { setVerifyStage('idle'); setEmailVerifyToken(''); setOtp(''); setVErr(null); }
   }
 
@@ -157,6 +168,18 @@ export function RegisterScreen() {
     return () => window.clearInterval(id);
   }, [verifyStage, resendIn]);
 
+  // Debounced: is this parent email already tied to a live account? Drives the inline note + gating.
+  useEffect(() => {
+    if (!emailOk) { setEmailTaken(null); return; }
+    let ignore = false;
+    const t = window.setTimeout(async () => {
+      try { const r = await client.registrationEmailAvailable(guardianEmail.trim().toLowerCase()); if (!ignore) setEmailTaken(!r.available); }
+      catch { if (!ignore) setEmailTaken(null); }
+    }, 450);
+    return () => { ignore = true; window.clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guardianEmail, emailOk]);
+
   async function requestCode() {
     setVBusy(true); setVErr(null);
     try {
@@ -165,7 +188,7 @@ export function RegisterScreen() {
       setTimeout(() => otpRef.current?.focus(), 50);
     } catch (e) {
       // Already-registered email: show the standard banner and do NOT proceed to the code step.
-      if (e instanceof ApiError && e.code === 'EMAIL_IN_USE') { setErr(e.message); setVErr(null); setVerifyStage('idle'); }
+      if (e instanceof ApiError && e.code === 'EMAIL_IN_USE') { setEmailTaken(true); setVErr(null); setVerifyStage('idle'); }
       else setVErr(e instanceof ApiError ? (e.code === 'RATE_LIMITED' ? 'Too many requests — wait a few minutes.' : "Couldn't send the code right now. Try again shortly.") : (e as Error).message);
     } finally { setVBusy(false); }
   }
@@ -188,8 +211,14 @@ export function RegisterScreen() {
 
   async function submitDetails() {
     if (!phoneE164) { setErr('Enter a valid phone number including its country code.'); return; }
-    const r = await guard(() => client.registrationContact({ guardianName, email: guardianEmail.trim().toLowerCase(), phone: phoneE164, grant: grant || undefined, emailVerifyToken: emailVerifyToken || undefined }));
-    if (r) { setGrant(r.registration_grant); setStep('consent'); }
+    setBusy(true); setErr(null);
+    try {
+      const r = await client.registrationContact({ guardianName, email: guardianEmail.trim().toLowerCase(), phone: phoneE164, grant: grant || undefined, emailVerifyToken: emailVerifyToken || undefined });
+      setGrant(r.registration_grant); setStep('consent');
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'EMAIL_IN_USE') setEmailTaken(true); // show inline under the email, not the top banner
+      else setErr(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally { setBusy(false); }
   }
   async function acceptConsent() {
     const r = await guard(() => client.registrationConsent(grant, POLICY_VERSION, `consent:${POLICY_VERSION}`));
@@ -259,8 +288,8 @@ export function RegisterScreen() {
 
               <div className="eyebrow" style={{ marginTop: 8 }}>Parent</div>
               <Field label="Parent name"><input className="input" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="Parent full name" /></Field>
-              <Field label="Parent email" hint={guardianEmail ? (emailOk ? '✓ Looks good' : 'Enter a valid email address') : undefined} hintKind={guardianEmail ? (emailOk ? 'ok' : 'bad') : undefined}>
-                <input className={`input ${guardianEmail ? (emailOk ? 'ok' : 'bad') : ''}`} type="email" inputMode="email"
+              <Field label="Parent email" hint={emailHint} hintKind={emailHintKind}>
+                <input className={`input ${emailBadVisual ? 'bad' : emailOkVisual ? 'ok' : ''}`} type="email" inputMode="email"
                   value={guardianEmail} onChange={(e) => onEmailChange(e.target.value)} placeholder="parent@email.com" />
               </Field>
 
@@ -268,7 +297,7 @@ export function RegisterScreen() {
                 <div className="stack" style={{ gap: 8 }}>
                   {vErr && <div className="err" role="alert">{vErr}</div>}
                   {verifyStage === 'idle' && (
-                    <button type="button" className="btn secondary" disabled={vBusy} onClick={requestCode}>{vBusy ? 'Sending…' : 'Verify email'}</button>
+                    <button type="button" className="btn secondary" disabled={vBusy || emailTaken === true} onClick={requestCode}>{vBusy ? 'Sending…' : 'Verify email'}</button>
                   )}
                   {verifyStage === 'sent' && (
                     <div className="verify-panel stack" style={{ gap: 10 }}>

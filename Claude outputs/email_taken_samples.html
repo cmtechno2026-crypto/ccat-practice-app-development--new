@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCAT — Email-taken inline states · 3 samples</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --primary:#3e7bee; --ink:#2a2e43; --ink-soft:#4a4f66; --muted:#8a90a6; --line:#e7eaf3;
+    --tint-blue:#eaf0ff; --teal:#22c3a6; --green:#22a06b; --coral:#ef5b6b; --coral-tint:#fdecef; --card:#fff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Nunito,system-ui,sans-serif;color:var(--ink);
+    background:radial-gradient(1200px 700px at 20% -5%,#eef3ff,#e7ecf7 60%);padding:28px 20px 60px}
+  .head{max-width:1120px;margin:0 auto 26px}
+  .head h1{font-family:'Baloo 2';font-weight:800;font-size:25px;margin:0 0 8px}
+  .head p{margin:0;color:var(--ink-soft);font-weight:700;font-size:14px;line-height:1.55;max-width:840px}
+  .head .tag{display:inline-block;font-family:'Baloo 2';font-weight:800;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--primary);background:var(--tint-blue);padding:5px 11px;border-radius:999px;margin-bottom:12px}
+  .grid{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px}
+  @media(max-width:960px){.grid{grid-template-columns:1fr;max-width:460px}}
+  .cell{display:flex;flex-direction:column;gap:12px}
+  .clabel{display:flex;align-items:center;gap:10px}
+  .clabel .n{width:26px;height:26px;border-radius:8px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-weight:800;font-size:14px;flex:none}
+  .clabel b{font-family:'Baloo 2';font-weight:800;font-size:16px}
+  .clabel .d{color:var(--muted);font-weight:700;font-size:12px}
+  .form{background:#f4f6fc;border:1px solid #e6e9f4;border-radius:16px;padding:20px 18px}
+  .eyebrow{font-family:'Baloo 2';font-weight:800;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;margin:0 0 12px}
+  label{display:block;font-weight:800;font-size:13px;color:var(--ink-soft);margin:0 0 6px}
+  .input{width:100%;padding:12px 13px;border:2px solid var(--line);border-radius:14px;font:inherit;font-weight:700;background:#fff;color:var(--ink)}
+  .input.bad{border-color:var(--coral)}
+  .hint{font-size:12.5px;font-weight:800;margin:6px 0 0;line-height:1.4}
+  .hint.bad{color:#c83}
+  .hint.bad a{color:var(--primary);text-decoration:underline}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;font-family:'Baloo 2';font-weight:800;font-size:15px;border:none;border-radius:14px;padding:12px 16px;cursor:pointer;width:100%;margin-top:14px}
+  .btn.disabled{background:#dfe4f1;color:#aab2c8;cursor:not-allowed}
+  .cont{background:#dfe4f1;color:#aab2c8;margin-top:10px}
+  .note{color:var(--muted);font-weight:700;font-size:11.5px;margin-top:8px}
+  /* reference: the OK state */
+  .ref{max-width:1120px;margin:26px auto 0;background:#fff;border:1px dashed #cdd5ea;border-radius:12px;padding:14px 16px}
+  .ref .r-label{font-family:'Baloo 2';font-weight:800;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:0 0 8px}
+  .hint.ok{color:var(--green)}
+  .btn.soft{background:var(--tint-blue);color:var(--primary);margin-top:10px}
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="tag">CCAT · register · email already registered</span>
+    <h1>Already-registered email — 3 inline samples</h1>
+    <p>When the entered email already has an account: the green "Looks good" is replaced by a short red note <b>under the field</b>, the <b>Verify email</b> button is disabled, and the old top banner is gone. Samples differ only in the short wording. <b>Reply with a sample number.</b></p>
+  </div>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="cell">
+      <div class="clabel"><span class="n">1</span><b>Plain &amp; short</b><span class="d">minimal</span></div>
+      <div class="form">
+        <p class="eyebrow">Parent</p>
+        <label>Parent email</label>
+        <input class="input bad" value="shreyam274001@gmail.com" readonly>
+        <div class="hint bad">Already registered — please use a different email.</div>
+        <button class="btn disabled">Verify email</button>
+        <div class="note">Continue stays disabled until a new email is entered.</div>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="cell">
+      <div class="clabel"><span class="n">2</span><b>With “Log in” link</b><span class="d">most helpful</span></div>
+      <div class="form">
+        <p class="eyebrow">Parent</p>
+        <label>Parent email</label>
+        <input class="input bad" value="shreyam274001@gmail.com" readonly>
+        <div class="hint bad">This email already has an account — <a href="#">log in</a> or use another.</div>
+        <button class="btn disabled">Verify email</button>
+        <div class="note">Continue stays disabled until a new email is entered.</div>
+      </div>
+    </div>
+
+    <!-- 3 -->
+    <div class="cell">
+      <div class="clabel"><span class="n">3</span><b>Icon + short</b><span class="d">a touch louder</span></div>
+      <div class="form">
+        <p class="eyebrow">Parent</p>
+        <label>Parent email</label>
+        <input class="input bad" value="shreyam274001@gmail.com" readonly>
+        <div class="hint bad">⚠ Email already registered. Try a different one.</div>
+        <button class="btn disabled">Verify email</button>
+        <div class="note">Continue stays disabled until a new email is entered.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="ref">
+    <p class="r-label">For contrast — the normal (available) state, unchanged</p>
+    <label>Parent email</label>
+    <input class="input" style="border-color:var(--teal)" value="parentA274001@gmail.com" readonly>
+    <div class="hint ok">✓ Looks good</div>
+    <button class="btn soft">Verify email</button>
+  </div>
+</body>
+</html>
