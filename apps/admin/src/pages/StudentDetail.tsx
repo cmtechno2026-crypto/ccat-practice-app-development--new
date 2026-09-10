@@ -12,13 +12,13 @@ const toDateInputIST = (iso?: string | null): string => { if (!iso) return ''; c
 export function StudentDetail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const { can, me } = useAuth();
+  const { can } = useAuth();
   const toast = useToast();
   const { data, loading, error, reload } = useAsync(() => api.studentDetail(id!), [id]);
   const [adjust, setAdjust] = useState(false);
   const [form, setForm] = useState({ kind: 'coins', delta: '10', reason: '', reference: '' });
   const [err, setErr] = useState('');
-  const [bg, setBg] = useState(false);
+  const [pinReset, setPinReset] = useState(false);
   const [del, setDel] = useState(false);
   const [delRef, setDelRef] = useState('');
   const [delErr, setDelErr] = useState('');
@@ -52,7 +52,6 @@ export function StudentDetail() {
   if (loading) return <Loading />;
   if (error) return <ErrorBox e={error} />;
   const d = data!;
-  const isSuper = me?.role === 'super_admin';
   // Membership panel — reads whatever the detail payload carries (membership/entitlement); falls back
   // to the free plan when the payments feature isn't wired on this environment yet.
   const TIER_LABEL: Record<string, string> = { free: 'Free plan', t50: '$50 · Practice', t250: '$250 · +Exam', t500: '$500 · All access' };
@@ -132,8 +131,6 @@ export function StudentDetail() {
   const approveGrade = async (reqId: string) => { try { await api.approveGradeRequest(id!, reqId); toast('Grade change approved — grade updated, history preserved.'); reload(); } catch (e) { toast((e as Error).message); } };
   const rejectGrade = async (reqId: string) => { try { await api.rejectGradeRequest(id!, reqId); toast('Grade change rejected — grade unchanged.'); reload(); } catch (e) { toast((e as Error).message); } };
 
-  const approveBg = async (reqId: string) => { try { await api.approveBreakGlass(id!, reqId); toast('Device enrolled — audited'); reload(); } catch (e) { toast((e as Error).message); } };
-  const denyBg = async (reqId: string) => { try { await api.denyBreakGlass(id!, reqId); toast('Request denied'); reload(); } catch (e) { toast((e as Error).message); } };
   const doAdjust = async () => {
     if (!form.reason.trim() || !form.reference.trim()) { setErr('Reason and reference required'); return; }
     try { await api.rewardAdjust(id!, form.kind, Number(form.delta), form.reason.trim(), form.reference.trim()); setAdjust(false); toast('Reward adjusted'); reload(); }
@@ -145,6 +142,7 @@ export function StudentDetail() {
       <div className="toolbar"><h2>{d.display_name} <span className="muted" style={{ fontSize: 15 }}>@{d.username}</span></h2>
         <div className="rowactions">
           {can('student.update') && <button className="btn sm" onClick={openEdit}>✎ Edit student</button>}
+          {can('student.update') && <button className="btn sm" onClick={() => setPinReset(true)}>🔑 Reset PIN</button>}
           {can('deletion.support') && <button className="btn ghost sm" onClick={exportDsar}>⬇ Export data (DSAR)</button>}
           {can('deletion.support') && d.status !== 'pending_deletion' && <button className="btn danger sm" onClick={() => { setDelRef(''); setDelErr(''); setDel(true); }}>Request deletion</button>}
           <button className="btn ghost sm" onClick={() => nav('/students')}>← Directory</button>
@@ -247,7 +245,6 @@ export function StudentDetail() {
           const g0 = d.guardians[0];
           const h0 = d.status_history[0];
           const activeDev = d.devices.find((x: any) => x.status === 'active');
-          const bgCount = d.break_glass_requests?.length ?? 0;
           return <>
             {/* Recent sessions */}
             <div className={`sdtile sd-blue ${O('sessions') ? 'sdbig' : ''}`}>
@@ -295,25 +292,9 @@ export function StudentDetail() {
                       <tbody>{d.devices.map((v: any) => (<tr key={v.id}><td>{v.platform || 'device'}</td><td><StatusPill status={v.status} /></td>
                         <td className="muted">{v.enrolled_at ? new Date(v.enrolled_at).toLocaleDateString() : '—'}</td></tr>))}</tbody></table></div>
                   )}
-                  {bgCount > 0 && (
-                    <div style={{ marginTop: 10 }}>
-                      <div className="muted" style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>Pending break-glass co-sign</div>
-                      {d.break_glass_requests.map((r: any) => (
-                        <div className="minirow" key={r.id} style={{ background: 'var(--tint, #FFF3DB)' }}>
-                          <div className="grow"><div style={{ fontSize: 13 }}>{r.platform || 'device'} · <span style={{ fontFamily: 'ui-monospace,Menlo,monospace' }}>{String(r.device_hash).slice(0, 10)}…</span></div>
-                            <div className="muted" style={{ fontSize: 12 }}>by {r.requested_by} · {r.verification_note}</div></div>
-                          {isSuper ? <><button className="btn sm" onClick={() => approveBg(r.id)}>Approve &amp; enroll</button><button className="btn ghost sm" onClick={() => denyBg(r.id)}>Deny</button></>
-                            : <span className="tag">awaits Super-Admin</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="rowactions" style={{ marginTop: 10 }}>
-                    {can('device.break_glass') && <button className="btn gold sm" onClick={() => setBg(true)}>🔑 {isSuper ? 'Break-glass enroll' : 'Request break-glass'}</button>}
-                  </div>
                 </>) : (
                   <div><div style={{ fontSize: 13 }}>{activeDev ? `${activeDev.platform || 'device'} · active` : (d.devices.length ? `${d.devices.length} device(s)` : 'No devices')}</div>
-                    <div className="muted" style={{ fontSize: 12.5 }}>{bgCount > 0 ? `${bgCount} co-sign pending` : 'No pending requests'}</div></div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>{activeDev ? 'Active device enrolled' : 'No active device'}</div></div>
                 )}
               </div>
               <div className="sdfoot"><ExpBtn k="devices" /></div>
@@ -377,9 +358,9 @@ export function StudentDetail() {
           {editErr && <div className="err" style={{ marginTop: 8 }}>{editErr}</div>}
         </Modal>
       )}
-      {bg && <BreakGlassModal studentName={d.display_name} isSuper={isSuper} onClose={() => setBg(false)}
-        onDone={(msg) => { setBg(false); toast(msg); reload(); }}
-        submit={(body) => api.breakGlass(id!, body)} />}
+      {pinReset && <ResetPinModal studentName={d.display_name} onClose={() => setPinReset(false)}
+        onDone={(msg) => { setPinReset(false); toast(msg); reload(); }}
+        submit={(new_pin, reference) => api.resetPin(id!, new_pin, reference)} />}
       {del && (
         <Modal title={`Request account deletion — ${d.display_name}`} onClose={() => setDel(false)}
           footer={<><button className="btn ghost grow" onClick={() => setDel(false)}>Cancel</button><button className="btn danger grow" onClick={requestDeletion}>Request deletion</button></>}>
@@ -402,40 +383,33 @@ export function StudentDetail() {
   );
 }
 
-function BreakGlassModal({ studentName, isSuper, onClose, onDone, submit }: { studentName: string; isSuper: boolean; onClose: () => void; onDone: (msg: string) => void; submit: (b: { platform?: string; device_hash: string; verification_note: string; reference?: string }) => Promise<any> }) {
-  const [platform, setPlatform] = useState('ios');
-  const [deviceHash, setDeviceHash] = useState('');
-  const [note, setNote] = useState('');
+function ResetPinModal({ studentName, onClose, onDone, submit }: { studentName: string; onClose: () => void; onDone: (msg: string) => void; submit: (new_pin: string, reference?: string) => Promise<any> }) {
+  const [pin, setPin] = useState('');
+  const [show, setShow] = useState(false);
   const [reference, setReference] = useState('');
-  const [c1, setC1] = useState(false); const [c2, setC2] = useState(false); const [c3, setC3] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const ready = c1 && c2 && c3 && deviceHash.trim().length >= 6 && note.trim().length >= 10;
+  const ready = /^\d{4}$/.test(pin);
+  const gen = () => { setPin(String(Math.floor(1000 + Math.random() * 9000))); setShow(true); };
   const run = async () => {
-    if (!ready) { setErr('Complete the checklist, and give a device id and a verification note (≥10 chars).'); return; }
+    if (!ready) { setErr('Enter a 4-digit PIN, or tap Generate.'); return; }
     setBusy(true); setErr('');
-    try {
-      const r = await submit({ platform, device_hash: deviceHash.trim(), verification_note: note.trim(), reference: reference.trim() || undefined });
-      onDone(r?.enrolled ? 'Device enrolled out of band — audited.' : 'Sent to a Super-Admin for co-sign.');
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    try { await submit(pin, reference.trim() || undefined); onDone(`PIN reset to ${pin} — the student must sign in again. Audited.`); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   return (
-    <Modal wide title="🔑 Break-glass device enrollment" onClose={onClose}
+    <Modal title={`🔑 Reset PIN — ${studentName}`} onClose={onClose}
       footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button>
-        <button className={`btn grow ${isSuper ? '' : 'gold'}`} disabled={busy || !ready} onClick={run}>{isSuper ? 'Enroll device' : 'Request co-sign'}</button></>}>
-      <div className="aihint" style={{ background: 'var(--tint, #FFF3DB)' }}>This bypasses guardian OTP. Use it only after verifying the guardian another way — it is the one path that can put a child account on a new device without the registered channels. {isSuper ? 'You are signing as Super-Admin.' : 'This sends to a Super-Admin for co-sign; nothing is enrolled until they approve.'}</div>
-      <div className="editor"><div className="grid2">
-        <div><label>Platform</label><select value={platform} onChange={e => setPlatform(e.target.value)}><option value="ios">iOS</option><option value="android">Android</option></select></div>
-        <div><label>New device id / hash</label><input value={deviceHash} onChange={e => setDeviceHash(e.target.value)} placeholder="e.g. 4b71…c208" /></div>
+        <button className="btn grow" disabled={busy || !ready} onClick={run}>{busy ? 'Resetting…' : 'Reset PIN'}</button></>}>
+      <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Sets a new 4-digit login PIN, clears any lockout, and signs the student out everywhere — they sign back in with the new PIN. Share it with the guardian securely. Guardians can also self-reset from the login screen.</div>
+      <label>New 4-digit PIN</label>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input type={show ? 'text' : 'password'} inputMode="numeric" maxLength={4} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="4-digit PIN" style={{ width: 130, letterSpacing: 4, fontFamily: 'ui-monospace,Menlo,monospace' }} />
+        <button type="button" className="btn ghost sm" onClick={() => setShow(v => !v)}>{show ? '🙈 Hide' : '👁️ Show'}</button>
+        <button type="button" className="btn sm" onClick={gen}>Generate</button>
       </div>
-      <label>How was the guardian's identity verified? (required, audited)</label>
-      <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Spoke to guardian on file number, confirmed DOB and last session." />
-      <label>Ticket / case reference (optional)</label>
-      <input value={reference} onChange={e => setReference(e.target.value)} />
-      </div>
-      <label className="pickrow"><input type="checkbox" checked={c1} onChange={e => setC1(e.target.checked)} /><span>I spoke to the guardian and verified their identity out of band.</span></label>
-      <label className="pickrow"><input type="checkbox" checked={c2} onChange={e => setC2(e.target.checked)} /><span>I have recorded how identity was verified in the ticket.</span></label>
-      <label className="pickrow"><input type="checkbox" checked={c3} onChange={e => setC3(e.target.checked)} /><span>I understand this enrollment is audited and reviewed.</span></label>
+      <label style={{ marginTop: 10 }}>Ticket / case reference (optional)</label>
+      <input value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. CASE-1042" />
       {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
     </Modal>
   );

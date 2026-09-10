@@ -6,6 +6,7 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
+import { hashSecret } from '../security/crypto.js';
 
 // Shared break-glass enrollment: revoke any active device + live sessions, then enroll the new device
 // as the sole active one. Runs inside a caller-provided transaction so approve/direct share one path.
@@ -300,6 +301,25 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     });
     if (n === 0) throw Errors.validation('No active device to revoke');
     return { revoked: true };
+  });
+
+  // Reset a student's 4-digit login PIN (Blueprint §4.4, admin-assisted). Sets a new PIN, clears any
+  // lockout, and revokes live sessions so the next sign-in uses the new PIN. Guardians can also
+  // self-serve via /v1/recovery/pin. The plaintext PIN is never logged.
+  app.post('/v1/admin/students/:id/reset-pin', guard, async (req) => {
+    requirePermission(req, 'student.update');
+    const id = (req.params as any).id;
+    const b = z.object({ new_pin: z.string().regex(/^\d{4}$/), reference: z.string().optional() }).parse(req.body ?? {});
+    const s = await db.query('select id from ccat.students where id=$1', [id]);
+    if (s.rows.length === 0) throw Errors.notFound('Student not found');
+    const pinHash = await hashSecret(b.new_pin, cfg.pinPepper);
+    await withTransaction(db, async (c) => {
+      const u = await c.query(`update ccat.student_credentials set pin_hash=$2, failed_attempts=0, locked_until=null where student_id=$1 returning student_id`, [id, pinHash]);
+      if (u.rows.length === 0) await c.query(`insert into ccat.student_credentials(student_id, pin_hash) values ($1,$2)`, [id, pinHash]);
+      await c.query(`update ccat.auth_sessions set revoked_at=now(), revoked_reason='admin_pin_reset' where student_id=$1 and revoked_at is null`, [id]);
+      await auditLog(c, req.admin!.adminId, 'student.pin.reset', 'student', id, b.reference ?? null);
+    });
+    return { reset: true };
   });
 
   // Deletion support (§7) — guardian-authorized default; here admin records the request.
