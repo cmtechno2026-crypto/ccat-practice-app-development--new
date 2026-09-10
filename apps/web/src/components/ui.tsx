@@ -50,8 +50,8 @@ export function GradePlanChip() {
   const paid = tier !== 'free';
   return (
     <Link className="gp-chip" to="/plan" aria-label={`Grade ${gradeLabel}, plan ${planName}`}>
-      <span className="seg">🎓 {gradeLabel}</span>
-      <span className={`seg plan${paid ? ' gold' : ''}`}>⭐ {planName}</span>
+      <span className="grade">🎓 {gradeLabel}</span>
+      <span className={`planbadge${paid ? '' : ' free'}`}>⭐ {planName}</span>
     </Link>
   );
 }

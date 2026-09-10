@@ -888,11 +888,14 @@ p { line-height: 1.5; }
 .verify-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--tint-green); color: var(--green); font-weight: 800; font-size: 13px; border-radius: var(--radius-pill); padding: 8px 13px; }
 
 /* ===== Home hero: Grade + plan chip ===== */
-.gp-chip { display: inline-flex; align-items: center; border-radius: 999px; overflow: hidden; flex: none;
-  border: 1px solid rgba(255,255,255,.28); font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 14px; text-decoration: none; }
-.gp-chip .seg { padding: 9px 14px; color: #fff; background: rgba(255,255,255,.18); white-space: nowrap; }
-.gp-chip .seg.plan { background: rgba(255,255,255,.30); }
-.gp-chip .seg.plan.gold { background: #ffe6b0; color: #7a4d00; }
+.gp-chip { display: inline-flex; align-items: center; gap: 8px; flex: none;
+  padding: 7px 8px 7px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.28);
+  background: rgba(255,255,255,.18); color: #fff; text-decoration: none; white-space: nowrap;
+  font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 14px; }
+.gp-chip .grade { display: inline-flex; align-items: center; gap: 6px; }
+.gp-chip .planbadge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+  border-radius: 999px; font-size: 12px; background: #ffe6b0; color: #7a4d00; }
+.gp-chip .planbadge.free { background: rgba(255,255,255,.28); color: #fff; }
 
 /* ===== My Plan pricing page (namespaced 'pp-') ===== */
 .planpage { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1f2937; }
