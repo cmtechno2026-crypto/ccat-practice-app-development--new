@@ -118,7 +118,7 @@ export function ExamPapers() {
                   </label>
                   {manage && detail.state === 'draft' && <button className="btn green sm" onClick={() => act(api.publishSet(detail.id), 'Published')}>Publish</button>}
                   {manage && detail.state === 'published' && <button className="btn amber sm" onClick={() => act(api.retireSet(detail.id), 'Retired — removed from the student catalog')}>Retire</button>}
-                  {manage && detail.state === 'draft' && <button className="btn danger sm" onClick={async () => { try { await api.deleteSet(detail.id); toast('Deleted'); setSelId(''); setDetail(null); loadSets(); } catch (e) { toast((e as Error).message); } }}>Delete</button>}
+                  {manage && (detail.state === 'draft' || detail.state === 'retired') && <button className="btn danger sm" onClick={async () => { try { await api.deleteSet(detail.id); toast('Deleted'); setSelId(''); setDetail(null); loadSets(); } catch (e) { toast((e as Error).message); } }}>Delete</button>}
                 </div>
 
                 {detail.question_count < 5 && <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Add at least 5 questions across the sections before this paper can be published (currently {detail.question_count}).</p>}
