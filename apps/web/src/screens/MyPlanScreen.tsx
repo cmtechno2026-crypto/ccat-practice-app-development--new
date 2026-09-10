@@ -93,7 +93,7 @@ export function MyPlanScreen() {
 
   return (
     <>
-      <AppBar title="My Plan" sub="Your membership & upgrades" back />
+      <AppBar title="My Plan" sub="Your membership & upgrades" back wide />
       <div className="plan-wrap stack">
         <div className="stack" style={{ maxWidth: 760, width: '100%', margin: '0 auto' }}>
         {phase === 'activating' && (

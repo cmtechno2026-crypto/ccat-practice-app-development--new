@@ -732,6 +732,9 @@ p { line-height: 1.5; }
 .appbar:has(.inner-wide) { padding-left: 0; padding-right: 0; }
 .appbar .inner-wide { box-sizing: border-box; max-width: 1240px; margin: 0 auto; padding: 0 28px; }
 @media (max-width: 600px) { .appbar .inner-wide { padding: 0 16px; } }
+/* Plan page: align Back (hard-left) and Grade+avatar (hard-right) with the pricing cards' column. */
+.appbar:has(+ .plan-wrap) .inner-wide { max-width: 1400px; padding: 0 22px; }
+@media (max-width: 600px) { .appbar:has(+ .plan-wrap) .inner-wide { padding: 0 16px; } }
 
 /* Colourful "sets done" boxes (one per battery + Total) and Battery-test metric boxes — light shades
    with a thin accent bar on top. Numbers stay ink for readability. */
