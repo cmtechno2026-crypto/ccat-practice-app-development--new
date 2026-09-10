@@ -74,7 +74,7 @@ export const SELLABLE_TIERS: EntitlementTier[] = ['t50', 't250', 't500'];
 export const TIER_CATALOG: Record<EntitlementTier, TierInfo> = {
   free: { tier: 'free', label: 'Free', name: 'Free', price: '$0', priceLabel: '$0 CAD',
     desc: 'Explore the platform before choosing a paid plan.',
-    features: ['1 demo practice set for each battery'] },
+    features: ['Set 1 of every practice topic (except Battery Combine)'] },
   t50: { tier: 't50', label: '$50', name: 'Standard', price: '$50', priceLabel: '$50 CAD', accessTerm: '1-year access',
     desc: 'Ideal for students who want full access to practice material.',
     features: ['Unlimited access to all individual practice sets'] },

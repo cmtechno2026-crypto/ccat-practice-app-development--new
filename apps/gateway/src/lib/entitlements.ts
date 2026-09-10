@@ -233,24 +233,26 @@ export function isCombineSubcategory(subcategoryKey: string | null | undefined, 
   return (maxQuestionsPerSet ?? 15) >= 45;
 }
 
-// Compute the ONE demo set per battery for a grade: the first set of the first subcategory of each
-// battery, derived deterministically from the DB (never hard-coded ids). Ordering mirrors the prompt:
-// subcategories by (display_order, created_at, id); sets by (created_at, id) among PUBLISHED sets with
-// active questions (published excludes retired, so this is the first non-retired set). DISTINCT ON the
-// category id with a matching leading ORDER BY picks the first per battery. Grade-scoped, so free users
-// get the first set they actually see in their own catalog.
+// Compute the FREE demo sets for a grade: Set 1 (the first published set) of EVERY non-combine
+// subcategory (sub-battery), derived deterministically from the DB (never hard-coded ids). Combine
+// subcategories are excluded (key contains 'combine' or 45+ questions per set) — combine stays paid.
+// Sets are ordered (created_at, id) among PUBLISHED sets with active questions (published excludes
+// retired). DISTINCT ON (sub.id) with a matching leading ORDER BY picks Set 1 for each subcategory.
 export async function computeDemoSetIds(db: DB, gradeId: string): Promise<Set<string>> {
   const { rows } = await db.query(
-    `select distinct on (cat.id) sv.id as set_version_id
+    `select distinct on (sub.id) sv.id as set_version_id
        from ccat.question_sets qs
        join ccat.categories cat on cat.id = qs.category_id
        join ccat.subcategories sub on sub.id = qs.subcategory_id
        join ccat.question_set_versions sv on sv.question_set_id = qs.id
       where qs.grade_id = $1
         and sv.state = 'published'
+        and sub.active = true
+        and lower(coalesce(sub.key, '')) not like '%combine%'
+        and coalesce(sub.max_questions_per_set, 15) < 45
         and exists (select 1 from ccat.set_version_questions svq
                      where svq.set_version_id = sv.id and svq.active = true)
-      order by cat.id, sub.display_order asc, sub.created_at asc, sub.id asc, sv.created_at asc, sv.id asc`,
+      order by sub.id, sv.created_at asc, sv.id asc`,
     [gradeId],
   );
   return new Set(rows.map((r) => String(r.set_version_id)));
