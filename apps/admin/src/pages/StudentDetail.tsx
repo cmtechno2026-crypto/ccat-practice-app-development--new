@@ -132,7 +132,6 @@ export function StudentDetail() {
   const approveGrade = async (reqId: string) => { try { await api.approveGradeRequest(id!, reqId); toast('Grade change approved — grade updated, history preserved.'); reload(); } catch (e) { toast((e as Error).message); } };
   const rejectGrade = async (reqId: string) => { try { await api.rejectGradeRequest(id!, reqId); toast('Grade change rejected — grade unchanged.'); reload(); } catch (e) { toast((e as Error).message); } };
 
-  const revoke = async () => { if (!confirm('Revoke this device and end the student\'s sessions?')) return; try { await api.revokeDevice(id!, 'admin console'); toast('Device revoked'); reload(); } catch (e) { toast((e as Error).message); } };
   const approveBg = async (reqId: string) => { try { await api.approveBreakGlass(id!, reqId); toast('Device enrolled — audited'); reload(); } catch (e) { toast((e as Error).message); } };
   const denyBg = async (reqId: string) => { try { await api.denyBreakGlass(id!, reqId); toast('Request denied'); reload(); } catch (e) { toast((e as Error).message); } };
   const doAdjust = async () => {
@@ -311,7 +310,6 @@ export function StudentDetail() {
                   )}
                   <div className="rowactions" style={{ marginTop: 10 }}>
                     {can('device.break_glass') && <button className="btn gold sm" onClick={() => setBg(true)}>🔑 {isSuper ? 'Break-glass enroll' : 'Request break-glass'}</button>}
-                    {can('device.revoke') && d.devices.some((x: any) => x.status === 'active') ? <button className="btn danger sm" onClick={revoke}>Revoke active device</button> : null}
                   </div>
                 </>) : (
                   <div><div style={{ fontSize: 13 }}>{activeDev ? `${activeDev.platform || 'device'} · active` : (d.devices.length ? `${d.devices.length} device(s)` : 'No devices')}</div>
