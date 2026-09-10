@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { Grade } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
@@ -41,7 +41,6 @@ export function GradePill() {
 // Home hero: Grade + membership plan in one two-tone chip that taps through to My Plan. Paid tiers show
 // gold; falls back to just the grade pill when payments is off.
 export function GradePlanChip() {
-  const nav = useNavigate();
   const { profile, entitlements } = useApp();
   const gradeLabel = useGradeLabel(profile?.grade_id);
   if (!profile || !gradeLabel) return null;
@@ -49,14 +48,12 @@ export function GradePlanChip() {
   const tier = entitlements?.tier ?? 'free';
   const planName = TIER_CATALOG[tier]?.name ?? 'Free';
   const paid = tier !== 'free';
-  // Explicit onClick navigate in addition to the Link href: some in-app headers sit under handlers
-  // that swallow the anchor's default navigation, so we drive the route programmatically to be safe.
+  // Informational only — grade + membership plan. NOT a link (no navigation on click).
   return (
-    <Link className="gp-chip" to="/plan" aria-label={`Grade ${gradeLabel}, plan ${planName}`}
-      onClick={(e) => { e.preventDefault(); nav('/plan'); }}>
+    <span className="gp-chip" aria-label={`Grade ${gradeLabel}, plan ${planName}`}>
       <span className="grade">🎓 {gradeLabel}</span>
       <span className={`planbadge${paid ? '' : ' free'}`}>⭐ {planName}</span>
-    </Link>
+    </span>
   );
 }
 
