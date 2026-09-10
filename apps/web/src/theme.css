@@ -437,7 +437,9 @@ p { line-height: 1.5; }
 }
 .home-hero h1 { color: #fff; font-size: 24px; }
 .home-hero .hh-streak { color: rgba(255,255,255,.92); font-weight: 700; font-size: 13.5px; margin-top: 4px; }
+.home-hero .hh-text { flex: 1 1 auto; min-width: 0; }
 .home-hero .hh-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.home-hero .hh-actions { flex: 0 0 auto; }
 .hh-continue {
   all: unset; cursor: pointer; font-family: 'Baloo 2'; font-weight: 800; font-size: 14px;
   background: #fff; color: var(--purple); padding: 10px 16px; border-radius: var(--radius-pill);
@@ -920,3 +922,6 @@ p { line-height: 1.5; }
 .pp-foot { margin-top: 24px; text-align: center; color: #6b7280; font-size: 13px; }
 @media (max-width: 1050px) { .pp-plans { grid-template-columns: repeat(2, minmax(0,1fr)); max-width: 620px; margin: 0 auto; } }
 @media (max-width: 700px) { .pp-plans { grid-template-columns: 1fr; } }
+
+/* My Plan: full-width pricing (aligns with the header back arrow ↔ fox) */
+.plan-wrap { width: 100%; max-width: 1400px; margin: 0 auto; padding: 16px 22px 48px; }

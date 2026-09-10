@@ -94,7 +94,8 @@ export function MyPlanScreen() {
   return (
     <>
       <AppBar title="My Plan" sub="Your membership & upgrades" back />
-      <div className="content stack">
+      <div className="plan-wrap stack">
+        <div className="stack" style={{ maxWidth: 760, width: '100%', margin: '0 auto' }}>
         {phase === 'activating' && (
           <Card className="stack">
             <div className="row" style={{ alignItems: 'center', gap: 10 }}>
@@ -121,6 +122,7 @@ export function MyPlanScreen() {
             <div className="muted" style={{ fontSize: 13 }}>No payment was made. You can pick a plan again whenever you're ready.</div>
           </Card>
         )}
+        </div>
 
         {/* Pricing page (indigo/Inter design, namespaced 'pp-'). */}
         <div className="planpage">

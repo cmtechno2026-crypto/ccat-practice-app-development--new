@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Plan — width/layout samples</title>
+<style>
+  :root{ --ink:#1f2937; --muted:#6b7280; --border:#e5e7eb; --indigo:#4f46e5; --appblue:#3e7bee; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#eef1fa;color:var(--ink);padding:26px 20px 70px}
+  .head{max-width:1400px;margin:0 auto 22px}
+  .head h1{font-weight:800;font-size:24px;margin:0 0 8px}
+  .head p{margin:0;color:var(--muted);font-weight:600;font-size:14px;line-height:1.5;max-width:900px}
+  .head .tag{display:inline-block;font-weight:800;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--indigo);background:#eef2ff;padding:5px 11px;border-radius:999px;margin-bottom:10px}
+  .sample{max-width:1400px;margin:0 auto 40px}
+  .slabel{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+  .slabel .n{width:26px;height:26px;border-radius:8px;background:var(--indigo);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+  .slabel b{font-weight:800;font-size:17px}
+  .slabel .d{color:var(--muted);font-weight:600;font-size:13px}
+
+  .app{border:1px solid #dfe3ef;border-radius:16px;overflow:hidden;background:#eef1fa}
+  .bar{background:linear-gradient(150deg,#3e7bee,#2c5fd0);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:14px 22px}
+  .bar .l{display:flex;align-items:center;gap:12px}
+  .bar .back{width:34px;height:34px;border-radius:12px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:16px}
+  .bar .t{font-family:'Baloo 2',sans-serif;font-weight:800;font-size:17px}
+  .bar .r{display:flex;align-items:center;gap:10px}
+  .bar .pill{background:rgba(255,255,255,.2);border-radius:999px;padding:6px 12px;font-weight:800;font-size:13px}
+  .bar .fox{width:36px;height:36px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:18px}
+  .body{padding:22px}
+
+  .plans{display:grid;gap:18px;align-items:stretch}
+  .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .card{position:relative;display:flex;flex-direction:column;padding:22px;border:1px solid var(--border);border-radius:16px;background:#fff;box-shadow:0 4px 16px rgba(17,24,39,.04)}
+  .card.premium{border:2px solid var(--indigo)}
+  .badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:var(--indigo);color:#fff;font-size:11px;font-weight:900;letter-spacing:.04em}
+  .name{font-weight:800;font-size:20px;margin-bottom:8px}
+  .prow{display:flex;align-items:baseline;gap:5px}
+  .price{font-size:34px;font-weight:900;letter-spacing:-.02em}
+  .cur{color:var(--muted);font-size:13px;font-weight:700}
+  .term{color:var(--indigo);font-weight:800;font-size:13px;margin:6px 0 8px}
+  .desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 16px}
+  .div{height:1px;background:var(--border);margin-bottom:16px}
+  ul{list-style:none;padding:0;margin:0 0 20px;display:grid;gap:11px;flex:1}
+  li{display:flex;gap:9px;font-size:14px;line-height:1.4}
+  .ck{flex:none;width:19px;height:19px;border-radius:50%;background:#ecfdf3;color:#16a34a;display:grid;place-items:center;font-size:12px;font-weight:900;margin-top:1px}
+  .btn{width:100%;min-height:44px;border:1px solid var(--border);border-radius:11px;padding:11px 14px;font-weight:800;font-size:14px;cursor:pointer}
+  .btn.sec{background:#f9fafb;color:var(--muted)}
+  .btn.pri{background:var(--indigo);border-color:var(--indigo);color:#fff}
+
+  /* compact variant */
+  .compact .card{padding:18px}
+  .compact .price{font-size:30px}
+  .compact .desc{margin-bottom:12px}
+  .compact ul{gap:8px;margin-bottom:14px}
+  .compact .name{font-size:18px}
+
+  /* landscape (row) variant */
+  .rows{display:flex;flex-direction:column;gap:14px}
+  .rcard{position:relative;display:flex;align-items:center;gap:22px;padding:20px 24px;border:1px solid var(--border);border-radius:16px;background:#fff;box-shadow:0 4px 16px rgba(17,24,39,.04)}
+  .rcard.premium{border:2px solid var(--indigo)}
+  .rcard .rleft{flex:0 0 210px}
+  .rcard .rmid{flex:1;display:flex;flex-wrap:wrap;gap:8px 22px}
+  .rcard .rmid li{font-size:13.5px}
+  .rcard .rbtn{flex:0 0 190px}
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="tag">My Plan · width &amp; layout</span>
+    <h1>Plan page width — 3 samples</h1>
+    <p>The grid now spans the full content width (aligned with the back arrow and fox), so cards get wider and less elongated. Each sample keeps the same content; only the layout differs. <b>Reply with a sample number.</b></p>
+  </div>
+
+  <!-- SAMPLE 1: full-width 4-across -->
+  <div class="sample">
+    <div class="slabel"><span class="n">1</span><b>Full-width, 4 across</b><span class="d">edge-to-edge; wider cards, same 4-column row</span></div>
+    <div class="app">
+      <div class="bar"><div class="l"><span class="back">‹</span><span class="t">My Plan</span></div><div class="r"><span class="pill">🎓 Grade 3</span><span class="fox">🦊</span></div></div>
+      <div class="body">
+        <div class="plans g4">
+          <div class="card"><div class="name">Free</div><div class="prow"><span class="price">$0</span><span class="cur">CAD</span></div><p class="desc" style="margin-top:8px">Explore the platform before choosing a paid plan.</p><div class="div"></div><ul><li><span class="ck">✓</span>Set 1 of every practice topic (except Battery Combine)</li></ul><button class="btn sec">Current Plan</button></div>
+          <div class="card"><div class="name">Standard</div><div class="prow"><span class="price">$50</span><span class="cur">CAD</span></div><div class="term">1-year access</div><p class="desc">Full access to practice material.</p><div class="div"></div><ul><li><span class="ck">✓</span>Unlimited access to all individual practice sets</li></ul><button class="btn pri">Get Standard — $50 CAD</button></div>
+          <div class="card"><div class="name">Plus</div><div class="prow"><span class="price">$100</span><span class="cur">CAD</span></div><div class="term">1-year access</div><p class="desc">Full battery tests and timed exams.</p><div class="div"></div><ul><li><span class="ck">✓</span>All individual practice sets</li><li><span class="ck">✓</span>Full battery tests</li><li><span class="ck">✓</span>Full-length timed exam papers</li></ul><button class="btn pri">Get Plus — $100 CAD</button></div>
+          <div class="card premium"><div class="badge">BEST VALUE</div><div class="name">Premium</div><div class="prow"><span class="price">$200</span><span class="cur">CAD</span></div><div class="term">1-year access</div><p class="desc">Everything plus personal mentoring.</p><div class="div"></div><ul><li><span class="ck">✓</span>All practice sets</li><li><span class="ck">✓</span>Timed exam papers</li><li><span class="ck">✓</span>Full battery tests</li><li><span class="ck">✓</span>Weekly test</li><li><span class="ck">✓</span>5 live 1-on-1 mentoring sessions</li></ul><button class="btn pri">Get Premium — $200 CAD</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SAMPLE 2: 2x2 -->
+  <div class="sample">
+    <div class="slabel"><span class="n">2</span><b>2 × 2 grid</b><span class="d">two big rows; widest cards, shortest height</span></div>
+    <div class="app">
+      <div class="bar"><div class="l"><span class="back">‹</span><span class="t">My Plan</span></div><div class="r"><span class="pill">🎓 Grade 3</span><span class="fox">🦊</span></div></div>
+      <div class="body">
+        <div class="plans g2">
+          <div class="card"><div class="name">Free</div><div class="prow"><span class="price">$0</span><span class="cur">CAD</span></div><p class="desc" style="margin-top:8px">Explore the platform before choosing a paid plan.</p><div class="div"></div><ul><li><span class="ck">✓</span>Set 1 of every practice topic (except Battery Combine)</li></ul><button class="btn sec">Current Plan</button></div>
+          <div class="card"><div class="name">Standard</div><div class="prow"><span class="price">$50</span><span class="cur">CAD</span></div><div class="term">1-year access</div><p class="desc">Full access to practice material.</p><div class="div"></div><ul><li><span class="ck">✓</span>Unlimited access to all individual practice sets</li></ul><button class="btn pri">Get Standard — $50 CAD</button></div>
+          <div class="card"><div class="name">Plus</div><div class="prow"><span class="price">$100</span><span class="cur">CAD</span></div><div class="term">1-year access</div><p class="desc">Full battery tests and timed exams.</p><div class="div"></div><ul><li><span class="ck">✓</span>All individual practice sets</li><li><span class="ck">✓</span>Full battery tests</li><li><span class="ck">✓</span>Full-length timed exam papers</li></ul><button class="btn pri">Get Plus — $100 CAD</button></div>
+          <div class="card premium"><div class="badge">BEST VALUE</div><div class="name">Premium</div><div class="prow"><span class="price">$200</span><span class="cur">CAD</span></div><div class="term">1-year access</div><p class="desc">Everything plus personal mentoring.</p><div class="div"></div><ul><li><span class="ck">✓</span>All practice sets</li><li><span class="ck">✓</span>Timed exam papers</li><li><span class="ck">✓</span>Full battery tests</li><li><span class="ck">✓</span>Weekly test</li><li><span class="ck">✓</span>5 live 1-on-1 mentoring sessions</li></ul><button class="btn pri">Get Premium — $200 CAD</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SAMPLE 3: full-width landscape rows -->
+  <div class="sample">
+    <div class="slabel"><span class="n">3</span><b>Landscape rows</b><span class="d">one wide row per plan — shortest, most horizontal</span></div>
+    <div class="app">
+      <div class="bar"><div class="l"><span class="back">‹</span><span class="t">My Plan</span></div><div class="r"><span class="pill">🎓 Grade 3</span><span class="fox">🦊</span></div></div>
+      <div class="body">
+        <div class="rows">
+          <div class="rcard"><div class="rleft"><div class="name">Free</div><div class="prow"><span class="price">$0</span><span class="cur">CAD</span></div></div><ul class="rmid"><li><span class="ck">✓</span>Set 1 of every practice topic (except Battery Combine)</li></ul><div class="rbtn"><button class="btn sec">Current Plan</button></div></div>
+          <div class="rcard"><div class="rleft"><div class="name">Standard</div><div class="prow"><span class="price">$50</span><span class="cur">CAD</span></div><div class="term">1-year access</div></div><ul class="rmid"><li><span class="ck">✓</span>All individual practice sets</li></ul><div class="rbtn"><button class="btn pri">Get Standard — $50</button></div></div>
+          <div class="rcard"><div class="rleft"><div class="name">Plus</div><div class="prow"><span class="price">$100</span><span class="cur">CAD</span></div><div class="term">1-year access</div></div><ul class="rmid"><li><span class="ck">✓</span>All practice sets</li><li><span class="ck">✓</span>Full battery tests</li><li><span class="ck">✓</span>Timed exam papers</li></ul><div class="rbtn"><button class="btn pri">Get Plus — $100</button></div></div>
+          <div class="rcard premium"><div class="badge">BEST VALUE</div><div class="rleft"><div class="name">Premium</div><div class="prow"><span class="price">$200</span><span class="cur">CAD</span></div><div class="term">1-year access</div></div><ul class="rmid"><li><span class="ck">✓</span>All practice sets</li><li><span class="ck">✓</span>Timed exams</li><li><span class="ck">✓</span>Full battery tests</li><li><span class="ck">✓</span>Weekly test</li><li><span class="ck">✓</span>5 live 1-on-1 mentoring sessions</li></ul><div class="rbtn"><button class="btn pri">Get Premium — $200</button></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Loading, ErrorBox, Modal, useToast } from '../components/ui';
@@ -29,16 +29,6 @@ export function ExamPapers() {
   useEffect(() => { if (!grade && tax?.grades?.length) setGrade(String(tax.grades[0].grade_number)); }, [tax]); // eslint-disable-line
 
   const examForms = useMemo(() => (sets || []).filter(s => s.allowed_exam && (!grade || String(s.grade_number) === grade)), [sets, grade]);
-  // Auto-create the 3 starter exam papers when a grade has none (idempotent server-side). Admins then
-  // edit/delete/add freely. Guarded per-grade so it fires once and respects deletions afterward.
-  const scaffolded = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!manage || !grade || sets === null || examForms.length > 0) return;
-    const gid = tax?.grades?.find((g: any) => String(g.grade_number) === grade)?.id;
-    if (!gid || scaffolded.current.has(gid)) return;
-    scaffolded.current.add(gid);
-    api.scaffoldExamPapers(gid).then(r => { if (r.created > 0) loadSets(); }).catch(() => {});
-  }, [grade, sets, examForms, manage, tax]); // eslint-disable-line
   useEffect(() => {
     if (examForms.length && !examForms.some(f => f.id === selId)) setSelId(examForms[0].id);
     if (!examForms.length) { setSelId(''); setDetail(null); }
