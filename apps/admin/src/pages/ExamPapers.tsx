@@ -43,7 +43,7 @@ export function ExamPapers() {
     if (examForms.length && !examForms.some(f => f.id === selId)) setSelId(examForms[0].id);
     if (!examForms.length) { setSelId(''); setDetail(null); }
   }, [examForms]); // eslint-disable-line
-  const loadDetail = (id: string) => { if (!id) return setDetail(null); api.set(id).then(setDetail).catch(setError); };
+  const loadDetail = (id: string) => { if (!id) return setDetail(null); api.set(id).then(setDetail).catch(() => setDetail(null)); };
   useEffect(() => { loadDetail(selId); }, [selId]); // eslint-disable-line
 
   const refresh = () => { loadSets(); if (selId) loadDetail(selId); };
@@ -118,7 +118,7 @@ export function ExamPapers() {
                   </label>
                   {manage && detail.state === 'draft' && <button className="btn green sm" onClick={() => act(api.publishSet(detail.id), 'Published')}>Publish</button>}
                   {manage && detail.state === 'published' && <button className="btn amber sm" onClick={() => act(api.retireSet(detail.id), 'Retired — removed from the student catalog')}>Retire</button>}
-                  {manage && detail.state === 'draft' && <button className="btn danger sm" onClick={() => act(api.deleteSet(detail.id), 'Deleted').then(() => { setSelId(''); })}>Delete</button>}
+                  {manage && detail.state === 'draft' && <button className="btn danger sm" onClick={async () => { try { await api.deleteSet(detail.id); toast('Deleted'); setSelId(''); setDetail(null); loadSets(); } catch (e) { toast((e as Error).message); } }}>Delete</button>}
                 </div>
 
                 {detail.question_count < 5 && <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Add at least 5 questions across the sections before this paper can be published (currently {detail.question_count}).</p>}
