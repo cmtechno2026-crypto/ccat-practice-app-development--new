@@ -259,10 +259,6 @@ export function RegisterScreen() {
 
           {step === 'details' && (
             <>
-              <div className="card" style={{ background: 'var(--tint-blue)' }}>
-                <p>🧑‍👧 <strong>A parent sets this up.</strong> We ask for a grown-up's email and phone and for consent before creating the account — Canadian privacy rules (PIPEDA), no ads, no selling data.</p>
-              </div>
-
               <div className="eyebrow">About the learner</div>
               <Field label="Child's first name"><input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="e.g. Aisha" /></Field>
               <Field label="Grade">
