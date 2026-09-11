@@ -146,12 +146,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
               ss.longest_streak
               from ccat.student_streaks ss where ss.student_id = s.id) stk on true
         where s.is_preview = false   -- preview accounts never appear in the real student directory
-          and (s.status <> 'purged' or $1::ccat.student_status = 'purged')  -- deleted (purged) students are hidden
           and ($1::ccat.student_status is null or s.status = $1::ccat.student_status)
           and ($2::text is null or r.band = $2)
           and ($3::text is null or s.username_normalized::text ilike $3
                or s.display_name ilike $3 or gc.email ilike $3 or coalesce(gc.phone,'') ilike $3)
-        order by ${sortCol} ${dir} nulls last, s.created_at desc
+        order by (s.status = 'purged') asc, ${sortCol} ${dir} nulls last, s.created_at desc
         limit $4 offset $5`,
       [status, band, search, limit, offset],
     );
