@@ -1,0 +1,98 @@
+/* ============================================================================
+   Pre-login landing page (route "/") — "Parent Trust" design.
+   All rules are scoped under .lp so nothing leaks into the authenticated app.
+   ========================================================================== */
+.lp { --blue:#1A5EAB; --blue-d:#0f3f7a; --navy:#0c1b33; --gold:#E8A020;
+  --lp-ink:#1f2937; --lp-muted:#5b6472; --lp-line:#e6e9f0;
+  font-family: Inter, system-ui, -apple-system, sans-serif; color: var(--lp-ink);
+  background: #fff; min-height: 100vh; scroll-behavior: smooth; }
+.lp * { box-sizing: border-box; }
+.lp h1, .lp h2, .lp h3 { font-family: Poppins, sans-serif; margin: 0; color: var(--lp-ink); line-height: 1.12; }
+.lp a { text-decoration: none; }
+.lp img { display: block; }
+
+/* nav */
+.lp-nav { position: sticky; top: 0; z-index: 50; background: #fff; border-bottom: 1px solid var(--lp-line); }
+.lp-nav-in { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: 18px; padding: 12px 24px; }
+.lp-logo img { height: 62px; width: auto; }
+.lp-menu { margin-left: auto; display: flex; align-items: center; gap: 24px; }
+.lp-menu a { color: var(--lp-ink); font-weight: 700; font-size: 14.5px; }
+.lp-menu a:hover { color: var(--blue); }
+.lp-btn { font-family: Poppins, sans-serif; font-weight: 700; border-radius: 8px; padding: 10px 18px; font-size: 14px; display: inline-block; cursor: pointer; }
+.lp-btn.ghost { color: var(--blue); border: 1.5px solid var(--blue); }
+.lp-btn.solid { color: #fff; background: var(--gold); }
+@media (max-width: 900px) { .lp-menu a:not(.lp-btn) { display: none; } .lp-logo img { height: 44px; } }
+
+/* hero */
+.lp-hero { background: linear-gradient(160deg, var(--navy), #12294a 70%); color: #fff; }
+.lp-hero-in { max-width: 1200px; margin: 0 auto; padding: 66px 24px 72px; display: grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items: center; }
+@media (max-width: 900px) { .lp-hero-in { grid-template-columns: 1fr; } }
+.lp-ey { color: var(--gold); font-family: Poppins, sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; }
+.lp-hero h1 { color: #fff; font-size: 44px; line-height: 1.1; margin: 14px 0; }
+.lp-hero h1 em { color: var(--gold); font-style: normal; }
+.lp-hero p { color: #c7d2e6; font-size: 17px; line-height: 1.6; max-width: 520px; }
+.lp-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+.lp-btn.lg { padding: 14px 24px; font-size: 16px; }
+.lp-trust { margin-top: 20px; color: #9fb3d4; font-weight: 600; font-size: 13.5px; }
+.lp-panel { background: #fff; border-radius: 16px; padding: 26px; color: var(--lp-ink); box-shadow: 0 30px 60px -30px rgba(0,0,0,.6); }
+.lp-panel h3 { font-size: 18px; margin-bottom: 14px; }
+.lp-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--lp-line); }
+.lp-row:last-child { border: 0; }
+.lp-ic { width: 40px; height: 40px; border-radius: 10px; background: #eaf2ff; display: flex; align-items: center; justify-content: center; font-size: 20px; flex: none; }
+.lp-row b { font-family: Poppins, sans-serif; font-size: 14.5px; }
+.lp-row span { color: var(--lp-muted); font-size: 12.5px; }
+
+/* sections */
+.lp-sec { max-width: 1200px; margin: 0 auto; padding: 60px 24px; scroll-margin-top: 96px; }
+.lp-sh { text-align: center; margin-bottom: 38px; }
+.lp-sh .lp-ey { color: var(--blue); display: block; }
+.lp-sh h2 { font-size: 34px; margin-top: 8px; }
+.lp-sh p { color: var(--lp-muted); max-width: 640px; margin: 12px auto 0; font-size: 15.5px; }
+.lp-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+@media (max-width: 900px) { .lp-grid3 { grid-template-columns: 1fr; } }
+.lp-fcard { display: flex; gap: 14px; background: #fff; border: 1px solid var(--lp-line); border-radius: 14px; padding: 22px; }
+.lp-fcard .fx { font-size: 28px; flex: none; }
+.lp-fcard h3 { font-size: 17px; margin-bottom: 6px; }
+.lp-fcard p { color: var(--lp-muted); font-size: 14px; margin: 0; line-height: 1.5; }
+
+/* how */
+.lp-how { background: #f5f8fd; }
+.lp-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+@media (max-width: 900px) { .lp-steps { grid-template-columns: 1fr; } }
+.lp-step { display: flex; gap: 12px; align-items: flex-start; }
+.lp-sn { width: 34px; height: 34px; border-radius: 50%; background: var(--blue); color: #fff; font-family: Poppins, sans-serif; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; }
+.lp-step h3 { font-size: 15px; }
+.lp-step p { color: var(--lp-muted); font-size: 13px; margin: 5px 0 0; }
+
+/* pricing */
+.lp-plans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; align-items: stretch; }
+@media (max-width: 980px) { .lp-plans { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .lp-plans { grid-template-columns: 1fr; } }
+.lp-plan { position: relative; display: flex; flex-direction: column; background: #fff; border: 1px solid var(--lp-line); border-radius: 16px; padding: 26px; }
+.lp-plan.best { border: 2px solid var(--blue); box-shadow: 0 18px 40px -24px rgba(26,94,171,.5); }
+.lp-pbadge { position: absolute; top: -13px; left: 50%; transform: translateX(-50%); background: var(--blue); color: #fff; font-family: Poppins, sans-serif; font-weight: 700; font-size: 11px; padding: 6px 12px; border-radius: 999px; white-space: nowrap; }
+.lp-pn { font-family: Poppins, sans-serif; font-weight: 700; font-size: 19px; }
+.lp-pp { font-family: Poppins, sans-serif; font-weight: 800; font-size: 40px; margin-top: 6px; }
+.lp-pp span { font-size: 13px; color: var(--lp-muted); margin-left: 4px; }
+.lp-pt { color: var(--blue); font-weight: 700; font-size: 13px; min-height: 18px; margin-bottom: 14px; }
+.lp-plan ul { list-style: none; padding: 0; margin: 0 0 20px; display: grid; gap: 11px; flex: 1; }
+.lp-plan li { display: flex; gap: 8px; font-size: 14px; color: #374151; }
+.lp-ck { color: #16a34a; font-weight: 800; }
+.lp-pbtn { display: block; text-align: center; font-family: Poppins, sans-serif; font-weight: 700; border-radius: 9px; padding: 12px; background: var(--blue); color: #fff; cursor: pointer; }
+.lp-plan.best .lp-pbtn { background: var(--gold); color: #3a2600; }
+
+/* contact */
+.lp-contact { background: linear-gradient(160deg, var(--blue), var(--blue-d)); border-radius: 20px; color: #fff; padding: 48px; text-align: center; }
+.lp-contact h2 { color: #fff; font-size: 32px; }
+.lp-contact p { color: #dbe6f6; max-width: 560px; margin: 14px auto 24px; font-size: 15.5px; }
+.lp-cbtns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.lp-cbtns a { font-family: Poppins, sans-serif; font-weight: 700; border-radius: 8px; padding: 14px 24px; }
+.lp-cw { background: var(--gold); color: #3a2600; }
+.lp-cm2 { background: rgba(255,255,255,.14); color: #fff; border: 1px solid rgba(255,255,255,.4); }
+
+/* footer */
+.lp-footer { background: var(--navy); color: #9fb3d4; text-align: center; padding: 30px; font-size: 13.5px; }
+.lp-footer a { color: var(--gold); font-weight: 700; }
+
+/* Smooth in-page scrolling for the menu anchors — scoped to when the landing is mounted. */
+html:has(.lp) { scroll-behavior: smooth; }
