@@ -3,9 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ApiError } from '@ccat/api-client';
 import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
-import cmLogo from '../assets/cm-logo.jpg';
+import cmWordmark from '../assets/cm-wordmark.png';
+import '../landing.css';
 
-// Login (route "/login"). Split brand panel matching the gateway. The 4-digit PIN is shown as four
+// Login (route "/login"). Navy split panel matching the landing page. The 4-digit PIN is shown as four
 // boxes backed by ONE hidden numeric input, so `pin` stays the single source of truth for submit.
 export function LoginScreen() {
   const nav = useNavigate();
@@ -24,7 +25,6 @@ export function LoginScreen() {
       const me = await client.profile();
       setProfile(me);
       flash('Welcome back! 👋');
-      // Always land on Home after a fresh sign-in (history replace so login/old page aren't in the back-stack).
       nav('/home', { replace: true });
     } catch (e) {
       setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username or PIN.' : e.message) : (e as Error).message);
@@ -34,18 +34,24 @@ export function LoginScreen() {
   const canSubmit = !!username && pin.length === 4 && !busy;
 
   return (
-    <div className="auth-split">
-      <div className="auth-brand">
-        <span className="b-circ" style={{ width: 260, height: 260, top: -90, right: -70 }} />
-        <span className="b-circ" style={{ width: 150, height: 150, bottom: 20, left: -50 }} />
-        <div className="b-logo"><img src={cmLogo} alt="Concept Mastery" /></div>
-        <div className="b-quote">Welcome back, <span>champion.</span></div>
-        <div className="b-by">— CCAT Practice by Concept Mastery</div>
-      </div>
-      <div className="auth-form">
-        <div className="af-inner">
+    <div className="a2-split">
+      <aside className="a2-brand">
+        <span className="a2-circ" style={{ width: 260, height: 260, top: -90, right: -70 }} />
+        <span className="a2-circ" style={{ width: 150, height: 150, bottom: 20, left: -50 }} />
+        <div className="a2-logochip"><img src={cmWordmark} alt="Concept Mastery — Quality Education" /></div>
+        <div className="a2-quote">Welcome back, <span>champion.</span></div>
+        <ul className="a2-trust">
+          <li>✔ Grades 1–12 · CCAT / NGAT</li>
+          <li>✔ Trusted by 500+ parents</li>
+          <li>✔ PIPEDA-compliant</li>
+        </ul>
+        <div className="a2-by">— CCAT Practice by Concept Mastery</div>
+      </aside>
+      <div className="a2-form">
+        <div className="a2-inner">
+          <Link className="a2-back" to="/">← Back to home</Link>
           <h1>Welcome back 👋</h1>
-          <p className="af-sub">Enter your username and 4-digit PIN.</p>
+          <p className="a2-sub">Enter your username and 4-digit PIN.</p>
           {err && <div className="err" role="alert">{err}</div>}
           <div className="field">
             <label>Username</label>
@@ -77,9 +83,9 @@ export function LoginScreen() {
               </button>
             </div>
           </div>
-          <button className="btn primary" disabled={!canSubmit} onClick={submit}>Let me in! 🔓</button>
-          <div className="auth-links"><Link to="/recovery">Forgot PIN?</Link></div>
-          <div className="auth-foot">New here? <Link to="/register">Create an account</Link></div>
+          <button className="a2-btn gold" disabled={!canSubmit} onClick={submit}>Let me in! 🔓</button>
+          <div className="a2-links"><Link to="/recovery">Forgot PIN?</Link></div>
+          <div className="a2-foot">New here? <Link to="/register">Create an account</Link></div>
         </div>
       </div>
     </div>

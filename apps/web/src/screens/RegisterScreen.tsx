@@ -4,7 +4,9 @@ import { ApiError } from '@ccat/api-client';
 import { parsePhone, type CountryCode } from '../lib/phone';
 import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
-import { AppBar, Field } from '../components/ui';
+import { Field } from '../components/ui';
+import cmWordmark from '../assets/cm-wordmark.png';
+import '../landing.css';
 
 // Registration funnel (Blueprint §4). Minors-only product → the account is ALWAYS guardian-owned: a
 // guardian enters name + email + phone (validated server-side). When VITE_EMAIL_VERIFY_ENABLED is on the
@@ -238,10 +240,24 @@ export function RegisterScreen() {
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   return (
-    <>
-      <AppBar title="Create account" back />
-      <div className="content center-narrow">
-        <div className="stack">
+    <div className="a2-split">
+      <aside className="a2-brand">
+        <span className="a2-circ" style={{ width: 260, height: 260, top: -90, right: -70 }} />
+        <span className="a2-circ" style={{ width: 150, height: 150, bottom: 20, left: -50 }} />
+        <div className="a2-logochip"><img src={cmWordmark} alt="Concept Mastery — Quality Education" /></div>
+        <div className="a2-quote">Every champion starts with a <span>single question.</span></div>
+        <ul className="a2-trust">
+          <li>✔ Grades 1–12 · CCAT / NGAT</li>
+          <li>✔ Trusted by 500+ parents</li>
+          <li>✔ PIPEDA-compliant</li>
+        </ul>
+        <div className="a2-by">— CCAT Practice by Concept Mastery</div>
+      </aside>
+      <div className="a2-form">
+        <div className="a2-inner">
+          <button type="button" className="a2-back" onClick={() => nav(-1)}>‹ Back</button>
+          <h1>Create account</h1>
+          <div className="stack">
           {FUNNEL.includes(step) && (
             <div className="funnel-steps" aria-label={`Step ${FUNNEL.indexOf(step) + 1} of ${FUNNEL.length}`}>
               {FUNNEL.map((s, i) => {
@@ -374,8 +390,9 @@ export function RegisterScreen() {
               <button className="btn" onClick={() => nav('/home', { replace: true })}>Enter the app 🎉</button>
             </div>
           )}
+          </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
