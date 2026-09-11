@@ -43,7 +43,7 @@ export function LoginScreen() {
         <div className="a2-logochip"><img src={cmWordmark} alt="Concept Mastery — Quality Education" /></div>
         <div className="a2-quote">Welcome back, <span>champion.</span></div>
         <ul className="a2-trust">
-          <li>✔ Grades 1–12 · CCAT / NGAT</li>
+          <li>✔ Grades 2–5 · CCAT / NGAT</li>
           <li>✔ Trusted by 500+ parents</li>
           <li>✔ PIPEDA-compliant</li>
         </ul>
