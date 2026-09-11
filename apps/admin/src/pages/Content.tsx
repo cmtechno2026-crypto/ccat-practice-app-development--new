@@ -9,6 +9,8 @@ import { SetEditor } from '../components/SetEditor';
 import { BulkSets, maxQuestionsForSub } from '../components/BulkSets';
 import { RenameSetName } from '../components/RenameSetName';
 
+const titleCase = (v: string | null | undefined) => (v ?? '').replace(/\b\w/g, (c) => c.toUpperCase());
+
 const slugKey = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
 const DIFFS = [{ k: 'easy', l: 'Easy' }, { k: 'medium', l: 'Medium' }, { k: 'hard', l: 'Hard' }];
@@ -147,7 +149,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
                 <div className="treecathd"><span>{catIcon(c.category)} {c.category}</span><span className="muted">{c.subs.size} group{c.subs.size === 1 ? '' : 's'}</span></div>
                 {[...c.subs.entries()].map(([sid, sv]) => (
                   <button key={sid} className={`treesub ${sub === sid ? 'on' : ''}`} onClick={() => setSub(sid)}>
-                    <span>{sv.name}</span><span className="muted tabnum">{sv.count} set{sv.count === 1 ? '' : 's'}</span>
+                    <span>{titleCase(sv.name)}</span><span className="muted tabnum">{sv.count} set{sv.count === 1 ? '' : 's'}</span>
                   </button>
                 ))}
               </div>
@@ -158,7 +160,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
           {/* difficulty tabs + set table */}
           <div>
             <div className="contenthdr">
-              <div className="muted" style={{ fontSize: 13 }}>{activeSubName ? `${activeCatName} → ${activeSubName}` : `All sets · Grade ${grade}`}</div>
+              <div className="muted" style={{ fontSize: 13 }}>{activeSubName ? `${activeCatName} → ${titleCase(activeSubName)}` : `All sets · Grade ${grade}`}</div>
               <div className="filterchips" style={{ margin: 0 }}>
                 {DIFFS.map(d => <button key={d.k} className={`chipbtn ${diff === d.k ? 'on' : ''}`} onClick={() => { setDiff(d.k); }}>{d.l}</button>)}
               </div>

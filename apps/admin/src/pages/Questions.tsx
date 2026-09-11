@@ -5,6 +5,8 @@ import { useAuth } from '../lib/auth';
 import { Modal, ErrorBox, useToast } from '../components/ui';
 import { QuestionEditor } from '../components/QuestionEditor';
 
+const titleCase = (v: string | null | undefined) => (v ?? '').replace(/\b\w/g, (c) => c.toUpperCase());
+
 const STATES = [
   { key: '', label: 'All' },
   { key: 'draft', label: 'Draft' },
@@ -68,7 +70,7 @@ export function Questions() {
             <tbody>{items.map(q => (
               <tr key={q.id}>
                 <td><div className="qrow-prev">{q.preview || '(no text)'}</div><div className="muted" style={{ fontSize: 12 }}>v{q.version_number} · {q.question_type}</div></td>
-                <td>{q.category}<div className="muted" style={{ fontSize: 12 }}>{q.subcategory}</div></td>
+                <td>{q.category}<div className="muted" style={{ fontSize: 12 }}>{titleCase(q.subcategory)}</div></td>
                 <td>Grade {q.grade_number}</td>
                 <td style={{ textTransform: 'capitalize' }}>{q.difficulty}</td>
                 <td><span className={`pill dotted s-${q.state}`} style={{ textTransform: 'none' }}>{STATE_LABEL[q.state] || q.state}</span></td>

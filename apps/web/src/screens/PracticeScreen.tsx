@@ -1,3 +1,4 @@
+import { titleCase } from '@ccat/client-core';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { CatalogItem, Mode } from '@ccat/api-client';
@@ -207,7 +208,7 @@ export function PracticeScreen() {
     <div className="crumbs">
       <button className="crumb" onClick={() => go({ battery: null, category: null, set: null })}>Practice</button>
       {battery && <><span className="crumb-sep">›</span><button className="crumb" onClick={() => go({ category: null, set: null })}>{batteryMeta(battery).name}</button></>}
-      {battery && category && <><span className="crumb-sep">›</span><button className="crumb" onClick={() => go({ set: null })}>{category}</button></>}
+      {battery && category && <><span className="crumb-sep">›</span><button className="crumb" onClick={() => go({ set: null })}>{titleCase(category)}</button></>}
     </div>
   );
 
@@ -228,7 +229,7 @@ export function PracticeScreen() {
             <div className="start-hero-top" style={{ background: bm.tint }}>
               <div className="ic" style={{ background: '#fff', fontSize: 30 }}>{bm.icon}</div>
               <div>
-                <div className="eyebrow" style={{ color: bm.color }}>{bm.name} · {selectedSet.subcategory}</div>
+                <div className="eyebrow" style={{ color: bm.color }}>{bm.name} · {titleCase(selectedSet.subcategory)}</div>
                 <h2 style={{ marginTop: 2 }}>{selectedSet.name}</h2>
               </div>
               {locked && <span style={{ marginLeft: 'auto' }}><LockBadge /></span>}
@@ -293,7 +294,7 @@ export function PracticeScreen() {
     const sets = (grouped[battery]?.[category] ?? []).slice().sort((a, b) => (a.retired ? 1 : 0) - (b.retired ? 1 : 0));
     return (
       <>
-        <AppBar title={category} sub={`${batteryMeta(battery).name} · pick a set`} back />
+        <AppBar title={titleCase(category)} sub={`${batteryMeta(battery).name} · pick a set`} back />
         <div className="content stack">
           {crumb}
           {loading && <Loader />}
@@ -389,7 +390,7 @@ export function PracticeScreen() {
               <Card key={sub} onClick={() => go({ category: sub })}>
                 <div className="row">
                   <div className="ic" style={{ background: bm.tint }}>{bm.icon}</div>
-                  <div style={{ flex: 1 }}><h3>{sub}</h3><div className="muted">{sets.length} set{sets.length === 1 ? '' : 's'}</div></div>
+                  <div style={{ flex: 1 }}><h3>{titleCase(sub)}</h3><div className="muted">{sets.length} set{sets.length === 1 ? '' : 's'}</div></div>
                   {allLocked ? <LockBadge /> : <span className="pill">›</span>}
                 </div>
               </Card>

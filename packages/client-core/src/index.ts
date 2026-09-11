@@ -53,6 +53,11 @@ export class AnswerBuffer {
 }
 
 // ---- timers / formatting --------------------------------------------------
+// Title Case a display name: capitalise the first letter of every word (subcategory/topic names).
+export function titleCase(s: string | null | undefined): string {
+  return (s ?? '').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export function mmss(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;

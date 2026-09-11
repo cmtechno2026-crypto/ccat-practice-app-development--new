@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { PracticeAttemptResult, SessionWithQuestions } from '@ccat/api-client';
 import { ApiError } from '@ccat/api-client';
-import { AnswerBuffer, blocksToText, mmss, remainingSeconds } from '@ccat/client-core';
+import { AnswerBuffer, blocksToText, mmss, remainingSeconds, titleCase } from '@ccat/client-core';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AppBar, Loader, ErrorNote, Card, Figure } from '../components/ui';
@@ -291,7 +291,7 @@ export function SessionScreen() {
   const diffColor = { easy: '#22a06b', medium: '#d9902a', hard: '#e4574f' }[(sess.difficulty ?? '').toLowerCase()] ?? 'var(--primary)';
   const isMulti = !isExam && q.multi === true;
   const myMulti = multiPicks[q.question_version_id] ?? [];
-  const subLine = [sess.subcategory, sess.set_name].filter(Boolean).join(' · ');
+  const subLine = [titleCase(sess.subcategory), sess.set_name].filter(Boolean).join(' · ');
 
   return (
     <>

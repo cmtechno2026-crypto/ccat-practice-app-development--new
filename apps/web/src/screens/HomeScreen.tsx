@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { firstName } from '@ccat/client-core';
+import { firstName , titleCase} from '@ccat/client-core';
 import type { Achievement, ProgressSummary } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
@@ -122,7 +122,7 @@ export function HomeScreen() {
         const nextReward = summary.next_reward ?? null;
         const completion = data.progress.progress_pct ?? null;
         const resumeLine = active
-          ? [active.set_name, active.difficulty].filter(Boolean).join(' · ') || active.subcategory || `${active.mode} session`
+          ? [active.set_name, active.difficulty].filter(Boolean).join(' · ') || titleCase(active.subcategory) || `${active.mode} session`
           : '';
         const answered = active ? Number((active as any).answered_count ?? 0) : 0;
         const qTotal = active ? Number((active as any).question_count ?? 0) : 0;
