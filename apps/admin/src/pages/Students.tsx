@@ -94,7 +94,7 @@ export function Students() {
 
   const [pending, setPending] = useState<any>(null);
   const [reason, setReason] = useState(''); const [detail, setDetail] = useState(''); const [merr, setMerr] = useState('');
-  const [del, setDel] = useState<any>(null); const [delBusy, setDelBusy] = useState(false); const [delErr, setDelErr] = useState('');
+  const [del, setDel] = useState<any>(null); const [delBusy, setDelBusy] = useState(false); const [delErr, setDelErr] = useState(''); const [delAck, setDelAck] = useState(false);
 
   // Pending requests keyed by student, for row highlighting (grade-change / deletion / break-glass).
   const [reqMap, setReqMap] = useState<Record<string, string[]>>({});
@@ -276,7 +276,7 @@ export function Students() {
                   {r.status === 'active' && can('student.suspend') && <button className="btn warn sm" onClick={() => act(r, 'suspended', 'Suspend')}>Suspend</button>}
                   {r.status === 'suspended' && can('student.unsuspend') && <button className="btn ghost sm" onClick={() => act(r, 'active', 'Unsuspend')}>Unsuspend</button>}
                   {r.status === 'banned' && can('student.unban') && <button className="btn ghost sm" onClick={() => act(r, 'active', 'Unban')}>Unban</button>}
-                  {can('student.deletion.override') && <button className="btn danger sm" onClick={() => { setDel(r); setDelErr(''); }}>Delete</button>}
+                  {can('student.deletion.override') && <button className="btn danger sm" onClick={() => { setDel(r); setDelErr(''); setDelAck(false); }}>Delete</button>}
                   <button className="btn ghost sm" onClick={() => nav(`/students/${r.id}`)}>View</button>
                 </div></td>
               </tr>
@@ -306,8 +306,13 @@ export function Students() {
       )}
       {del && (
         <Modal title={`Delete — ${del.display_name}`} onClose={() => setDel(null)}
-          footer={<><button className="btn ghost grow" onClick={() => setDel(null)}>Cancel</button><button className="btn danger grow" disabled={delBusy} onClick={doDelete}>{delBusy ? 'Deleting…' : 'Delete permanently'}</button></>}>
-          <div className="aihint" style={{ background: 'var(--tint, #FDECE6)', color: '#C2321C' }}><b>Permanent.</b> This erases the student's personal data (name, username, login, guardian contacts, devices) and removes the account from the directory. Practice history is kept only in anonymized form for integrity. This cannot be undone.</div>
+          footer={<><button className="btn ghost grow" onClick={() => setDel(null)}>Cancel</button><button className="btn danger grow" disabled={delBusy || !delAck} onClick={doDelete}>{delBusy ? 'Deleting…' : 'Delete permanently'}</button></>}>
+          <div className="aihint" style={{ background: 'var(--tint, #FDECE6)', color: '#C2321C' }}><b>Permanent — cannot be undone.</b> Erases this student's personal data and removes them from the directory; anonymized practice history is kept.</div>
+          <div style={{ margin: '10px 2px', fontSize: 13, lineHeight: 1.7 }}>
+            <div><b>User ID:</b> {del.username}</div>
+            <div><b>Grade:</b> Grade {del.grade_number}</div>
+          </div>
+          <label className="pickrow"><input type="checkbox" checked={delAck} onChange={e => setDelAck(e.target.checked)} /><span>I understand this permanently deletes this account.</span></label>
           {delErr && <div className="err" style={{ marginTop: 8 }}>{delErr}</div>}
         </Modal>
       )}
