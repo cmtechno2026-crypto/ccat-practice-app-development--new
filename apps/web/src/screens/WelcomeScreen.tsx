@@ -59,7 +59,7 @@ export function WelcomeScreen() {
       <section className="lp-hero">
         <div className="lp-hero-in">
           <div>
-            <span className="lp-ey">CCAT / NGAT Prep · Canada · USA · Australia</span>
+            <span className="lp-ey">CCAT / NGAT Prep</span>
             <h1>Prepare your child for the CCAT with a <em>proven system.</em></h1>
             <p>The CCAT Practice app by Concept Mastery gives students real exam-style questions, full-length timed mocks, and progress parents can actually measure.</p>
             <div className="lp-cta">

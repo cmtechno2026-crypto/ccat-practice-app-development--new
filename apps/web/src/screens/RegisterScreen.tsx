@@ -17,7 +17,7 @@ import '../landing.css';
 
 type Step = 'details' | 'consent' | 'account';
 const FUNNEL: Step[] = ['details', 'consent', 'account'];
-const STEP_LABEL: Record<Step, string> = { details: 'Details', consent: 'Consent', account: 'Account', success: 'Done' };
+const STEP_LABEL: Record<Step, string> = { details: 'Details', consent: 'Consent', account: 'Account' };
 const POLICY_VERSION = '2026-01';
 // Off by default. Turn on (with the gateway's EMAIL_VERIFY_REQUIRED and migration 0045 applied) once
 // email delivery is live.
