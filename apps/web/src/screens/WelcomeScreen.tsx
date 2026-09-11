@@ -68,7 +68,7 @@ export function WelcomeScreen() {
             <span className="lp-ey">CCAT / NGAT Prep</span>
             <h1>Prepare your child for the CCAT with a <em>proven system.</em></h1>
             <span className="lp-gradepill">🎯 Built for Grades 2–5</span>
-            <p>The CCAT Practice platform by Concept Mastery gives Grade 2–5 students real exam-style questions, full-length timed mocks, and progress parents can actually measure.</p>
+            <p>The CCAT Practice platform by Concept Mastery gives <span style={{ whiteSpace: 'nowrap' }}>Grade 2–5</span> students real exam-style questions, full-length timed mocks, and progress parents can actually measure.</p>
             <div className="lp-cta">
               <Link className="lp-btn solid lg" to="/register" onClick={clearRedirect}>Create an account</Link>
               <Link className="lp-btn ghost lg" style={{ color: '#fff', borderColor: '#fff' }} to="/login" onClick={clearRedirect}>I already have an account</Link>
