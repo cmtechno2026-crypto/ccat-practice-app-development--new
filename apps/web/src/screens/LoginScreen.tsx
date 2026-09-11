@@ -25,7 +25,9 @@ export function LoginScreen() {
       const me = await client.profile();
       setProfile(me);
       flash('Welcome back! 👋');
-      nav('/home', { replace: true });
+      let dest = '/home';
+      try { const r = sessionStorage.getItem('cmPostAuthRedirect'); if (r) { dest = r; sessionStorage.removeItem('cmPostAuthRedirect'); } } catch { /* ignore */ }
+      nav(dest, { replace: true });
     } catch (e) {
       setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username or PIN.' : e.message) : (e as Error).message);
     } finally { setBusy(false); }

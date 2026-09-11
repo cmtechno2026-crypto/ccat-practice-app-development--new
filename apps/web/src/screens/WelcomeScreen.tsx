@@ -3,6 +3,12 @@ import { useApp } from '../lib/store';
 import cmWordmark from '../assets/cm-wordmark.png';
 import '../landing.css';
 
+// When a plan is chosen from the landing pricing, remember to send the user to /plan after they
+// log in or sign up (survives the register<->login hop via sessionStorage).
+const REDIRECT_KEY = 'cmPostAuthRedirect';
+const wantPlan = () => { try { sessionStorage.setItem(REDIRECT_KEY, '/plan'); } catch { /* ignore */ } };
+const clearRedirect = () => { try { sessionStorage.removeItem(REDIRECT_KEY); } catch { /* ignore */ } };
+
 // Pre-login landing page (route "/"). Full marketing page: features, how-it-works, pricing, contact —
 // with a sticky header whose menu scrolls to each section, and CTAs into /register and /login.
 // All styling is scoped under `.lp` (apps/web/src/landing.css) so it never touches the in-app UI.
@@ -47,8 +53,8 @@ export function WelcomeScreen() {
             <a href="#pricing">Pricing</a>
             <a href="#contact">Contact</a>
             <a href="https://conceptmastery.com" target="_blank" rel="noopener noreferrer">Main site ↗</a>
-            <Link className="lp-btn ghost" to="/login">Log in</Link>
-            <Link className="lp-btn solid" to="/register">Create account</Link>
+            <Link className="lp-btn ghost" to="/login" onClick={clearRedirect}>Log in</Link>
+            <Link className="lp-btn solid" to="/register" onClick={clearRedirect}>Create account</Link>
           </nav>
         </div>
       </header>
@@ -64,8 +70,8 @@ export function WelcomeScreen() {
             <span className="lp-gradepill">🎯 Built for Grades 3–5</span>
             <p>The CCAT Practice platform by Concept Mastery gives Grade 3–5 students real exam-style questions, full-length timed mocks, and progress parents can actually measure.</p>
             <div className="lp-cta">
-              <Link className="lp-btn solid lg" to="/register">Create an account</Link>
-              <Link className="lp-btn ghost lg" style={{ color: '#fff', borderColor: '#fff' }} to="/login">I already have an account</Link>
+              <Link className="lp-btn solid lg" to="/register" onClick={clearRedirect}>Create an account</Link>
+              <Link className="lp-btn ghost lg" style={{ color: '#fff', borderColor: '#fff' }} to="/login" onClick={clearRedirect}>I already have an account</Link>
             </div>
             <div className="lp-trust">✔ Trusted by 500+ parents · ✔ Grades 3–5 · ✔ PIPEDA-compliant</div>
           </div>
@@ -123,7 +129,7 @@ export function WelcomeScreen() {
               <div className="lp-pp">{pl.price}<span>CAD</span></div>
               <div className="lp-pt">{pl.term}</div>
               <ul>{pl.feats.map((f) => <li key={f}><span className="lp-ck">✓</span>{f}</li>)}</ul>
-              <Link className="lp-pbtn" to="/register">{pl.cta}</Link>
+              <Link className="lp-pbtn" to="/register" onClick={wantPlan}>{pl.cta}</Link>
             </article>
           ))}
         </div>

@@ -234,7 +234,12 @@ export function RegisterScreen() {
     }));
     if (!created) return;
     const me = await guard(async () => { await client.login(username, pin, getDeviceHash()); return client.profile(); });
-    if (me) { setProfile(me); flash('Welcome to CCAT Practice! 🎉'); nav('/home', { replace: true }); }
+    if (me) {
+      setProfile(me); flash('Welcome to CCAT Practice! 🎉');
+      let dest = '/home';
+      try { const r = sessionStorage.getItem('cmPostAuthRedirect'); if (r) { dest = r; sessionStorage.removeItem('cmPostAuthRedirect'); } } catch { /* ignore */ }
+      nav(dest, { replace: true });
+    }
   }
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
