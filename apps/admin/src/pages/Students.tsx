@@ -94,6 +94,7 @@ export function Students() {
 
   const [pending, setPending] = useState<any>(null);
   const [reason, setReason] = useState(''); const [detail, setDetail] = useState(''); const [merr, setMerr] = useState('');
+  const [del, setDel] = useState<any>(null); const [delBusy, setDelBusy] = useState(false); const [delErr, setDelErr] = useState('');
 
   // Pending requests keyed by student, for row highlighting (grade-change / deletion / break-glass).
   const [reqMap, setReqMap] = useState<Record<string, string[]>>({});
@@ -149,6 +150,11 @@ export function Students() {
     if (!reason.trim()) { setMerr('Reason code required'); return; }
     try { await api.studentStatus(pending.id, pending.version, pending.to, reason.trim(), detail.trim() || undefined); setPending(null); toast(`Status changed to ${pending.to}`); load(false); }
     catch (e) { if (e instanceof ApiError && e.code === 'VERSION_CONFLICT') { setMerr('Changed by someone else — refreshing.'); load(false); } else setMerr((e as Error).message); }
+  };
+  const doDelete = async () => {
+    if (!del) return; setDelBusy(true); setDelErr('');
+    try { const name = del.display_name; await api.deleteStudentNow(del.id); setDel(null); toast(`Deleted ${name}`); load(false); }
+    catch (e) { setDelErr((e as Error).message); } finally { setDelBusy(false); }
   };
 
   const chip = (key: string | null, label: string, count?: number) => (
@@ -268,9 +274,9 @@ export function Students() {
                 {cols.has('devices') && <td>{r.device_total === 0 ? <span className="muted">None</span> : r.device_active < r.device_total ? `${r.device_active} of ${r.device_total} active` : `${r.device_total} device${r.device_total > 1 ? 's' : ''}`}</td>}
                 <td><div className="rowactions">
                   {r.status === 'active' && can('student.suspend') && <button className="btn warn sm" onClick={() => act(r, 'suspended', 'Suspend')}>Suspend</button>}
-                  {r.status === 'active' && can('student.ban') && <button className="btn danger sm" onClick={() => act(r, 'banned', 'Ban')}>Ban</button>}
                   {r.status === 'suspended' && can('student.unsuspend') && <button className="btn ghost sm" onClick={() => act(r, 'active', 'Unsuspend')}>Unsuspend</button>}
                   {r.status === 'banned' && can('student.unban') && <button className="btn ghost sm" onClick={() => act(r, 'active', 'Unban')}>Unban</button>}
+                  {can('student.deletion.override') && <button className="btn danger sm" onClick={() => { setDel(r); setDelErr(''); }}>Delete</button>}
                   <button className="btn ghost sm" onClick={() => nav(`/students/${r.id}`)}>View</button>
                 </div></td>
               </tr>
@@ -296,6 +302,13 @@ export function Students() {
           <label>Reason code</label><input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. abuse, support_hold" />
           <label>Details (optional)</label><input value={detail} onChange={e => setDetail(e.target.value)} />
           <div className="err">{merr}</div>
+        </Modal>
+      )}
+      {del && (
+        <Modal title={`Delete — ${del.display_name}`} onClose={() => setDel(null)}
+          footer={<><button className="btn ghost grow" onClick={() => setDel(null)}>Cancel</button><button className="btn danger grow" disabled={delBusy} onClick={doDelete}>{delBusy ? 'Deleting…' : 'Delete permanently'}</button></>}>
+          <div className="aihint" style={{ background: 'var(--tint, #FDECE6)', color: '#C2321C' }}><b>Permanent.</b> This erases the student's personal data (name, username, login, guardian contacts, devices) and removes the account from the directory. Practice history is kept only in anonymized form for integrity. This cannot be undone.</div>
+          {delErr && <div className="err" style={{ marginTop: 8 }}>{delErr}</div>}
         </Modal>
       )}
     </div>

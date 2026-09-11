@@ -356,6 +356,50 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     return { status: 'active', restored: true, deletionRequestId: out.deletionRequestId };
   });
 
+  // One-click "Delete" from the Students list. True row-delete is impossible by design (append-only
+  // ledgers cascade), so this ANONYMIZES + TOMBSTONES the student (status='purged') and scrubs all PII —
+  // like purge, but from ANY status (no pending_deletion step). The row then disappears from the directory
+  // (the list hides 'purged'). Irreversible; Super-Admin authority (student.deletion.override).
+  app.post('/v1/admin/students/:id/delete', guard, async (req) => {
+    requirePermission(req, 'student.deletion.override');
+    const id = (req.params as any).id;
+    const b = z.object({ reference: z.string().optional() }).parse(req.body ?? {});
+    const out = await withTransaction(db, async (c) => {
+      const s = await c.query('select status from ccat.students where id=$1 for update', [id]);
+      if (s.rows.length === 0) throw Errors.notFound('Student not found');
+      const prev = s.rows[0]!.status as string;
+      if (prev === 'purged') return { status: 'purged', already: true };
+      const guardians = (await c.query('select guardian_id from ccat.student_guardians where student_id=$1', [id])).rows.map((r) => r.guardian_id);
+      await c.query(`update ccat.students set
+          display_name='[deleted student]',
+          username_normalized=('deleted_'||replace(id::text,'-',''))::citext,
+          birth_month=1, birth_year=2000,
+          active_avatar_stage_id=null, active_theme_id=null,
+          status='purged', version=version+1
+        where id=$1`, [id]);
+      await c.query(`update ccat.auth_sessions set revoked_at=now(), revoked_reason='student_purged' where student_id=$1 and revoked_at is null`, [id]);
+      await c.query(`delete from ccat.auth_sessions where student_id=$1`, [id]);
+      // Devices are referenced by kept (anonymized) sessions — scrub in place rather than delete (FK).
+      await c.query(`update ccat.student_devices set device_hash='purged_'||id::text, status='revoked', revoked_at=coalesce(revoked_at,now()), revoked_reason='student_purged' where student_id=$1`, [id]);
+      await c.query(`delete from ccat.student_credentials where student_id=$1`, [id]);
+      await c.query(`delete from ccat.verification_challenges where student_id=$1`, [id]);
+      await c.query(`delete from ccat.student_guardians where student_id=$1`, [id]);
+      await c.query(`update ccat.data_export_requests set artifact_ref=null where student_id=$1`, [id]);
+      await c.query(`update ccat.deletion_requests set state='purged', purged_at=now() where student_id=$1 and state='pending_deletion'`, [id]);
+      if (guardians.length)
+        await c.query(`update ccat.guardian_contacts g set
+            email=('deleted+'||g.id||'@invalid.local')::citext, phone=null,
+            email_verified_at=null, phone_verified_at=null
+          where g.id = any($1::uuid[])
+            and not exists (select 1 from ccat.student_guardians sg where sg.guardian_id=g.id)`, [guardians]);
+      await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value,reference)
+          values ($1,'admin','student.deleted','student',$2,$3,'{"status":"purged"}'::jsonb,$4)`,
+        [req.admin!.adminId, id, JSON.stringify({ status: prev }), b.reference ?? null]);
+      return { status: 'purged' };
+    });
+    return { deleted: true, ...out };
+  });
+
   // Purge / finalize deletion (§7.2 override path) — ADMIN-2.
   // A true hard-DELETE of the student row is IMPOSSIBLE by design: xp_transactions, coin_transactions,
   // student_achievements, student_status_events and consents are append-only (tg_forbid_mutation) yet
