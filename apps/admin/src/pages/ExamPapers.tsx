@@ -39,9 +39,18 @@ export function ExamPapers() {
   const refresh = () => { loadSets(); if (selId) loadDetail(selId); };
   const act = async (fn: Promise<any>, m: string) => { try { await fn; toast(m); refresh(); } catch (e) { toast((e as Error).message); } };
 
-  const setDuration = async (mins: number) => {
-    if (!detail) return; const v = Math.max(1, Math.min(180, Math.round(mins) || 0));
-    await act(api.patchSet(detail.id, { duration_minutes: v }), `Duration ${v} min`);
+  // Per-battery time limits (minutes). Falls back to an even split of the old single duration.
+  const bmins = (secKey: string): number => {
+    const bd = detail?.battery_durations as Record<string, number> | undefined | null;
+    if (bd && bd[secKey] != null) return Number(bd[secKey]);
+    return Math.max(1, Math.round((detail?.duration_minutes ?? 30) / 3));
+  };
+  const setBatteryMins = async (secKey: string, mins: number) => {
+    if (!detail) return;
+    const v = Math.max(1, Math.min(180, Math.round(mins) || 0));
+    const cur: Record<string, number> = { verbal: bmins('verbal'), non_verbal: bmins('non_verbal'), quantitative: bmins('quantitative') };
+    cur[secKey] = v;
+    await act(api.patchSet(detail.id, { battery_durations: cur }), `${SECTION_LABEL[secKey]} ${v} min`);
   };
   const removeQuestion = async (qid: string) => {
     if (!detail) return;
@@ -101,11 +110,7 @@ export function ExamPapers() {
                   <div style={{ fontFamily: 'Baloo 2', fontSize: 20, color: 'var(--ink)' }}>{detail.name}</div>
                   <span className={`pill s-${detail.state}`} style={{ textTransform: 'uppercase', fontSize: 11 }}>{detail.state}</span>
                   <span className="spacerx" style={{ flex: 1 }} />
-                  <label className="muted" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    Duration
-                    <input type="number" min={1} max={180} defaultValue={detail.duration_minutes ?? 30} disabled={!manage}
-                      onBlur={e => setDuration(Number(e.target.value))} style={{ width: 74 }} /> min
-                  </label>
+                  <span className="muted" style={{ fontSize: 13 }}>Total {bmins('verbal') + bmins('non_verbal') + bmins('quantitative')} min · per-battery limits below</span>
                   {manage && detail.state === 'draft' && <button className="btn green sm" onClick={() => act(api.publishSet(detail.id), 'Published')}>Publish</button>}
                   {manage && detail.state === 'published' && <button className="btn amber sm" onClick={() => act(api.retireSet(detail.id), 'Retired — removed from the student catalog')}>Retire</button>}
                   {manage && (detail.state === 'draft' || detail.state === 'retired') && <button className="btn danger sm" onClick={async () => { try { await api.deleteSet(detail.id); toast('Deleted'); setSelId(''); setDetail(null); loadSets(); } catch (e) { toast((e as Error).message); } }}>Delete</button>}
@@ -119,7 +124,12 @@ export function ExamPapers() {
                     <div className="panel" key={secKey} style={{ marginTop: 12 }}>
                       <div className="panelhead" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <h3><button className="linklike" onClick={() => manage && detail.state === 'draft' && catIdFor(secKey) && setBattery(secKey)} style={{ font: 'inherit', color: 'var(--ink)' }}>{SECTION_LABEL[secKey]}</button> <span className="muted" style={{ fontSize: 12.5, fontWeight: 700 }}>· {qs.length} question{qs.length === 1 ? '' : 's'} · {detail.state === 'published' ? 'live' : 'draft'}</span></h3>
-                        {manage && detail.state === 'draft' && catIdFor(secKey) && <button className="btn sm" onClick={() => setBattery(secKey)}>+ Add question</button>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <label className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>⏱ Time limit
+                            <input key={`${secKey}-${bmins(secKey)}`} type="number" min={1} max={180} defaultValue={bmins(secKey)} disabled={!manage}
+                              onBlur={e => setBatteryMins(secKey, Number(e.target.value))} style={{ width: 64 }} /> min</label>
+                          {manage && detail.state === 'draft' && catIdFor(secKey) && <button className="btn sm" onClick={() => setBattery(secKey)}>+ Add question</button>}
+                        </div>
                       </div>
                       {qs.length === 0 ? <div className="empty">No {SECTION_LABEL[secKey]} questions yet.</div> : (
                         <div className="tablewrap"><table>

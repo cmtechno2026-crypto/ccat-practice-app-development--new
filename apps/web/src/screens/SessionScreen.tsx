@@ -41,6 +41,9 @@ export function SessionScreen() {
   // Exam batteries: null = the battery lobby; otherwise the active battery's category_key.
   const [examBattery, setExamBattery] = useState<string | null>(null);
   const [batteryDone, setBatteryDone] = useState<Record<string, boolean>>({});
+  // Per-battery timing (exam): started/deadline/completed per battery, plus a 1s tick for countdowns.
+  const [batState, setBatState] = useState<Record<string, { started_at: string; deadline_at: string; completed_at: string | null }>>({});
+  const [nowTs, setNowTs] = useState(Date.now());
   const bufRef = useRef<AnswerBuffer | null>(null);
 
   const isExam = sess?.mode === 'exam';
@@ -54,6 +57,11 @@ export function SessionScreen() {
       const es: Record<string, string[]> = {};
       s.questions.forEach((q) => { if (q.selected_option_ids.length) es[q.question_version_id] = q.selected_option_ids; });
       setExamSel(es);
+      // Seed per-battery timers from the server (rows exist only for batteries already started).
+      const bs: Record<string, { started_at: string; deadline_at: string; completed_at: string | null }> = {};
+      const bd: Record<string, boolean> = {};
+      (s.batteries_state ?? []).forEach((r) => { bs[r.category_key] = { started_at: r.started_at, deadline_at: r.deadline_at, completed_at: r.completed_at }; if (r.completed_at) bd[r.category_key] = true; });
+      setBatState(bs); setBatteryDone(bd);
       // Resume where you left off: jump to the first UNANSWERED question (practice). Exam keeps its
       // battery-scoped flow. If everything is answered (or nothing is), stay at the start.
       if (s.mode !== 'exam') {
@@ -74,6 +82,48 @@ export function SessionScreen() {
     }, 1000);
     return () => clearInterval(t);
   }, [sess]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Exam: 1-second tick to drive per-battery countdowns.
+  useEffect(() => {
+    if (sess?.mode !== 'exam') return;
+    const t = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [sess?.mode]);
+
+  const batRemaining = (key: string): number | null => {
+    const b = batState[key];
+    if (!b?.deadline_at) return null;
+    return Math.max(0, Math.round((new Date(b.deadline_at).getTime() - nowTs) / 1000));
+  };
+  const batStatus = (key: string): 'not_started' | 'running' | 'expired' | 'done' => {
+    const b = batState[key];
+    if (batteryDone[key] || b?.completed_at) return 'done';
+    if (!b) return 'not_started';
+    return (batRemaining(key) ?? 0) > 0 ? 'running' : 'expired';
+  };
+  async function startBattery(key: string) {
+    try {
+      const r = await client.batteryStart(id, key);
+      setBatState((m) => ({ ...m, [key]: { started_at: r.started_at, deadline_at: r.deadline_at, completed_at: r.completed_at } }));
+    } catch (e) { flash(e instanceof ApiError ? e.message : (e as Error).message); return; }
+    setExamBattery(key); setIdx(0);
+  }
+  async function completeBattery(key: string) {
+    try { await client.batteryComplete(id, key); } catch { /* best-effort */ }
+    setBatState((m) => ({ ...m, [key]: { started_at: m[key]?.started_at ?? new Date().toISOString(), deadline_at: m[key]?.deadline_at ?? new Date().toISOString(), completed_at: new Date().toISOString() } }));
+    setBatteryDone((d) => ({ ...d, [key]: true }));
+  }
+
+  // Auto-lock the active battery the moment its own timer hits zero (other batteries keep going).
+  useEffect(() => {
+    if (sess?.mode !== 'exam' || !examBattery || batteryDone[examBattery]) return;
+    const rem = batRemaining(examBattery);
+    if (rem != null && rem <= 0) {
+      void completeBattery(examBattery);
+      setExamBattery(null); setIdx(0);
+      flash("Time's up for this battery.");
+    }
+  }, [nowTs, examBattery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isExamMode = sess?.mode === 'exam';
   // Exam batteries = questions grouped by category, in a stable order.
@@ -185,34 +235,42 @@ export function SessionScreen() {
   if (err) return (<><AppBar title="Session" back /><div className="content"><ErrorNote error={err} /></div></>);
   if (!sess) return (<><AppBar title="Session" back /><div className="content"><Loader /></div></>);
 
-  // EXAM battery lobby — pick a battery to work through; the shared timer keeps running.
-  const timerColorLobby = remaining != null && remaining < 60 ? 'var(--coral)' : (remaining != null && remaining < 180 ? 'var(--amber)' : 'var(--green)');
+  // EXAM battery lobby — each battery is timed independently; its clock starts on Start.
   const BATT_META: Record<string, { icon: string; tint: string }> = { verbal: { icon: '🔤', tint: 'var(--tint-blue)' }, non_verbal: { icon: '🧩', tint: 'var(--tint-lilac)' }, nonverbal: { icon: '🧩', tint: 'var(--tint-lilac)' }, quantitative: { icon: '🔢', tint: 'var(--tint-green)' } };
   if (isExamMode && examBattery === null) {
-    const doneCount = batteries.filter((b) => batteryDone[b.key]).length;
+    const doneCount = batteries.filter((b) => batStatus(b.key) === 'done' || batStatus(b.key) === 'expired').length;
+    const durs = (sess.battery_durations ?? {}) as Record<string, number>;
     return (
       <>
-        <AppBar title={sess.set_name ?? 'Exam'} sub={`Pick a battery · ${doneCount}/${batteries.length} completed`} back
-          right={remaining != null ? <span className="pill" style={{ color: timerColorLobby }}>⏳ {mmss(remaining)}</span> : undefined} />
+        <AppBar title={sess.set_name ?? 'Exam'} sub={`Pick a battery · ${doneCount}/${batteries.length} finished`} back />
         <div className="content session-content stack">
           <div className="card" style={{ background: 'var(--tint-blue)' }}>
-            <div className="muted">Work through each battery before time runs out. The timer keeps running across all of them.</div>
+            <div className="muted">Each battery is timed on its own. The clock starts when you tap <strong>Start</strong> and keeps running until that battery's time is up — so finish one before you begin the next.</div>
           </div>
           {batteries.map((b) => {
             const answered = b.questions.filter((qq) => examSel[qq.question_version_id]?.length).length;
-            const done = !!batteryDone[b.key];
+            const st = batStatus(b.key);
+            const rem = batRemaining(b.key);
+            const limit = Number(durs[b.key]) > 0 ? Number(durs[b.key]) : null;
+            const remColor = rem != null && rem < 60 ? 'var(--coral)' : (rem != null && rem < 180 ? 'var(--amber)' : 'var(--green)');
             const m = BATT_META[b.key] ?? { icon: '📝', tint: 'var(--tint-blue)' };
+            const sub = st === 'done' ? `Completed · ${answered}/${b.questions.length} attempted`
+              : st === 'expired' ? `Time's up · ${answered}/${b.questions.length} attempted`
+              : st === 'running' ? `In progress · ${answered}/${b.questions.length}`
+              : `${b.questions.length} questions${limit ? ` · ${limit} min` : ''}`;
             return (
               <Card key={b.key}>
                 <div className="row">
                   <div className="ic" style={{ background: m.tint }}>{m.icon}</div>
                   <div style={{ flex: 1 }}>
                     <h3 style={{ textTransform: 'capitalize' }}>{b.name.replace('_', '-')}</h3>
-                    <div className="muted">{done ? `Completed · ${answered}/${b.questions.length} attempted` : answered ? `In progress · ${answered}/${b.questions.length}` : `Not started · ${b.questions.length} questions`}</div>
+                    <div className="muted">{sub}</div>
                   </div>
-                  {done
-                    ? <span className="pill" style={{ background: 'var(--tint-green)', color: 'var(--green)' }}>Done ✓</span>
-                    : <button className="btn small" onClick={() => { setExamBattery(b.key); setIdx(0); }}>{answered ? 'Continue' : 'Start'}</button>}
+                  {st === 'running' && rem != null && <span className="pill" style={{ color: remColor, marginRight: 8 }}>⏳ {mmss(rem)}</span>}
+                  {st === 'done' && <span className="pill" style={{ background: 'var(--tint-green)', color: 'var(--green)' }}>Done ✓</span>}
+                  {st === 'expired' && <span className="pill" style={{ background: 'var(--coral-tint)', color: 'var(--coral)' }}>Time's up</span>}
+                  {st === 'running' && <button className="btn small" onClick={() => { setExamBattery(b.key); setIdx(0); }}>Continue</button>}
+                  {st === 'not_started' && <button className="btn small" onClick={() => void startBattery(b.key)}>Start</button>}
                 </div>
               </Card>
             );
@@ -226,7 +284,9 @@ export function SessionScreen() {
 
   const p = pq[q.question_version_id];
   const examChosen = examSel[q.question_version_id] ?? [];
-  const timerColor = remaining != null && remaining < 60 ? 'var(--coral)' : (remaining != null && remaining < 180 ? 'var(--amber)' : 'var(--green)');
+  // Exam shows the ACTIVE battery's own countdown; practice shows the session timer.
+  const shownRemaining = isExamMode && examBattery ? batRemaining(examBattery) : remaining;
+  const timerColor = shownRemaining != null && shownRemaining < 60 ? 'var(--coral)' : (shownRemaining != null && shownRemaining < 180 ? 'var(--amber)' : 'var(--green)');
   // Option A fixed difficulty palette — Easy green · Medium amber · Hard coral.
   const diffColor = { easy: '#22a06b', medium: '#d9902a', hard: '#e4574f' }[(sess.difficulty ?? '').toLowerCase()] ?? 'var(--primary)';
   const isMulti = !isExam && q.multi === true;
@@ -241,7 +301,7 @@ export function SessionScreen() {
         right={(
           <span className="row" style={{ gap: 6 }}>
             {sess.difficulty && <span className="pill" style={{ background: 'transparent', color: diffColor, border: `1px solid ${diffColor}` }}>{sess.difficulty}</span>}
-            {remaining != null && <span className="pill" style={{ color: timerColor }}>⏳ {mmss(remaining)}</span>}
+            {shownRemaining != null && <span className="pill" style={{ color: timerColor }}>⏳ {mmss(shownRemaining)}</span>}
           </span>
         )} />
       <div className="content session-content stack">
@@ -359,7 +419,7 @@ export function SessionScreen() {
           {idx < total - 1
             ? <button className="btn qnav" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))}>Next ›</button>
             : isExamMode
-              ? <button className="btn qnav" onClick={() => { if (examBattery) setBatteryDone((d) => ({ ...d, [examBattery]: true })); setExamBattery(null); setIdx(0); }}>End this battery ✅</button>
+              ? <button className="btn qnav" onClick={() => { if (examBattery) void completeBattery(examBattery); setExamBattery(null); setIdx(0); }}>End this battery ✅</button>
               : <button className="btn qnav" disabled={submitting} onClick={submit}>{submitting ? '…' : 'Submit ✅'}</button>}
         </div>
 

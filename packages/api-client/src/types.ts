@@ -44,7 +44,11 @@ export interface Session {
   started_at: string; deadline_at: string | null;
   // Set metadata (present on GET /v1/sessions/:id) for the player header + result subline.
   set_name?: string | null; category_key?: string | null; subcategory?: string | null; difficulty?: string | null;
+  // Exam per-battery timing (present on GET /v1/sessions/:id for exams).
+  battery_durations?: Record<string, number> | null; // minutes per battery key
+  batteries_state?: BatteryState[]; // rows exist only for batteries the student has started
 }
+export interface BatteryState { category_key: string; started_at: string; deadline_at: string; completed_at: string | null; }
 export interface SessionQuestion {
   question_version_id: string; logical_question_id: string; question_type: string;
   multi?: boolean; // "pick all correct" — number of correct options > 1 (never which)

@@ -95,7 +95,7 @@ export const api = {
   sets: () => req<{ items: any[] }>('GET', '/v1/admin/content/sets'),
   set: (id: string) => req<any>('GET', `/v1/admin/content/sets/${id}`),
   createSet: (b: any) => req<{ set_version_id: string }>('POST', '/v1/admin/content/sets', b),
-  patchSet: (id: string, b: { name?: string; duration_minutes?: number | null; preserve_order?: boolean }) => req<any>('PATCH', `/v1/admin/content/sets/${id}`, b),
+  patchSet: (id: string, b: { name?: string; duration_minutes?: number | null; battery_durations?: Record<string, number> | null; preserve_order?: boolean }) => req<any>('PATCH', `/v1/admin/content/sets/${id}`, b),
   setMembership: (id: string, question_version_ids: string[]) => req<any>('POST', `/v1/admin/content/sets/${id}/questions`, { question_version_ids }),
   // Google-Forms-style batch author: save one OR many question cards into a set (or a single exam
   // battery via scope_category_id) in one pass.

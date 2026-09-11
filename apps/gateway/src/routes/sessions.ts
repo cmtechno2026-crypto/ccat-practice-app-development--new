@@ -126,7 +126,12 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     }
     if (body.mode === 'practice' && !set.allowed_practice) throw Errors.validation('Practice not allowed', { code: 'MODE_NOT_ALLOWED' });
     if (body.mode === 'exam' && !set.allowed_exam) throw Errors.validation('Exam not allowed', { code: 'MODE_NOT_ALLOWED' });
-    if (body.timer_type === 'timed' && !body.duration_seconds) throw Errors.validation('duration_seconds required for timed');
+    // Exam papers are timed PER BATTERY (each battery's clock starts when the student starts it), so the
+    // session row itself is untimed — there is no single overall deadline. Practice keeps its own timer.
+    const isExam = body.mode === 'exam';
+    const timerType: 'untimed' | 'timed' = isExam ? 'untimed' : body.timer_type;
+    const durationSeconds = isExam ? null : (body.duration_seconds ?? null);
+    if (timerType === 'timed' && !durationSeconds) throw Errors.validation('duration_seconds required for timed');
 
     // Payments Phase 2 hard gate (flag-gated). A locked set MUST NOT start a session. Placed after the
     // existing grade/published/mode checks so error precedence (non-leaking 404 for cross-grade) is
@@ -143,8 +148,8 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
       });
     }
 
-    const deadline = body.timer_type === 'timed'
-      ? new Date(Date.now() + (body.duration_seconds ?? 0) * 1000)
+    const deadline = timerType === 'timed'
+      ? new Date(Date.now() + (durationSeconds ?? 0) * 1000)
       : null;
 
     try {
@@ -155,8 +160,8 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          returning id, session_version, state, started_at, deadline_at`,
         [
-          studentId, deviceId, body.set_version_id, set.ruleset_version_id, body.mode, body.timer_type,
-          body.duration_seconds ?? null,
+          studentId, deviceId, body.set_version_id, set.ruleset_version_id, body.mode, timerType,
+          durationSeconds,
           seedFrom(studentId, body.set_version_id, 'q'),
           seedFrom(studentId, body.set_version_id, 'o'),
           deadline,
@@ -165,8 +170,8 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
       const row = s.rows[0]!;
       reply.code(201);
       return {
-        id: row.id, set_version_id: body.set_version_id, mode: body.mode, timer_type: body.timer_type,
-        duration_seconds: body.duration_seconds ?? null, state: row.state,
+        id: row.id, set_version_id: body.set_version_id, mode: body.mode, timer_type: timerType,
+        duration_seconds: durationSeconds, state: row.state,
         session_version: row.session_version, started_at: row.started_at, deadline_at: row.deadline_at,
       };
     } catch (e: any) {
@@ -209,7 +214,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     const id = (req.params as { id: string }).id;
     const s = await db.query(
       `select s.id, s.set_version_id, s.mode, s.timer_type, s.duration_seconds, s.state, s.session_version, s.started_at, s.deadline_at,
-              s.question_order_seed, s.option_order_seed, sv.preserve_order,
+              s.question_order_seed, s.option_order_seed, sv.preserve_order, sv.battery_durations,
               qs.grade_id, sub.key as subcategory_key,
               qs.name as set_name, cat.key as category_key, sub.name as subcategory, d.key as difficulty
          from ccat.sessions s
@@ -251,9 +256,16 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     // Server-controlled deterministic shuffle by the session's stored seeds (§9.2, §17.3), unless the
     // set fixes authoring order (CONTENT-3 preserve_order), in which case serve by position.
     const orderedQuestions = sess.preserve_order ? qs.rows : seededShuffle(qs.rows, Number(sess.question_order_seed));
-    const { question_order_seed, option_order_seed, preserve_order, grade_id, subcategory_key, ...sessionOut } = sess;
+    const { question_order_seed, option_order_seed, preserve_order, grade_id, subcategory_key, battery_durations, ...sessionOut } = sess;
+    // Per-battery timing state (rows exist only for batteries the student has started).
+    const bstate = await db.query(
+      `select category_key, started_at, deadline_at, completed_at from ccat.session_batteries where session_id = $1`,
+      [id],
+    );
     return {
       ...sessionOut,
+      battery_durations: battery_durations ?? null,
+      batteries_state: bstate.rows,
       questions: orderedQuestions.map((r, i) => ({
         question_version_id: r.question_version_id,
         logical_question_id: r.logical_question_id,
@@ -276,17 +288,94 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     };
   });
 
+  // POST /v1/sessions/:id/batteries/:key/start — start a battery's independent timer (wall-clock).
+  // Idempotent: if the battery is already running, returns its existing timing (the clock keeps going).
+  app.post('/v1/sessions/:id/batteries/:key/start', { preHandler: [app.authenticateStudent] }, async (req) => {
+    const { id, key } = req.params as { id: string; key: string };
+    const sres = await db.query(
+      `select s.id, s.state, s.mode, sv.battery_durations, sv.duration_minutes
+         from ccat.sessions s join ccat.question_set_versions sv on sv.id = s.set_version_id
+        where s.id = $1 and s.student_id = $2`,
+      [id, req.student!.studentId],
+    );
+    if (sres.rows.length === 0) throw Errors.notFound('Session not found');
+    const sr = sres.rows[0]!;
+    if (sr.mode !== 'exam') throw Errors.validation('Not an exam session');
+    if (sr.state !== 'IN_PROGRESS') throw Errors.sessionTerminal();
+    const existing = await db.query(
+      `select category_key, started_at, deadline_at, completed_at from ccat.session_batteries where session_id=$1 and category_key=$2`,
+      [id, key],
+    );
+    if (existing.rows.length > 0) return existing.rows[0];
+    const bd = (sr.battery_durations ?? {}) as Record<string, number>;
+    const mins = Number(bd[key]) > 0 ? Number(bd[key]) : Math.max(1, Math.round((sr.duration_minutes ?? 30) / 3));
+    const deadline = new Date(Date.now() + mins * 60 * 1000);
+    const ins = await db.query(
+      `insert into ccat.session_batteries(session_id, category_key, deadline_at) values ($1,$2,$3)
+       on conflict (session_id, category_key) do nothing
+       returning category_key, started_at, deadline_at, completed_at`,
+      [id, key, deadline],
+    );
+    if (ins.rows.length > 0) return ins.rows[0];
+    const again = await db.query(
+      `select category_key, started_at, deadline_at, completed_at from ccat.session_batteries where session_id=$1 and category_key=$2`,
+      [id, key],
+    );
+    return again.rows[0];
+  });
+
+  // POST /v1/sessions/:id/batteries/:key/complete — mark a battery finished (manual end or timer expiry).
+  app.post('/v1/sessions/:id/batteries/:key/complete', { preHandler: [app.authenticateStudent] }, async (req) => {
+    const { id, key } = req.params as { id: string; key: string };
+    const own = await db.query(`select 1 from ccat.sessions where id=$1 and student_id=$2`, [id, req.student!.studentId]);
+    if (own.rows.length === 0) throw Errors.notFound('Session not found');
+    const upd = await db.query(
+      `update ccat.session_batteries set completed_at = coalesce(completed_at, now())
+         where session_id=$1 and category_key=$2
+       returning category_key, started_at, deadline_at, completed_at`,
+      [id, key],
+    );
+    if (upd.rows.length === 0) throw Errors.notFound('Battery not started');
+    return upd.rows[0];
+  });
+
   // PATCH /v1/sessions/:id/answers — versioned autosave (§12). Stale writes rejected.
   app.patch('/v1/sessions/:id/answers', { preHandler: [app.authenticateStudent] }, async (req) => {
     const id = (req.params as { id: string }).id;
     const body = answersSchema.parse(req.body);
     const s = await db.query(
-      `select id, state, timer_type, deadline_at from ccat.sessions where id = $1 and student_id = $2`,
+      `select id, state, mode, timer_type, deadline_at from ccat.sessions where id = $1 and student_id = $2`,
       [id, req.student!.studentId],
     );
     if (s.rows.length === 0) throw Errors.notFound('Session not found');
     const sess = s.rows[0]!;
     if (sess.state !== 'IN_PROGRESS') throw Errors.sessionTerminal();
+    // Exam batteries are timed independently: an answer for a battery whose timer has expired (or that was
+    // never started) is rejected — that battery is locked, but the other batteries keep going.
+    if (sess.mode === 'exam' && body.answers.length > 0) {
+      const qids = body.answers.map((a) => a.question_version_id);
+      const cats = await db.query(
+        `select qv.id, qcat.key as category_key
+           from ccat.question_versions qv
+           join ccat.logical_questions lq on lq.id = qv.logical_question_id
+           join ccat.categories qcat on qcat.id = lq.category_id
+          where qv.id = any($1)`,
+        [qids],
+      );
+      const catOf = new Map<string, string>(cats.rows.map((r: any) => [r.id, r.category_key]));
+      const bat = await db.query(
+        `select category_key, deadline_at, completed_at from ccat.session_batteries where session_id = $1`,
+        [id],
+      );
+      const batBy = new Map<string, any>(bat.rows.map((r: any) => [r.category_key, r]));
+      const now = new Date();
+      for (const a of body.answers) {
+        const ck = catOf.get(a.question_version_id);
+        const b = ck ? batBy.get(ck) : undefined;
+        const expired = !b || (b.deadline_at && new Date(b.deadline_at) <= now) || !!b.completed_at;
+        if (expired) throw Errors.conflict('BATTERY_TIME_UP', 'This battery\'s time is up');
+      }
+    }
     // Deadline-aware guard (§14): a timed session past its deadline cannot accept answers;
     // finalize it and reject the write.
     if (sess.timer_type === 'timed' && sess.deadline_at && new Date(sess.deadline_at) <= new Date()) {

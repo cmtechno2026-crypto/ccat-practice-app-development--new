@@ -146,7 +146,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     const id = (req.params as any).id;
     const sv = await db.query(
       `select sv.id, sv.version_number, sv.state, sv.allowed_practice, sv.allowed_exam, sv.allowed_timers,
-              sv.question_count, sv.duration_minutes, sv.preserve_order, sv.published_at, qs.grade_id, qs.name, g.grade_number,
+              sv.question_count, sv.duration_minutes, sv.battery_durations, sv.preserve_order, sv.published_at, qs.grade_id, qs.name, g.grade_number,
               qs.category_id, qs.subcategory_id, cat.name category, sub.name subcategory
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id=sv.question_set_id
@@ -175,6 +175,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     const b = z.object({
       name: z.string().min(1).optional(),
       duration_minutes: z.number().int().min(1).max(180).nullable().optional(),
+      battery_durations: z.record(z.number().int().min(1).max(180)).nullable().optional(),
       preserve_order: z.boolean().optional(),
     }).parse(req.body ?? {});
     const sv = await db.query('select question_set_id, state from ccat.question_set_versions where id=$1', [id]);
@@ -182,6 +183,12 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     if (b.preserve_order !== undefined && sv.rows[0]!.state !== 'draft')
       throw Errors.validation('Question order can only be changed while the set is a draft (§8.1)');
     if (b.duration_minutes !== undefined) await db.query('update ccat.question_set_versions set duration_minutes=$2 where id=$1', [id, b.duration_minutes]);
+    if (b.battery_durations !== undefined) {
+      // Keep duration_minutes in sync as the total (for the paper list + back-compat) when saving per-battery limits.
+      const total = b.battery_durations ? Object.values(b.battery_durations).reduce((a, n) => a + Number(n || 0), 0) : null;
+      await db.query('update ccat.question_set_versions set battery_durations=$2, duration_minutes=coalesce($3, duration_minutes) where id=$1',
+        [id, b.battery_durations ? JSON.stringify(b.battery_durations) : null, total]);
+    }
     if (b.preserve_order !== undefined) await db.query('update ccat.question_set_versions set preserve_order=$2 where id=$1', [id, b.preserve_order]);
     if (b.name !== undefined) await db.query('update ccat.question_sets set name=$2 where id=$1', [sv.rows[0]!.question_set_id, b.name]);
     await audit(db, req, 'content.set.updated', 'set_version', id, b.name ?? null);

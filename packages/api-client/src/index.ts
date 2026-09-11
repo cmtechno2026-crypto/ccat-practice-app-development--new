@@ -1,6 +1,6 @@
 import type {
   ApiErrorBody, Channel, ChallengeStarted, Grade, Mode, TimerType, TokenPair,
-  StudentProfile, Session, SessionWithQuestions, AnswerWrite, AnswerAck,
+  StudentProfile, Session, SessionWithQuestions, BatteryState, AnswerWrite, AnswerAck,
   SessionResult, ExamHistoryItem, RewardsSummary, CoinsPanel, Readiness, Progress, CatalogItem, Bookmark, BookmarkReview, Achievement,
   AvatarsResponse, Theme, Announcement, Book, AdultChallenge, RetailerHandoff, PracticeAttemptResult,
   SupportCase, SupportCaseCreated, AccountInfo, AccountGuardian, DeletionResult, ReferralInfo,
@@ -247,7 +247,13 @@ export class CcatClient {
   abandon(id: string, confirm = false) {
     return this.request<{ session_id: string; terminal_state: string }>('POST', `/v1/sessions/${id}/abandon`, { auth: true, body: { confirm } });
   }
-  sessionResult(id: string) { return this.request<SessionResult>('GET', `/v1/sessions/${id}/result`, { auth: true }); }
+  batteryStart(sessionId: string, key: string) {
+    return this.request<BatteryState>('POST', `/v1/sessions/${sessionId}/batteries/${key}/start`, { auth: true });
+  }
+  batteryComplete(sessionId: string, key: string) {
+    return this.request<BatteryState>('POST', `/v1/sessions/${sessionId}/batteries/${key}/complete`, { auth: true });
+  }
+    sessionResult(id: string) { return this.request<SessionResult>('GET', `/v1/sessions/${id}/result`, { auth: true }); }
   examHistory() { return this.request<ExamHistoryItem[]>('GET', '/v1/exams/history', { auth: true }); }
 
   // ---- practice per-question feedback (practice sessions only) -----------------
