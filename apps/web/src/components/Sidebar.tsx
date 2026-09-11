@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import cmMark from '../assets/cm-mark.png';
 import { useApp } from '../lib/store';
 import { PAYMENTS_ENABLED } from '../lib/entitlements';
 import { Avatar } from './Avatar';
@@ -73,7 +74,7 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
             emblem in the collapsed rail) + brand text on the RIGHT ("Concept Mastery" / "CCAT Practice")
             that fades in when the rail expands. Rendered as crisp markup, not a raster. */}
         <Link to="/home" className="brand" aria-label="Concept Mastery — home">
-          <span className="brand-tile" aria-hidden>CM</span>
+          <img className="brand-tile" src={cmMark} alt="" aria-hidden />
           <span className="brandtext"><strong>Concept Mastery</strong><small>CCAT Practice</small></span>
         </Link>
         {/* Mobile drawer close (CSS-hidden on desktop) */}

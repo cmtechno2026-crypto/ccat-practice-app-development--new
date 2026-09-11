@@ -1,8 +1,8 @@
 /* CCAT design tokens — ported from apps/mobile/src/theme.ts (student app parity).
    Baloo 2 (display) + Nunito (body). Primary #3e7bee per owner decision. */
 :root {
-  --primary: #3e7bee;
-  --primary-dark: #2c5fd0;
+  --primary: #1A5EAB;
+  --primary-dark: #0f4a8f;
   --ink: #2a2e43;
   --ink-soft: #4a4f66;
   --muted: #8a90a6;
@@ -14,12 +14,12 @@
   --subtle: #f7f8fc;
   --card: #ffffff;
   --tint-blue: #eaf0ff;
-  --tint-lilac: #f3ecfb;
+  --tint-lilac: #eef3fb;
   --tint-green: #e8f7f1;
-  --purple: #8b5cf6;
+  --purple: #1A5EAB;
   --green: #22a06b;
   --teal: #22c3a6;
-  --amber: #f6a821;
+  --amber: #E8A020;
   --amber-tint: #fff3db;
   --coral: #ef5b6b;
   --coral-tint: #fdecef;
@@ -395,8 +395,8 @@ p { line-height: 1.5; }
 }
 .entry-tile:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
 .entry-tile:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
-.entry-practice { background: linear-gradient(160deg, #4E8FE0, #3E7BEE 60%, #2C5FD0); }
-.entry-exam { background: linear-gradient(160deg, #F0894A, #E4574F 60%, #C2453F); }
+.entry-practice { background: linear-gradient(160deg, #2f77d8, #1A5EAB 60%, #0f3f7a); }
+.entry-exam { background: linear-gradient(160deg, #E8A020, #c47f12 60%, #a56a0e); }
 .entry-tile .et-ic { font-size: 34px; }
 .entry-tile .et-title { font-family: 'Baloo 2'; font-weight: 800; font-size: 19px; }
 .entry-tile .et-sub { font-weight: 700; font-size: 13px; color: rgba(255,255,255,.92); line-height: 1.35; }
@@ -432,7 +432,7 @@ p { line-height: 1.5; }
 /* Header band (purple gradient) */
 .home-hero {
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-  background: linear-gradient(150deg, #9a6cf8, var(--purple) 55%, #6a3fd0);
+  background: linear-gradient(150deg, #2f77d8, #1A5EAB 55%, #0f3f7a);
   color: #fff; border-radius: var(--radius-lg); padding: 20px 22px; box-shadow: var(--shadow-card);
 }
 .home-hero h1 { color: #fff; font-size: 24px; }
@@ -605,19 +605,19 @@ p { line-height: 1.5; }
    paint/sizing only; the push-model shell (App.tsx + .main offset) is unchanged.
    ========================================================================== */
 :root { --rail-w: 72px; --rail-open: 236px; }
-.sidebar { background: linear-gradient(180deg, #7b5cff 0%, #5b3ff0 100%); border-right: none; padding: 14px 13px; color: #fff; }
+.sidebar { background: linear-gradient(180deg, #1e6bd6 0%, #1A5EAB 62%, #0f4a8f 100%); border-right: none; padding: 14px 13px; color: #fff; }
 .sidebar.expanded { box-shadow: 8px 0 28px rgba(40, 20, 90, .28); }
 .sidebar .brand { display: flex; align-items: center; gap: 11px; padding: 2px 2px 14px; min-width: 0; height: 56px; box-sizing: content-box; }
 .sidebar .brand-tile { flex: none; width: 42px; height: 42px; border-radius: 12px; background: #fff; color: #5b3ff0; display: flex; align-items: center; justify-content: center; font-family: 'Baloo 2', sans-serif; font-weight: 900; font-size: 16px; }
 .sidebar .brandtext strong { color: #fff; font-size: 15px; }
 .sidebar .brandtext small { color: rgba(255, 255, 255, .72); }
-.snav { color: #eae4ff; min-height: 46px; padding: 0 12px; }
+.snav { color: rgba(255,255,255,.82); min-height: 46px; padding: 0 12px; }
 .snav .ico { width: 26px; font-size: 20px; }
 .snav:hover { background: rgba(255, 255, 255, .10); color: #fff; }
-.snav.active { background: #fff; color: #5b3ff0; }
+.snav.active { background: #fff; color: #1A5EAB; }
 .sidebar-foot { border-top: 1px solid rgba(255, 255, 255, .18); padding-top: 10px; }
 .snav-profile .ico { background: #fff; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; }
-.snav-logout { color: #eae4ff; }
+.snav-logout { color: rgba(255,255,255,.82); }
 .sidebar-close { color: #fff; }
 
 /* ============================================================================
@@ -931,3 +931,6 @@ p { line-height: 1.5; }
 
 /* My Plan: full-width pricing (aligns with the header back arrow ↔ fox) */
 .plan-wrap { width: 100%; max-width: 1400px; margin: 0 auto; padding: 16px 22px 48px; }
+
+/* Brand logo mark in the sidebar rail (replaces the old "CM" letters). */
+.sidebar img.brand-tile { padding: 4px; object-fit: contain; background: #fff; }
