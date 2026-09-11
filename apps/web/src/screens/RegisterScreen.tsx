@@ -15,7 +15,7 @@ import '../landing.css';
 //
 // Steps: details (child + guardian, with inline validation + optional email verify) → consent → account.
 
-type Step = 'details' | 'consent' | 'account' | 'success';
+type Step = 'details' | 'consent' | 'account';
 const FUNNEL: Step[] = ['details', 'consent', 'account'];
 const STEP_LABEL: Record<Step, string> = { details: 'Details', consent: 'Consent', account: 'Account', success: 'Done' };
 const POLICY_VERSION = '2026-01';
@@ -82,7 +82,7 @@ const emailValid = (s: string) => /^\S+@\S+\.\S+$/.test(s.trim());
 
 export function RegisterScreen() {
   const nav = useNavigate();
-  const { setProfile } = useApp();
+  const { setProfile, flash } = useApp();
   const referralCode = (() => { try { return new URLSearchParams(window.location.search).get('ref') || undefined; } catch { return undefined; } })();
 
   const [step, setStep] = useState<Step>('details');
@@ -234,7 +234,7 @@ export function RegisterScreen() {
     }));
     if (!created) return;
     const me = await guard(async () => { await client.login(username, pin, getDeviceHash()); return client.profile(); });
-    if (me) { setProfile(me); setStep('success'); }
+    if (me) { setProfile(me); flash('Welcome to CCAT Practice! 🎉'); nav('/home', { replace: true }); }
   }
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -378,18 +378,6 @@ export function RegisterScreen() {
             </>
           )}
 
-          {step === 'success' && (
-            <div className="stack" style={{ textAlign: 'center', gap: 16, paddingTop: 12 }}>
-              <div style={{ fontSize: 72 }}>🎉</div>
-              <h1>You're all set, {displayName || 'champ'}!</h1>
-              <p className="muted">The account is ready and you're signed in. Let's start practising and build your first streak.</p>
-              <div className="row" style={{ justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span className="pill" style={{ background: 'var(--tint-lilac)', color: 'var(--purple)' }}>⭐ Earn XP as you practise</span>
-                <span className="pill" style={{ background: 'var(--amber-tint)', color: 'var(--amber)' }}>🔥 Start your streak today</span>
-              </div>
-              <button className="btn" onClick={() => nav('/home', { replace: true })}>Enter the app 🎉</button>
-            </div>
-          )}
           </div>
         </div>
       </div>

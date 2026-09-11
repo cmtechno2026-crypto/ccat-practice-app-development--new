@@ -117,7 +117,8 @@ html:has(.lp) { scroll-behavior: smooth; }
 .a2-by { position: relative; z-index: 1; color: #7f93b5; font-weight: 700; font-size: 12.5px; }
 .a2-form { background: #f4f6fc; display: flex; justify-content: center; padding: 44px 24px; }
 .a2-inner { width: 100%; max-width: 420px; }
-.a2-back { display: inline-block; color: #1A5EAB; font-weight: 700; font-size: 13px; text-decoration: none; margin-bottom: 14px; }
+.a2-back { display: inline-flex; align-items: center; gap: 4px; background: transparent; border: 0; padding: 0; cursor: pointer; color: #1A5EAB; font-family: Inter, sans-serif; font-weight: 700; font-size: 13.5px; text-decoration: none; margin-bottom: 16px; }
+.a2-back:hover { text-decoration: underline; }
 .a2-inner h1 { font-family: Poppins, sans-serif; font-size: 28px; color: #1f2937; }
 .a2-sub { color: #5b6472; font-weight: 600; font-size: 14.5px; margin: 6px 0 18px; }
 .a2-btn { width: 100%; border: 0; border-radius: 10px; padding: 14px; font-family: Poppins, sans-serif; font-weight: 700; font-size: 15px; cursor: pointer; color: #fff; margin-top: 8px; }
@@ -128,3 +129,10 @@ html:has(.lp) { scroll-behavior: smooth; }
 .a2-links a { color: #1A5EAB; font-weight: 700; font-size: 13.5px; }
 .a2-foot { text-align: center; margin-top: 10px; color: #5b6472; font-weight: 600; font-size: 13.5px; }
 .a2-foot a { color: #1A5EAB; font-weight: 700; }
+
+/* Auth-form button palette (register): primary = CM blue, secondary "Verify email" = gold. */
+.a2-form .btn { background: #1A5EAB; color: #fff; }
+.a2-form .btn:hover:not(:disabled) { background: #154e8f; }
+.a2-form .btn.secondary { background: #E8A020; color: #3a2600; }
+.a2-form .btn.secondary:hover:not(:disabled) { background: #d5910f; }
+.a2-form .btn:disabled, .a2-form .btn.secondary:disabled { background: #c7d0e6; color: #fff; }
