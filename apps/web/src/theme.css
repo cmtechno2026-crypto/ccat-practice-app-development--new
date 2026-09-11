@@ -396,7 +396,7 @@ p { line-height: 1.5; }
 .entry-tile:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
 .entry-tile:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 .entry-practice { background: linear-gradient(160deg, #2f77d8, #1A5EAB 60%, #0f3f7a); }
-.entry-exam { background: linear-gradient(160deg, #E8A020, #c47f12 60%, #a56a0e); }
+.entry-exam { background: linear-gradient(160deg, #d99a2e, #a5731a); }
 .entry-tile .et-ic { font-size: 34px; }
 .entry-tile .et-title { font-family: 'Baloo 2'; font-weight: 800; font-size: 19px; }
 .entry-tile .et-sub { font-weight: 700; font-size: 13px; color: rgba(255,255,255,.92); line-height: 1.35; }
