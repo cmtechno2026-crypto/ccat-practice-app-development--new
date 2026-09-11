@@ -136,3 +136,8 @@ html:has(.lp) { scroll-behavior: smooth; }
 .a2-form .btn.secondary { background: #E8A020; color: #3a2600; }
 .a2-form .btn.secondary:hover:not(:disabled) { background: #d5910f; }
 .a2-form .btn:disabled, .a2-form .btn.secondary:disabled { background: #c7d0e6; color: #fff; }
+
+/* Hero grade badge — "Built for Grades 3–5". */
+.lp-gradepill { display: inline-flex; align-items: center; gap: 8px; margin: 14px 0 2px;
+  background: var(--gold); color: #3a2600; font-family: Poppins, sans-serif; font-weight: 800;
+  font-size: 14px; border-radius: 999px; padding: 8px 16px; }

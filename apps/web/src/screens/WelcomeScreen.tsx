@@ -18,7 +18,7 @@ const FEATURES = [
 
 const STEPS = [
   ['1', 'Create a parent account', 'A grown-up sets it up in a minute — PIPEDA-compliant.'],
-  ['2', "Pick your child's grade", 'Content is targeted to the right grade, Grade 1 to 12.'],
+  ['2', "Pick your child's grade", 'Content is targeted to the right grade, Grades 3 to 5.'],
   ['3', 'Practise by topic', 'Start free, then unlock every set across all three batteries.'],
   ['4', 'Take a timed mock exam', 'Build real exam stamina with full-length, timed papers.'],
   ['5', 'Track & earn rewards', 'Watch the readiness score climb and collect badges.'],
@@ -61,12 +61,13 @@ export function WelcomeScreen() {
           <div>
             <span className="lp-ey">CCAT / NGAT Prep</span>
             <h1>Prepare your child for the CCAT with a <em>proven system.</em></h1>
-            <p>The CCAT Practice app by Concept Mastery gives students real exam-style questions, full-length timed mocks, and progress parents can actually measure.</p>
+            <span className="lp-gradepill">🎯 Built for Grades 3–5</span>
+            <p>The CCAT Practice platform by Concept Mastery gives Grade 3–5 students real exam-style questions, full-length timed mocks, and progress parents can actually measure.</p>
             <div className="lp-cta">
               <Link className="lp-btn solid lg" to="/register">Create an account</Link>
               <Link className="lp-btn ghost lg" style={{ color: '#fff', borderColor: '#fff' }} to="/login">I already have an account</Link>
             </div>
-            <div className="lp-trust">✔ Trusted by 500+ parents · ✔ Grades 1–12 · ✔ PIPEDA-compliant</div>
+            <div className="lp-trust">✔ Trusted by 500+ parents · ✔ Grades 3–5 · ✔ PIPEDA-compliant</div>
           </div>
           <div className="lp-panel">
             <h3>What's inside</h3>
