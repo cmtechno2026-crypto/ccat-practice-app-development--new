@@ -307,7 +307,7 @@ export function Students() {
       {del && (
         <Modal title={`Delete — ${del.display_name}`} onClose={() => setDel(null)}
           footer={<><button className="btn ghost grow" onClick={() => setDel(null)}>Cancel</button><button className="btn danger grow" disabled={delBusy || !delAck} onClick={doDelete}>{delBusy ? 'Deleting…' : 'Delete permanently'}</button></>}>
-          <div className="aihint" style={{ background: 'var(--tint, #FDECE6)', color: '#C2321C' }}><b>Permanent — cannot be undone.</b> Erases this student's personal data and removes them from the directory; anonymized practice history is kept.</div>
+          <div className="aihint" style={{ background: 'var(--tint, #FDECE6)', color: '#C2321C' }}><b>Permanent — cannot be undone.</b> Erases this student's personal data and removes them from the directory.</div>
           <div style={{ margin: '10px 2px', fontSize: 13, lineHeight: 1.7 }}>
             <div><b>User ID:</b> {del.username}</div>
             <div><b>Grade:</b> Grade {del.grade_number}</div>
