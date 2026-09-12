@@ -219,17 +219,17 @@ const BODY = `
       <div class="rev">
         <span class="stars">★★★★★</span>
         <q>My son used to rush through pattern questions and choose the first answer that looked right. Working on one skill at a time has helped him slow down and explain his thinking. The short sets fit easily into our after-school routine, and he usually starts without being reminded.</q>
-        <div class="who"><div class="ph">🙂</div><div class="meta"><b>User CM-2041</b><br>Grade 3</div></div>
+        <div class="who"><div class="ph">🙂</div><div class="meta">Grade 3</div></div>
       </div>
       <div class="rev">
         <span class="stars">★★★★★</span>
         <q>The timed exams showed us something regular practice did not: my daughter understood most of the questions, but she was spending too long on a few of them. Seeing her results by battery helped us focus on pacing without putting unnecessary pressure on her.</q>
-        <div class="who"><div class="ph">🙂</div><div class="meta"><b>User CM-1877</b><br>Grade 4</div></div>
+        <div class="who"><div class="ph">🙂</div><div class="meta">Grade 4</div></div>
       </div>
       <div class="rev">
         <span class="stars">★★★★★</span>
         <q>My daughter was completing the questions but could not always explain how she reached an answer. During the mentoring sessions, the instructor focused on her reasoning process and showed her how to approach unfamiliar problems. She now talks through difficult questions more calmly.</q>
-        <div class="who"><div class="ph">🙂</div><div class="meta"><b>User CM-1502</b><br>Grade 4</div></div>
+        <div class="who"><div class="ph">🙂</div><div class="meta">Grade 4</div></div>
       </div>
     </div>
 
