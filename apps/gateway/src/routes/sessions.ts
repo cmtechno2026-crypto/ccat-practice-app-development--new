@@ -4,7 +4,7 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors, AppError } from '../errors.js';
 import { checkIdempotency, saveIdempotency } from '../lib/idempotency.js';
-import { finalizeSession } from '../lib/finalize.js';
+import { finalizeSession, finalizeTimedOutExams } from '../lib/finalize.js';
 import { seededShuffle } from '../lib/shuffle.js';
 import { resolveEntitlement, computeDemoSetIds, isCombineSubcategory } from '../lib/entitlements.js';
 
@@ -489,9 +489,16 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
   // Exam Progress panel. One row per paper: distinct on the paper (question_set), keeping the newest attempt.
   app.get('/v1/exams/history', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
+    // Close out any fully-timed-out exams first so a just-ended paper appears here immediately.
+    await finalizeTimedOutExams(db, sid);
     const q = req.query as { from?: string; to?: string };
     const params: any[] = [sid];
-    const cond: string[] = ["s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')"];
+    // Only papers whose exam is ENDED: finished attempt AND no attempt still in progress. While the student
+    // is mid-exam on a paper (any battery still enterable), that paper is hidden until they end the exam.
+    const cond: string[] = [
+      "s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')",
+      "not exists (select 1 from ccat.sessions s2 join ccat.question_set_versions sv2 on sv2.id = s2.set_version_id where s2.student_id = $1 and s2.mode = 'exam' and s2.state = 'IN_PROGRESS' and sv2.question_set_id = qs.id)",
+    ];
     if (q.from) { params.push(q.from); cond.push(`s.terminal_at >= $${params.length}`); }
     if (q.to) { params.push(q.to); cond.push(`s.terminal_at < $${params.length}`); }
 

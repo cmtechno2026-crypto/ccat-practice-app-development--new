@@ -186,3 +186,25 @@ export async function finalizeOverdueSessions(db: DB): Promise<number> {
   }
   return n;
 }
+
+// End any of the student's IN-PROGRESS exam sessions whose EVERY battery has run out (completed or past
+// its per-battery deadline). Exams are untimed at the session level, so nothing else closes them. Shared
+// by the catalog route (flips "Resume" → "Retake") and the exam-history endpoint (so a fully-timed-out
+// paper appears in Exam Progress promptly). A paper with a battery never started is NOT ended.
+export async function finalizeTimedOutExams(db: DB, studentId: string): Promise<void> {
+  const { rows } = await db.query(
+    `select s.id
+       from ccat.sessions s
+       join ccat.question_set_versions sv on sv.id = s.set_version_id
+      where s.student_id = $1 and s.mode = 'exam' and s.state = 'IN_PROGRESS'
+        and sv.battery_durations is not null
+        and (select count(*) from jsonb_object_keys(sv.battery_durations)) =
+            (select count(*) from ccat.session_batteries sb
+              where sb.session_id = s.id and (sb.completed_at is not null or sb.deadline_at <= now()))`,
+    [studentId],
+  );
+  for (const r of rows as any[]) {
+    try { await finalizeSession(db, r.id, studentId, { finalizedBy: 'deadline', submissionId: `auto:${r.id}` }); }
+    catch { /* idempotent + best-effort */ }
+  }
+}
