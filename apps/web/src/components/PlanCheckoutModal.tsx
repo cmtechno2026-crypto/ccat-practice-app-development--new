@@ -109,7 +109,8 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
         setProfile(me);
         return; // landing sees a profile and navigates to /home; keep busy while it unmounts
       }
-      const order = await client.paypalCreateOrder(tier);
+      // Return straight to Home after PayPal (capture + activation happen there) — the plan page is skipped.
+      const order = await client.paypalCreateOrder(tier, 'home');
       window.location.href = order.url; // leaves the page; keep busy so the button stays disabled
     } catch (e) {
       setErr(msg(e, 'Could not start checkout. Please try again.'));

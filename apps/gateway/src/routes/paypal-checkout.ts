@@ -16,7 +16,12 @@ import { verifyEmailToken } from './email-verify.js';
 //    the PayPal capture id so capture-on-return and the webhook grant exactly once between them.
 // Flag contract: cfg.paymentsEnabled false -> 404 (matches the rest of the gateway's flag-off no-op).
 
-const orderSchema = z.object({ tier: z.enum(['t50', 't250', 't500']) });
+const orderSchema = z.object({
+  tier: z.enum(['t50', 't250', 't500']),
+  // Where PayPal returns to after approval. 'home' is used by the landing-page checkout so the parent
+  // lands straight on Home (capture happens there); default 'plan' keeps the in-app My Plan upgrade UI.
+  return_to: z.enum(['plan', 'home']).optional(),
+});
 const captureSchema = z.object({ order_id: z.string().min(1) });
 // Public (pre-account) checkout: buy a plan against an OTP-verified email that has NO account yet.
 const orderPublicSchema = z.object({
@@ -30,7 +35,9 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
   // Create a PayPal order for a tier UPGRADE. Returns the PayPal approval URL for the web to redirect to.
   app.post('/v1/checkout/paypal/order', { preHandler: [app.authenticateStudent] }, async (req) => {
     if (!cfg.paymentsEnabled) throw Errors.notFound('Payments are not enabled');
-    const { tier } = orderSchema.parse(req.body) as { tier: Tier };
+    const parsed = orderSchema.parse(req.body) as { tier: Tier; return_to?: 'plan' | 'home' };
+    const tier = parsed.tier;
+    const returnTo = parsed.return_to ?? 'plan';
 
     const amount = amountForTier(cfg, tier);
     if (!paypalConfigured(cfg) || !amount) throw new AppError(500, 'PAYMENTS_MISCONFIGURED', `PayPal not fully configured for tier ${tier}`);
@@ -47,8 +54,8 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
       tier,
       amount,
       customId: encodeCustomId(guardianEmail, tier, req.student!.studentId),
-      returnUrl: `${cfg.webAppOrigin}/plan?checkout=success`,
-      cancelUrl: `${cfg.webAppOrigin}/plan?checkout=cancel`,
+      returnUrl: `${cfg.webAppOrigin}/${returnTo}?checkout=success`,
+      cancelUrl: `${cfg.webAppOrigin}/${returnTo === 'home' ? 'home' : 'plan'}?checkout=cancel`,
     });
     if (!order.approveUrl) throw new AppError(502, 'PAYPAL_NO_APPROVE_URL', 'PayPal did not return an approval URL');
     return { url: order.approveUrl, id: order.id };

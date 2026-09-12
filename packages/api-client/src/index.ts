@@ -145,8 +145,8 @@ export class CcatClient {
   entitlementsMe() { return this.request<EntitlementsMe>('GET', '/v1/entitlements/me', { auth: true }); }
   // Payments (PayPal, in-app) — create an order for a tier UPGRADE. The client sends ONLY the tier; the
   // gateway owns the amount, eligibility, and return URLs. Returns the PayPal approval URL to redirect to.
-  paypalCreateOrder(tier: 't50' | 't250' | 't500') {
-    return this.request<{ url: string; id: string }>('POST', '/v1/checkout/paypal/order', { auth: true, body: { tier } });
+  paypalCreateOrder(tier: 't50' | 't250' | 't500', returnTo?: 'plan' | 'home') {
+    return this.request<{ url: string; id: string }>('POST', '/v1/checkout/paypal/order', { auth: true, body: { tier, return_to: returnTo } });
   }
   // Capture an approved PayPal order on return. The gateway grants the tier (idempotent with the webhook).
   paypalCapture(orderId: string) {

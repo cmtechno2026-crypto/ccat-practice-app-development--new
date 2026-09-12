@@ -1,4 +1,5 @@
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { firstName , titleCase} from '@ccat/client-core';
 import type { Achievement, ProgressSummary } from '@ccat/api-client';
 import { client } from '../lib/api';
@@ -57,7 +58,25 @@ function mascotLine(streak: number, completion: number | null): string {
 
 export function HomeScreen() {
   const nav = useNavigate();
-  const { profile, entitlements, entitlementsLoaded } = useApp();
+  const { profile, entitlements, entitlementsLoaded, refreshEntitlements, flash } = useApp();
+  const [params] = useSearchParams();
+
+  // Landing-page Case 1 checkout returns straight here (?checkout=success&token=<orderId>). Capture the
+  // order so the plan activates, refresh entitlements so the unlock shows, then strip the query. The
+  // capture + PayPal webhook are both idempotent, so a re-run or a lost redirect still grants exactly once.
+  const captured = useRef(false);
+  useEffect(() => {
+    if (captured.current) return;
+    if (params.get('checkout') !== 'success') return;
+    captured.current = true;
+    const orderId = params.get('token');
+    const done = () => { refreshEntitlements(); nav('/home', { replace: true }); };
+    if (orderId) {
+      flash('Payment confirmed — activating your plan… 🎉');
+      client.paypalCapture(orderId).catch(() => { /* webhook is the backstop */ }).finally(done);
+    } else { done(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Payments Phase 2: when the flag is off, capsOf() unlocks everything, so examLocked is always false
   // and the exam entry tile renders exactly as today.
   const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements, entitlementsLoaded).exam;
