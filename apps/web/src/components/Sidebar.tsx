@@ -17,7 +17,7 @@ const NAV: NavItem[] = [
   { label: 'Home', icon: '🏠', to: '/home', match: (l) => l.pathname === '/home' },
   { label: 'Practice', icon: '✏️', to: '/practice', match: (l) => (l.pathname === '/practice' && !isExam(l)) || l.pathname.startsWith('/session') || l.pathname.startsWith('/result') },
   { label: 'Exam', icon: '📝', to: '/practice?mode=exam', match: (l) => l.pathname === '/practice' && isExam(l) },
-  { label: 'Progress & Analytics', icon: '📊', to: '/progress', match: (l) => l.pathname === '/progress' },
+  { label: 'Progress', icon: '📊', to: '/progress', match: (l) => l.pathname === '/progress' },
   // Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
   // { label: 'Customize', icon: '🎨', to: '/customize', match: (l) => l.pathname === '/customize' },
   { label: 'Achievements', icon: '🏅', to: '/achievements', match: (l) => l.pathname === '/achievements' },

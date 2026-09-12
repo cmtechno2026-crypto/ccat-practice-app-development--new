@@ -174,7 +174,7 @@ export function HomeScreen() {
                   accuracy rings. Every value is real; honest empty states ("—" / 0 / rings at 0). */}
               <Card className="home-progress">
                 <div className="hp-head">
-                  <div className="eyebrow">📊 Progress &amp; Analytics</div>
+                  <div className="eyebrow">📊 Progress</div>
                   <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>
                 </div>
                 {(() => {

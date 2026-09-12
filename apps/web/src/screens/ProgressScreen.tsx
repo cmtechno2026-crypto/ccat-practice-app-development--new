@@ -253,7 +253,7 @@ export function ProgressScreen() {
   return (
     <div className={`prog-shell ${preview ? 'paneled' : ''}`}>
       <div className="prog-col">
-        <AppBar title="Progress & Analytics" sub="Your real practice data" back wide />
+        <AppBar title="Progress" sub="Your real practice data" back wide />
         <div className="content content-wide">
           <div className="prog-filters" role="group" aria-label="Filters">
             <label className="pf-field">

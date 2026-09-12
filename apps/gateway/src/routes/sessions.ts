@@ -514,6 +514,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     // rather than being finished early.
     const ids = rows.map((r) => r.session_id);
     const timeByKey = new Map<string, { secs: number; timedOut: boolean }>();
+    const sessionSecs = new Map<string, number>(); // Σ per-battery time for the paper's TIME column
     if (ids.length > 0) {
       const bt = await db.query(
         `select sb.session_id, sb.category_key,
@@ -524,7 +525,10 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
           where sb.session_id = any($1::uuid[])`,
         [ids],
       );
-      for (const b of bt.rows as any[]) timeByKey.set(`${b.session_id}|${b.category_key}`, { secs: Number(b.secs), timedOut: b.timed_out === true });
+      for (const b of bt.rows as any[]) {
+        timeByKey.set(`${b.session_id}|${b.category_key}`, { secs: Number(b.secs), timedOut: b.timed_out === true });
+        sessionSecs.set(b.session_id, (sessionSecs.get(b.session_id) ?? 0) + Number(b.secs));
+      }
     }
 
     return rows.map((r) => {
@@ -543,7 +547,10 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
         score_total: total,
         accuracy_pct: total > 0 ? Math.round((100 * r.score_correct) / total) : 0,
         attempted_count: attempted,
-        time_spent_seconds: r.time_spent_seconds,
+        // Paper TIME = the real time spent inside the timed batteries (each capped at its deadline), so it
+        // can never exceed the paper's allotted total. Falls back to the session wall-clock only for legacy
+        // exams that have no per-battery timer rows.
+        time_spent_seconds: sessionSecs.has(r.session_id) ? sessionSecs.get(r.session_id)! : r.time_spent_seconds,
         by_battery,
       };
     });
