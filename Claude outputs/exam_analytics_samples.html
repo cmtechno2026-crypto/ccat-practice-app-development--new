@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exam Papers analytics — 3 samples</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --blue:#1A5EAB; --blue-d:#0f4a8f; --gold:#E8A020; --gold-d:#a5731a;
+    --ink:#2a2e43; --mid:#6b7186; --line:#e7ebf3; --card:#fff; --bg:#f4f6fb;
+    --verbal:#3e7bee; --quant:#22c3a6; --nonverbal:#8b5cf6;
+    --vt:#eaf0ff; --qt:#e6f7f1; --nt:#f3ecfb; --gt:#fdf3e2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Nunito,system-ui,sans-serif;color:var(--ink);background:var(--bg);padding:24px 18px 70px}
+  .head{max-width:1080px;margin:0 auto 20px}
+  .head .tag{display:inline-block;font-family:'Baloo 2';font-weight:800;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--gold-d);background:var(--gt);padding:5px 11px;border-radius:999px;margin-bottom:10px}
+  .head h1{font-family:'Baloo 2';font-weight:800;font-size:24px;margin:0 0 8px}
+  .head p{margin:0;color:#4a4f66;font-weight:700;font-size:14px;line-height:1.55;max-width:860px}
+  .head .note{margin-top:8px;font-size:12.5px;color:var(--mid);font-weight:700}
+  .wrap{max-width:1080px;margin:0 auto}
+  .slabel{display:flex;align-items:center;gap:10px;margin:34px 0 12px}
+  .slabel .n{width:28px;height:28px;border-radius:8px;background:var(--gold);color:#241800;display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-weight:800;font-size:15px;flex:none}
+  .slabel b{font-family:'Baloo 2';font-weight:800;font-size:17px}
+  .slabel .d{color:var(--mid);font-weight:700;font-size:12.5px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px}
+  .card.tint{background:linear-gradient(180deg,#fffaf0,#fff)}
+  .eyebrow{font-family:'Baloo 2';font-weight:800;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--gold-d);display:flex;align-items:center;gap:7px}
+  .big{font-family:'Baloo 2';font-weight:800;font-size:34px;margin:6px 0 0}
+  .muted{color:var(--mid);font-weight:700}
+
+  .grid{display:grid;gap:16px}
+  .g-2{grid-template-columns:1fr 1fr}
+  .g-3{grid-template-columns:repeat(3,1fr)}
+  .g-main{grid-template-columns:1.6fr 1fr}
+  @media(max-width:760px){.g-2,.g-3,.g-main{grid-template-columns:1fr}}
+
+  .tile{border-radius:16px;padding:16px 18px;border:1px solid var(--line)}
+  .tile .v{font-family:'Baloo 2';font-weight:800;font-size:28px}
+  .tile .k{font-weight:800;font-size:13.5px;margin-top:2px}
+  .tile .s{color:var(--mid);font-weight:700;font-size:12px}
+  .tile.gold{background:var(--gt);border-color:#f2ddb4}
+  .tile.blue{background:var(--vt);border-color:#d6e2fb}
+  .tile.green{background:var(--qt);border-color:#c9efe3}
+  .tile.purple{background:var(--nt);border-color:#e4d6fb}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 10px;font-weight:800;font-size:12px}
+  .pill.ok{background:#e9f7ef;color:#1e7a46}
+  .pill.warn{background:#fdefe0;color:#a15c00}
+  .pill.bad{background:#fdecec;color:#c0392b}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;color:var(--mid);font-weight:800;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:2px solid var(--line)}
+  td{padding:10px;border-bottom:1px solid var(--line);font-weight:700}
+  tr:last-child td{border-bottom:0}
+  .score{font-family:'Baloo 2';font-weight:800}
+
+  .bar{height:12px;border-radius:999px;background:var(--line);overflow:hidden}
+  .bar>i{display:block;height:100%;border-radius:999px}
+  .rowbar{display:grid;grid-template-columns:110px 1fr 46px;gap:10px;align-items:center;margin:10px 0}
+  .rowbar .lab{font-weight:800;font-size:13.5px}
+  .rowbar .pct{font-family:'Baloo 2';font-weight:800;text-align:right}
+
+  .tabs{display:inline-flex;background:#eef2f8;border-radius:999px;padding:4px;gap:4px}
+  .tabs button{border:0;background:transparent;font-family:'Baloo 2';font-weight:800;font-size:13.5px;color:var(--mid);padding:8px 16px;border-radius:999px;cursor:default}
+  .tabs button.on{background:#fff;color:var(--blue);box-shadow:0 2px 8px -4px rgba(0,0,0,.25)}
+  .tabs.gold button.on{color:var(--gold-d)}
+
+  .ring{--p:0;width:74px;height:74px;border-radius:50%;flex:none;display:grid;place-items:center;
+    background:conic-gradient(var(--gold) calc(var(--p)*1%), var(--line) 0)}
+  .ring>span{width:56px;height:56px;border-radius:50%;background:#fff;display:grid;place-items:center;font-family:'Baloo 2';font-weight:800;font-size:16px;color:var(--gold-d)}
+  .ring.sm{width:52px;height:52px}.ring.sm>span{width:39px;height:39px;font-size:12.5px}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;font-weight:800;color:var(--mid);margin-top:8px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+</style></head>
+<body>
+<div class="head">
+  <span class="tag">CCAT · Progress &amp; Analytics · Exam Papers</span>
+  <h1>Exam-paper analytics — 3 layouts</h1>
+  <p>Adds full-length exam performance to the Progress page (today it only shows practice). Amber is the exam
+  accent, matching your exam tiles. Every number here comes from data you already store per exam paper: score,
+  accuracy, time spent, completed vs timed-out, date, and the per-battery breakdown. <b>Reply with A, B, or C.</b></p>
+  <div class="note">Numbers below are sample data. A first version needs no new backend — it reads the existing exam history; per-battery time-vs-allotted (Sample C) would use the exam timer data you added.</div>
+</div>
+
+<div class="wrap">
+
+  <!-- ================= SAMPLE A ================= -->
+  <div class="slabel"><span class="n">A</span><b>Mirror of the practice block</b><span class="d">a parallel “Exam papers” section under practice — same shape users already know</span></div>
+
+  <div class="grid g-main">
+    <div class="card tint">
+      <div class="eyebrow">📝 Exam papers — average score</div>
+      <div class="big">72%</div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">5 of 6 papers completed · best 84%</div>
+      <!-- accuracy trend -->
+      <svg viewBox="0 0 560 200" width="100%" height="180" preserveAspectRatio="none" aria-label="Accuracy per paper">
+        <g stroke="#eef1f6" stroke-width="1">
+          <line x1="0" y1="40" x2="560" y2="40"/><line x1="0" y1="90" x2="560" y2="90"/><line x1="0" y1="140" x2="560" y2="140"/>
+        </g>
+        <polygon points="20,150 130,120 240,90 350,70 460,96 540,86 540,190 20,190" fill="#f6e4c2" opacity=".5"/>
+        <polyline points="20,150 130,120 240,90 350,70 460,96 540,86" fill="none" stroke="var(--gold)" stroke-width="3"/>
+        <g fill="#fff" stroke="var(--gold)" stroke-width="3">
+          <circle cx="20" cy="150" r="4"/><circle cx="130" cy="120" r="4"/><circle cx="240" cy="90" r="4"/><circle cx="350" cy="70" r="4"/><circle cx="460" cy="96" r="4"/><circle cx="540" cy="86" r="4"/>
+        </g>
+      </svg>
+      <div class="between muted" style="font-size:11.5px"><span>Paper 1</span><span>Paper 3</span><span>Paper 6</span></div>
+    </div>
+    <div class="grid" style="align-content:start">
+      <div class="tile gold"><div class="v">6</div><div class="k">Papers attempted</div><div class="s">5 completed · 1 timed out</div></div>
+      <div class="tile blue"><div class="v">84%</div><div class="k">Best score</div><div class="s">Paper 4 · Sep 2</div></div>
+      <div class="tile green"><div class="v">28m</div><div class="k">Avg time / paper</div><div class="s">3h 12m total on exams</div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="eyebrow" style="margin-bottom:12px">Accuracy by battery (exam papers)</div>
+    <div class="rowbar"><span class="lab" style="color:var(--verbal)">Verbal</span><div class="bar"><i style="width:75%;background:var(--verbal)"></i></div><span class="pct">75%</span></div>
+    <div class="rowbar"><span class="lab" style="color:var(--quant)">Quantitative</span><div class="bar"><i style="width:68%;background:var(--quant)"></i></div><span class="pct">68%</span></div>
+    <div class="rowbar"><span class="lab" style="color:var(--nonverbal)">Non-verbal</span><div class="bar"><i style="width:73%;background:var(--nonverbal)"></i></div><span class="pct">73%</span></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="eyebrow" style="margin-bottom:10px">Recent papers</div>
+    <table>
+      <thead><tr><th>Paper</th><th>Date</th><th>Score</th><th>Accuracy</th><th>Time</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Full Battery Mock 6</td><td>Sep 6</td><td class="score">54/70</td><td>78%</td><td>31m</td><td><span class="pill ok">Completed</span></td></tr>
+        <tr><td>Full Battery Mock 5</td><td>Sep 3</td><td class="score">48/70</td><td>69%</td><td>34m</td><td><span class="pill warn">Timed out</span></td></tr>
+        <tr><td>Full Battery Mock 4</td><td>Sep 2</td><td class="score">59/70</td><td>84%</td><td>26m</td><td><span class="pill ok">Completed</span></td></tr>
+        <tr><td>Full Battery Mock 3</td><td>Sep 1</td><td class="score">50/70</td><td>71%</td><td>29m</td><td><span class="pill ok">Completed</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ================= SAMPLE B ================= -->
+  <div class="slabel"><span class="n">B</span><b>KPI row + rings + combined chart</b><span class="d">compact scorecard; battery accuracy as rings; one chart that toggles Accuracy / Time</span></div>
+
+  <div class="grid g-3">
+    <div class="tile gold"><div class="v">72%</div><div class="k">Average accuracy</div><div class="s">across 5 completed papers</div></div>
+    <div class="tile blue"><div class="v">84%</div><div class="k">Best paper</div><div class="s">▲ 6% vs first attempt</div></div>
+    <div class="tile green"><div class="v">6</div><div class="k">Papers taken</div><div class="s">1 timed out</div></div>
+  </div>
+
+  <div class="grid g-main" style="margin-top:16px">
+    <div class="card">
+      <div class="between" style="margin-bottom:12px">
+        <div class="eyebrow">Performance over time</div>
+        <div class="tabs gold"><button class="on">Accuracy</button><button>Time used</button></div>
+      </div>
+      <svg viewBox="0 0 560 200" width="100%" height="180" preserveAspectRatio="none">
+        <g stroke="#eef1f6" stroke-width="1"><line x1="0" y1="50" x2="560" y2="50"/><line x1="0" y1="100" x2="560" y2="100"/><line x1="0" y1="150" x2="560" y2="150"/></g>
+        <polyline points="20,150 130,120 240,92 350,70 460,98 540,86" fill="none" stroke="var(--gold)" stroke-width="3"/>
+        <g fill="var(--gold)"><circle cx="20" cy="150" r="4"/><circle cx="130" cy="120" r="4"/><circle cx="240" cy="92" r="4"/><circle cx="350" cy="70" r="4"/><circle cx="460" cy="98" r="4"/><circle cx="540" cy="86" r="4"/></g>
+      </svg>
+      <div class="between muted" style="font-size:11.5px"><span>Aug 30</span><span>Sep 2</span><span>Sep 6</span></div>
+    </div>
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:14px">Battery accuracy</div>
+      <div class="grid g-3" style="gap:10px;text-align:center">
+        <div><div class="ring" style="--p:75;background:conic-gradient(var(--verbal) 75%,var(--line) 0)"><span style="color:var(--verbal)">75%</span></div><div class="muted" style="font-size:12px;margin-top:6px">Verbal</div></div>
+        <div><div class="ring" style="--p:68;background:conic-gradient(var(--quant) 68%,var(--line) 0)"><span style="color:var(--quant)">68%</span></div><div class="muted" style="font-size:12px;margin-top:6px">Quant</div></div>
+        <div><div class="ring" style="--p:73;background:conic-gradient(var(--nonverbal) 73%,var(--line) 0)"><span style="color:var(--nonverbal)">73%</span></div><div class="muted" style="font-size:12px;margin-top:6px">Non-verbal</div></div>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:14px;line-height:1.5">Quantitative is your lowest exam battery — worth targeted practice.</div>
+    </div>
+  </div>
+
+  <!-- ================= SAMPLE C ================= -->
+  <div class="slabel"><span class="n">C</span><b>Practice / Exams top toggle</b><span class="d">one switch flips the whole page between Practice and Exams; exams get a “latest paper” hero + time-vs-allotted</span></div>
+
+  <div class="card" style="padding:14px 16px;margin-bottom:16px">
+    <div class="between">
+      <div class="tabs"><button>Practice</button><button class="on" style="color:var(--gold-d)">Exam papers</button></div>
+      <span class="muted" style="font-size:12.5px">Date range: All time ▾</span>
+    </div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="card tint">
+      <div class="eyebrow">🏁 Latest paper — Full Battery Mock 6 · Sep 6</div>
+      <div class="between" style="margin-top:12px">
+        <div class="ring" style="--p:78;background:conic-gradient(var(--gold) 78%,var(--line) 0)"><span>78%</span></div>
+        <div style="flex:1;margin-left:16px">
+          <div class="score" style="font-size:24px">54 / 70 correct</div>
+          <div class="muted" style="font-size:13px">Finished in 31m of 45m · <span class="pill ok">Completed</span></div>
+          <div class="legend" style="margin-top:10px">
+            <span><i style="background:var(--verbal)"></i>Verbal 20/24</span>
+            <span><i style="background:var(--quant)"></i>Quant 16/24</span>
+            <span><i style="background:var(--nonverbal)"></i>Non-verbal 18/22</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grid" style="align-content:start">
+      <div class="tile gold"><div class="v">72%</div><div class="k">Avg across papers</div><div class="s">6 taken · best 84%</div></div>
+      <div class="tile blue"><div class="v">88%</div><div class="k">Time efficiency</div><div class="s">avg 28m used of 45m</div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="eyebrow" style="margin-bottom:12px">Time used vs allotted, by battery (last paper)</div>
+    <div class="rowbar"><span class="lab" style="color:var(--verbal)">Verbal</span><div class="bar"><i style="width:80%;background:var(--verbal)"></i></div><span class="pct">12/15m</span></div>
+    <div class="rowbar"><span class="lab" style="color:var(--quant)">Quantitative</span><div class="bar"><i style="width:100%;background:var(--quant)"></i></div><span class="pct">15/15m</span></div>
+    <div class="rowbar"><span class="lab" style="color:var(--nonverbal)">Non-verbal</span><div class="bar"><i style="width:53%;background:var(--nonverbal)"></i></div><span class="pct">8/15m</span></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">Quant hit the time limit — pacing to watch on test day.</div>
+  </div>
+
+</div>
+</body></html>

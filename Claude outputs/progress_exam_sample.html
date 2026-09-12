@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Progress &amp; Analytics — with Exam</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --blue:#1A5EAB; --blue-d:#0f4a8f; --gold:#E8A020; --gold-d:#a5731a; --orange:#e8971f;
+    --ink:#2a2e43; --mid:#6b7186; --line:#e7ebf3; --card:#fff; --bg:#eef1f8;
+    --verbal:#3e7bee; --quant:#22c3a6; --nonverbal:#8b5cf6;
+    --vt:#eef3ff; --qt:#e9f8f2; --nt:#f4eefc; --gt:#fdf3e0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Nunito,system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+  .band{background:linear-gradient(120deg,#1a5eab,#1751a0);padding:22px 26px;display:flex;align-items:center;gap:16px}
+  .band .bk{width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.16);display:grid;place-items:center;color:#fff;font-size:20px}
+  .band h1{color:#fff;font-family:'Baloo 2';font-weight:800;font-size:22px;margin:0}
+  .band .sub{color:#cfe0f5;font-weight:700;font-size:13px}
+  .band .sp{flex:1}
+  .band .chip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:999px;padding:8px 14px;font-family:'Baloo 2';font-weight:800;font-size:13px}
+  .page{max-width:1180px;margin:0 auto;padding:22px 26px 80px}
+
+  .lbl{font-weight:800;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mid);margin:0 0 8px}
+  .select{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-weight:800;max-width:270px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+
+  .top{display:grid;grid-template-columns:1.55fr 1fr;gap:18px;margin-top:16px}
+  @media(max-width:820px){.top{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px}
+  .soft{background:linear-gradient(180deg,#f3f0fb,#fbf5 f0)}
+  .eyebrow{font-family:'Baloo 2';font-weight:800;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mid);display:flex;align-items:center;gap:7px}
+  .big{font-family:'Baloo 2';font-weight:800;font-size:34px;margin:6px 0 0}
+
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-content:start}
+  .tile{border-radius:16px;padding:16px 18px;border:1px solid var(--line);position:relative;overflow:hidden;background:#fff}
+  .tile::before{content:"";position:absolute;left:0;right:0;top:0;height:4px}
+  .tile .v{font-family:'Baloo 2';font-weight:800;font-size:26px}
+  .tile .k{font-weight:800;font-size:14px;margin-top:2px}
+  .tile .s{color:var(--mid);font-weight:700;font-size:12px}
+  .tile.v0{background:var(--vt)}.tile.v0::before{background:var(--verbal)}
+  .tile.q0{background:var(--qt)}.tile.q0::before{background:var(--quant)}
+  .tile.n0{background:var(--nt)}.tile.n0::before{background:var(--nonverbal)}
+  .tile.e0{background:var(--gt)}.tile.e0::before{background:var(--gold)}
+
+  .panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px;margin-top:18px}
+  .phead{display:flex;align-items:center;gap:8px;font-family:'Baloo 2';font-weight:800;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--mid);margin-bottom:14px}
+  .tabs{display:inline-flex;background:#eef2f8;border-radius:999px;padding:5px;gap:5px;margin-bottom:16px}
+  .tabs button{border:0;background:transparent;font-family:'Baloo 2';font-weight:800;font-size:14px;color:var(--mid);padding:9px 18px;border-radius:999px;cursor:default;display:flex;align-items:center;gap:7px}
+  .tabs button.on{background:#fff;color:var(--blue);box-shadow:0 3px 9px -4px rgba(0,0,0,.3)}
+  .dot{width:9px;height:9px;border-radius:50%}
+
+  .subboxes{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:820px){.subboxes{grid-template-columns:1fr 1fr}}
+  .sub{border-radius:14px;padding:16px;text-align:center;background:var(--vt);position:relative;overflow:hidden}
+  .sub::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--verbal)}
+  .sub.combine{background:var(--qt)}.sub.combine::before{background:var(--quant)}
+  .sub .v{font-family:'Baloo 2';font-weight:800;font-size:22px;color:var(--blue)}
+  .sub.combine .v{color:#1e7a46}
+  .sub .k{font-weight:800;font-size:12px;color:var(--mid);text-transform:uppercase;letter-spacing:.03em;margin-top:4px}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+  th{text-align:left;color:var(--mid);font-weight:800;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:9px 10px;border-bottom:2px solid var(--line)}
+  td{padding:11px 10px;border-bottom:1px solid var(--line);font-weight:700}
+  tr:last-child td{border-bottom:0}
+  .score{font-family:'Baloo 2';font-weight:800}
+  .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 10px;font-weight:800;font-size:12px}
+  .pill.ok{background:#e9f7ef;color:#1e7a46}.pill.warn{background:#fdefe0;color:#a15c00}
+
+  .exam-top{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
+  @media(max-width:820px){.exam-top{grid-template-columns:1fr}}
+  .kpis{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-content:start}
+  @media(max-width:820px){.kpis{grid-template-columns:1fr 1fr 1fr}}
+  .rowbar{display:grid;grid-template-columns:112px 1fr 44px;gap:10px;align-items:center;margin:11px 0}
+  .rowbar .lab{font-weight:800;font-size:13.5px}
+  .bar{height:12px;border-radius:999px;background:var(--line);overflow:hidden}
+  .bar>i{display:block;height:100%;border-radius:999px}
+  .pct{font-family:'Baloo 2';font-weight:800;text-align:right}
+  .callout{background:#fdf3e0;border:1px dashed #e9c887;border-radius:12px;padding:10px 12px;font-weight:700;font-size:12.5px;color:#8a5a08;margin-top:12px}
+  .muted{color:var(--mid);font-weight:700}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+</style></head>
+<body>
+  <div class="band">
+    <div class="bk">‹</div>
+    <div><h1>Progress &amp; Analytics</h1><div class="sub">Your real practice &amp; exam data</div></div>
+    <div class="sp"></div>
+    <div class="chip">🎓 Grade 3 · ⭐ Free</div>
+  </div>
+
+  <div class="page">
+    <p class="lbl">Date range</p>
+    <div class="select between">All time <span>▾</span></div>
+
+    <!-- TOP: practice time + stat tiles (now includes an Exam box) -->
+    <div class="top">
+      <div class="card" style="background:linear-gradient(180deg,#f4f1fb,#fff)">
+        <div class="eyebrow">⏱ Overall practice time</div>
+        <div class="big">4h 38m</div>
+        <svg viewBox="0 0 620 210" width="100%" height="210" preserveAspectRatio="none" style="margin-top:10px">
+          <g stroke="#eceff5" stroke-width="1"><line x1="0" y1="40" x2="620" y2="40"/><line x1="0" y1="90" x2="620" y2="90"/><line x1="0" y1="140" x2="620" y2="140"/></g>
+          <polygon points="30,188 150,168 270,150 390,60 510,150 590,168 590,196 30,196" fill="#fdeccb" opacity=".7"/>
+          <polyline points="30,188 150,168 270,150 390,60 510,150 590,168" fill="none" stroke="var(--orange)" stroke-width="3"/>
+          <g fill="#fff" stroke="var(--orange)" stroke-width="3"><circle cx="30" cy="188" r="4"/><circle cx="150" cy="168" r="4"/><circle cx="270" cy="150" r="4"/><circle cx="390" cy="60" r="4"/><circle cx="510" cy="150" r="4"/><circle cx="590" cy="168" r="4"/></g>
+        </svg>
+        <div class="between muted" style="font-size:11.5px"><span>Aug 30</span><span>Sep 1</span><span>Sep 2</span><span>Sep 3</span><span>Sep 6</span></div>
+      </div>
+
+      <div class="tiles">
+        <div class="tile v0"><div class="v">4/38</div><div class="k">Verbal</div><div class="s">sets done</div></div>
+        <div class="tile q0"><div class="v">2/42</div><div class="k">Quantitative</div><div class="s">sets done</div></div>
+        <div class="tile n0"><div class="v">7/36</div><div class="k">Non-verbal</div><div class="s">sets done</div></div>
+        <!-- NEW: Exam box -->
+        <div class="tile e0"><div class="v">72%</div><div class="k">📝 Exam papers</div><div class="s">6 taken · best 84%</div></div>
+      </div>
+    </div>
+
+    <!-- RENAMED panel: Battery Practice (was Battery Tests) -->
+    <div class="panel">
+      <div class="phead">🧠 Battery Practice</div>
+      <div class="tabs">
+        <button class="on"><span class="dot" style="background:var(--verbal)"></span>Verbal</button>
+        <button><span class="dot" style="background:var(--quant)"></span>Quantitative</button>
+        <button><span class="dot" style="background:var(--nonverbal)"></span>Non-verbal</button>
+      </div>
+      <div class="subboxes">
+        <div class="sub"><div class="v">9%</div><div class="k">Sentence Completion</div></div>
+        <div class="sub"><div class="v">—</div><div class="k">Verbal Classification</div></div>
+        <div class="sub"><div class="v">—</div><div class="k">Verbal Analogy</div></div>
+        <div class="sub combine"><div class="v">0%</div><div class="k">Verbal Battery Combine</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Set</th><th>Description</th><th>Accuracy</th><th>Score</th><th>Avg time/Q</th></tr></thead>
+        <tbody>
+          <tr><td><a style="color:var(--blue);font-weight:800">Set 1</a></td><td><span class="pill" style="background:var(--vt);color:var(--blue)">Sentence completion</span></td><td>40%</td><td class="score">2/5</td><td>5s</td></tr>
+          <tr><td><a style="color:var(--blue);font-weight:800">Set 2</a></td><td><span class="pill" style="background:var(--vt);color:var(--blue)">Sentence completion</span></td><td>20%</td><td class="score">2/10</td><td>27s</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- NEW panel: Exam Progress -->
+    <div class="panel" style="border-color:#f0dcb0;box-shadow:0 0 0 3px #fdf6e8 inset">
+      <div class="phead" style="color:var(--gold-d)">📝 Exam Progress</div>
+
+      <div class="exam-top">
+        <div class="card" style="background:linear-gradient(180deg,#fffaf0,#fff)">
+          <div class="eyebrow" style="color:var(--gold-d)">Average paper score</div>
+          <div class="big" style="color:var(--gold-d)">72%</div>
+          <div class="muted" style="font-size:13px;margin-bottom:6px">5 of 6 papers completed · best 84%</div>
+          <svg viewBox="0 0 560 170" width="100%" height="150" preserveAspectRatio="none" style="margin-top:6px">
+            <g stroke="#f1ece0" stroke-width="1"><line x1="0" y1="40" x2="560" y2="40"/><line x1="0" y1="85" x2="560" y2="85"/><line x1="0" y1="130" x2="560" y2="130"/></g>
+            <polyline points="20,130 130,105 240,80 350,58 460,86 540,74" fill="none" stroke="var(--gold)" stroke-width="3"/>
+            <g fill="var(--gold)"><circle cx="20" cy="130" r="4"/><circle cx="130" cy="105" r="4"/><circle cx="240" cy="80" r="4"/><circle cx="350" cy="58" r="4"/><circle cx="460" cy="86" r="4"/><circle cx="540" cy="74" r="4"/></g>
+          </svg>
+          <div class="between muted" style="font-size:11.5px"><span>Paper 1</span><span>Paper 3</span><span>Paper 6</span></div>
+        </div>
+        <div class="kpis">
+          <div class="tile e0" style="grid-column:span 1"><div class="v">6</div><div class="k">Papers</div><div class="s">1 timed out</div></div>
+          <div class="tile v0"><div class="v">84%</div><div class="k">Best</div><div class="s">Sep 2</div></div>
+          <div class="tile q0"><div class="v">28m</div><div class="k">Avg time</div><div class="s">of 45m</div></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="eyebrow" style="margin-bottom:6px">Accuracy by battery (exams)</div>
+        <div class="rowbar"><span class="lab" style="color:var(--verbal)">Verbal</span><div class="bar"><i style="width:75%;background:var(--verbal)"></i></div><span class="pct">75%</span></div>
+        <div class="rowbar"><span class="lab" style="color:var(--quant)">Quantitative</span><div class="bar"><i style="width:68%;background:var(--quant)"></i></div><span class="pct">68%</span></div>
+        <div class="rowbar"><span class="lab" style="color:var(--nonverbal)">Non-verbal</span><div class="bar"><i style="width:73%;background:var(--nonverbal)"></i></div><span class="pct">73%</span></div>
+        <div class="callout">⚠ Quantitative is the lowest exam battery and hit the time limit last paper — worth targeted practice.</div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="eyebrow" style="margin-bottom:4px">Recent papers</div>
+        <table>
+          <thead><tr><th>Paper</th><th>Date</th><th>Score</th><th>Accuracy</th><th>Time</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Full Battery Mock 6</td><td>Sep 6</td><td class="score">54/70</td><td>78%</td><td>31m</td><td><span class="pill ok">Completed</span></td></tr>
+            <tr><td>Full Battery Mock 5</td><td>Sep 3</td><td class="score">48/70</td><td>69%</td><td>34m</td><td><span class="pill warn">Timed out</span></td></tr>
+            <tr><td>Full Battery Mock 4</td><td>Sep 2</td><td class="score">59/70</td><td>84%</td><td>26m</td><td><span class="pill ok">Completed</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</body></html>

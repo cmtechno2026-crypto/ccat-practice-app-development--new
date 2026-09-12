@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exam Progress — v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --blue:#1A5EAB; --gold:#E8A020; --gold-d:#a5731a;
+    --ink:#2a2e43; --mid:#6b7186; --line:#e7ebf3; --card:#fff; --bg:#eef1f8;
+    --verbal:#3e7bee; --quant:#22c3a6; --nonverbal:#8b5cf6;
+    --vt:#eef3ff; --qt:#e9f8f2; --nt:#f4eefc; --gt:#fdf3e0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Nunito,system-ui,sans-serif;color:var(--ink);background:var(--bg);padding:24px 18px 70px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .note{font-weight:700;font-size:13px;color:var(--mid);margin:0 0 16px}
+  .note b{color:var(--ink)}
+
+  .tile-demo{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+  @media(max-width:760px){.tile-demo{grid-template-columns:1fr 1fr}}
+  .tile{border-radius:16px;padding:16px 18px;border:1px solid var(--line);position:relative;overflow:hidden;background:#fff}
+  .tile::before{content:"";position:absolute;left:0;right:0;top:0;height:4px}
+  .tile .v{font-family:'Baloo 2';font-weight:800;font-size:26px}
+  .tile .k{font-weight:800;font-size:14px;margin-top:2px}
+  .tile .s{color:var(--mid);font-weight:700;font-size:12px}
+  .tile.v0{background:var(--vt)}.tile.v0::before{background:var(--verbal)}
+  .tile.q0{background:var(--qt)}.tile.q0::before{background:var(--quant)}
+  .tile.n0{background:var(--nt)}.tile.n0::before{background:var(--nonverbal)}
+  .tile.e0{background:var(--gt)}.tile.e0::before{background:var(--gold)}
+
+  .panel{background:#fff;border:1px solid #f0dcb0;border-radius:18px;padding:20px;box-shadow:0 0 0 3px #fdf6e8 inset}
+  .phead{display:flex;align-items:center;gap:8px;font-family:'Baloo 2';font-weight:800;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--gold-d);margin-bottom:14px}
+
+  .hrow{display:grid;grid-template-columns:24px 1.6fr .7fr .8fr .7fr .9fr;gap:10px;padding:0 14px 8px;color:var(--mid);font-weight:800;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+  .paper{border:1px solid var(--line);border-radius:14px;margin-bottom:10px;overflow:hidden;background:#fff}
+  .paper > .r{display:grid;grid-template-columns:24px 1.6fr .7fr .8fr .7fr .9fr;gap:10px;align-items:center;padding:14px;cursor:pointer;user-select:none}
+  .paper > .r:hover{background:#fbfcfe}
+  .paper .caret{font-family:'Baloo 2';font-weight:800;color:var(--gold-d);transition:transform .15s}
+  .paper.open .caret{transform:rotate(90deg)}
+  .paper .name{font-weight:800}
+  .paper .score{font-family:'Baloo 2';font-weight:800}
+  .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 10px;font-weight:800;font-size:12px}
+  .pill.ok{background:#e9f7ef;color:#1e7a46}.pill.warn{background:#fdefe0;color:#a15c00}
+
+  .detail{display:none;padding:4px 14px 16px;border-top:1px dashed var(--line);background:#fcfbf7}
+  .paper.open .detail{display:block}
+  .detail .cap{font-weight:800;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--mid);margin:12px 2px 10px}
+  .bcards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media(max-width:640px){.bcards{grid-template-columns:1fr}}
+  .bcard{border-radius:14px;padding:14px;position:relative;overflow:hidden}
+  .bcard::before{content:"";position:absolute;left:0;right:0;top:0;height:4px}
+  .bcard .bn{font-weight:800;font-size:13px}
+  .bcard .bs{font-family:'Baloo 2';font-weight:800;font-size:22px;margin-top:4px}
+  .bcard .ba{font-weight:700;font-size:12px;color:var(--mid)}
+  .bcard .bt{font-weight:800;font-size:12px;color:var(--ink);margin-top:2px;display:flex;align-items:center;gap:5px}
+  .bcard .bar{height:8px;border-radius:999px;background:#fff;overflow:hidden;margin-top:8px}
+  .bcard .bar>i{display:block;height:100%;border-radius:999px}
+  .bV{background:var(--vt)}.bV::before{background:var(--verbal)}
+  .bQ{background:var(--qt)}.bQ::before{background:var(--quant)}
+  .bN{background:var(--nt)}.bN::before{background:var(--nonverbal)}
+  .empty{color:var(--mid);font-weight:700;font-size:13px;padding:18px 14px;text-align:center}
+</style></head>
+<body>
+<div class="wrap">
+  <p class="note"><b>Two changes shown.</b> Exam box now reads done/total like the battery boxes. The Exam Progress panel is just the paper list — click any paper to reveal its three-battery performance. (Sample data.)</p>
+
+  <!-- Top tiles, with the Exam box now done/total -->
+  <div class="tile-demo">
+    <div class="tile v0"><div class="v">4/38</div><div class="k">Verbal</div><div class="s">sets done</div></div>
+    <div class="tile q0"><div class="v">2/42</div><div class="k">Quantitative</div><div class="s">sets done</div></div>
+    <div class="tile n0"><div class="v">7/36</div><div class="k">Non-verbal</div><div class="s">sets done</div></div>
+    <div class="tile e0"><div class="v">3/10</div><div class="k">📝 Exam papers</div><div class="s">papers done</div></div>
+  </div>
+
+  <!-- Exam Progress panel: paper list only, expandable -->
+  <div class="panel">
+    <div class="phead">📝 Exam Progress</div>
+
+    <div class="hrow"><span></span><span>Paper</span><span>Score</span><span>Accuracy</span><span>Time</span><span>Status</span></div>
+
+    <div class="paper open">
+      <div class="r" onclick="this.parentElement.classList.toggle('open')">
+        <span class="caret">›</span>
+        <span><span class="name">Full Battery Mock 6</span><br><span style="color:var(--mid);font-weight:700;font-size:12px">Sep 6</span></span>
+        <span class="score">54/70</span><span>78%</span><span>31m</span><span><span class="pill ok">Completed</span></span>
+      </div>
+      <div class="detail">
+        <div class="cap">Performance by battery</div>
+        <div class="bcards">
+          <div class="bcard bV"><div class="bn" style="color:var(--verbal)">Verbal</div><div class="bs">20/24</div><div class="ba">83% accuracy</div><div class="bt">⏱ 12m used</div><div class="bar"><i style="width:83%;background:var(--verbal)"></i></div></div>
+          <div class="bcard bQ"><div class="bn" style="color:#1e7a46">Quantitative</div><div class="bs">16/24</div><div class="ba">67% accuracy</div><div class="bt">⏱ 11m used</div><div class="bar"><i style="width:67%;background:var(--quant)"></i></div></div>
+          <div class="bcard bN"><div class="bn" style="color:var(--nonverbal)">Non-verbal</div><div class="bs">18/22</div><div class="ba">82% accuracy</div><div class="bt">⏱ 8m used</div><div class="bar"><i style="width:82%;background:var(--nonverbal)"></i></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="paper">
+      <div class="r" onclick="this.parentElement.classList.toggle('open')">
+        <span class="caret">›</span>
+        <span><span class="name">Full Battery Mock 5</span><br><span style="color:var(--mid);font-weight:700;font-size:12px">Sep 3</span></span>
+        <span class="score">48/70</span><span>69%</span><span>34m</span><span><span class="pill warn">Timed out</span></span>
+      </div>
+      <div class="detail">
+        <div class="cap">Performance by battery</div>
+        <div class="bcards">
+          <div class="bcard bV"><div class="bn" style="color:var(--verbal)">Verbal</div><div class="bs">18/24</div><div class="ba">75% accuracy</div><div class="bt">⏱ 13m used</div><div class="bar"><i style="width:75%;background:var(--verbal)"></i></div></div>
+          <div class="bcard bQ"><div class="bn" style="color:#1e7a46">Quantitative</div><div class="bs">13/24</div><div class="ba">54% accuracy</div><div class="bt">⏱ 15m · hit limit</div><div class="bar"><i style="width:54%;background:var(--quant)"></i></div></div>
+          <div class="bcard bN"><div class="bn" style="color:var(--nonverbal)">Non-verbal</div><div class="bs">17/22</div><div class="ba">77% accuracy</div><div class="bt">⏱ 6m used</div><div class="bar"><i style="width:77%;background:var(--nonverbal)"></i></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="paper">
+      <div class="r" onclick="this.parentElement.classList.toggle('open')">
+        <span class="caret">›</span>
+        <span><span class="name">Full Battery Mock 4</span><br><span style="color:var(--mid);font-weight:700;font-size:12px">Sep 2</span></span>
+        <span class="score">59/70</span><span>84%</span><span>26m</span><span><span class="pill ok">Completed</span></span>
+      </div>
+      <div class="detail">
+        <div class="cap">Performance by battery</div>
+        <div class="bcards">
+          <div class="bcard bV"><div class="bn" style="color:var(--verbal)">Verbal</div><div class="bs">21/24</div><div class="ba">88% accuracy</div><div class="bt">⏱ 10m used</div><div class="bar"><i style="width:88%;background:var(--verbal)"></i></div></div>
+          <div class="bcard bQ"><div class="bn" style="color:#1e7a46">Quantitative</div><div class="bs">19/24</div><div class="ba">79% accuracy</div><div class="bt">⏱ 9m used</div><div class="bar"><i style="width:79%;background:var(--quant)"></i></div></div>
+          <div class="bcard bN"><div class="bn" style="color:var(--nonverbal)">Non-verbal</div><div class="bs">19/22</div><div class="ba">86% accuracy</div><div class="bt">⏱ 7m used</div><div class="bar"><i style="width:86%;background:var(--nonverbal)"></i></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- empty-state note (shown when no exams taken) -->
+    <!-- <div class="empty">No exam papers yet — finish a full battery exam to see it here.</div> -->
+  </div>
+</div>
+</body></html>

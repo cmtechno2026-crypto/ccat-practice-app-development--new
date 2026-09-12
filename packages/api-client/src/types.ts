@@ -59,7 +59,12 @@ export interface SessionQuestion {
   image_url?: string | null;
   selected_option_ids: string[]; answer_version: number;
 }
-export interface BatterySummary { category_key: string; correct: number; total: number; attempted: number; }
+export interface BatterySummary {
+  category_key: string; correct: number; total: number; attempted: number;
+  // Present on exam-history batteries: time used in that battery (from the exam timers) and whether it
+  // ended by hitting its per-battery time limit. null time = no timer data (e.g. pre-timer exams).
+  time_spent_seconds?: number | null; timed_out?: boolean;
+}
 export interface SessionWithQuestions extends Session { questions: SessionQuestion[]; }
 
 export interface AnswerWrite { question_version_id: string; selected_option_ids: string[]; answer_version: number; }
@@ -239,6 +244,8 @@ export interface ProgressSummary {
   practiceTimeMinutes: number | null;   // LIVE (session wall-clock); null/0 when no terminal sessions
   practiceTimeSeries: ProgressTimePoint[]; // LIVE per-day; [] when none
   batteries: ProgressBatterySummary[];
+  // Exam papers done/total for the grade (mirrors each battery's sets done/total). done is range-filtered.
+  exam?: { papersDone: number; papersTotal: number };
 }
 
 // One per-set row from GET /v1/progress/sets (finished sets in a battery, optional subcategory filter).

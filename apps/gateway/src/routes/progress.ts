@@ -209,6 +209,38 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
         group by 1 order by 1`, spar);
     const practiceTimeSeries = (seriesRow.rows as any[]).map((x) => ({ date: x.date as string, minutes: Number(x.minutes) }));
 
+    // --- Exam papers done/total (mirrors the battery "sets done/total") ---
+    // total = exam papers available for this grade (a paper = a question_set whose PUBLISHED version has
+    // allowed_exam=true and at least one active question). done = distinct such papers the student has a
+    // FINISHED exam session for (SUBMITTED/AUTO_SUBMITTED) within the selected date range. done ≤ total.
+    let examPapersTotal = 0;
+    let examPapersDone = 0;
+    if (gradeId) {
+      const et = await db.query(
+        `select count(distinct qs.id)::int as total
+           from ccat.question_sets qs
+          where qs.grade_id = $1
+            and exists (select 1 from ccat.question_set_versions sv
+                         where sv.question_set_id = qs.id and sv.state = 'published' and sv.allowed_exam = true
+                           and exists (select 1 from ccat.set_version_questions svq
+                                        where svq.set_version_id = sv.id and svq.active = true))`,
+        [gradeId]);
+      examPapersTotal = Number(et.rows[0]?.total ?? 0);
+
+      const dp: any[] = [sid, gradeId];
+      const dc: string[] = ["s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')", "qs.grade_id = $2", "sv.allowed_exam = true"];
+      if (r.from) { dp.push(r.from); dc.push(`s.terminal_at >= $${dp.length}`); }
+      if (r.to) { dp.push(r.to); dc.push(`s.terminal_at < $${dp.length}`); }
+      const doneRow = await db.query(
+        `select count(distinct qs.id)::int as done
+           from ccat.sessions s
+           join ccat.session_results r on r.session_id = s.id
+           join ccat.question_set_versions sv on sv.id = s.set_version_id
+           join ccat.question_sets qs on qs.id = sv.question_set_id
+          where ${dc.join(' and ')}`, dp);
+      examPapersDone = Number(doneRow.rows[0]?.done ?? 0);
+    }
+
     const batteries = cats.map((c) => {
       const b = byCat.get(c.key);
       // Every subcategory of this battery (incl combine) with its accuracy — for the battery boxes AND
@@ -238,6 +270,7 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
       practiceTimeMinutes,
       practiceTimeSeries,
       batteries,
+      exam: { papersDone: examPapersDone, papersTotal: examPapersTotal },
     };
   });
 

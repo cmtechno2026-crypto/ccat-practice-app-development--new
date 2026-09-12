@@ -483,9 +483,17 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     };
   });
 
-  // GET /v1/exams/history — the student's finished EXAM sessions with per-battery breakdown
-  // (client-agnostic; powers the Achievements "Exam progress" panel). Newest first.
+  // GET /v1/exams/history — the student's FINISHED exam sessions (submitted or auto-submitted), newest
+  // first, with a per-battery breakdown that includes each battery's time used. Optional ?from=&to= (ISO)
+  // filter on terminal_at so it tracks the Progress-page date range. Powers the Exam Progress panel.
   app.get('/v1/exams/history', { preHandler: [app.authenticateStudent] }, async (req) => {
+    const sid = req.student!.studentId;
+    const q = req.query as { from?: string; to?: string };
+    const params: any[] = [sid];
+    const cond: string[] = ["s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')"];
+    if (q.from) { params.push(q.from); cond.push(`s.terminal_at >= $${params.length}`); }
+    if (q.to) { params.push(q.to); cond.push(`s.terminal_at < $${params.length}`); }
+
     const { rows } = await db.query(
       `select s.id as session_id, s.terminal_at, r.terminal_state, r.score_correct, r.score_total, r.detail,
               greatest(0, extract(epoch from (s.terminal_at - s.started_at)))::int as time_spent_seconds,
@@ -494,25 +502,49 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
          join ccat.session_results r on r.session_id = s.id
          join ccat.question_set_versions sv on sv.id = s.set_version_id
          join ccat.question_sets qs on qs.id = sv.question_set_id
-        where s.student_id = $1 and s.mode = 'exam'
+        where ${cond.join(' and ')}
         order by s.terminal_at desc nulls last
-        limit 10`,
-      [req.student!.studentId],
+        limit 25`,
+      params,
     );
+
+    // Per-battery time from the exam timers (ccat.session_batteries). Time used for a battery = from when
+    // the student started it until it ended for them: completed_at if they finished it, else the battery
+    // deadline, never past the exam's own terminal time. timed_out = the battery ended by its deadline
+    // rather than being finished early.
+    const ids = rows.map((r) => r.session_id);
+    const timeByKey = new Map<string, { secs: number; timedOut: boolean }>();
+    if (ids.length > 0) {
+      const bt = await db.query(
+        `select sb.session_id, sb.category_key,
+                greatest(0, extract(epoch from (least(coalesce(sb.completed_at, sb.deadline_at), s.terminal_at) - sb.started_at)))::int as secs,
+                (sb.completed_at is null or sb.completed_at >= sb.deadline_at) as timed_out
+           from ccat.session_batteries sb
+           join ccat.sessions s on s.id = sb.session_id
+          where sb.session_id = any($1::uuid[])`,
+        [ids],
+      );
+      for (const b of bt.rows as any[]) timeByKey.set(`${b.session_id}|${b.category_key}`, { secs: Number(b.secs), timedOut: b.timed_out === true });
+    }
+
     return rows.map((r) => {
       const { byBattery, attempted } = summarizeBattery(r.detail);
       const total = r.score_total ?? 0;
+      const by_battery = byBattery.map((b) => {
+        const t = timeByKey.get(`${r.session_id}|${b.category_key}`);
+        return { ...b, time_spent_seconds: t ? t.secs : null, timed_out: t ? t.timedOut : false };
+      });
       return {
         session_id: r.session_id,
         set_name: r.set_name,
         when: r.terminal_at,
-        end_reason: r.terminal_state, // SUBMITTED | AUTO_SUBMITTED | ABANDONED
+        end_reason: r.terminal_state, // SUBMITTED | AUTO_SUBMITTED
         score_correct: r.score_correct,
         score_total: total,
         accuracy_pct: total > 0 ? Math.round((100 * r.score_correct) / total) : 0,
         attempted_count: attempted,
         time_spent_seconds: r.time_spent_seconds,
-        by_battery: byBattery,
+        by_battery,
       };
     });
   });

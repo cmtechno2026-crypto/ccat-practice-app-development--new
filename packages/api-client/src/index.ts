@@ -268,7 +268,13 @@ export class CcatClient {
     return this.request<BatteryState>('POST', `/v1/sessions/${sessionId}/batteries/${key}/complete`, { auth: true });
   }
     sessionResult(id: string) { return this.request<SessionResult>('GET', `/v1/sessions/${id}/result`, { auth: true }); }
-  examHistory() { return this.request<ExamHistoryItem[]>('GET', '/v1/exams/history', { auth: true }); }
+  examHistory(range: { from?: string; to?: string } = {}) {
+    const parts: string[] = [];
+    if (range.from) parts.push(`from=${encodeURIComponent(range.from)}`);
+    if (range.to) parts.push(`to=${encodeURIComponent(range.to)}`);
+    const qs = parts.length ? `?${parts.join('&')}` : '';
+    return this.request<ExamHistoryItem[]>('GET', `/v1/exams/history${qs}`, { auth: true });
+  }
 
   // ---- practice per-question feedback (practice sessions only) -----------------
   // Single-answer: pass one option id. Multi-correct ("pick all"): pass an array — the server
