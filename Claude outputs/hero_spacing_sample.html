@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hero spacing — current vs fixed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--blue:#1A5EAB;--orange:#e8620e;--sky:#eaf1fb;--white:#fff;--ink:#2a2e43;--mid:#5b6274;--line:#dbe4f2;--gold:#E8A020}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Nunito,system-ui,sans-serif;color:var(--ink);background:#cfd8e6;padding:20px}
+  .lab{max-width:1200px;margin:0 auto 8px;font-family:'Baloo 2';font-weight:800;color:#334;font-size:15px}
+  .lab small{font-family:Nunito;font-weight:700;color:#556;font-size:12.5px}
+  .frame{max-width:1200px;margin:0 auto 26px;border:1px solid #b9c4d6;border-radius:12px;overflow:hidden;background:#fff}
+  nav.n{background:#fff;border-bottom:2px solid var(--blue);display:flex;align-items:center;justify-content:space-between;padding:12px 26px}
+  .brand{font-family:'Baloo 2';font-weight:800;color:var(--blue)}
+  .navcta{display:flex;gap:10px;align-items:center;font-weight:800;font-size:13px;color:var(--blue)}
+  .btn{border-radius:8px;padding:9px 14px;font-family:'Baloo 2';font-weight:800;font-size:13px}
+  .btn.o{border:2px solid var(--blue);color:var(--blue)} .btn.g{background:var(--gold);color:#241800}
+  .hero{background:linear-gradient(180deg,var(--sky),var(--white))}
+  .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;padding:0 26px}
+  .cur .wrap{align-items:center;padding-block:80px}       /* CURRENT: centered + big top pad */
+  .fix .wrap{align-items:start;padding-block:36px}         /* FIXED: top-aligned + tighter */
+  .badge{display:inline-flex;align-items:center;gap:.5em;background:#fff;border:1px solid var(--line);padding:7px 14px;border-radius:999px;font-size:13px;font-weight:800;color:var(--blue)}
+  h1{font-family:'Baloo 2';font-weight:800;font-size:44px;line-height:1.06;margin:16px 0 0;color:var(--blue)}
+  h1 .u{color:var(--orange)}
+  .sub{color:var(--mid);font-size:17px;line-height:1.5;margin:16px 0 0;max-width:34ch}
+  .cta{margin-top:22px} .cta .btn{display:inline-block;background:var(--blue);color:#fff;padding:14px 22px;border-radius:10px;font-size:15px}
+  .shot{aspect-ratio:9/10;border:2px dashed var(--blue);border-radius:16px;background:repeating-linear-gradient(45deg,#eaf1fb,#eaf1fb 14px,#e2ecfa 14px,#e2ecfa 28px);display:grid;place-items:center;color:var(--blue);font-weight:800}
+  @media(max-width:760px){.wrap{grid-template-columns:1fr}}
+</style></head><body>
+  <div class="lab">① CURRENT <small>— row is vertically centered against the tall image, so a big empty band sits above the badge</small></div>
+  <div class="frame cur">
+    <nav class="n"><span class="brand">Concept Mastery</span><span class="navcta">Features&nbsp;&nbsp;How it works&nbsp;&nbsp;Pricing&nbsp;&nbsp;<span class="btn o">Log in</span><span class="btn g">Create account</span></span></nav>
+    <div class="hero"><div class="wrap">
+      <div class="txt">
+        <span class="badge">🎯 Built for Grades 2–5 · CCAT / NGAT</span>
+        <h1>Your child walks into the CCAT already knowing <span class="u">exactly what to expect.</span></h1>
+        <p class="sub">Real exam-style questions, full-length timed mocks, and a readiness score you can actually watch climb.</p>
+        <div class="cta"><span class="btn">Start free — no card needed →</span></div>
+      </div>
+      <div class="shot">hero image</div>
+    </div></div>
+  </div>
+
+  <div class="lab">② FIXED <small>— row top-aligned + hero top padding trimmed; content starts right under the nav</small></div>
+  <div class="frame fix">
+    <nav class="n"><span class="brand">Concept Mastery</span><span class="navcta">Features&nbsp;&nbsp;How it works&nbsp;&nbsp;Pricing&nbsp;&nbsp;<span class="btn o">Log in</span><span class="btn g">Create account</span></span></nav>
+    <div class="hero"><div class="wrap">
+      <div class="txt">
+        <span class="badge">🎯 Built for Grades 2–5 · CCAT / NGAT</span>
+        <h1>Your child walks into the CCAT already knowing <span class="u">exactly what to expect.</span></h1>
+        <p class="sub">Real exam-style questions, full-length timed mocks, and a readiness score you can actually watch climb.</p>
+        <div class="cta"><span class="btn">Start free — no card needed →</span></div>
+      </div>
+      <div class="shot">hero image</div>
+    </div></div>
+  </div>
+</body></html>
