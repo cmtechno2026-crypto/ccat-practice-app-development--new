@@ -54,8 +54,10 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
       tier,
       amount,
       customId: encodeCustomId(guardianEmail, tier, req.student!.studentId),
+      // Success → the requested page (Home for landing Case 1, My Plan for in-app upgrades). Cancel/decline
+      // → always My Plan, which shows the "Checkout canceled" card (the buyer is signed in by this point).
       returnUrl: `${cfg.webAppOrigin}/${returnTo}?checkout=success`,
-      cancelUrl: `${cfg.webAppOrigin}/${returnTo === 'home' ? 'home' : 'plan'}?checkout=cancel`,
+      cancelUrl: `${cfg.webAppOrigin}/plan?checkout=cancel`,
     });
     if (!order.approveUrl) throw new AppError(502, 'PAYPAL_NO_APPROVE_URL', 'PayPal did not return an approval URL');
     return { url: order.approveUrl, id: order.id };
