@@ -76,9 +76,9 @@
   .cml .nav-link{font-weight:700;text-decoration:none;font-size:15px;padding:10px 14px}
 
   /* hero */
-  .cml .hero{background:linear-gradient(180deg,var(--sky),var(--white))}
+  .cml .hero{background:linear-gradient(180deg,var(--sky),var(--white));padding-block:clamp(24px,3.5vw,40px)}
   .cml .hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,60px);align-items:start;
-    padding-block:clamp(24px,3vw,44px)}
+    padding-block:0}
   .cml .badge{aspect-ratio:auto}
   .cml .hero .badge{display:inline-flex;width:auto;aspect-ratio:auto;align-items:center;gap:.5em;background:var(--white);border:1px solid var(--line);
     padding:7px 14px;border-radius:999px;font-size:13.5px;font-weight:700;color:var(--blue)}
