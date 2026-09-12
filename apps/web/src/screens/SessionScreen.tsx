@@ -290,6 +290,14 @@ export function SessionScreen() {
   const isMulti = !isExam && q.multi === true;
   const myMulti = multiPicks[q.question_version_id] ?? [];
   const subLine = [titleCase(sess.subcategory), sess.set_name].filter(Boolean).join(' · ');
+  // This is the LAST accessible battery when every OTHER battery is already done or timed out — ending it
+  // ends the whole exam, so the end-battery button becomes "End Exam" and finalizes instead of returning
+  // to the lobby (there's nothing left to enter).
+  const examLastBattery = isExamMode && examBattery != null
+    && batteries.filter((b) => b.key !== examBattery).every((b) => {
+      const s = batStatus(b.key);
+      return s === 'done' || s === 'expired';
+    });
 
   return (
     <>
@@ -416,7 +424,9 @@ export function SessionScreen() {
           {idx < total - 1
             ? <button className="btn qnav" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))}>Next ›</button>
             : isExamMode
-              ? <button className="btn qnav" onClick={() => { if (examBattery) void completeBattery(examBattery); setExamBattery(null); setIdx(0); }}>End this battery ✅</button>
+              ? (examLastBattery
+                  ? <button className="btn qnav" disabled={submitting} onClick={async () => { if (examBattery) { try { await completeBattery(examBattery); } catch { /* finalize anyway */ } } await submit(); }}>{submitting ? '…' : 'End Exam ✅'}</button>
+                  : <button className="btn qnav" onClick={() => { if (examBattery) void completeBattery(examBattery); setExamBattery(null); setIdx(0); }}>End this battery ✅</button>)
               : <button className="btn qnav" disabled={submitting} onClick={submit}>{submitting ? '…' : 'Submit ✅'}</button>}
         </div>
 
