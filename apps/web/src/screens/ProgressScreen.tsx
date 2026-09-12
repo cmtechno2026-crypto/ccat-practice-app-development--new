@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { client } from '../lib/api';
+import { useApp } from '../lib/store';
 import type { ProgressQuery, ProgressSetRow, ProgressSummary, ProgressSetReview, ExamHistoryItem } from '@ccat/api-client';
 import { AppBar, Loader, ErrorNote, useAsync, Figure } from '../components/ui';
+import { capsOf, PAYMENTS_ENABLED } from '../lib/entitlements';
 
 // PROGRESS PAGE ("P1" + preview panel).
 //   ROW 1  practice-time chart + per-battery "done/total" sets-done boxes (combine excluded, no Total box).
@@ -140,13 +143,27 @@ function fmtWhen(iso: string | null | undefined): string {
 // EXAM PROGRESS — the student's finished exam papers (range-filtered). Each paper row expands to its
 // three-battery breakdown (score, accuracy, and time used from the exam timers). All values come straight
 // from GET /v1/exams/history; nothing is derived beyond per-battery accuracy = round(100·correct/total).
-function ExamProgress({ query }: { query: ProgressQuery }) {
+function ExamProgress({ query, locked, onUpgrade }: { query: ProgressQuery; locked: boolean; onUpgrade: () => void }) {
   const { loading, error, data, reload } = useAsync(
-    async () => client.examHistory({ from: query.from, to: query.to }) as Promise<ExamHistoryItem[]>,
-    [query],
+    async () => (locked ? ([] as ExamHistoryItem[]) : (client.examHistory({ from: query.from, to: query.to }) as Promise<ExamHistoryItem[]>)),
+    [query, locked],
   );
   const [open, setOpen] = useState<string | null>(null);
   const papers = data ?? [];
+
+  if (locked) {
+    return (
+      <div className="rail-card p1-exam" style={{ marginTop: 16, borderColor: '#f0dcb0', boxShadow: 'inset 0 0 0 2px #fdf6e8' }}>
+        <div className="eyebrow" style={{ color: '#a5731a' }}>📝 Exam Progress</div>
+        <div className="stack" style={{ alignItems: 'center', textAlign: 'center', gap: 8, padding: '16px 0' }}>
+          <div style={{ fontSize: 34 }}>🔒</div>
+          <strong>Exam progress is a Plus feature</strong>
+          <div className="muted" style={{ maxWidth: 440 }}>Upgrade to Plus to unlock timed exams and track your exam results and per-battery breakdown here.</div>
+          <button className="btn small" onClick={onUpgrade}>See plans</button>
+        </div>
+      </div>
+    );
+  }
 
   const hcell = { color: 'var(--muted)', fontWeight: 800, fontSize: 11.5, textTransform: 'uppercase' as const, letterSpacing: '.04em' };
   const cols = '20px 1.6fr .7fr .8fr .7fr .9fr';
@@ -258,11 +275,32 @@ export function ProgressScreen() {
   );
   const setsShown = setsAsync.data ?? [];
 
+  // Plan gating (cosmetic; progress data isn't sensitive). Free → whole page locked. Standard (no exam
+  // capability) → practice progress visible, exam box + Exam Progress locked. Plus/Premium → everything.
+  const nav = useNavigate();
+  const { entitlements, entitlementsLoaded, refreshEntitlements } = useApp();
+  useEffect(() => { if (PAYMENTS_ENABLED && !entitlements) refreshEntitlements(); /* eslint-disable-next-line */ }, []);
+  const caps = capsOf(entitlements, entitlementsLoaded);
+  const entReady = !PAYMENTS_ENABLED || entitlementsLoaded;
+  const freeLocked = entReady && caps.practice !== 'all';   // only the free tier has demo-level practice
+  const examLocked = entReady && !caps.exam;                // free + Standard lack the exam capability
+
   return (
     <div className={`prog-shell ${preview ? 'paneled' : ''}`}>
       <div className="prog-col">
         <AppBar title="Progress" sub="Your real practice data" back wide />
         <div className="content content-wide">
+          {!entReady ? <Loader /> : freeLocked ? (
+            <div className="rail-card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+              <div style={{ fontSize: 44 }}>🔒</div>
+              <h2 style={{ marginTop: 8 }}>Progress tracking is a membership feature</h2>
+              <div className="muted" style={{ maxWidth: 520, margin: '8px auto 16px' }}>
+                Upgrade to see your practice analytics, battery breakdowns and exam results. Standard unlocks full practice tracking; Plus adds exam progress.
+              </div>
+              <button className="btn" onClick={() => nav('/plan')}>See plans</button>
+            </div>
+          ) : (
+          <>
           <div className="prog-filters" role="group" aria-label="Filters">
             <label className="pf-field">
               <span className="pf-lbl">Date range</span>
@@ -297,9 +335,19 @@ export function ProgressScreen() {
                     </div>
                   ))}
                   <div className="sd-box sd-exam" style={{ background: '#fdf3e0', borderTop: '3px solid #E8A020' }}>
-                    <span className="sd-n" style={{ color: '#a5731a' }}>{s.exam?.papersDone ?? 0}/{s.exam?.papersTotal ?? 0}</span>
-                    <span className="sd-l">📝 Exam papers</span>
-                    <span className="sd-sub">papers done</span>
+                    {examLocked ? (
+                      <>
+                        <span className="sd-n" style={{ color: '#a5731a' }}>🔒</span>
+                        <span className="sd-l">📝 Exam papers</span>
+                        <span className="sd-sub">Plus unlocks</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="sd-n" style={{ color: '#a5731a' }}>{s.exam?.papersDone ?? 0}/{s.exam?.papersTotal ?? 0}</span>
+                        <span className="sd-l">📝 Exam papers</span>
+                        <span className="sd-sub">papers done</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -375,10 +423,12 @@ export function ProgressScreen() {
                   )}
                 </div>
               </div>
-              <ExamProgress query={query} />
+              <ExamProgress query={query} locked={examLocked} onUpgrade={() => nav('/plan')} />
               </>
             );
           })()}
+          </>
+          )}
         </div>
       </div>
 
