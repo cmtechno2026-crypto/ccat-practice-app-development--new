@@ -29,13 +29,6 @@ const BATTERY_VIS: Record<string, { fallbackName: string; icon: string; color: s
   non_verbal: { fallbackName: 'Non-verbal reasoning', icon: '🧩', color: '#8b5cf6', tint: '#f3ecfb' },
 };
 
-// Option A difficulty palette — Easy green 🌱 · Medium amber 🌳 · Hard coral 🌲.
-const DIFF_META: Record<string, { icon: string; color: string; tint: string }> = {
-  easy: { icon: '🌱', color: '#22a06b', tint: '#e8f7f1' },
-  medium: { icon: '🌳', color: '#d9902a', tint: '#fff3db' },
-  hard: { icon: '🌲', color: '#e4574f', tint: '#fde9ef' },
-};
-
 type Prefs = { difficulty: string; timerMin: number | null; customMins: number | null };
 function loadPrefs(): Prefs {
   try { const p = JSON.parse(localStorage.getItem('cmPracticePrefs') || '{}'); return { difficulty: p.difficulty ?? 'all', timerMin: p.timerMin ?? null, customMins: p.customMins ?? null }; }
@@ -157,9 +150,6 @@ export function PracticeScreen() {
       <>
         <AppBar title="CCAT Exam" sub="Timed mock exams" back />
         <div className="content stack">
-          <div className="card" style={{ background: 'var(--tint-blue)' }}>
-            <div className="muted">⏱ The timer starts the moment you open a set. Work through the three batteries (Verbal · Non-verbal · Quantitative) before time runs out.</div>
-          </div>
           {examLocked && (
             <div className="card" style={{ background: 'var(--tint, #f1eefb)' }}>
               <div className="row" style={{ alignItems: 'center', gap: 10 }}>
@@ -215,7 +205,6 @@ export function PracticeScreen() {
   // ---- START SCREEN (a set is selected) ----
   const selectedSet = setId ? practice.find((c) => c.set_version_id === setId) : null;
   if (setId && selectedSet) {
-    const dm = DIFF_META[(selectedSet.difficulty ?? '').toLowerCase()];
     const bm = batteryMeta(selectedSet.category_key);
     const st = selectedSet.progress?.status ?? 'not_started';
     const timerLabel = timerMin == null ? 'Untimed' : `${timerMin} min`;
@@ -236,7 +225,6 @@ export function PracticeScreen() {
             </div>
             <div className="start-facts">
               <div className="fact"><div className="n">{selectedSet.question_count}</div><div className="l">Questions</div></div>
-              <div className="fact"><div className="n">{dm ? dm.icon : ''} {selectedSet.difficulty ?? '—'}</div><div className="l">Difficulty</div></div>
               <div className="fact"><div className="n">✏️ Practice</div><div className="l">Mode</div></div>
             </div>
             <div className="muted" style={{ marginTop: 4 }}>Practice mode gives instant feedback: a hint after a wrong first try, two attempts, then the answer and why. Bookmark any question to revisit it later.</div>
@@ -302,7 +290,6 @@ export function PracticeScreen() {
           {sets.length === 0 && <div className="empty">No sets in {category} yet.<br />Check back after your teacher publishes more.</div>}
           {sets.map((s) => {
             const st = s.progress?.status ?? 'not_started';
-            const dm = DIFF_META[(s.difficulty ?? '').toLowerCase()];
             const pct = st === 'in_progress' && s.question_count ? Math.round((100 * (s.progress!.answered_count)) / s.question_count) : 0;
             const cta = st === 'completed' ? 'Redo' : st === 'in_progress' ? 'Resume' : 'Start';
             // A retired set is a read-only history card — greyed, no navigation, no start/redo.
@@ -312,7 +299,7 @@ export function PracticeScreen() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <strong>{s.name}</strong>
                     <div className="muted">
-                      {dm ? `${dm.icon} ` : ''}{s.difficulty ?? '—'} · {s.question_count} questions
+                      {s.question_count} questions
                       {s.progress?.score_total != null && <> · ✅ {s.progress.score_correct}/{s.progress.score_total}</>}
                     </div>
                   </div>
@@ -329,7 +316,7 @@ export function PracticeScreen() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <strong>{s.name}</strong>
                     <div className="muted">
-                      {dm ? `${dm.icon} ` : ''}{s.difficulty ?? '—'} · {s.question_count} questions
+                      {s.question_count} questions
                     </div>
                   </div>
                   <LockBadge />
@@ -343,7 +330,7 @@ export function PracticeScreen() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong>{s.name}</strong>
                   <div className="muted">
-                    {dm ? `${dm.icon} ` : ''}{s.difficulty ?? '—'} · {s.question_count} questions
+                    {s.question_count} questions
                     {st === 'completed' && s.progress?.score_total != null && <> · ✅ {s.progress.score_correct}/{s.progress.score_total}</>}
                     {st === 'in_progress' && <> · ⏳ {s.progress!.answered_count}/{s.question_count}</>}
                   </div>

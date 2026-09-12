@@ -20,7 +20,7 @@ const NAV: NavItem[] = [
   { label: 'Progress & Analytics', icon: '📊', to: '/progress', match: (l) => l.pathname === '/progress' },
   // Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
   // { label: 'Customize', icon: '🎨', to: '/customize', match: (l) => l.pathname === '/customize' },
-  { label: 'Rewards', icon: '🏅', to: '/rewards', match: (l) => l.pathname === '/rewards' },
+  { label: 'Achievements', icon: '🏅', to: '/achievements', match: (l) => l.pathname === '/achievements' },
   { label: 'Bookmark', icon: '🔖', to: '/bookmarks', match: (l) => l.pathname === '/bookmarks' },
   // Payments Phase 1 — My Plan (membership + upgrades). Shown only when payments is enabled; flag OFF
   // keeps the sidebar exactly as today.

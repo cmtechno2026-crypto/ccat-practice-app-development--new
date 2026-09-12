@@ -287,8 +287,6 @@ export function SessionScreen() {
   // Exam shows the ACTIVE battery's own countdown; practice shows the session timer.
   const shownRemaining = isExamMode && examBattery ? batRemaining(examBattery) : remaining;
   const timerColor = shownRemaining != null && shownRemaining < 60 ? 'var(--coral)' : (shownRemaining != null && shownRemaining < 180 ? 'var(--amber)' : 'var(--green)');
-  // Option A fixed difficulty palette — Easy green · Medium amber · Hard coral.
-  const diffColor = { easy: '#22a06b', medium: '#d9902a', hard: '#e4574f' }[(sess.difficulty ?? '').toLowerCase()] ?? 'var(--primary)';
   const isMulti = !isExam && q.multi === true;
   const myMulti = multiPicks[q.question_version_id] ?? [];
   const subLine = [titleCase(sess.subcategory), sess.set_name].filter(Boolean).join(' · ');
@@ -300,7 +298,6 @@ export function SessionScreen() {
         back
         right={(
           <span className="row" style={{ gap: 6 }}>
-            {sess.difficulty && <span className="pill" style={{ background: 'transparent', color: diffColor, border: `1px solid ${diffColor}` }}>{sess.difficulty}</span>}
             {shownRemaining != null && <span className="pill" style={{ color: timerColor }}>⏳ {mmss(shownRemaining)}</span>}
           </span>
         )} />

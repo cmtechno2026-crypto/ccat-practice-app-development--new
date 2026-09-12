@@ -1,11 +1,8 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import type { Achievement, ExamHistoryItem, CoinsPanel as CoinsPanelData } from '@ccat/api-client';
+import type { Achievement, CoinsPanel as CoinsPanelData } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
 
-const reasonLabel: Record<string, string> = { SUBMITTED: 'Completed', AUTO_SUBMITTED: "Time's up", ABANDONED: 'Ended early' };
-const reasonIcon: Record<string, string> = { SUBMITTED: '🏁', AUTO_SUBMITTED: '⏰', ABANDONED: '📝' };
 const relTime = (iso: string | null) => {
   if (!iso) return '';
   try {
@@ -14,43 +11,6 @@ const relTime = (iso: string | null) => {
     if (s < 86400) return `${Math.floor(s / 3600)}h ago`; return `${Math.floor(s / 86400)}d ago`;
   } catch { return ''; }
 };
-
-function ExamProgress({ history }: { history: ExamHistoryItem[] }) {
-  return (
-    <Card>
-      <div className="eyebrow">📊 Exam progress</div>
-      {history.length === 0 ? (
-        <div className="stack" style={{ alignItems: 'center', textAlign: 'center', gap: 8, padding: '12px 0' }}>
-          <div style={{ fontSize: 36 }}>📝</div>
-          <strong>No exams yet</strong>
-          <div className="muted">Take a timed CCAT exam and your results will show up here.</div>
-          <Link to="/practice?mode=exam" className="btn small">Start an exam</Link>
-        </div>
-      ) : (
-        <div className="stack" style={{ gap: 10, marginTop: 8 }}>
-          {history.map((e) => (
-            <div key={e.session_id} className="exam-row">
-              <div className="between">
-                <div><strong>{reasonIcon[e.end_reason] ?? '📝'} {e.set_name ?? 'CCAT Exam'}</strong>
-                  <div className="muted">{relTime(e.when)} · {reasonLabel[e.end_reason] ?? 'Finished'}</div></div>
-                <div style={{ textAlign: 'right' }}><strong>{e.score_correct}/{e.score_total}</strong><div className="muted">{e.accuracy_pct}% acc</div></div>
-              </div>
-              {!!e.by_battery.length && (
-                <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                  {e.by_battery.map((b) => (
-                    <span key={b.category_key} className="pill" style={{ background: 'var(--subtle)', color: 'var(--ink-soft)', textTransform: 'capitalize' }}>
-                      {b.category_key.replace('_', '-')} {b.correct}/{b.total}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
 
 function CoinsPanel({ coins }: { coins: CoinsPanelData }) {
   const { coin_balance, current_streak, ladder, next, history } = coins;
@@ -151,10 +111,10 @@ function AchievementCard({ a, open, onToggle }: { a: Achievement; open: boolean;
 
 export function RewardsScreen() {
   const { loading, error, data, reload } = useAsync(async () => {
-    const [summary, achievements, exams, coins] = await Promise.all([
-      client.rewardsSummary(), client.achievements(), client.examHistory().catch(() => []), client.coins().catch(() => null),
+    const [summary, achievements, coins] = await Promise.all([
+      client.rewardsSummary(), client.achievements(), client.coins().catch(() => null),
     ]);
-    return { summary, achievements, exams, coins };
+    return { summary, achievements, coins };
   });
   const [open, setOpen] = useState<string | null>(null);
   const toggle = (k: string) => setOpen((o) => (o === k ? null : k));
@@ -180,8 +140,6 @@ export function RewardsScreen() {
             </div>
 
             {data.coins && <CoinsPanel coins={data.coins} />}
-
-            <ExamProgress history={data.exams as ExamHistoryItem[]} />
 
             <div className="eyebrow">✅ Unlocked</div>
             {unlocked.length === 0 && <div className="empty">No badges yet — finish a set to earn your first!</div>}

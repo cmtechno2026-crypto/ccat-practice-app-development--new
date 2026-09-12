@@ -4,6 +4,30 @@ import type { Config } from '../config.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { Errors } from '../errors.js';
 import { resolveEntitlement, computeDemoSetIds, isCombineSubcategory, isSetLockedForPractice, type Capabilities } from '../lib/entitlements.js';
+import { finalizeSession } from '../lib/finalize.js';
+
+// End any of the student's IN-PROGRESS exam sessions whose EVERY battery has run out (completed or past
+// its per-battery deadline). Exams are untimed at the session level, so nothing else closes them; without
+// this a fully-timed-out paper would keep showing "Resume". Finalizing (idempotent, AUTO_SUBMITTED) records
+// the result and flips the catalog status to completed → the list then shows "Retake". A paper with a
+// battery the student never started is NOT ended (they can still resume to attempt it).
+async function finalizeTimedOutExams(db: DB, studentId: string): Promise<void> {
+  const { rows } = await db.query(
+    `select s.id
+       from ccat.sessions s
+       join ccat.question_set_versions sv on sv.id = s.set_version_id
+      where s.student_id = $1 and s.mode = 'exam' and s.state = 'IN_PROGRESS'
+        and sv.battery_durations is not null
+        and (select count(*) from jsonb_object_keys(sv.battery_durations)) =
+            (select count(*) from ccat.session_batteries sb
+              where sb.session_id = s.id and (sb.completed_at is not null or sb.deadline_at <= now()))`,
+    [studentId],
+  );
+  for (const r of rows as any[]) {
+    try { await finalizeSession(db, r.id, studentId, { finalizedBy: 'deadline', submissionId: `auto:${r.id}` }); }
+    catch { /* idempotent + best-effort: never block the catalog on a finalize race */ }
+  }
+}
 
 export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // GET /v1/grades — data-driven catalog (§29). Public-ish (no student data).
@@ -22,6 +46,8 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
   // count; none → not_started.
   app.get('/v1/catalog', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
+    // Close out any fully-timed-out exam papers first so their catalog status reflects "done" (→ Retake).
+    await finalizeTimedOutExams(db, sid);
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name, cat.key as category_key, cat.name as category_name, sub.name as subcategory,
               sub.key as subcategory_key,

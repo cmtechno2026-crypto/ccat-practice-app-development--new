@@ -46,7 +46,8 @@ const RoutesTree = ({ profile }: { profile: unknown }) => (
     <Route path="/practice" element={<Protected><PracticeScreen /></Protected>} />
     <Route path="/session/:id" element={<Protected><SessionScreen /></Protected>} />
     <Route path="/result/:id" element={<Protected><ResultScreen /></Protected>} />
-    <Route path="/rewards" element={<Protected><RewardsScreen /></Protected>} />
+    <Route path="/achievements" element={<Protected><RewardsScreen /></Protected>} />
+    <Route path="/rewards" element={<Navigate to="/achievements" replace />} />
     <Route path="/progress" element={<Protected><ProgressScreen /></Protected>} />
     <Route path="/bookmarks" element={<Protected><BookmarksScreen /></Protected>} />
     {/* Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
