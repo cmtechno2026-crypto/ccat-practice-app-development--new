@@ -58,7 +58,7 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
     closeT.current = window.setTimeout(onCollapse, CLOSE_DELAY_MS);
   }, [onCollapse]);
 
-  async function logout() { await signOut(); nav('/login', { replace: true }); }
+  async function logout() { await signOut(); nav('/', { replace: true }); }
 
   return (
     <aside

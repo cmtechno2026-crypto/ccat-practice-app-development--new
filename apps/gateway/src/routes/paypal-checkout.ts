@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors, AppError } from '../errors.js';
-import { resolveEntitlement, checkoutRejectReason, type Tier } from '../lib/entitlements.js';
+import { resolveEntitlement, checkoutRejectReason, loadDefaultPlan, computeEffective, clampTier, type Tier } from '../lib/entitlements.js';
 import { createOrder, captureOrder, amountForTier, paypalConfigured, encodeCustomId, decodeCustomId } from '../lib/paypal.js';
 import { grantPaidEntitlementPaypal } from '../lib/paypal-grant.js';
 import { verifyEmailToken } from './email-verify.js';
@@ -111,8 +111,31 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
       [email],
     );
     const usernames = rows.map((r) => r.username as string);
+
+    // Current effective plan for this guardian email (same decision the authed /order endpoint makes:
+    // the guardian's own active grant, floored by any site promo). The modal uses it to show "Log in"
+    // instead of "Log in & pay" when the account already has this tier or higher (no upgrade to sell).
+    let currentTier: Tier = 'free';
+    if (usernames.length > 0) {
+      const dp = await loadDefaultPlan(db);
+      const ent = await db.query(
+        `select tier, status, current_period_end from ccat.entitlements where lower(guardian_email) = $1 limit 1`,
+        [email],
+      );
+      let rowActive = false;
+      let rowTier: Tier = 'free';
+      if (ent.rows.length) {
+        const r = ent.rows[0]!;
+        const notExpired = r.current_period_end == null || new Date(r.current_period_end) > new Date();
+        rowActive = r.status === 'active' && notExpired;
+        if (rowActive && ['free', 't50', 't250', 't500'].includes(r.tier)) rowTier = r.tier as Tier;
+      }
+      const eff = computeEffective({ rowActive, rowTier, grantReason: null, promo: dp });
+      currentTier = clampTier(eff.rawTier);
+    }
+
     req.log.info({ email, n: usernames.length }, 'checkout.account_lookup');
-    return { exists: usernames.length > 0, usernames };
+    return { exists: usernames.length > 0, usernames, currentTier };
   });
 
   // Case 2 — create a PayPal order for an OTP-VERIFIED email that has NO live account. The email token

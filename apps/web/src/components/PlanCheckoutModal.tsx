@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '@ccat/api-client';
 import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
-import { TIER_CATALOG } from '../lib/entitlements';
+import { TIER_CATALOG, tierIndex } from '../lib/entitlements';
 
 // Landing-page checkout modal. Opened by a "Get <plan>" button on the public landing (WelcomeScreen).
 // Fewest-clicks flow that guarantees the plan activates in both cases:
@@ -17,7 +17,7 @@ import { TIER_CATALOG } from '../lib/entitlements';
 // The gateway owns the amount, eligibility and return URLs; the client sends only tier / email / OTP token.
 
 type Sellable = 't50' | 't250' | 't500';
-type Step = 'email' | 'login' | 'otp' | 'redirecting';
+type Step = 'email' | 'login' | 'otp';
 
 const CK_EMAIL = 'cmCheckoutEmail';
 const CK_TOKEN = 'cmCheckoutEmailToken';
@@ -34,8 +34,12 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
   const [email, setEmail] = useState('');
   const [usernames, setUsernames] = useState<string[]>([]);
   const [username, setUsername] = useState('');
+  const [currentTier, setCurrentTier] = useState<'free' | 't50' | 't250' | 't500'>('free');
+  // The account already has this tier or higher → nothing to sell; the button becomes "Log in".
+  const alreadyHas = tierIndex(currentTier) >= tierIndex(tier);
   const [pin, setPin] = useState('');
   const [otp, setOtp] = useState('');
+  const [otpErr, setOtpErr] = useState<string | null>(null); // inline error under the code field
   const [resendIn, setResendIn] = useState(0);
 
   const emailValid = /^\S+@\S+\.\S+$/.test(email.trim());
@@ -71,6 +75,7 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
       if (r.exists && r.usernames.length > 0) {
         setUsernames(r.usernames);
         setUsername(r.usernames[0] ?? '');
+        setCurrentTier(r.currentTier ?? 'free');
         setStep('login');
       } else {
         await client.registrationEmailRequest(normEmail);
@@ -82,7 +87,7 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
       if (e instanceof ApiError && e.code === 'EMAIL_IN_USE') {
         try {
           const r = await client.accountByEmail(normEmail);
-          setUsernames(r.usernames); setUsername(r.usernames[0] ?? ''); setStep('login');
+          setUsernames(r.usernames); setUsername(r.usernames[0] ?? ''); setCurrentTier(r.currentTier ?? 'free'); setStep('login');
         } catch { setErr('This email already has an account — please log in.'); }
       } else {
         setErr(msg(e, "Couldn't continue. Please try again."));
@@ -90,19 +95,23 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
     } finally { setBusy(false); }
   }
 
-  // Case 1 — log in, then create the authed order and redirect to PayPal.
-  async function loginAndPay() {
+  // Case 1 — log in. If the account already has this plan (or higher) there's nothing to buy: set the
+  // profile so the landing routes into the app (/home). Otherwise go STRAIGHT to PayPal — we deliberately
+  // do NOT set the profile here, because that would redirect the landing to /home before the PayPal
+  // redirect fires (the "visits home in between" flash the user saw).
+  async function loginSubmit() {
     if (!username || pin.length !== 4 || busy) return;
     setBusy(true); setErr(null);
     try {
       await client.login(username, pin, getDeviceHash());
-      const me = await client.profile();
-      setProfile(me);
-      setStep('redirecting');
+      if (alreadyHas) {
+        const me = await client.profile();
+        setProfile(me);
+        return; // landing sees a profile and navigates to /home; keep busy while it unmounts
+      }
       const order = await client.paypalCreateOrder(tier);
-      window.location.href = order.url;
+      window.location.href = order.url; // leaves the page; keep busy so the button stays disabled
     } catch (e) {
-      setStep('login');
       setErr(msg(e, 'Could not start checkout. Please try again.'));
       setBusy(false);
     }
@@ -111,22 +120,29 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
   // Case 2 — verify the code, then create the public order for the verified email and redirect to PayPal.
   async function verifyAndPay() {
     if (otp.length !== 6 || busy) return;
-    setBusy(true); setErr(null);
+    setBusy(true); setErr(null); setOtpErr(null);
+    // Step A: confirm the OTP. A wrong/expired code shows inline under the code field, not the top banner.
+    let conf: { email: string; token: string };
     try {
-      const conf = await client.registrationEmailConfirm(normEmail, otp);
-      // Carry the verified email + token across the PayPal round-trip so /register prefills a VERIFIED email
-      // (one-time; the register page clears these after it consumes them).
+      conf = await client.registrationEmailConfirm(normEmail, otp);
+    } catch (e) {
+      setOtpErr(e instanceof ApiError && e.code === 'RATE_LIMITED'
+        ? 'Too many attempts — wait a few minutes.'
+        : 'Invalid OTP');
+      setBusy(false);
+      return;
+    }
+    // Step B: create the order and redirect. (Order/network errors surface in the top banner.)
+    try {
       try {
         sessionStorage.setItem(CK_EMAIL, conf.email);
         sessionStorage.setItem(CK_TOKEN, conf.token);
         sessionStorage.setItem(CK_TIER, tier);
       } catch { /* private mode — register can still capture via the URL order id */ }
-      setStep('redirecting');
       const order = await client.paypalCreateOrderPublic(conf.email, tier, conf.token);
-      window.location.href = order.url;
+      window.location.href = order.url; // leaves the page; keep busy so the button stays disabled
     } catch (e) {
-      setStep('otp');
-      setErr(msg(e, 'That code is wrong or expired. Resend and try again.'));
+      setErr(msg(e, 'Could not start checkout. Please try again.'));
       setBusy(false);
     }
   }
@@ -134,7 +150,7 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
   async function resend() {
     if (resendIn > 0 || busy) return;
     setBusy(true); setErr(null);
-    try { await client.registrationEmailRequest(normEmail); setResendIn(45); setOtp(''); }
+    try { await client.registrationEmailRequest(normEmail); setResendIn(45); setOtp(''); setOtpErr(null); }
     catch (e) { setErr(msg(e, "Couldn't resend the code.")); }
     finally { setBusy(false); }
   }
@@ -186,8 +202,8 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
 
         {step === 'email' && (
           <>
-            <h3 style={S.h3}>Enter your email to start</h3>
-            <p style={S.sub}>We’ll check if you already have an account.</p>
+            <h3 style={S.h3}>Start your child’s plan</h3>
+            <p style={S.sub}>Enter your email to log in or create an account.</p>
             <label style={S.label}>Parent email</label>
             <input style={S.input} type="email" inputMode="email" autoFocus value={email}
               placeholder="parent@email.com"
@@ -204,7 +220,9 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
         {step === 'login' && (
           <>
             <h3 style={S.h3}>Welcome back 👋</h3>
-            <p style={S.sub}>Log in to buy the {info.name} plan for your account.</p>
+            <p style={S.sub}>{alreadyHas
+              ? 'You already have this plan — just log in to continue.'
+              : `Log in to buy the ${info.name} plan for your account.`}</p>
             <label style={S.label}>Username</label>
             {usernames.length > 1 ? (
               <select style={S.input} value={username} onChange={(e) => setUsername(e.target.value)}>
@@ -218,11 +236,11 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
             <input style={{ ...S.input, ...S.code }} inputMode="numeric" autoComplete="one-time-code"
               maxLength={4} autoFocus value={pin} placeholder="••••"
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              onKeyDown={(e) => { if (e.key === 'Enter') loginAndPay(); }} />
+              onKeyDown={(e) => { if (e.key === 'Enter') loginSubmit(); }} />
             <div style={{ height: 14 }} />
-            <button style={{ ...S.payBtn, opacity: username && pin.length === 4 && !busy ? 1 : 0.6 }}
-              disabled={!username || pin.length !== 4 || busy} onClick={loginAndPay}>
-              {busy ? 'Please wait…' : `Log in & pay ${info.priceLabel}`}
+            <button style={{ ...(alreadyHas ? S.blueBtn : S.payBtn), opacity: username && pin.length === 4 && !busy ? 1 : 0.6 }}
+              disabled={!username || pin.length !== 4 || busy} onClick={loginSubmit}>
+              {busy ? 'Please wait…' : alreadyHas ? 'Log in' : `Log in & pay ${info.priceLabel}`}
             </button>
             <div style={{ textAlign: 'center', marginTop: 6, fontSize: 12.5, color: '#8a90a6', fontWeight: 700 }}>
               Not you? <button style={{ ...S.link, display: 'inline', padding: 0, fontSize: 12.5, color: '#1A5EAB' }}
@@ -236,10 +254,13 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
             <h3 style={S.h3}>Verify your email</h3>
             <p style={S.sub}>Enter the 6-digit code we sent to <strong>{normEmail}</strong>.</p>
             <label style={S.label}>Verification code</label>
-            <input style={{ ...S.input, ...S.code }} inputMode="numeric" autoComplete="one-time-code"
+            <input style={{ ...S.input, ...S.code, ...(otpErr ? { borderColor: '#c0392b' } : {}) }}
+              inputMode="numeric" autoComplete="one-time-code"
               maxLength={6} autoFocus value={otp} placeholder="••••••"
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              aria-invalid={otpErr ? true : undefined}
+              onChange={(e) => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); if (otpErr) setOtpErr(null); }}
               onKeyDown={(e) => { if (e.key === 'Enter') verifyAndPay(); }} />
+            {otpErr && <div style={{ color: '#c0392b', fontSize: 12.5, fontWeight: 800, marginTop: 6 }}>{otpErr}</div>}
             <div style={{ height: 14 }} />
             <button style={{ ...S.payBtn, opacity: otp.length === 6 && !busy ? 1 : 0.6 }}
               disabled={otp.length !== 6 || busy} onClick={verifyAndPay}>
@@ -254,12 +275,6 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
           </>
         )}
 
-        {step === 'redirecting' && (
-          <>
-            <h3 style={S.h3}>Taking you to PayPal…</h3>
-            <p style={S.sub}>Complete your payment securely on PayPal. You’ll come right back.</p>
-          </>
-        )}
       </div>
     </div>
   );

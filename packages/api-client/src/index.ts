@@ -155,7 +155,7 @@ export class CcatClient {
   // Landing checkout, Case 1 — reveal the userID(s) for a guardian email so the login form can prefill.
   // No auth (open lookup; the gateway rate-limits it). exists:false when no active account matches.
   accountByEmail(email: string) {
-    return this.request<{ exists: boolean; usernames: string[] }>('GET', `/v1/checkout/account-by-email?email=${encodeURIComponent(email)}`);
+    return this.request<{ exists: boolean; usernames: string[]; currentTier: 'free' | 't50' | 't250' | 't500' }>('GET', `/v1/checkout/account-by-email?email=${encodeURIComponent(email)}`);
   }
   // Landing checkout, Case 2 — create an order for an OTP-verified email that has NO account yet. Pass the
   // token from registrationEmailConfirm. Returns the PayPal approval URL to redirect to.
