@@ -249,7 +249,7 @@ const BODY = `
         <h2 style="margin-top:10px">Book a free 45-minute demo class for your child.</h2>
         <p class="lede" style="margin-top:14px">See a Concept Mastery instructor work with your child on real CCAT-style questions — no cost, no obligation. It's the fastest way to know if this is right for them.</p>
         <div class="hero-cta">
-          <a class="btn btn-blue btn-lg" href="https://conceptmastery.com/">Book a free 45-min demo class →</a>
+          <a class="btn btn-blue btn-lg" href="https://conceptmastery.com/free-ccat-class-registeration/">Book a free 45-min demo class →</a>
         </div>
       </div>
     </div>
@@ -279,7 +279,7 @@ const BODY = `
     <p>Create a free account now. Practise today. Upgrade only when you see the readiness score climb.</p>
     <div class="hero-cta">
       <a class="btn btn-gold btn-lg" href="/register">Create your free account →</a>
-      <a class="btn btn-lg" style="background:#fff;color:var(--blue)" href="https://conceptmastery.com/">Book a free 45-min demo class</a>
+      <a class="btn btn-lg" style="background:#fff;color:var(--blue)" href="https://conceptmastery.com/free-ccat-class-registeration/">Book a free 45-min demo class</a>
     </div>
     <p class="hero-note">Concept Mastery has coached 500+ families across Canada, the US &amp; Australia. <a class="mail" href="mailto:info@conceptmastery.com">info@conceptmastery.com</a></p>
   </div>
