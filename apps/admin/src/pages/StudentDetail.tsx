@@ -54,12 +54,12 @@ export function StudentDetail() {
   const d = data!;
   // Membership panel — reads whatever the detail payload carries (membership/entitlement); falls back
   // to the free plan when the payments feature isn't wired on this environment yet.
-  const TIER_LABEL: Record<string, string> = { free: 'Free plan', t50: '$50 · Practice', t250: '$100 · +Exam', t500: '$200 · All access' };
+  const TIER_LABEL: Record<string, string> = { free: 'Free plan', t50: '$49 · Practice', t250: '$99 · +Exam', t500: '$199 · All access' };
   const TIER_FULL: Record<string, string> = {
     free: 'free — demo sets only',
-    t50: '$50 (Standard) — all practice (Exam/Combine locked)',
-    t250: '$100 (Plus) — practice + Exam + Combine (Weekly locked)',
-    t500: '$200 (Premium) — everything incl. Weekly',
+    t50: '$49 (Standard) — all practice (Exam/Combine locked)',
+    t250: '$99 (Plus) — practice + Exam + Combine (Weekly locked)',
+    t500: '$199 (Premium) — everything incl. Weekly',
   };
   const REASON_LABEL: Record<string, string> = { comp: 'Comp (free access)', paid: 'Paid', sale: 'Sale', discount: 'Discount', trial: 'Trial', other: 'Other' };
   const eff = membership?.effective;
