@@ -169,7 +169,15 @@ function ExamProgress({ query }: { query: ProgressQuery }) {
 
           {papers.map((p) => {
             const isOpen = open === p.session_id;
-            const timedOut = p.end_reason === 'AUTO_SUBMITTED';
+            // Status reflects what actually happened, not just the finalize reason: an auto-finalized paper
+            // the student never engaged with (nothing answered, no time on any battery) reads "Not attempted",
+            // not "Timed out"; auto-finalized WITH engagement is "Timed out"; a manual submit is "Completed".
+            const noEngagement = (p.attempted_count ?? 0) === 0 && !p.time_spent_seconds;
+            const status = noEngagement
+              ? { label: 'Not attempted', bg: '#eef1f6', fg: '#6b7186' }
+              : p.end_reason === 'AUTO_SUBMITTED'
+                ? { label: 'Timed out', bg: '#fdefe0', fg: '#a15c00' }
+                : { label: 'Completed', bg: '#e9f7ef', fg: '#1e7a46' };
             return (
               <div key={p.session_id} style={{ border: '1px solid var(--line)', borderRadius: 14, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
                 <button
@@ -185,8 +193,8 @@ function ExamProgress({ query }: { query: ProgressQuery }) {
                   <span>{fmtSeconds(p.time_spent_seconds)}</span>
                   <span>
                     <span style={{ display: 'inline-flex', borderRadius: 999, padding: '4px 10px', fontWeight: 800, fontSize: 12,
-                      background: timedOut ? '#fdefe0' : '#e9f7ef', color: timedOut ? '#a15c00' : '#1e7a46' }}>
-                      {timedOut ? 'Timed out' : 'Completed'}
+                      background: status.bg, color: status.fg }}>
+                      {status.label}
                     </span>
                   </span>
                 </button>
