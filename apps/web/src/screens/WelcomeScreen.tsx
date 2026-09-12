@@ -6,8 +6,8 @@ import { PAYMENTS_ENABLED } from '../lib/entitlements';
 import '../landing2.css';
 import wm from '../assets/cm-wordmark.png';
 import heroImg from '../assets/landing-hero.jpg';
-import homeImg from '../assets/landing-home.png';
-import pracImg from '../assets/landing-practice.png';
+import homeImg from '../assets/landing-home.webp';
+import pracImg from '../assets/landing-practice.webp';
 import demoImg from '../assets/landing-demo.jpg';
 
 // Pre-login landing page (route "/"). Marketing page authored as HTML (design provided by the team),
@@ -23,8 +23,8 @@ const BODY = `
     <a href="/" aria-label="Concept Mastery"><img class="logoimg" src="%WM%" alt="Concept Mastery" style="height:52px;width:auto"></a>
     <nav class="nav-cta">
       <a class="nav-link" href="#features">Features</a>
-      <a class="nav-link" href="#pricing">Plans</a>
       <a class="nav-link" href="#how">How it works</a>
+      <a class="nav-link" href="#pricing">Pricing</a>
       <a class="nav-link" href="#contact">Contact</a>
       <a class="nav-link" href="https://conceptmastery.com/" target="_blank" rel="noopener">Main site ↗</a>
       <a class="btn btn-outline" href="/login">Log in</a>
@@ -249,7 +249,7 @@ const BODY = `
         <h2 style="margin-top:10px">Book a free 45-minute demo class for your child.</h2>
         <p class="lede" style="margin-top:14px">See a Concept Mastery instructor work with your child on real CCAT-style questions — no cost, no obligation. It's the fastest way to know if this is right for them.</p>
         <div class="hero-cta">
-          <a class="btn btn-blue btn-lg" href="https://conceptmastery.com/free-ccat-class-registeration/">Book a free 45-min demo class →</a>
+          <a class="btn btn-blue btn-lg" href="https://conceptmastery.com/">Book a free 45-min demo class →</a>
         </div>
       </div>
     </div>
@@ -279,7 +279,7 @@ const BODY = `
     <p>Create a free account now. Practise today. Upgrade only when you see the readiness score climb.</p>
     <div class="hero-cta">
       <a class="btn btn-gold btn-lg" href="/register">Create your free account →</a>
-      <a class="btn btn-lg" style="background:#fff;color:var(--blue)" href="https://conceptmastery.com/free-ccat-class-registeration/">Book a free 45-min demo class</a>
+      <a class="btn btn-lg" style="background:#fff;color:var(--blue)" href="https://conceptmastery.com/">Book a free 45-min demo class</a>
     </div>
     <p class="hero-note">Concept Mastery has coached 500+ families across Canada, the US &amp; Australia. <a class="mail" href="mailto:info@conceptmastery.com">info@conceptmastery.com</a></p>
   </div>
