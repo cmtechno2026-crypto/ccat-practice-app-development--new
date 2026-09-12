@@ -23,8 +23,8 @@ const BODY = `
     <a href="/" aria-label="Concept Mastery"><img class="logoimg" src="%WM%" alt="Concept Mastery" style="height:52px;width:auto"></a>
     <nav class="nav-cta">
       <a class="nav-link" href="#features">Features</a>
+      <a class="nav-link" href="#pricing">Plans</a>
       <a class="nav-link" href="#how">How it works</a>
-      <a class="nav-link" href="#pricing">Pricing</a>
       <a class="nav-link" href="#contact">Contact</a>
       <a class="nav-link" href="https://conceptmastery.com/" target="_blank" rel="noopener">Main site ↗</a>
       <a class="btn btn-outline" href="/login">Log in</a>
