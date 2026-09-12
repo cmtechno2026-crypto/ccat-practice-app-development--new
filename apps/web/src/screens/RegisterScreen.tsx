@@ -128,6 +128,10 @@ export function RegisterScreen() {
   const [vErr, setVErr] = useState<string | null>(null);
   const [emailTaken, setEmailTaken] = useState<boolean | null>(null); // null = unknown/checking
   const otpRef = useRef<HTMLInputElement>(null);
+  // Set when the parent arrives here after paying on the landing page (Case 2). The email is prefilled +
+  // already verified, and the plan is already active on that email; they just finish creating the account.
+  const [fromCheckout, setFromCheckout] = useState(false);
+  const [checkoutMsg, setCheckoutMsg] = useState<string | null>(null);
 
   // consent + account
   const [consentChecked, setConsentChecked] = useState(false);
@@ -170,8 +174,42 @@ export function RegisterScreen() {
     return () => window.clearInterval(id);
   }, [verifyStage, resendIn]);
 
+  // Landing checkout return (Case 2): capture the paid order, then prefill + lock the VERIFIED email. The
+  // entitlement is already written against that email server-side, so finishing signup attaches the plan.
+  // One-time: the carried email/token are cleared once consumed.
+  const checkoutHandled = useRef(false);
+  useEffect(() => {
+    if (checkoutHandled.current) return;
+    checkoutHandled.current = true;
+    let sp: URLSearchParams;
+    try { sp = new URLSearchParams(window.location.search); } catch { return; }
+    if (sp.get('checkout') !== 'success') return;
+    const orderId = sp.get('token'); // PayPal appends ?token=<orderId> on return
+    let ckEmail = ''; let ckToken = '';
+    try {
+      ckEmail = sessionStorage.getItem('cmCheckoutEmail') || '';
+      ckToken = sessionStorage.getItem('cmCheckoutEmailToken') || '';
+      sessionStorage.removeItem('cmCheckoutEmail');
+      sessionStorage.removeItem('cmCheckoutEmailToken');
+      sessionStorage.removeItem('cmCheckoutTier');
+    } catch { /* ignore */ }
+    // Capture is idempotent with the webhook backstop — a failure here still activates via the webhook.
+    if (orderId) { client.paypalCapturePublic(orderId).catch(() => { /* webhook backstop */ }); }
+    if (ckEmail) {
+      setGuardianEmail(ckEmail);
+      setEmailTaken(false);
+      if (ckToken) { setEmailVerifyToken(ckToken); setVerifyStage('verified'); }
+      setFromCheckout(true);
+      setCheckoutMsg('Payment received 🎉 Your plan is active. Finish creating your account below to start — your email is already verified.');
+    } else {
+      setCheckoutMsg('Payment received 🎉 Create your account with the same email you paid with to activate your plan.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Debounced: is this parent email already tied to a live account? Drives the inline note + gating.
   useEffect(() => {
+    if (fromCheckout) return; // email is fixed + verified after a paid checkout — don't re-check/flip it
     if (!emailOk) { setEmailTaken(null); return; }
     let ignore = false;
     const t = window.setTimeout(async () => {
@@ -277,6 +315,12 @@ export function RegisterScreen() {
             </div>
           )}
           {err && <div className="err" role="alert">{err}</div>}
+          {checkoutMsg && (
+            <div role="status" style={{ background: '#e9f7ef', color: '#1e7a46', border: '1px solid #bfe6cf',
+              borderRadius: 12, padding: '11px 14px', fontWeight: 700, fontSize: 13.5, lineHeight: 1.5 }}>
+              {checkoutMsg}
+            </div>
+          )}
 
           {step === 'details' && (
             <>
@@ -305,9 +349,11 @@ export function RegisterScreen() {
 
               <div className="eyebrow" style={{ marginTop: 8 }}>Parent</div>
               <Field label="Parent name"><input className="input" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="Parent full name" /></Field>
-              <Field label="Parent email" hint={emailHint} hintKind={emailHintKind}>
-                <input className={`input ${emailBadVisual ? 'bad' : emailOkVisual ? 'ok' : ''}`} type="email" inputMode="email"
-                  value={guardianEmail} onChange={(e) => onEmailChange(e.target.value)} placeholder="parent@email.com" />
+              <Field label="Parent email" hint={fromCheckout ? '✓ Verified — the email you paid with' : emailHint} hintKind={fromCheckout ? 'ok' : emailHintKind}>
+                <input className={`input ${fromCheckout ? 'ok' : emailBadVisual ? 'bad' : emailOkVisual ? 'ok' : ''}`} type="email" inputMode="email"
+                  value={guardianEmail} readOnly={fromCheckout} aria-readonly={fromCheckout || undefined}
+                  onChange={(e) => onEmailChange(e.target.value)} placeholder="parent@email.com"
+                  style={fromCheckout ? { background: '#f4f7fc', cursor: 'not-allowed' } : undefined} />
               </Field>
 
               {EMAIL_VERIFY_ENABLED && emailOk && (

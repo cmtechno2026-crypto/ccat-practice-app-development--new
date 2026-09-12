@@ -152,6 +152,20 @@ export class CcatClient {
   paypalCapture(orderId: string) {
     return this.request<{ status: string; granted: boolean; tier?: string }>('POST', '/v1/checkout/paypal/capture', { auth: true, body: { order_id: orderId } });
   }
+  // Landing checkout, Case 1 — reveal the userID(s) for a guardian email so the login form can prefill.
+  // No auth (open lookup; the gateway rate-limits it). exists:false when no active account matches.
+  accountByEmail(email: string) {
+    return this.request<{ exists: boolean; usernames: string[] }>('GET', `/v1/checkout/account-by-email?email=${encodeURIComponent(email)}`);
+  }
+  // Landing checkout, Case 2 — create an order for an OTP-verified email that has NO account yet. Pass the
+  // token from registrationEmailConfirm. Returns the PayPal approval URL to redirect to.
+  paypalCreateOrderPublic(email: string, tier: 't50' | 't250' | 't500', emailVerifyToken: string) {
+    return this.request<{ url: string; id: string }>('POST', '/v1/checkout/paypal/order-public', { body: { email, tier, email_verify_token: emailVerifyToken } });
+  }
+  // Landing checkout, Case 2 — capture the approved public order on return; the gateway grants by email.
+  paypalCapturePublic(orderId: string) {
+    return this.request<{ status: string; granted: boolean; tier?: string; email?: string }>('POST', '/v1/checkout/paypal/capture-public', { body: { order_id: orderId } });
+  }
   rewardsSummary() { return this.request<RewardsSummary>('GET', '/v1/rewards/summary', { auth: true }); }
   coins() { return this.request<CoinsPanel>('GET', '/v1/rewards/coins', { auth: true }); }
   readiness() { return this.request<Readiness>('GET', '/v1/readiness', { auth: true }); }

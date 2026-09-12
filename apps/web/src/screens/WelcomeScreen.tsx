@@ -1,6 +1,8 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import { useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/store';
+import { PlanCheckoutModal } from '../components/PlanCheckoutModal';
+import { PAYMENTS_ENABLED } from '../lib/entitlements';
 import '../landing2.css';
 import wm from '../assets/cm-wordmark.png';
 import heroImg from '../assets/landing-hero.jpg';
@@ -172,7 +174,7 @@ const BODY = `
           <li><span class="ck">✓</span> Progress &amp; readiness score</li>
           <li><span class="ck">✓</span> Rewards, streaks &amp; bookmarks</li>
         </ul>
-        <a class="btn btn-blue" href="/register" data-plan="1">Get Standard</a>
+        <a class="btn btn-blue" href="/register" data-plan="1" data-tier="t50">Get Standard</a>
       </div>
 
       <div class="plan">
@@ -185,7 +187,7 @@ const BODY = `
           <li><span class="ck">✓</span> Full-length timed exam papers</li>
           <li><span class="ck">✓</span> Real exam-day stamina practice</li>
         </ul>
-        <a class="btn btn-blue" href="/register" data-plan="1">Get Plus</a>
+        <a class="btn btn-blue" href="/register" data-plan="1" data-tier="t250">Get Plus</a>
       </div>
 
       <div class="plan best">
@@ -199,7 +201,7 @@ const BODY = `
           <li><span class="ck">✓</span> <b>5 live 1-on-1 mentoring sessions</b></li>
           <li><span class="ck">✓</span> Direct coaching from a CM instructor</li>
         </ul>
-        <a class="btn btn-gold" href="/register" data-plan="1">Get Premium</a>
+        <a class="btn btn-gold" href="/register" data-plan="1" data-tier="t500">Get Premium</a>
       </div>
     </div>
     
@@ -291,9 +293,12 @@ const BODY = `
 </footer>
 `;
 
+type Sellable = 't50' | 't250' | 't500';
+
 export function WelcomeScreen() {
   const nav = useNavigate();
   const { profile } = useApp();
+  const [checkoutTier, setCheckoutTier] = useState<Sellable | null>(null);
   if (profile) return <Navigate to="/home" replace />;
   const html = BODY
     .replace(/%WM%/g, wm)
@@ -309,6 +314,10 @@ export function WelcomeScreen() {
     // hash (in-page scroll), external and mailto links keep their default behaviour
     if (!href || href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto')) return;
     e.preventDefault();
+    // A "Get <plan>" button opens the in-page checkout modal (email → login/OTP → PayPal) instead of
+    // sending the parent to /register first. Falls back to the old /plan-after-auth path if payments are off.
+    const tier = a.getAttribute('data-tier') as Sellable | null;
+    if (tier && PAYMENTS_ENABLED) { setCheckoutTier(tier); return; }
     try {
       if (a.getAttribute('data-plan')) sessionStorage.setItem('cmPostAuthRedirect', '/plan');
       else sessionStorage.removeItem('cmPostAuthRedirect');
@@ -316,5 +325,10 @@ export function WelcomeScreen() {
     nav(href);
   }
 
-  return <div className="cml" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <>
+      <div className="cml" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+      {checkoutTier && <PlanCheckoutModal tier={checkoutTier} onClose={() => setCheckoutTier(null)} />}
+    </>
+  );
 }
