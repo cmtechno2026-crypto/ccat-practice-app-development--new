@@ -483,9 +483,10 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     };
   });
 
-  // GET /v1/exams/history — the student's FINISHED exam sessions (submitted or auto-submitted), newest
-  // first, with a per-battery breakdown that includes each battery's time used. Optional ?from=&to= (ISO)
-  // filter on terminal_at so it tracks the Progress-page date range. Powers the Exam Progress panel.
+  // GET /v1/exams/history — the student's LATEST finished attempt PER exam paper (submitted or
+  // auto-submitted), newest first, with a per-battery breakdown that includes each battery's time used.
+  // Optional ?from=&to= (ISO) filter on terminal_at so it tracks the Progress-page date range. Powers the
+  // Exam Progress panel. One row per paper: distinct on the paper (question_set), keeping the newest attempt.
   app.get('/v1/exams/history', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
     const q = req.query as { from?: string; to?: string };
@@ -494,19 +495,21 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     if (q.from) { params.push(q.from); cond.push(`s.terminal_at >= $${params.length}`); }
     if (q.to) { params.push(q.to); cond.push(`s.terminal_at < $${params.length}`); }
 
-    const { rows } = await db.query(
-      `select s.id as session_id, s.terminal_at, r.terminal_state, r.score_correct, r.score_total, r.detail,
-              greatest(0, extract(epoch from (s.terminal_at - s.started_at)))::int as time_spent_seconds,
+    const res = await db.query(
+      `select distinct on (qs.id)
+              s.id as session_id, s.terminal_at, r.terminal_state, r.score_correct, r.score_total, r.detail,
               qs.name as set_name
          from ccat.sessions s
          join ccat.session_results r on r.session_id = s.id
          join ccat.question_set_versions sv on sv.id = s.set_version_id
          join ccat.question_sets qs on qs.id = sv.question_set_id
         where ${cond.join(' and ')}
-        order by s.terminal_at desc nulls last
-        limit 25`,
+        order by qs.id, s.terminal_at desc nulls last`,
       params,
     );
+    // distinct on requires ordering by qs.id first; present newest-attempt-first across papers.
+    const rows = res.rows.slice().sort((a: any, b: any) =>
+      new Date(b.terminal_at ?? 0).getTime() - new Date(a.terminal_at ?? 0).getTime()).slice(0, 25);
 
     // Per-battery time from the exam timers (ccat.session_batteries). Time used for a battery = from when
     // the student started it until it ended for them: completed_at if they finished it, else the battery
@@ -548,9 +551,9 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
         accuracy_pct: total > 0 ? Math.round((100 * r.score_correct) / total) : 0,
         attempted_count: attempted,
         // Paper TIME = the real time spent inside the timed batteries (each capped at its deadline), so it
-        // can never exceed the paper's allotted total. Falls back to the session wall-clock only for legacy
-        // exams that have no per-battery timer rows.
-        time_spent_seconds: sessionSecs.has(r.session_id) ? sessionSecs.get(r.session_id)! : r.time_spent_seconds,
+        // can never exceed the allotted total AND is always consistent with the per-battery times below
+        // (both come from the same timer rows). null → shown as "—" when no timer data exists.
+        time_spent_seconds: sessionSecs.has(r.session_id) ? sessionSecs.get(r.session_id)! : null,
         by_battery,
       };
     });
