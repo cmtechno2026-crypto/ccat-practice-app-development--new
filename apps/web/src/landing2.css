@@ -231,8 +231,8 @@
   }
   @media (prefers-reduced-motion:reduce){.cml *{transition:none!important}html:has(.cml){scroll-behavior:auto}}
 
-  .cml .imgslot.shot{border:0;background:none;padding:0;aspect-ratio:auto;border-radius:0;overflow:visible;display:block}
-  .cml .imgslot.shot img{width:100%;height:auto;object-fit:contain;border-radius:12px;box-shadow:0 20px 50px -28px rgba(26,94,171,.45)}
+  .cml .imgslot.shot{border:0;background:none;padding:0;aspect-ratio:16/9;border-radius:12px;overflow:hidden;display:block;box-shadow:0 20px 50px -28px rgba(26,94,171,.45)}
+  .cml .imgslot.shot img{width:100%;height:100%;object-fit:cover;border-radius:12px}
   .cml section[id]{scroll-margin-top:88px}
   .cml .nav-cta{flex-wrap:wrap}
   @media (max-width:1040px){.cml .nav-link{padding:8px 10px;font-size:14px}}
