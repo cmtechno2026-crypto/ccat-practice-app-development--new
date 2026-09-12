@@ -50,6 +50,8 @@ export const api = {
   },
   studentStats: () => req<{ total: number; active: number; suspended: number; banned: number; pending_deletion: number; practised_today: number }>('GET', '/v1/admin/students/stats'),
   studentDetail: (id: string) => req<any>('GET', `/v1/admin/students/${id}/detail`),
+  createStudent: (b: { display_name: string; username: string; pin: string; grade_id: string; birth_month?: number; birth_year?: number; guardian_email?: string; guardian_name?: string; guardian_phone?: string }) =>
+    req<{ id: string; username: string; display_name: string; status: string }>('POST', '/v1/admin/students', b),
   studentStatus: (id: string, version: number, to_status: string, reason_code: string, reason_text?: string) =>
     req<any>('POST', `/v1/admin/students/${id}/status`, { to_status, reason_code, reason_text }, { 'if-match': String(version) }),
   // Edit student profile (name/grade). Optimistic concurrency via If-Match against students.version.

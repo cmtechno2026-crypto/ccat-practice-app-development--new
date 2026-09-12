@@ -1,0 +1,235 @@
+/* Scoped landing styles (route "/"), all under .cml so nothing leaks into the app. */
+
+  /* ============================================================
+     CONCEPT MASTERY — CCAT LANDING PAGE
+     Brand colors only. Light theme. Arial / system sans.
+     IMAGE SLOTS: each .imgslot shows the exact filename + size to
+     drop in. To go live, place files in an /assets folder next to
+     this HTML and uncomment the <img> line inside each slot.
+     ============================================================ */
+  .cml{
+    --blue:#1A5EAB;   /* primary  */
+    --gold:#E8A020;   /* accent   */
+    --sky:#EAF1FB;    /* light fill */
+    --orange:#D4620E; /* warm accent */
+    --line:#D0D0D0;   /* borders  */
+    --ink:#1A1A1A;    /* body text */
+    --mid:#666666;    /* secondary */
+    --white:#FFFFFF;
+    --blue-dark:#134a86; /* darker shade of CM Blue for hover only */
+    --wrap:1120px;
+    --display:"Baloo 2",system-ui,sans-serif;  /* big headings */
+    --head:"Poppins",system-ui,sans-serif;     /* sub-heads, buttons, labels */
+    --body:"Nunito",system-ui,sans-serif;       /* body copy */
+    --util:"Inter",system-ui,sans-serif;        /* prices, numbers */
+    --sans:var(--body);
+  }
+  .cml *{box-sizing:border-box}
+  html:has(.cml){scroll-behavior:smooth}
+  .cml{margin:0;background:var(--white);color:var(--ink);font-family:var(--sans);
+    font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+  .cml img{max-width:100%;display:block}
+  .cml .wrap{max-width:var(--wrap);margin:0 auto;padding-inline:22px}
+  .cml section{padding-block:clamp(52px,7vw,92px)}
+  .cml h1,.cml h2{font-family:var(--display);font-weight:800;line-height:1.1;margin:0;color:var(--blue);text-wrap:balance}
+  .cml h3{font-family:var(--head);font-weight:700;line-height:1.18;margin:0;color:var(--blue);text-wrap:balance}
+  .cml h1{font-size:clamp(32px,5.4vw,54px);letter-spacing:-.005em}
+  .cml h2{font-size:clamp(27px,3.8vw,40px)}
+  .cml h3{font-size:clamp(18px,2vw,21px)}
+  .cml p{margin:0}
+  .cml a{color:var(--blue)}
+  .cml .eyebrow{font-family:var(--head);font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--orange)}
+  .cml .lede{font-size:clamp(17px,1.9vw,20px);color:var(--mid);line-height:1.55}
+  .cml .note{font-size:13px;color:var(--mid);font-style:italic}
+
+  /* buttons */
+  .cml .btn{display:inline-flex;align-items:center;gap:.5em;font-family:var(--head);font-weight:700;font-size:17px;
+    padding:15px 26px;border-radius:10px;border:2px solid transparent;cursor:pointer;text-decoration:none;
+    transition:transform .12s ease,background .12s ease}
+  .cml .btn:hover{transform:translateY(-2px)}
+  .cml .btn:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+  .cml .btn-blue{background:var(--blue);color:#fff}
+  .cml .btn-blue:hover{background:var(--blue-dark)}
+  .cml .btn-gold{background:var(--gold);color:#241800}
+  .cml .btn-outline{background:transparent;border-color:var(--blue);color:var(--blue)}
+  .cml .btn-outline:hover{background:var(--sky)}
+  .cml .btn-lg{font-size:19px;padding:18px 32px}
+
+  /* ---- image slot component (renders cleanly empty; teammate drops file in) ---- */
+  .cml .imgslot{position:relative;border:2px dashed var(--blue);background:
+      repeating-linear-gradient(45deg,var(--sky),var(--sky) 14px,#e2ecfa 14px,#e2ecfa 28px);
+    border-radius:16px;display:grid;place-items:center;text-align:center;overflow:hidden}
+  .cml .imgslot img{width:100%;height:100%;object-fit:cover;border-radius:14px}
+  .cml .imgslot .lab{padding:22px;color:var(--blue)}
+  .cml .imgslot .lab .id{display:inline-block;background:var(--blue);color:#fff;font-weight:700;font-size:12px;
+    letter-spacing:.06em;padding:4px 10px;border-radius:999px;margin-bottom:10px}
+  .cml .imgslot .lab b{display:block;font-size:15px}
+  .cml .imgslot .lab small{display:block;color:var(--mid);font-weight:600;margin-top:4px;font-size:12.5px}
+
+  /* header / nav */
+  .cml header.nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.95);backdrop-filter:blur(6px);
+    border-bottom:2px solid var(--blue)}
+  .cml header.nav .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:12px}
+  .cml .logoslot{width:170px;height:56px;border:1px dashed var(--line);border-radius:8px;display:grid;place-items:center;
+    color:var(--blue);font-weight:700;font-size:12px;text-align:center;line-height:1.2;background:var(--white)}
+  .cml .nav-cta{display:flex;gap:10px;align-items:center}
+  .cml .nav-link{font-weight:700;text-decoration:none;font-size:15px;padding:10px 14px}
+
+  /* hero */
+  .cml .hero{background:linear-gradient(180deg,var(--sky),var(--white))}
+  .cml .hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,60px);align-items:center;
+    padding-block:clamp(44px,6vw,80px)}
+  .cml .hero .badge{display:inline-flex;align-items:center;gap:.5em;background:var(--white);border:1px solid var(--line);
+    padding:7px 14px;border-radius:999px;font-size:13.5px;font-weight:700;color:var(--blue)}
+  .cml .hero h1{margin:18px 0 0}
+  .cml .hero h1 .u{color:var(--orange)}
+  .cml .hero-sub{margin:18px 0 0;font-size:clamp(17px,2vw,20px);color:var(--mid);line-height:1.5;max-width:36ch}
+  .cml .hero-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
+  .cml .hero-note{margin-top:14px;font-size:14px;color:var(--mid)}
+  .cml .hero .imgslot{aspect-ratio:9/10}
+  .cml .trust{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:28px;padding-top:22px;border-top:1px solid var(--line)}
+  .cml .trust span{display:inline-flex;align-items:center;gap:.45em;font-size:14px;font-weight:600;color:var(--ink)}
+  .cml .trust b{color:var(--blue)}
+
+  /* generic */
+  .cml .band{background:var(--sky)}
+  .cml .center{text-align:center;max-width:720px;margin-inline:auto}
+  .cml .sectlabel{display:flex;flex-direction:column;gap:10px;margin-bottom:8px}
+  .cml .grid{display:grid;gap:18px}
+  .cml .cols-3{grid-template-columns:repeat(3,1fr)}
+  .cml .cols-2{grid-template-columns:1fr 1fr}
+
+  /* feature cards */
+  .cml .feat{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:24px}
+  .cml .feat .ic{width:46px;height:46px;border-radius:11px;background:var(--sky);display:grid;place-items:center;
+    font-size:22px;margin-bottom:14px}
+  .cml .feat h3{font-size:18px}
+  .cml .feat p{color:var(--mid);font-size:15px;margin-top:6px}
+
+  /* problem */
+  .cml .pain{display:grid;gap:12px;margin-top:28px}
+  .cml .pain-row{display:flex;gap:14px;align-items:flex-start;background:var(--white);border:1px solid var(--line);
+    border-left:4px solid var(--orange);border-radius:12px;padding:16px 18px}
+  .cml .pain-row .x{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:rgba(212,98,14,.12);
+    color:var(--orange);display:grid;place-items:center;font-weight:700;margin-top:1px}
+
+  /* split (image + text) */
+  .cml .split{display:grid;grid-template-columns:1fr 1fr;gap:clamp(24px,4vw,52px);align-items:center}
+  .cml .split.rev .txt{order:2}
+  .cml .split .imgslot{aspect-ratio:3/2}
+  .cml .split ul{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:12px}
+  .cml .split li{display:flex;gap:10px;font-size:16px}
+  .cml .split li .ck{color:var(--blue);font-weight:700;flex:0 0 auto}
+
+  /* value stack */
+  .cml .stack{background:var(--white);border:1px solid var(--line);border-radius:18px;padding:clamp(22px,3vw,34px);
+    box-shadow:0 24px 60px -46px rgba(26,94,171,.5)}
+  .cml .stack ul{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:2px}
+  .cml .stack li{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:baseline;padding:14px 2px;
+    border-bottom:1px dashed var(--line)}
+  .cml .stack li:last-child{border-bottom:0}
+  .cml .stack .item span{display:block;color:var(--mid);font-size:14.5px;margin-top:3px}
+  .cml .stack .val{font-weight:700;color:var(--blue);white-space:nowrap}
+  .cml .stack .kicker{margin-top:16px;text-align:center;color:var(--mid);font-size:14px}
+
+  /* pricing */
+  .cml .price-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:38px;align-items:stretch}
+  .cml .plan{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:26px 22px;
+    display:flex;flex-direction:column;position:relative}
+  .cml .plan.best{border:2px solid var(--gold);box-shadow:0 22px 54px -40px rgba(232,160,32,.9)}
+  .cml .plan .tag{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:var(--gold);color:#241800;
+    font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;white-space:nowrap}
+  .cml .plan .pname{font-family:var(--head);font-weight:700;font-size:22px;color:var(--blue)}
+  .cml .plan .priced{margin:14px 0 4px;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .cml .plan .was{font-family:var(--util);color:var(--mid);text-decoration:line-through;font-weight:600;font-size:19px}
+  .cml .plan .now{font-family:var(--util);font-weight:700;font-size:40px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
+  .cml .plan .cur{font-size:14px;color:var(--mid);font-weight:700}
+  .cml .plan .save{display:inline-block;margin-top:6px;background:rgba(212,98,14,.12);color:var(--orange);
+    font-weight:700;font-size:13px;padding:4px 10px;border-radius:8px}
+  .cml .plan .term{color:var(--mid);font-size:14px;margin-top:2px}
+  .cml .plan ul{list-style:none;margin:20px 0 24px;padding:0;display:grid;gap:11px;flex:1}
+  .cml .plan li{display:flex;gap:10px;font-size:15px;line-height:1.45}
+  .cml .plan li .ck{color:var(--blue);font-weight:700;flex:0 0 auto}
+  .cml .plan .btn{width:100%;justify-content:center}
+  .cml .plan.free .now{color:var(--mid)}
+
+  /* testimonials — real reviews only; empty slots for the team to fill */
+  .cml .rev{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:24px}
+  .cml .rev .stars{color:var(--gold);letter-spacing:2px;font-size:15px}
+  .cml .rev q{display:block;margin:12px 0 16px;font-size:16px;line-height:1.55;color:var(--ink);min-height:96px}
+  .cml .rev .who{display:flex;align-items:center;gap:12px}
+  .cml .rev .who .ph{width:44px;height:44px;border-radius:50%;background:var(--sky);border:1px dashed var(--blue);
+    flex:0 0 auto}
+  .cml .rev .who .meta{font-size:13.5px;color:var(--mid);font-weight:600}
+  .cml .rev.empty{border:2px dashed var(--line);background:var(--sky)}
+  .cml .rev.empty .fill{color:var(--blue);font-weight:700;font-size:14px}
+  .cml .rev.empty .fill small{display:block;color:var(--mid);font-weight:600;margin-top:6px;font-size:12.5px}
+
+  /* steps */
+  .cml .steps{display:grid;gap:14px;margin-top:34px;counter-reset:s}
+  .cml .step{display:grid;grid-template-columns:54px 1fr;gap:18px;align-items:start;background:var(--white);
+    border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .cml .step .n{counter-increment:s;width:54px;height:54px;border-radius:13px;background:var(--sky);color:var(--blue);
+    font-family:var(--display);font-weight:800;font-size:24px;display:grid;place-items:center}
+  .cml .step .n::before{content:counter(s)}
+  .cml .step h3{font-size:18px}
+  .cml .step p{color:var(--mid);margin-top:3px;font-size:15.5px}
+
+  /* faq */
+  .cml .faq{max-width:820px;margin:32px auto 0;display:grid;gap:12px}
+  .cml details{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:2px 20px}
+  .cml summary{cursor:pointer;list-style:none;font-weight:700;font-size:17px;padding:16px 0;color:var(--blue);
+    display:flex;justify-content:space-between;gap:16px;align-items:center}
+  .cml summary::-webkit-details-marker{display:none}
+  .cml summary::after{content:"+";font-weight:700;color:var(--blue);font-size:24px;line-height:1}
+  .cml details[open] summary::after{content:"–"}
+  .cml details p{color:var(--mid);padding:0 0 18px;font-size:15.5px;line-height:1.6}
+
+  /* final cta (CM Blue band — brand primary) */
+  .cml .final{background:var(--blue);color:#fff;text-align:center}
+  .cml .final h2{color:#fff}
+  .cml .final p{color:#dbe7f7;max-width:620px;margin:14px auto 0}
+  .cml .final .eyebrow{color:var(--gold)}
+  .cml .final .hero-cta{justify-content:center;margin-top:24px}
+  .cml .final .hero-note{color:#b9cdea}
+  .cml .final a.mail{color:#fff;font-weight:700}
+
+  /* footer */
+  .cml footer{background:var(--white);border-top:1px solid var(--line);padding-block:30px;font-size:14px;color:var(--mid)}
+  .cml footer .wrap{display:flex;flex-wrap:wrap;gap:12px 26px;justify-content:space-between;align-items:center}
+  .cml footer a{color:var(--blue);font-weight:600;text-decoration:none}
+
+  @media (max-width:900px){
+    .cml .hero .wrap{grid-template-columns:1fr}
+    .cml .hero .txt{text-align:center}
+    .cml .hero .badge{margin-inline:auto}
+    .cml .hero-sub{max-width:none}
+    .cml .hero-cta{justify-content:center}
+    .cml .trust{justify-content:center}
+    .cml .hero .imgslot{aspect-ratio:16/10;max-width:520px;margin-inline:auto;order:-1}
+    .cml .split{grid-template-columns:1fr}
+    .cml .split.rev .txt{order:0}
+    .cml .split .imgslot{max-width:560px;margin-inline:auto;width:100%}
+    .cml .cols-3{grid-template-columns:1fr 1fr}
+    .cml .cols-2{grid-template-columns:1fr}
+    .cml .price-grid{grid-template-columns:repeat(2,1fr)}
+  }
+  @media (max-width:600px){
+    .cml .cols-3{grid-template-columns:1fr}
+    .cml .price-grid{grid-template-columns:1fr}
+    .cml .nav-link{display:none}
+    .cml .hero-cta{flex-direction:column;align-items:stretch}
+    .cml .hero-cta .btn{width:100%;justify-content:center}
+    .cml .final .hero-cta .btn{width:100%}
+    .cml .step{grid-template-columns:44px 1fr;gap:14px;padding:16px 16px}
+    .cml .step .n{width:44px;height:44px;font-size:20px}
+    .cml .wrap{padding-inline:18px}
+    .cml{font-size:16px}
+  }
+  @media (prefers-reduced-motion:reduce){.cml *{transition:none!important}html:has(.cml){scroll-behavior:auto}}
+
+  .cml .imgslot.shot{border:0;background:none;padding:0;aspect-ratio:auto;border-radius:0;overflow:visible;display:block}
+  .cml .imgslot.shot img{width:100%;height:auto;object-fit:contain;border-radius:12px;box-shadow:0 20px 50px -28px rgba(26,94,171,.45)}
+  .cml section[id]{scroll-margin-top:88px}
+  .cml .nav-cta{flex-wrap:wrap}
+  @media (max-width:1040px){.cml .nav-link{padding:8px 10px;font-size:14px}}

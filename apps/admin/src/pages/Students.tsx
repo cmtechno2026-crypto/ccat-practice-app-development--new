@@ -95,9 +95,12 @@ export function Students() {
   const [pending, setPending] = useState<any>(null);
   const [reason, setReason] = useState(''); const [detail, setDetail] = useState(''); const [merr, setMerr] = useState('');
   const [del, setDel] = useState<any>(null); const [delBusy, setDelBusy] = useState(false); const [delErr, setDelErr] = useState(''); const [delAck, setDelAck] = useState(false);
+  const [create, setCreate] = useState(false);
+  const [grades, setGrades] = useState<{ id: string; grade_number: number; name: string }[]>([]);
 
   // Pending requests keyed by student, for row highlighting (grade-change / deletion / break-glass).
   const [reqMap, setReqMap] = useState<Record<string, string[]>>({});
+  useEffect(() => { api.grades().then((r) => setGrades(r.items)).catch(() => {}); }, []);
   useEffect(() => {
     api.notifications().then(r => {
       const m: Record<string, string[]> = {};
@@ -173,6 +176,7 @@ export function Students() {
 
       {/* toolbar */}
       <div className="toolrow" onClick={e => e.stopPropagation()}>
+        {can('student.update') && <button className="btn sm" onClick={() => setCreate(true)}>+ New student</button>}
         <button className="chipbtn" onClick={() => setMenu(menu === 'sort' ? null : 'sort')}>
           Sort · {sortLabel} {dir === 'asc' ? '↑' : '↓'}
           {menu === 'sort' && (
@@ -316,6 +320,55 @@ export function Students() {
           {delErr && <div className="err" style={{ marginTop: 8 }}>{delErr}</div>}
         </Modal>
       )}
+      {create && <CreateStudentModal grades={grades} onClose={() => setCreate(false)} onDone={(msg) => { setCreate(false); toast(msg); load(false); }} />}
     </div>
+  );
+}
+
+function CreateStudentModal({ grades, onClose, onDone }: { grades: { id: string; grade_number: number; name: string }[]; onClose: () => void; onDone: (msg: string) => void }) {
+  const [display_name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
+  const [grade_id, setGrade] = useState(grades[0]?.id ?? '');
+  const [guardian_email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  React.useEffect(() => { if (!grade_id && grades[0]) setGrade(grades[0].id); }, [grades]); // eslint-disable-line
+  const ready = display_name.trim().length > 0 && username.trim().length >= 3 && /^\d{4}$/.test(pin) && !!grade_id;
+  const save = async () => {
+    if (!ready) { setErr('Name, a username (3+ chars), a 4-digit PIN and a grade are required.'); return; }
+    setBusy(true); setErr('');
+    try {
+      const r = await api.createStudent({ display_name: display_name.trim(), username: username.trim().toLowerCase(), pin, grade_id, guardian_email: guardian_email.trim() || undefined });
+      onDone(`Created ${r.display_name} (@${r.username}) — PIN ${pin}`);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title="New student" onClose={onClose}
+      footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={busy || !ready} onClick={save}>{busy ? 'Creating…' : 'Create student'}</button></>}>
+      <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Creates the account immediately — no email or OTP. The student signs in with the username and PIN; their device enrolls on first login. Guardian email is optional (used only for PIN recovery and membership).</div>
+      <label>Display name</label>
+      <input value={display_name} maxLength={40} onChange={e => setName(e.target.value)} placeholder="e.g. Aarav" />
+      <label>Username</label>
+      <input value={username} autoCapitalize="none" onChange={e => setUsername(e.target.value.toLowerCase())} placeholder="e.g. aarav_g3" />
+      <div className="row">
+        <div className="grow"><label>4-digit PIN</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={4} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="4820" style={{ width: 110, letterSpacing: 4, fontFamily: 'ui-monospace,Menlo,monospace' }} />
+            <button type="button" className="btn ghost sm" onClick={() => setShowPin(v => !v)}>{showPin ? '🙈' : '👁️'}</button>
+          </div>
+        </div>
+        <div className="grow"><label>Grade</label>
+          <select value={grade_id} onChange={e => setGrade(e.target.value)}>
+            {grades.length === 0 && <option value="">Loading…</option>}
+            {grades.map(g => <option key={g.id} value={g.id}>{g.name || `Grade ${g.grade_number}`}</option>)}
+          </select>
+        </div>
+      </div>
+      <label>Guardian email (optional)</label>
+      <input value={guardian_email} autoCapitalize="none" onChange={e => setEmail(e.target.value.toLowerCase())} placeholder="parent@example.com" />
+      {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
+    </Modal>
   );
 }

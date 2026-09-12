@@ -25,6 +25,52 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
   const guard = { preHandler: [authenticateAdmin] };
 
+  // Admin-create a student directly — NO guardian OTP / email verification. Mirrors the registration
+  // write (student + PIN + optional guardian link) without the multi-step grant flow. Username must be
+  // unique; the device enrolls itself on the student's first login, so none is created here.
+  const createStudentSchema = z.object({
+    display_name: z.string().trim().min(1).max(120),
+    username: z.string().trim().min(3).max(40),
+    pin: z.string().regex(/^\d{4}$/),
+    grade_id: z.string().uuid(),
+    birth_month: z.number().int().min(1).max(12).optional(),
+    birth_year: z.number().int().min(1990).max(2100).optional(),
+    guardian_email: z.string().trim().toLowerCase().email().optional(),
+    guardian_name: z.string().trim().max(120).optional(),
+    guardian_phone: z.string().trim().max(32).optional(),
+  });
+  app.post('/v1/admin/students', guard, async (req) => {
+    requirePermission(req, 'student.update');
+    const b = createStudentSchema.parse(req.body ?? {});
+    const g = await db.query('select id, active, coalesce(age_min_years, 9) as age_min from ccat.grades where id=$1', [b.grade_id]);
+    if (g.rows.length === 0) throw Errors.validation('Unknown grade');
+    if (!g.rows[0]!.active) throw Errors.validation('That grade is not active');
+    const birthYear = b.birth_year ?? (new Date().getUTCFullYear() - Number(g.rows[0]!.age_min));
+    const birthMonth = b.birth_month ?? 1;
+    const email = b.guardian_email || null;
+    const pinHash = await hashSecret(b.pin, cfg.pinPepper);
+    try {
+      const out = await withTransaction(db, async (c) => {
+        const st = await c.query(`insert into ccat.students(username_normalized, display_name, grade_id, birth_month, birth_year) values ($1,$2,$3,$4,$5) returning id`, [b.username, b.display_name, b.grade_id, birthMonth, birthYear]);
+        const id = st.rows[0]!.id as string;
+        await c.query(`insert into ccat.student_credentials(student_id, pin_hash) values ($1,$2)`, [id, pinHash]);
+        await c.query(`insert into ccat.analytics_identities(student_id) values ($1)`, [id]);
+        if (email) {
+          const ex = await c.query(`select id from ccat.guardian_contacts where email=$1 limit 1`, [email]);
+          const gid = ex.rows.length ? (ex.rows[0]!.id as string)
+            : (await c.query(`insert into ccat.guardian_contacts(name,email,phone) values ($1,$2,$3) returning id`, [b.guardian_name || 'Guardian', email, b.guardian_phone || null])).rows[0]!.id as string;
+          await c.query(`insert into ccat.student_guardians(student_id, guardian_id, relationship, is_primary) values ($1,$2,'guardian',true)`, [id, gid]);
+        }
+        await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','student.created','student',$2,$3)`, [req.admin!.adminId, id, JSON.stringify({ username: b.username, grade_id: b.grade_id, guardian_email: email })]);
+        return { id };
+      });
+      return { id: out.id, username: b.username, display_name: b.display_name, status: 'active' };
+    } catch (e: any) {
+      if (e?.code === '23505') throw Errors.usernameTaken();
+      throw e;
+    }
+  });
+
   app.get('/v1/admin/students/:id/detail', guard, async (req) => {
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
