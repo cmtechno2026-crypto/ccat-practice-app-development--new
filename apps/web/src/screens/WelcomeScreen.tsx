@@ -164,7 +164,7 @@ const BODY = `
 
       <div class="plan">
         <div class="pname">Standard</div>
-        <div class="priced"><span class="now">$50</span><span class="cur">CAD</span></div>
+        <div class="priced"><span class="now">$49</span><span class="cur">CAD</span></div>
         <div class="term">1-year access</div>
         <ul>
           <li><span class="ck">✓</span> Unlimited access to <b>all</b> practice sets</li>
@@ -177,7 +177,7 @@ const BODY = `
 
       <div class="plan">
         <div class="pname">Plus</div>
-        <div class="priced"><span class="now">$100</span><span class="cur">CAD</span></div>
+        <div class="priced"><span class="now">$99</span><span class="cur">CAD</span></div>
         <div class="term">1-year access</div>
         <ul>
           <li><span class="ck">✓</span> Everything in Standard</li>
@@ -191,7 +191,7 @@ const BODY = `
       <div class="plan best">
         <span class="tag">Best value</span>
         <div class="pname">Premium</div>
-        <div class="priced"><span class="now">$200</span><span class="cur">CAD</span></div>
+        <div class="priced"><span class="now">$199</span><span class="cur">CAD</span></div>
         <div class="term">1-year access</div>
         <ul>
           <li><span class="ck">✓</span> Everything in Plus</li>

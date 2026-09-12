@@ -43,7 +43,7 @@
   .cml .note{font-size:13px;color:var(--mid);font-style:italic}
 
   /* buttons */
-  .cml .btn{display:inline-flex;align-items:center;gap:.5em;font-family:var(--head);font-weight:700;font-size:17px;
+  .cml .btn{display:inline-flex;width:auto;align-items:center;gap:.5em;font-family:var(--head);font-weight:700;font-size:17px;
     padding:15px 26px;border-radius:10px;border:2px solid transparent;cursor:pointer;text-decoration:none;
     transition:transform .12s ease,background .12s ease}
   .cml .btn:hover{transform:translateY(-2px)}
@@ -79,7 +79,8 @@
   .cml .hero{background:linear-gradient(180deg,var(--sky),var(--white))}
   .cml .hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,60px);align-items:center;
     padding-block:clamp(44px,6vw,80px)}
-  .cml .hero .badge{display:inline-flex;align-items:center;gap:.5em;background:var(--white);border:1px solid var(--line);
+  .cml .badge{aspect-ratio:auto}
+  .cml .hero .badge{display:inline-flex;width:auto;aspect-ratio:auto;align-items:center;gap:.5em;background:var(--white);border:1px solid var(--line);
     padding:7px 14px;border-radius:999px;font-size:13.5px;font-weight:700;color:var(--blue)}
   .cml .hero h1{margin:18px 0 0}
   .cml .hero h1 .u{color:var(--orange)}
