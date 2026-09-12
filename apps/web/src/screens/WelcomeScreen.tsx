@@ -169,7 +169,7 @@ const BODY = `
         <div class="priced"><span class="now">$49</span><span class="cur">CAD</span></div>
         <div class="term">1-year access</div>
         <ul>
-          <li><span class="ck">✓</span> Unlimited access to <b>all</b> practice sets</li>
+          <li><span class="ck">✓</span> Unlimited access to all practice sets</li>
           <li><span class="ck">✓</span> All three batteries, every skill</li>
           <li><span class="ck">✓</span> Progress &amp; readiness score</li>
           <li><span class="ck">✓</span> Rewards, streaks &amp; bookmarks</li>
