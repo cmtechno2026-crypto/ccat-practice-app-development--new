@@ -145,6 +145,29 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
     return { item: rows[0] ?? null, students: students.rows, allowed_tiers: ALLOWED_TIERS, grant_reasons: ADMIN_GRANT_REASONS };
   });
 
+  // GET /v1/admin/entitlements/unclaimed — PAID entitlements with NO account yet (landing Case 2: paid
+  // before signing up). These don't appear on the Students page because no student exists, so surface them
+  // here so paid-but-abandoned signups can be tracked/chased. They drop off this list automatically the
+  // moment the buyer creates an account with that email (a linked student then exists).
+  app.get('/v1/admin/entitlements/unclaimed', guard, async (req) => {
+    requirePermission(req, 'config.global');
+    const { rows } = await db.query(
+      `select e.guardian_email, e.tier, e.status, e.current_period_end, e.source, e.grant_reason,
+              e.external_ref, e.created_at, e.updated_at
+         from ccat.entitlements e
+        where e.grant_reason = 'paid'
+          and e.status = 'active'
+          and not exists (
+            select 1 from ccat.guardian_contacts gc
+              join ccat.student_guardians sg on sg.guardian_id = gc.id
+              join ccat.students s on s.id = sg.student_id
+             where lower(gc.email::text) = lower(e.guardian_email) and s.status <> 'purged')
+        order by e.created_at desc
+        limit 200`,
+    );
+    return { items: rows };
+  });
+
   // POST /v1/admin/entitlements — upsert a guardian's entitlement by email (source='manual').
   app.post('/v1/admin/entitlements', guard, async (req) => {
     requirePermission(req, 'config.global');

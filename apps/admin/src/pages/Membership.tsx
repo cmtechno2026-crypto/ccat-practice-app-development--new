@@ -186,8 +186,75 @@ export function Membership() {
         </div>
       </Panel>
 
+      <UnclaimedPaidPanel />
+
       <DefaultPlanPanel editable={editable} />
     </>
+  );
+}
+
+// Landing Case 2 — parents who PAID before creating an account. No student exists yet, so they don't
+// appear on the Students page; their plan is reserved on the email and activates automatically once they
+// sign up with it. This list is how ops can see and chase abandoned post-payment signups. Rows disappear
+// on their own once the account is created.
+const PLAN_NAME: Record<string, string> = { free: 'Free', t50: 'Standard', t250: 'Plus', t500: 'Premium' };
+function UnclaimedPaidPanel() {
+  const toast = useToast();
+  const [items, setItems] = useState<any[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setBusy(true);
+    try { const r = await api.unclaimedPaid(); setItems(r.items ?? []); }
+    catch (e) { toast((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const daysSince = (iso?: string) => {
+    if (!iso) return null;
+    const d = new Date(iso); if (isNaN(d.getTime())) return null;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  };
+
+  return (
+    <Panel title="Paid — awaiting account">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <p className="lead" style={{ margin: 0, maxWidth: 680 }}>
+          Parents who paid on the website before creating an account. They aren't in Students yet — access is
+          reserved on their email and activates automatically when they sign up with that same email.
+        </p>
+        <button className="btn ghost" onClick={load} disabled={busy}>{busy ? 'Loading…' : 'Refresh'}</button>
+      </div>
+
+      {items == null ? (
+        <div className="muted" style={{ fontSize: 13 }}>Loading…</div>
+      ) : items.length === 0 ? (
+        <div className="muted" style={{ fontSize: 13 }}>None — every paid purchase has an account.</div>
+      ) : (
+        <div className="stack" style={{ display: 'grid', gap: 8 }}>
+          {items.map((it, i) => {
+            const days = daysSince(it.created_at);
+            return (
+              <div key={i} className="between" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                padding: '10px 12px', border: '1px solid var(--line, rgba(127,127,127,.18))', borderRadius: 10 }}>
+                <div>
+                  <strong>{it.guardian_email}</strong>
+                  <div className="muted" style={{ fontSize: 12.5 }}>
+                    {PLAN_NAME[it.tier] ?? it.tier} plan
+                    {it.current_period_end ? ` · expires ${new Date(it.current_period_end).toLocaleDateString()}` : ''}
+                    {it.created_at ? ` · paid ${new Date(it.created_at).toLocaleDateString()}` : ''}
+                  </div>
+                </div>
+                <span className="pill dotted" style={days != null && days >= 3 ? { color: 'var(--amber, #a15c00)' } : undefined}>
+                  {days != null ? `waiting ${days}d` : 'awaiting account'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
   );
 }
 

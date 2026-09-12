@@ -188,6 +188,14 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Co
            values ($1,$2,'guardian',true)`,
           [studentId, guardianId],
         );
+        // If this guardian PAID before creating the account (landing Case 2), an entitlement row already
+        // exists keyed on the email with guardian_id null. Link it to the guardian contact now so the
+        // record is complete — the plan is resolved by email either way, this just fills in the linkage.
+        await client.query(
+          `update ccat.entitlements set guardian_id = $1, updated_at = now()
+            where lower(guardian_email) = lower($2) and guardian_id is null`,
+          [guardianId, grant.guardianEmail],
+        );
         await client.query(
           `insert into ccat.consents(student_id, guardian_id, policy_version, consent_hash)
            values ($1,$2,$3,$4)`,
