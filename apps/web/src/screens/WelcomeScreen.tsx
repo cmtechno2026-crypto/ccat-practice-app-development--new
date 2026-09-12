@@ -132,11 +132,11 @@ const BODY = `
     <div class="stack" style="margin-top:32px">
       <h3>The Concept Mastery CCAT Practice System</h3>
       <ul>
-        <li><div class="item"><b>Practice by exact CCAT skill</b><span>Verbal, Non-verbal &amp; Quantitative, split into focused sets.</span></div><div class="val">Core</div></li>
-        <li><div class="item"><b>Full-length timed mock exams</b><span>Three-battery papers that mirror the real test and its clock.</span></div><div class="val">Core</div></li>
-        <li><div class="item"><b>Progress &amp; readiness score</b><span>Accuracy per battery and a readiness number you can track.</span></div><div class="val">Core</div></li>
-        <li><div class="item"><b>Rewards, streaks &amp; achievements</b><span>Keeps your child practising on their own.</span></div><div class="val">Core</div></li>
-        <li><div class="item"><b>Bookmarks for tricky questions</b><span>Save the hard ones and revisit any time.</span></div><div class="val">Core</div></li>
+        <li><div class="item"><b>Practice by exact CCAT skill</b><span>Verbal, Non-verbal &amp; Quantitative, split into focused sets.</span></div><div class="val">Standard</div></li>
+        <li><div class="item"><b>Full-length timed mock exams</b><span>Three-battery papers that mirror the real test and its clock.</span></div><div class="val">Plus</div></li>
+        <li><div class="item"><b>Progress &amp; readiness score</b><span>Accuracy per battery and a readiness number you can track.</span></div><div class="val">Standard</div></li>
+        <li><div class="item"><b>Rewards, streaks &amp; achievements</b><span>Keeps your child practising on their own.</span></div><div class="val">Standard</div></li>
+        <li><div class="item"><b>Bookmarks for tricky questions</b><span>Save the hard ones and revisit any time.</span></div><div class="val">Standard</div></li>
         <li><div class="item"><b>Weekly test + live 1-on-1 mentoring</b><span>On Premium: a weekly checkpoint plus 5 live coaching sessions.</span></div><div class="val">Premium</div></li>
       </ul>
       <div class="kicker">A year of everything above — for less than the cost of a single private tutoring session.</div>
