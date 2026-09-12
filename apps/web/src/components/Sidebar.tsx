@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import cmMark from '../assets/cm-mark.png';
 import { useApp } from '../lib/store';
-import { PAYMENTS_ENABLED } from '../lib/entitlements';
+import { PAYMENTS_ENABLED, capsOf } from '../lib/entitlements';
 import { Avatar } from './Avatar';
 
 // Primary navigation — persistent LEFT sidebar (desktop + tablet). PUSH model: this panel sits in the
@@ -44,7 +44,9 @@ const CLOSE_DELAY_MS = 200;
 export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDrawer }: SidebarProps) {
   const loc = useLocation();
   const nav = useNavigate();
-  const { profile, signOut } = useApp();
+  const { profile, signOut, entitlements, entitlementsLoaded } = useApp();
+  // Free plan → Progress is a membership feature; show a lock on its nav item.
+  const progressLocked = PAYMENTS_ENABLED && capsOf(entitlements, entitlementsLoaded).practice !== 'all';
   const openT = useRef<number | undefined>(undefined);
   const closeT = useRef<number | undefined>(undefined);
 
@@ -83,10 +85,14 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
       <nav className="snav-list">
         {NAV.map((it) => {
           const active = it.match(loc);
+          const locked = progressLocked && it.to === '/progress';
           return (
-            <Link key={it.label} to={it.to} title={it.label} className={`snav ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
-              <span className="ico" aria-hidden>{it.icon}</span>
-              <span className="label">{it.label}</span>
+            <Link key={it.label} to={it.to} title={locked ? `${it.label} — membership` : it.label} className={`snav ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
+              <span className="ico" aria-hidden style={locked ? { position: 'relative' } : undefined}>
+                {it.icon}
+                {locked && <span style={{ position: 'absolute', right: -4, top: -6, fontSize: 10 }}>🔒</span>}
+              </span>
+              <span className="label">{it.label}{locked && <span aria-hidden style={{ marginLeft: 6 }}>🔒</span>}</span>
             </Link>
           );
         })}

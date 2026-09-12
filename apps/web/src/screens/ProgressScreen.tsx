@@ -229,8 +229,10 @@ function ExamProgress({ query, locked, onUpgrade }: { query: ProgressQuery; lock
                             <div style={{ fontWeight: 800, fontSize: 13, color: cv.color }}>{cv.name}</div>
                             <div style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 22, marginTop: 4 }}>{b.total > 0 ? `${b.correct}/${b.total}` : '—'}</div>
                             <div className="muted" style={{ fontSize: 12 }}>{acc == null ? '—' : `${acc}% accuracy`}</div>
-                            <div style={{ fontWeight: 800, fontSize: 12, marginTop: 2 }}>
-                              ⏱ {fmtSeconds(b.time_spent_seconds)}{b.timed_out ? ' · time up' : (b.time_spent_seconds != null ? ' used' : '')}
+                            <div style={{ fontWeight: 800, fontSize: 12, marginTop: 2, color: b.time_spent_seconds == null ? 'var(--muted)' : undefined }}>
+                              {b.time_spent_seconds == null
+                                ? '⏳ Not started'
+                                : `⏱ ${fmtSeconds(b.time_spent_seconds)}${b.timed_out ? ' · time up' : ' used'}`}
                             </div>
                           </div>
                         );

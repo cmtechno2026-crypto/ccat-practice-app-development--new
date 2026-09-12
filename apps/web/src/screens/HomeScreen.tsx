@@ -80,6 +80,8 @@ export function HomeScreen() {
   // Payments Phase 2: when the flag is off, capsOf() unlocks everything, so examLocked is always false
   // and the exam entry tile renders exactly as today.
   const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements, entitlementsLoaded).exam;
+  // Free plan (demo-level practice) → progress tracking is a membership feature. Lock the home Progress card.
+  const progressLocked = PAYMENTS_ENABLED && capsOf(entitlements, entitlementsLoaded).practice !== 'all';
   const { loading, error, data, reload } = useAsync(async () => {
     const [summary, readiness, progress, announcements, active, achievements, analytics] = await Promise.all([
       client.rewardsSummary(), client.readiness(), client.progress(), client.announcements(),
@@ -175,9 +177,20 @@ export function HomeScreen() {
               <Card className="home-progress">
                 <div className="hp-head">
                   <div className="eyebrow">📊 Progress</div>
-                  <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>
+                  {!progressLocked && <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>}
                 </div>
-                {(() => {
+                {progressLocked ? (
+                  <button onClick={() => nav('/plan')}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+                      background: 'var(--tint-lilac, #eef3fb)', border: 0, borderRadius: 12, padding: '14px 16px', cursor: 'pointer', marginTop: 8 }}>
+                    <span style={{ fontSize: 26 }} aria-hidden>🔒</span>
+                    <span style={{ flex: 1 }}>
+                      <strong>Progress tracking is a membership feature</strong>
+                      <div className="muted" style={{ fontSize: 13 }}>Upgrade to see your battery breakdowns and exam analytics.</div>
+                    </span>
+                    <span className="pill" style={{ background: '#fdf3e0', color: '#a5731a', whiteSpace: 'nowrap' }}>🔒 Membership</span>
+                  </button>
+                ) : (() => {
                   // Sample 4 — one tile per battery: progress-% ring on the left, "N sets done" on the right.
                   const batteries = data.analytics?.batteries ?? [];
                   return (
