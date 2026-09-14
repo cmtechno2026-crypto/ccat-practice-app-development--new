@@ -4,11 +4,13 @@ import { useAuth } from '../lib/auth';
 import { Loading, ErrorBox, Modal, useToast } from '../components/ui';
 import { ContentTabs } from './Content';
 import { BulkSets } from '../components/BulkSets';
+import { SetEditor } from '../components/SetEditor';
+import { RenameSetName } from '../components/RenameSetName';
 
-// EXAM PAPERS (new model): Battery (category) → Sets → Questions. No subcategory.
-// Pick a battery pill → see that battery's single-battery exam sets → add / bulk-add sets → each set has
-// its own time limit and up to 60 questions from that battery. Backend accepts allowed_exam sets with a
-// NULL subcategory (see admin-content-authoring create + /questions cap = 60).
+// EXAM PAPERS (new model): Battery (category) → Sets → Questions. No subcategory. Presented as the SAME
+// full-width set table as Practice (rename in place, Questions progress bar, Status, Updated, Actions) —
+// plus a Time-limit column, since exam sets are timed and practice sets are not. Edit opens the shared
+// SetEditor. Backend accepts allowed_exam sets with a NULL subcategory.
 
 const BATTERIES = [
   { key: 'verbal', label: 'Verbal', color: '#5b8def' },
@@ -17,6 +19,11 @@ const BATTERIES = [
 ];
 const MAX_Q = 60;
 const slugKey = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+const fmtDate = (d: string) => {
+  if (!d) return '—';
+  const t = new Date(d); if (isNaN(t.getTime())) return '—';
+  return t.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
 
 export function ExamPapers() {
   const { can } = useAuth();
@@ -27,11 +34,9 @@ export function ExamPapers() {
   const [error, setError] = useState<any>(null);
   const [grade, setGrade] = useState<string>('');
   const [battery, setBattery] = useState<string>('verbal');
-  const [selId, setSelId] = useState<string>('');
-  const [detail, setDetail] = useState<any | null>(null);
   const [creating, setCreating] = useState(false);
   const [bulk, setBulk] = useState(false);
-  const [pick, setPick] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
 
   const catIdFor = (key: string) => (tax?.categories ?? []).find((c: any) => c.key === key)?.id as string | undefined;
 
@@ -44,37 +49,15 @@ export function ExamPapers() {
     s.allowed_exam && (!grade || String(s.grade_number) === grade) && s.category_id === catIdFor(battery)
   ), [sets, grade, battery, tax]); // eslint-disable-line
 
-  useEffect(() => {
-    if (examSets.length && !examSets.some(f => f.id === selId)) setSelId(examSets[0].id);
-    if (!examSets.length) { setSelId(''); setDetail(null); }
-  }, [examSets]); // eslint-disable-line
-
-  const loadDetail = (id: string) => { if (!id) return setDetail(null); api.set(id).then(setDetail).catch(() => setDetail(null)); };
-  useEffect(() => { loadDetail(selId); }, [selId]); // eslint-disable-line
-
-  const refresh = () => { loadSets(); if (selId) loadDetail(selId); };
-  const act = async (fn: Promise<any>, m: string) => { try { await fn; toast(m); refresh(); } catch (e) { toast((e as Error).message); } };
-
-  const setDuration = async (mins: number) => {
-    if (!detail) return;
+  const act = async (fn: Promise<any>, m: string) => { try { await fn; toast(m); loadSets(); } catch (e) { toast((e as Error).message); } };
+  const saveDuration = async (id: string, mins: number) => {
     const v = Math.max(1, Math.min(180, Math.round(mins) || 0));
-    await act(api.patchSet(detail.id, { duration_minutes: v }), `Time limit ${v} min`);
+    await act(api.patchSet(id, { duration_minutes: v }), `Time limit ${v} min`);
   };
-  const removeQuestion = async (qid: string) => {
-    if (!detail) return;
-    const ids = detail.questions.map((q: any) => q.id).filter((x: string) => x !== qid);
-    await act(api.setMembership(detail.id, ids), 'Question removed');
-  };
-  const addQuestions = async (newIds: string[]) => {
-    if (!detail) return;
-    const cur = detail.questions.map((q: any) => q.id);
-    const ids = [...new Set([...cur, ...newIds])];
-    if (ids.length > MAX_Q) { toast(`An exam set holds at most ${MAX_Q} questions`); return; }
-    await act(api.setMembership(detail.id, ids), 'Questions added');
-    setPick(false);
-  };
+  const doDelete = async (id: string) => { try { await api.deleteSet(id); toast('Deleted'); loadSets(); } catch (e) { toast((e as Error).message); } };
 
   const gradeObj = tax?.grades?.find((g: any) => String(g.grade_number) === grade);
+  const batteryLabel = BATTERIES.find(b => b.key === battery)?.label || '';
 
   return (
     <div>
@@ -118,62 +101,51 @@ export function ExamPapers() {
       </div>
 
       {error ? <ErrorBox e={error} /> : sets === null ? <Loading /> : (
-        <div className="contentgrid" style={{ gridTemplateColumns: '280px 1fr' }}>
-          {/* set list for this battery */}
-          <aside className="cattree">
-            {examSets.length === 0 && <div className="muted" style={{ padding: 10, fontSize: 13 }}>No {BATTERIES.find(b => b.key === battery)?.label} exam sets in Grade {grade} yet.</div>}
-            {examSets.map(f => (
-              <button key={f.id} className={`treesub ${selId === f.id ? 'on' : ''}`} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }} onClick={() => setSelId(f.id)}>
-                <span style={{ fontWeight: 700 }}>{f.name}</span>
-                <span className="muted tabnum" style={{ fontSize: 12 }}>{f.question_count} q · {f.duration_minutes ? `${f.duration_minutes} min` : 'no time'} · {f.state}</span>
-              </button>
-            ))}
-          </aside>
-
-          {/* selected set editor */}
-          <div>
-            {!detail ? <div className="panel"><div className="empty">Select or create an exam set.</div></div> : (
-              <>
-                <div className="panel" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                  <div style={{ fontFamily: 'Baloo 2', fontSize: 20, color: 'var(--ink)' }}>{detail.name}</div>
-                  <span className={`pill s-${detail.state}`} style={{ textTransform: 'uppercase', fontSize: 11 }}>{detail.state}</span>
-                  <label className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>⏱ Time limit
-                    <input key={`${detail.id}-${detail.duration_minutes}`} type="number" min={1} max={180} defaultValue={detail.duration_minutes ?? 30} disabled={!manage}
-                      onBlur={e => setDuration(Number(e.target.value))} style={{ width: 64 }} /> min</label>
-                  <span className="spacerx" style={{ flex: 1 }} />
-                  <span className="muted" style={{ fontSize: 13 }}>{detail.question_count} / {MAX_Q} questions</span>
-                  {manage && detail.state === 'draft' && <button className="btn green sm" onClick={() => act(api.publishSet(detail.id), 'Published')}>Publish</button>}
-                  {manage && detail.state === 'published' && <button className="btn amber sm" onClick={() => act(api.retireSet(detail.id), 'Retired — removed from the student catalog')}>Retire</button>}
-                  {manage && (detail.state === 'draft' || detail.state === 'retired') && <button className="btn danger sm" onClick={async () => { try { await api.deleteSet(detail.id); toast('Deleted'); setSelId(''); setDetail(null); loadSets(); } catch (e) { toast((e as Error).message); } }}>Delete</button>}
-                </div>
-
-                {detail.question_count < 5 && <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Add at least 5 questions before this set can be published (currently {detail.question_count}).</p>}
-
-                <div className="panel" style={{ marginTop: 12 }}>
-                  <div className="panelhead" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3>Questions <span className="muted" style={{ fontSize: 12.5, fontWeight: 700 }}>· {detail.question_count} of {MAX_Q}</span></h3>
-                    {manage && detail.state === 'draft' && <button className="btn sm" onClick={() => setPick(true)}>+ Add question</button>}
-                  </div>
-                  {(detail.questions || []).length === 0 ? <div className="empty">No questions yet.</div> : (
-                    <div className="tablewrap"><table>
-                      <tbody>{detail.questions.map((q: any) => (
-                        <tr key={q.id}>
-                          <td><div className="qrow-prev">{q.preview || '(no text)'}</div><div className="muted" style={{ fontSize: 12 }}>{q.difficulty} · {q.state}</div></td>
-                          {manage && detail.state === 'draft' && <td className="right" style={{ width: 90 }}><button className="btn danger sm" onClick={() => removeQuestion(q.id)}>Remove</button></td>}
-                        </tr>
-                      ))}</tbody>
-                    </table></div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+        <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="tablewrap"><table>
+            <thead><tr><th>Set</th><th>Questions</th><th>Time limit</th><th>Status</th><th>Updated</th><th className="right">Actions</th></tr></thead>
+            <tbody>{examSets.map(s => {
+              const pct = Math.min(100, Math.round((s.question_count / MAX_Q) * 100));
+              const barc = s.question_count >= 5 ? 'var(--green)' : s.question_count >= 1 ? 'var(--amber)' : 'var(--coral)';
+              return (
+                <tr key={s.id} className={s.state === 'retired' ? 'row-retired' : ''}>
+                  <td>
+                    <RenameSetName setId={s.id} name={s.name}
+                      existingNames={new Set(examSets.filter(x => x.state !== 'retired' && x.id !== s.id).map(x => String(x.name || '').trim().toLowerCase()))}
+                      onRenamed={() => loadSets()}>
+                      <button className="linklike" style={{ fontWeight: 700 }} onClick={() => setEditId(s.id)}>{s.name}</button>
+                    </RenameSetName>
+                    <div className="muted" style={{ fontSize: 12 }}>{batteryLabel} · v{s.version_number} · exam</div>
+                  </td>
+                  <td style={{ minWidth: 130 }}>
+                    <div className="tabnum" style={{ fontWeight: 700, color: barc }}>{s.question_count} / {MAX_Q}</div>
+                    <div className="rbar"><i style={{ width: `${Math.max(4, pct)}%`, background: barc }} /></div>
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <span className="muted" style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>⏱
+                      <input key={`${s.id}-${s.duration_minutes}`} type="number" min={1} max={180} defaultValue={s.duration_minutes ?? 30} disabled={!manage}
+                        onBlur={e => saveDuration(s.id, Number(e.target.value))} style={{ width: 56 }} /> min</span>
+                  </td>
+                  <td><span className={`pill s-${s.state}`} style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '.03em' }}>{s.state}</span></td>
+                  <td className="muted tabnum" style={{ fontSize: 12.5 }}>{fmtDate(s.updated_at)}</td>
+                  <td><div className="rowactions" style={{ justifyContent: 'flex-end' }}>
+                    {manage && <button className="btn ghost sm" onClick={() => setEditId(s.id)}>Edit</button>}
+                    {s.state === 'draft' && can('content.publish') && <button className="btn green sm" onClick={() => act(api.publishSet(s.id), 'Published')}>Publish</button>}
+                    {s.state === 'published' && can('content.retire') && <button className="btn amber sm" onClick={() => act(api.retireSet(s.id), 'Retired — removed from the student catalog')}>Retire</button>}
+                    {manage && <button className="btn ghost sm" onClick={() => act(api.copySet(s.id), 'Copied to a new draft')}>Copy</button>}
+                    {manage && <button className="btn danger sm" onClick={() => doDelete(s.id)}>Delete</button>}
+                  </div></td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+          {examSets.length === 0 && <div className="empty">No {batteryLabel} exam sets in Grade {grade} yet.</div>}
         </div>
       )}
 
       {creating && tax && gradeObj && catIdFor(battery) && (
-        <NewExamSet gradeObj={gradeObj} categoryId={catIdFor(battery)!} batteryLabel={BATTERIES.find(b => b.key === battery)!.label}
-          onClose={() => setCreating(false)} onDone={(id) => { setCreating(false); loadSets(); setSelId(id); }} />
+        <NewExamSet gradeObj={gradeObj} categoryId={catIdFor(battery)!} batteryLabel={batteryLabel}
+          onClose={() => setCreating(false)} onDone={(id) => { setCreating(false); loadSets(); setEditId(id); }} />
       )}
       {bulk && tax && gradeObj && catIdFor(battery) && (() => {
         const catId = catIdFor(battery)!;
@@ -190,9 +162,8 @@ export function ExamPapers() {
             onClose={() => setBulk(false)} onDone={() => loadSets()} />
         );
       })()}
-      {pick && detail && (
-        <QuestionPicker gradeNumber={detail.grade_number} categoryKey={battery} current={detail.questions.map((q: any) => q.id)}
-          remaining={MAX_Q - detail.question_count} onClose={() => setPick(false)} onAdd={addQuestions} />
+      {editId && tax && (
+        <SetEditor taxonomy={tax} setId={editId} onClose={() => setEditId(null)} onSaved={() => loadSets()} />
       )}
     </div>
   );
@@ -222,30 +193,6 @@ function NewExamSet({ gradeObj, categoryId, batteryLabel, onClose, onDone }: { g
       <input type="number" min={1} max={180} value={dur} onChange={e => setDur(e.target.value)} />
       <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Single-battery ({batteryLabel}) timed set. Add up to {MAX_Q} questions next.</p>
       <div className="err">{err}</div>
-    </Modal>
-  );
-}
-
-function QuestionPicker({ gradeNumber, categoryKey, current, remaining, onClose, onAdd }: { gradeNumber: number; categoryKey: string; current: string[]; remaining: number; onClose: () => void; onAdd: (ids: string[]) => void }) {
-  const [pool, setPool] = useState<any[] | null>(null);
-  const [sel, setSel] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    Promise.all([api.questions({ state: 'approved' }), api.questions({ state: 'published' })])
-      .then(([a, p]) => setPool([...a.items, ...p.items].filter((q: any) => q.grade_number === gradeNumber && q.category_key === categoryKey && !current.includes(q.id))))
-      .catch(() => setPool([]));
-  }, []); // eslint-disable-line
-  const toggle = (id: string) => setSel(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else { if (n.size >= remaining) return n; n.add(id); } return n; });
-  return (
-    <Modal wide title={`Add questions (${remaining} slot${remaining === 1 ? '' : 's'} left)`} onClose={onClose}
-      footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={sel.size === 0} onClick={() => onAdd([...sel])}>Add ({sel.size})</button></>}>
-      {pool === null ? <div className="empty">Loading…</div> : pool.length === 0 ? <div className="empty">No eligible questions for this battery in Grade {gradeNumber} — add or publish some questions first.</div> : (
-        <div style={{ maxHeight: 320, overflow: 'auto' }}>{pool.map(q => (
-          <label key={q.id} className={`pickrow ${sel.has(q.id) ? 'sel' : ''}`}>
-            <input type="checkbox" checked={sel.has(q.id)} onChange={() => toggle(q.id)} />
-            <div className="grow"><div className="qrow-prev">{q.preview || '(no text)'}</div><div className="muted" style={{ fontSize: 12 }}>{q.difficulty} · {q.state}</div></div>
-          </label>
-        ))}</div>
-      )}
     </Modal>
   );
 }
