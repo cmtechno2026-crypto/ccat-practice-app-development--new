@@ -33,7 +33,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
               cat.display_order as cat_order, sub.display_order as sub_order, sv.state as set_state,
               d.key as difficulty, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.duration_minutes,
               g.practice_enabled as grade_practice_enabled,
-              p.session_id, p.state as session_state, p.mode as session_mode,
+              p.session_id, p.state as session_state, p.mode as session_mode, p.deadline_at,
               p.score_correct, p.score_total, p.answered_count
          from ccat.students st
          join ccat.grades g on g.id = st.grade_id
