@@ -328,7 +328,7 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
 
     const qRes = await db.query(
       `select svq.position, qv.id as question_version_id, qv.question_type,
-              qv.prompt_blocks, qv.option_blocks, qv.correct_option_ids, sa.selected_option_ids
+              qv.prompt_blocks, qv.option_blocks, qv.correct_option_ids, qv.explanation_blocks, sa.selected_option_ids
          from ccat.set_version_questions svq
          join ccat.question_versions qv on qv.id = svq.question_version_id
          left join ccat.session_answers sa on sa.session_id = $1 and sa.question_version_id = qv.id
@@ -354,6 +354,7 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
         question_type: r0.question_type,
         prompt_blocks: r0.prompt_blocks,
         image_url: imageUrlOfBlocks(r0.prompt_blocks),
+        explanation_blocks: r0.explanation_blocks ?? null,
         options,
         selected_option_ids: selected,
         correct_option_ids: correctIds,

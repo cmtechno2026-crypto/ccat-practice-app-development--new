@@ -89,15 +89,37 @@ function TimeChart({ points }: { points: { date: string; minutes: number }[] }) 
   );
 }
 
-// Slide-in review panel body (fetches the latest submitted attempt for the set).
+// Slide-in review panel body (fetches the latest submitted attempt for the set). Includes filter
+// toggles: show/hide explanations, and show/hide correct vs incorrect (incl. unanswered) questions.
 function SetReviewPanel({ setId, setLabel, onClose }: { setId: string; setLabel: string; onClose: () => void }) {
   const { loading, error, data, reload } = useAsync(async () => client.progressSetReview(setId) as Promise<ProgressSetReview>, [setId]);
+  const [showExpl, setShowExpl] = useState(true);
+  const [showCorrect, setShowCorrect] = useState(true);
+  const [showIncorrect, setShowIncorrect] = useState(true);
+
+  const all = data?.questions ?? [];
+  // "Incorrect" here also covers unanswered (anything not correct).
+  const shown = all.filter((q) => (q.correct ? showCorrect : showIncorrect));
+
+  const chk = (checked: boolean, onChange: () => void, label: string) => (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 12.5, color: '#e9edff', cursor: 'pointer' }}>
+      <input type="checkbox" checked={checked} onChange={onChange} style={{ accentColor: '#fff', width: 15, height: 15 }} />{label}
+    </label>
+  );
+
   return (
     <div className="sp-in">
       <div className="sp-head">
         <h3>{setLabel}</h3>
         <button className="sp-x" aria-label="Close" onClick={onClose}>✕</button>
       </div>
+      {data && data.found && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', padding: '10px 16px', background: 'linear-gradient(90deg,#4b3bd6,#6d4bff)' }}>
+          {chk(showExpl, () => setShowExpl((v) => !v), 'Explanations')}
+          {chk(showCorrect, () => setShowCorrect((v) => !v), 'Correct')}
+          {chk(showIncorrect, () => setShowIncorrect((v) => !v), 'Incorrect')}
+        </div>
+      )}
       <div className="sp-body">
         {loading && <Loader />}
         {error && <ErrorNote error={error} onRetry={reload} />}
@@ -109,22 +131,33 @@ function SetReviewPanel({ setId, setLabel, onClose }: { setId: string; setLabel:
               <div className="a"><span className="n">{data.accuracyPct == null ? '—' : `${data.accuracyPct}%`}</span><span className="l">Accuracy</span></div>
               <div className="a"><span className="n">{fmtSeconds(data.timeSeconds)}</span><span className="l">Time</span></div>
             </div>
-            {data.questions.map((q, i) => (
-              <div key={q.question_version_id} className="sp-q">
-                <div className="sp-qh"><span>Question {i + 1}</span><span className={q.correct ? 'ok' : (q.answered ? 'bad' : 'muted')}>{q.correct ? '✓ Correct' : (q.answered ? '✗ Incorrect' : 'Not answered')}</span></div>
-                {blocksText(q.prompt_blocks) && <div className="sp-qt">{blocksText(q.prompt_blocks)}</div>}
-                <Figure url={q.image_url} kind="question" />
-                <div className="sp-opts">
-                  {q.options.map((o) => (
-                    <div key={o.option_id} className={`sp-opt ${o.correct ? 'correct' : (o.selected ? 'wrong' : '')}`}>
-                      <span className="sp-ot">{blocksText(o.content) || ''}</span>
-                      <Figure url={o.image_url} kind="option" />
-                      <span className="sp-mk">{o.correct ? '✓' : (o.selected ? '✗' : '')}</span>
+            {shown.length === 0 && <div className="muted" style={{ padding: '8px 2px' }}>Nothing to show — adjust the filters above.</div>}
+            {shown.map((q) => {
+              const n = all.indexOf(q) + 1; // stable original question number
+              const expl = blocksText(q.explanation_blocks ?? []);
+              return (
+                <div key={q.question_version_id} className="sp-q">
+                  <div className="sp-qh"><span>Question {n}</span><span className={q.correct ? 'ok' : (q.answered ? 'bad' : 'muted')}>{q.correct ? '✓ Correct' : (q.answered ? '✗ Incorrect' : 'Not answered')}</span></div>
+                  {blocksText(q.prompt_blocks) && <div className="sp-qt">{blocksText(q.prompt_blocks)}</div>}
+                  <Figure url={q.image_url} kind="question" />
+                  <div className="sp-opts">
+                    {q.options.map((o) => (
+                      <div key={o.option_id} className={`sp-opt ${o.correct ? 'correct' : (o.selected ? 'wrong' : '')}`}>
+                        <span className="sp-ot">{blocksText(o.content) || ''}</span>
+                        <Figure url={o.image_url} kind="option" />
+                        <span className="sp-mk">{o.correct ? '✓' : (o.selected ? '✗' : '')}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {showExpl && expl && (
+                    <div style={{ marginTop: 10, background: '#eef3fc', border: '1px solid #d9e4f7', borderRadius: 10, padding: '10px 12px' }}>
+                      <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 12, color: '#2f62c8', marginBottom: 3 }}>💡 Why</div>
+                      <div style={{ fontSize: 13.5, color: '#2a3450', lineHeight: 1.5 }}>{expl}</div>
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
       </div>

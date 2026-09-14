@@ -288,6 +288,7 @@ export interface ProgressReviewQuestion {
   question_type: string;
   prompt_blocks: unknown[];
   image_url: string | null;
+  explanation_blocks: unknown[] | null;  // why the correct answer is correct (may be null)
   options: ProgressReviewOption[];
   selected_option_ids: string[];
   correct_option_ids: string[];
