@@ -165,6 +165,7 @@ export interface CatalogSetProgress {
   status: 'not_started' | 'in_progress' | 'completed';
   session_id: string | null; answered_count: number;
   score_correct: number | null; score_total: number | null;
+  deadline_at?: string | null; // in-progress attempt's deadline (timed sets) → live countdown in the list
 }
 export interface CatalogItem {
   set_version_id: string; name: string; category_key: string; category_name?: string; subcategory: string;

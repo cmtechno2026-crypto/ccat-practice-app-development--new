@@ -21,6 +21,10 @@ interface AppState {
   // false until the first /v1/entitlements/me call settles (success or error). While false the UI shows
   // LOCKED caps so premium never flashes unlocked before snapping to locked.
   entitlementsLoaded: boolean;
+  // Which mode the currently-open session is (set by SessionScreen), so the sidebar can highlight
+  // Practice vs Exam correctly on the shared /session and /result routes. null when not in a session.
+  activeMode: 'practice' | 'exam' | null;
+  setActiveMode: (m: 'practice' | 'exam' | null) => void;
   setProfile: (p: StudentProfile | null) => void;
   refreshProfile: () => Promise<StudentProfile | null>;
   refreshEntitlements: () => Promise<void>;
@@ -39,6 +43,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Payments ON: loaded=false until the first /me settles → capsOf renders locked meanwhile (no flash).
   // Payments OFF: nothing to load, so start loaded=true.
   const [entitlementsLoaded, setEntLoaded] = useState<boolean>(!PAYMENTS_ENABLED);
+  const [activeMode, setActiveMode] = useState<'practice' | 'exam' | null>(null);
 
   const flash = useCallback((msg: string) => {
     setToast(msg);
@@ -98,6 +103,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <Ctx.Provider value={{
       ready, profile, appConfig, toast,
       paymentsEnabled: PAYMENTS_ENABLED, entitlements, entitlementsLoaded,
+      activeMode, setActiveMode,
       setProfile, refreshProfile, refreshEntitlements, signOut, flash,
     }}>
       {children}

@@ -25,7 +25,7 @@ interface PQ {
 export function SessionScreen() {
   const { id = '' } = useParams();
   const nav = useNavigate();
-  const { flash } = useApp();
+  const { flash, setActiveMode } = useApp();
   const [sess, setSess] = useState<SessionWithQuestions | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
@@ -53,6 +53,7 @@ export function SessionScreen() {
     client.getSession(id).then((s) => {
       if (!alive) return;
       setSess(s);
+      setActiveMode(s.mode === 'exam' ? 'exam' : 'practice'); // drives sidebar Practice/Exam highlight
       bufRef.current = new AnswerBuffer(s.questions);
       const es: Record<string, string[]> = {};
       s.questions.forEach((q) => { if (q.selected_option_ids.length) es[q.question_version_id] = q.selected_option_ids; });
@@ -70,7 +71,7 @@ export function SessionScreen() {
       }
       setRemaining(remainingSeconds(s.deadline_at));
     }).catch((e) => setErr(e instanceof ApiError ? e.message : (e as Error).message));
-    return () => { alive = false; };
+    return () => { alive = false; setActiveMode(null); };
   }, [id]);
 
   useEffect(() => {

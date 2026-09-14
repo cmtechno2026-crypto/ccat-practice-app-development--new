@@ -53,7 +53,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
            )
          left join ccat.difficulties d on d.id = sv.difficulty_id
          left join lateral (
-            select ss.id as session_id, ss.state, ss.mode,
+            select ss.id as session_id, ss.state, ss.mode, ss.deadline_at,
                    r.score_correct, r.score_total,
                    (select count(*)::int from ccat.session_answers sa
                       where sa.session_id = ss.id and sa.answer_version > 0) as answered_count
@@ -112,6 +112,8 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
           answered_count: inProgress ? (r.answered_count ?? 0) : 0,
           score_correct: isTerminal ? r.score_correct : null,
           score_total: isTerminal ? r.score_total : null,
+          // deadline of the in-progress attempt (exam sets are timed) → lets the list show a live countdown.
+          deadline_at: inProgress ? (r.deadline_at ?? null) : null,
         },
       };
       if (caps && demoSetIds) {

@@ -10,13 +10,17 @@ import { Avatar } from './Avatar';
 // driven by the `nav-expanded` class the parent puts on `.layout`) so content is never covered. Icons
 // keep a FIXED x/y in both states — expanding only fades in the labels to their right and widens the
 // panel. Below the mobile breakpoint the same panel becomes an off-canvas drawer (see theme.css).
-interface NavItem { label: string; icon: string; to: string; match: (loc: { pathname: string; search: string }) => boolean }
+type MatchCtx = { pathname: string; search: string; mode: 'practice' | 'exam' | null };
+interface NavItem { label: string; icon: string; to: string; match: (loc: MatchCtx) => boolean }
 
 const isExam = (l: { search: string }) => /mode=exam/.test(l.search);
+// A session/result route belongs to whichever mode the open session is (store.activeMode); fall back to
+// Practice when unknown so nothing is left unhighlighted.
+const inSession = (l: MatchCtx) => l.pathname.startsWith('/session') || l.pathname.startsWith('/result');
 const NAV: NavItem[] = [
   { label: 'Home', icon: '🏠', to: '/home', match: (l) => l.pathname === '/home' },
-  { label: 'Practice', icon: '✏️', to: '/practice', match: (l) => (l.pathname === '/practice' && !isExam(l)) || l.pathname.startsWith('/session') || l.pathname.startsWith('/result') },
-  { label: 'Exam', icon: '📝', to: '/practice?mode=exam', match: (l) => l.pathname === '/practice' && isExam(l) },
+  { label: 'Practice', icon: '✏️', to: '/practice', match: (l) => (l.pathname === '/practice' && !isExam(l)) || (inSession(l) && l.mode !== 'exam') },
+  { label: 'Exam', icon: '📝', to: '/practice?mode=exam', match: (l) => (l.pathname === '/practice' && isExam(l)) || (inSession(l) && l.mode === 'exam') },
   { label: 'Progress', icon: '📊', to: '/progress', match: (l) => l.pathname === '/progress' },
   // Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
   // { label: 'Customize', icon: '🎨', to: '/customize', match: (l) => l.pathname === '/customize' },
@@ -44,7 +48,7 @@ const CLOSE_DELAY_MS = 200;
 export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDrawer }: SidebarProps) {
   const loc = useLocation();
   const nav = useNavigate();
-  const { profile, signOut, entitlements, entitlementsLoaded } = useApp();
+  const { profile, signOut, entitlements, entitlementsLoaded, activeMode } = useApp();
   // Free plan → Progress is a membership feature; show a lock on its nav item.
   const progressLocked = PAYMENTS_ENABLED && capsOf(entitlements, entitlementsLoaded).practice !== 'all';
   const openT = useRef<number | undefined>(undefined);
@@ -84,7 +88,7 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
       </div>
       <nav className="snav-list">
         {NAV.map((it) => {
-          const active = it.match(loc);
+          const active = it.match({ pathname: loc.pathname, search: loc.search, mode: activeMode });
           const locked = progressLocked && it.to === '/progress';
           return (
             <Link key={it.label} to={it.to} title={locked ? `${it.label} — membership` : it.label} className={`snav ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>

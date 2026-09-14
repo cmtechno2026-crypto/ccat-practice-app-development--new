@@ -9,6 +9,17 @@ import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
 import { capsOf, PAYMENTS_ENABLED, type UpgradeFeature } from '../lib/entitlements';
 import { UpgradePanel, LockBadge } from '../components/UpgradePanel';
 
+// Live countdown for an in-progress (Resume) exam set — the clock keeps running server-side, so this
+// shows the true remaining time and ticks every second, turning amber then red as it runs low.
+function ExamCountdown({ deadline }: { deadline: string }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(t); }, []);
+  const rem = Math.max(0, Math.round((new Date(deadline).getTime() - now) / 1000));
+  const mm = Math.floor(rem / 60), ss = rem % 60;
+  const color = rem <= 0 ? 'var(--coral)' : rem < 60 ? 'var(--coral)' : rem < 180 ? 'var(--amber)' : 'var(--green)';
+  return <span style={{ color, fontWeight: 700 }}>⏳ {rem <= 0 ? 'time up' : `${mm}:${String(ss).padStart(2, '0')}`}</span>;
+}
+
 // PRACTICE — 3-level browse that ends in a quiz (mockup: CCAT Practice.dc.html), desktop layout,
 // mockup tokens:  BATTERY (3) → CATEGORY (subcategories) → SET → start screen → practice quiz.
 // Everything comes from GET /v1/catalog (published-only, student's grade, sets with active
@@ -142,6 +153,15 @@ export function PracticeScreen() {
     } finally { setStarting(false); }
   }
 
+  // Exam REDO — the exam is a single timed session; a fresh attempt abandons the in-progress one (exam
+  // abandon needs confirm=true) then starts a new exam session (startSet uses mode='exam' here).
+  async function redoExam(item: CatalogItem) {
+    if (PAYMENTS_ENABLED && !caps.exam) { openUpgrade('exam'); return; }
+    const sid = item.progress?.status === 'in_progress' ? item.progress.session_id : null;
+    if (sid) { try { await client.abandon(sid, true); } catch { /* already terminal — ignore */ } }
+    await startSet(item);
+  }
+
   // ============================ EXAM (battery-first → per-battery set list) ============================
   // Exam page mirrors the Practice battery landing: 3 battery cards → click a battery → that battery's
   // timed exam papers (sets). Each set is a single-battery timed paper with its own duration; clicking
@@ -183,7 +203,7 @@ export function PracticeScreen() {
             {data && sets.length === 0 && <div className="empty">No exam sets in {bm.name} yet.<br />Check back after your teacher publishes an exam.</div>}
             {sets.map((s) => {
               const st = s.progress?.status ?? 'not_started';
-              const cta = st === 'completed' ? 'Retake' : st === 'in_progress' ? 'Resume' : 'Start';
+              const resumeDeadline = st === 'in_progress' ? (s.progress?.deadline_at ?? null) : null;
               return (
                 <Card key={s.set_version_id} className={s.retired ? 'retired' : undefined}>
                   <div className="row" style={{ alignItems: 'flex-start' }}>
@@ -191,14 +211,21 @@ export function PracticeScreen() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h3>{s.name}</h3>
                       <div className="muted">{s.question_count} questions{s.duration_minutes ? ` · ⏱ ${s.duration_minutes} min` : ''}
+                        {resumeDeadline && <> · <ExamCountdown deadline={resumeDeadline} /> left</>}
                         {st === 'completed' && s.progress?.score_total != null && <> · ✅ {s.progress.score_correct}/{s.progress.score_total}</>}</div>
                     </div>
                     {s.retired
                       ? <span className="pill" style={{ background: 'var(--tint)', color: 'var(--muted)' }}>Retired</span>
                       : examLocked
                         ? <button className="btn small secondary" onClick={() => openUpgrade('exam')} aria-label="Unlocks with a membership">🔒 Unlock</button>
-                        : <button className={`btn small ${st === 'completed' ? 'secondary' : ''}`} disabled={starting}
-                            onClick={() => startSet(s, st === 'in_progress' ? s.progress?.session_id : null)}>{cta}</button>}
+                        : st === 'in_progress'
+                          // Timed exam still running → Resume (keep the clock) OR Redo (abandon + fresh attempt).
+                          ? <div className="row" style={{ gap: 8 }}>
+                              <button className="btn small" disabled={starting} onClick={() => startSet(s, s.progress?.session_id)}>Resume ›</button>
+                              <button className="btn small secondary" disabled={starting} onClick={() => redoExam(s)}>↻ Redo</button>
+                            </div>
+                          : <button className={`btn small ${st === 'completed' ? 'secondary' : ''}`} disabled={starting}
+                              onClick={() => startSet(s, null)}>{st === 'completed' ? 'Retake' : 'Start'}</button>}
                   </div>
                 </Card>
               );
