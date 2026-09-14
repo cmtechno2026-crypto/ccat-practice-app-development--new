@@ -39,7 +39,9 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
          join ccat.grades g on g.id = st.grade_id
          join ccat.question_sets qs on qs.grade_id = st.grade_id
          join ccat.categories cat on cat.id = qs.category_id
-         join ccat.subcategories sub on sub.id = qs.subcategory_id
+         -- LEFT JOIN: exam sets are single-battery with NO subcategory (subcategory_id is NULL), so an
+         -- inner join would drop them. Practice sets always have a subcategory.
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
          join ccat.question_set_versions sv on sv.question_set_id = qs.id and (
               -- Live, playable sets…
               (sv.state = 'published'
@@ -95,8 +97,9 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
         retired,
         category_key: r.category_key,
         category_name: r.category_name,   // battery display name (e.g. "Verbal Reasoning")
-        subcategory: r.subcategory,
-        maxQuestionsPerSet: Number(r.max_questions_per_set ?? 15),
+        subcategory: r.subcategory ?? null,
+        // Exam sets have no subcategory; their per-set cap is 60. Practice uses the subcategory's cap.
+        maxQuestionsPerSet: r.allowed_exam ? 60 : Number(r.max_questions_per_set ?? 15),
         difficulty: r.difficulty,
         question_count: r.question_count,
         duration_minutes: r.duration_minutes ?? null,

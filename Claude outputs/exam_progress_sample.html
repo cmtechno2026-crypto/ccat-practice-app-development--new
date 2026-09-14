@@ -1,0 +1,101 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exam Progress — battery nav</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Poppins:wght@600;700;800&family=Nunito:wght@600;700;800&family=Inter:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--blue:#3e7bee;--green:#12b886;--purple:#7b61ff;--ink:#1e2233;--mid:#6b7180;--line:#eef1f6;--white:#fff;--amber:#c67b12;
+    --display:"Baloo 2",system-ui,sans-serif;--head:"Poppins",system-ui,sans-serif;--body:"Nunito",system-ui,sans-serif;--util:"Inter",system-ui,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--body);color:var(--ink);background:#eef2f7;font-size:15px}
+  .page{max-width:1120px;margin:0 auto;padding:22px 16px 60px}
+  .tag{font-family:var(--head);font-weight:700;color:#33405c;font-size:13px;margin:2px 0 16px}
+  .panel{background:var(--white);border-radius:18px;box-shadow:0 16px 40px -30px rgba(30,50,90,.5);padding:20px 22px;margin-bottom:22px}
+  .plabel{display:flex;align-items:center;gap:8px;font-family:var(--head);font-weight:800;letter-spacing:.06em;font-size:13px;color:var(--amber);text-transform:uppercase;margin-bottom:14px}
+
+  /* battery nav pills (image 2) */
+  .pills{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .pill{background:#f2f4f9;border:2px solid transparent;border-radius:999px;padding:9px 18px;font-family:var(--head);font-weight:700;font-size:14px;color:#2a3450;display:flex;align-items:center;gap:9px;cursor:pointer}
+  .pill .dot{width:10px;height:10px;border-radius:50%}
+  .dot-v{background:#5b8def}.dot-q{background:#12b886}.dot-n{background:#7b61ff}
+  .pill.sel{border-color:#7b61ff;color:#6d4bff;background:#fff}
+  .pill .cnt{font-family:var(--util);font-weight:700;font-size:12px;color:#9aa3b5}
+
+  /* table (image 1) */
+  table{width:100%;border-collapse:collapse}
+  thead th{text-align:left;font-family:var(--head);font-weight:700;letter-spacing:.05em;font-size:12px;color:#9aa3b5;text-transform:uppercase;padding:0 8px 10px}
+  thead th.r{text-align:left}
+  .row td{background:#fff;border:1px solid var(--line);padding:16px 8px;vertical-align:middle}
+  .row td:first-child{border-right:0;border-radius:12px 0 0 12px;padding-left:16px}
+  .row td:last-child{border-left:0;border-radius:0 12px 12px 0}
+  .row td:not(:first-child):not(:last-child){border-left:0;border-right:0}
+  .rowspace{height:12px}
+  .chev{color:#c3b3f0;font-weight:800;margin-right:10px}
+  .pname{font-family:var(--display);font-weight:800;font-size:17px;color:var(--ink)}
+  .pdate{color:#9aa3b5;font-size:12.5px;margin-top:1px}
+  .score{font-family:var(--util);font-weight:800;font-size:17px;color:#0c8f68}
+  .acc,.time{font-family:var(--util);font-weight:600;font-size:15px;color:#2a3450}
+  .status{background:#e3f7ee;color:#0c8f68;border-radius:999px;padding:5px 13px;font-family:var(--head);font-weight:700;font-size:12.5px;display:inline-block}
+  .status.na{background:#f1f3f7;color:#8a90a6}
+  .status.timedout{background:#fdeede;color:#b0781a}
+  .empty{color:#9aa3b5;font-size:13.5px;padding:14px 4px}
+
+  /* expanded per-set detail (single battery now → one battery card) */
+  .exp{margin:6px 0 0;padding:14px 16px;background:#f7f9fc;border:1px solid var(--line);border-radius:12px}
+  .exp .bhead{font-family:var(--head);font-weight:700;font-size:13px;color:#6d4bff;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+  .exp .g{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .exp .cell{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .exp .cell .l{font-size:11px;color:#9aa3b5;font-family:var(--head);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .exp .cell .v{font-family:var(--util);font-weight:700;font-size:15px;color:#2a3450;margin-top:2px}
+  .note{color:#6b7180;font-size:12.5px;margin-top:10px}
+  .lab{font-family:var(--head);font-weight:700;color:#33405c;font-size:12.5px;margin:22px 0 8px}
+</style></head><body>
+<div class="page">
+  <div class="tag">SAMPLE — Exam Progress upgraded to the new per-battery model: a battery nav (image 2) filters the paper list. Each exam paper now belongs to ONE battery, so it appears only under its battery.</div>
+
+  <div class="panel">
+    <div class="plabel">📝 Exam Progress</div>
+
+    <!-- battery nav -->
+    <div class="pills">
+      <div class="pill"><span class="dot dot-v"></span>Verbal <span class="cnt">3</span></div>
+      <div class="pill"><span class="dot dot-q"></span>Quantitative <span class="cnt">2</span></div>
+      <div class="pill sel"><span class="dot dot-n"></span>Non-verbal <span class="cnt">2</span></div>
+    </div>
+
+    <!-- filtered paper table for the selected battery -->
+    <table>
+      <thead><tr><th>Paper</th><th>Score</th><th>Accuracy</th><th>Time</th><th class="r">Status</th></tr></thead>
+      <tbody>
+        <tr class="row">
+          <td><span class="chev">›</span><span class="pname">Non-verbal — Set 1</span><div class="pdate" style="margin-left:26px">Sep 12</div></td>
+          <td><span class="score">12/20</span></td>
+          <td><span class="acc">60%</span></td>
+          <td><span class="time">18m 40s</span></td>
+          <td><span class="status">Completed</span></td>
+        </tr>
+        <tr><td colspan="5" class="rowspace"></td></tr>
+        <tr class="row">
+          <td><span class="chev">›</span><span class="pname">Non-verbal — Set 2</span><div class="pdate" style="margin-left:26px">Not attempted</div></td>
+          <td><span class="acc" style="color:#9aa3b5">—</span></td>
+          <td><span class="acc" style="color:#9aa3b5">—</span></td>
+          <td><span class="acc" style="color:#9aa3b5">—</span></td>
+          <td><span class="status na">Not attempted</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="lab">Expanded row (click ›) — single-battery breakdown</div>
+    <div class="exp">
+      <div class="bhead"><span class="dot-n" style="width:9px;height:9px;border-radius:50%;display:inline-block;background:#7b61ff"></span> Non-verbal — Set 1</div>
+      <div class="g">
+        <div class="cell"><div class="l">Score</div><div class="v" style="color:#0c8f68">12 / 20</div></div>
+        <div class="cell"><div class="l">Accuracy</div><div class="v">60%</div></div>
+        <div class="cell"><div class="l">Time</div><div class="v">18m 40s</div></div>
+      </div>
+      <p class="note">Because a paper is now one battery, the expanded view shows that paper's own score / accuracy / time (no 3-battery split). A timed-out paper shows “· time up”, and an unattempted one shows “Not started”.</p>
+    </div>
+  </div>
+
+  <div class="tag" style="color:#8a90a6">Note: the old “Exam set 2 — 9/45” composite paper is retired, so it no longer appears here. Only new single-battery exam papers show, grouped under their battery pill.</div>
+</div>
+</body></html>

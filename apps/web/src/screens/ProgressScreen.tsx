@@ -140,16 +140,17 @@ function fmtWhen(iso: string | null | undefined): string {
   return `${MON[d.getMonth()]} ${d.getDate()}`;
 }
 
-// EXAM PROGRESS — the student's finished exam papers (range-filtered). Each paper row expands to its
-// three-battery breakdown (score, accuracy, and time used from the exam timers). All values come straight
-// from GET /v1/exams/history; nothing is derived beyond per-battery accuracy = round(100·correct/total).
-function ExamProgress({ query, locked, onUpgrade }: { query: ProgressQuery; locked: boolean; onUpgrade: () => void }) {
+// EXAM PROGRESS — the student's finished exam papers (range-filtered), grouped by BATTERY. Pick a battery
+// pill to filter; each paper is single-battery. Clicking a paper opens the SAME slide-in review drawer as a
+// Battery Practice set (per-question review). Values come straight from GET /v1/exams/history.
+const EXAM_BATTERIES = ['verbal', 'quantitative', 'non_verbal'];
+function ExamProgress({ query, locked, onUpgrade, onOpenReview }: { query: ProgressQuery; locked: boolean; onUpgrade: () => void; onOpenReview: (setId: string, label: string) => void }) {
   const { loading, error, data, reload } = useAsync(
     async () => (locked ? ([] as ExamHistoryItem[]) : (client.examHistory({ from: query.from, to: query.to }) as Promise<ExamHistoryItem[]>)),
     [query, locked],
   );
-  const [open, setOpen] = useState<string | null>(null);
-  const papers = data ?? [];
+  const [battery, setBattery] = useState('verbal');
+  const papers = (data ?? []).filter((p) => (p.battery_key ?? 'verbal') === battery);
 
   if (locked) {
     return (
@@ -166,45 +167,58 @@ function ExamProgress({ query, locked, onUpgrade }: { query: ProgressQuery; lock
   }
 
   const hcell = { color: 'var(--muted)', fontWeight: 800, fontSize: 11.5, textTransform: 'uppercase' as const, letterSpacing: '.04em' };
-  const cols = '20px 1.6fr .7fr .8fr .7fr .9fr';
+  const cols = '1.6fr .7fr .8fr .7fr .9fr';
 
   return (
     <div className="rail-card p1-exam" style={{ marginTop: 16, borderColor: '#f0dcb0', boxShadow: 'inset 0 0 0 2px #fdf6e8' }}>
       <div className="eyebrow" style={{ color: '#a5731a' }}>📝 Exam Progress</div>
 
+      {/* battery selector */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '12px 0' }}>
+        {EXAM_BATTERIES.map((k) => {
+          const cv = catVis(k); const on = battery === k;
+          return (
+            <button key={k} onClick={() => setBattery(k)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 999,
+                border: `2px solid ${on ? cv.color : 'transparent'}`, background: on ? '#fff' : '#f2f4f9',
+                color: on ? cv.color : '#2a3450', fontWeight: 700, cursor: 'pointer', font: 'inherit' }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: cv.color }} />{cv.name}
+            </button>
+          );
+        })}
+      </div>
+
       {loading && <Loader />}
       {error && <ErrorNote error={error} onRetry={reload} />}
       {data && papers.length === 0 && (
-        <div className="muted" style={{ marginTop: 10 }}>No exam papers yet — finish a full battery exam to see it here.</div>
+        <div className="muted" style={{ marginTop: 10 }}>No {catVis(battery).name} exam papers yet — finish a {catVis(battery).name} exam to see it here.</div>
       )}
 
       {data && papers.length > 0 && (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 4 }}>
           <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, padding: '0 12px 8px' }}>
-            <span /><span style={hcell}>Paper</span><span style={hcell}>Score</span><span style={hcell}>Accuracy</span><span style={hcell}>Time</span><span style={hcell}>Status</span>
+            <span style={hcell}>Paper</span><span style={hcell}>Score</span><span style={hcell}>Accuracy</span><span style={hcell}>Time</span><span style={hcell}>Status</span>
           </div>
 
           {papers.map((p) => {
-            const isOpen = open === p.session_id;
-            // Status reflects what actually happened, not just the finalize reason: an auto-finalized paper
-            // the student never engaged with (nothing answered, no time on any battery) reads "Not attempted",
-            // not "Timed out"; auto-finalized WITH engagement is "Timed out"; a manual submit is "Completed".
+            // Status: never-engaged auto-finalize → "Not attempted"; auto-finalize WITH engagement → "Timed
+            // out"; manual submit → "Completed".
             const noEngagement = (p.attempted_count ?? 0) === 0 && !p.time_spent_seconds;
             const status = noEngagement
               ? { label: 'Not attempted', bg: '#eef1f6', fg: '#6b7186' }
               : p.end_reason === 'AUTO_SUBMITTED'
                 ? { label: 'Timed out', bg: '#fdefe0', fg: '#a15c00' }
                 : { label: 'Completed', bg: '#e9f7ef', fg: '#1e7a46' };
+            const clickable = !noEngagement && !!p.set_id; // an attempted paper opens the review drawer
             return (
               <div key={p.session_id} style={{ border: '1px solid var(--line)', borderRadius: 14, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
                 <button
-                  onClick={() => setOpen(isOpen ? null : p.session_id)}
-                  aria-expanded={isOpen}
+                  onClick={() => { if (clickable) onOpenReview(p.set_id, p.set_name || 'Exam paper'); }}
+                  disabled={!clickable}
                   style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, alignItems: 'center', width: '100%',
-                    padding: 14, cursor: 'pointer', background: 'transparent', border: 0, textAlign: 'left', font: 'inherit' }}
+                    padding: 14, cursor: clickable ? 'pointer' : 'default', background: 'transparent', border: 0, textAlign: 'left', font: 'inherit' }}
                 >
-                  <span style={{ color: '#a5731a', fontWeight: 800, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
-                  <span><span style={{ fontWeight: 800 }}>{p.set_name || 'Exam paper'}</span><br /><span className="muted" style={{ fontSize: 12 }}>{fmtWhen(p.when)}</span></span>
+                  <span><span className={clickable ? 'set-link' : ''} style={{ fontWeight: 800 }}>{p.set_name || 'Exam paper'}</span><br /><span className="muted" style={{ fontSize: 12 }}>{fmtWhen(p.when)}</span></span>
                   <span style={{ fontWeight: 800 }}>{p.score_total > 0 ? `${p.score_correct}/${p.score_total}` : '—'}</span>
                   <span>{p.score_total > 0 ? `${p.accuracy_pct}%` : '—'}</span>
                   <span>{fmtSeconds(p.time_spent_seconds)}</span>
@@ -215,31 +229,6 @@ function ExamProgress({ query, locked, onUpgrade }: { query: ProgressQuery; lock
                     </span>
                   </span>
                 </button>
-
-                {isOpen && (
-                  <div style={{ padding: '4px 14px 16px', borderTop: '1px dashed var(--line)', background: '#fcfbf7' }}>
-                    <div style={{ ...hcell, margin: '12px 2px 10px' }}>Performance by battery</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-                      {p.by_battery.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No per-battery breakdown for this paper.</div>}
-                      {p.by_battery.map((b) => {
-                        const cv = catVis(b.category_key);
-                        const acc = b.total > 0 ? Math.round((100 * b.correct) / b.total) : null;
-                        return (
-                          <div key={b.category_key} style={{ borderRadius: 14, padding: 14, background: '#fff', border: '1px solid var(--line)', borderTop: `4px solid ${cv.color}` }}>
-                            <div style={{ fontWeight: 800, fontSize: 13, color: cv.color }}>{cv.name}</div>
-                            <div style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 22, marginTop: 4 }}>{b.total > 0 ? `${b.correct}/${b.total}` : '—'}</div>
-                            <div className="muted" style={{ fontSize: 12 }}>{acc == null ? '—' : `${acc}% accuracy`}</div>
-                            <div style={{ fontWeight: 800, fontSize: 12, marginTop: 2, color: b.time_spent_seconds == null ? 'var(--muted)' : undefined }}>
-                              {b.time_spent_seconds == null
-                                ? '⏳ Not started'
-                                : `⏱ ${fmtSeconds(b.time_spent_seconds)}${b.timed_out ? ' · time up' : ' used'}`}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}
@@ -425,7 +414,7 @@ export function ProgressScreen() {
                   )}
                 </div>
               </div>
-              <ExamProgress query={query} locked={examLocked} onUpgrade={() => nav('/plan')} />
+              <ExamProgress query={query} locked={examLocked} onUpgrade={() => nav('/plan')} onOpenReview={(id, label) => setPreview({ id, label })} />
               </>
             );
           })()}

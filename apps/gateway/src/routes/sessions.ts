@@ -97,10 +97,10 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
 
     const sv = await db.query(
       `select sv.id, sv.allowed_practice, sv.allowed_exam, sv.state, sv.ruleset_version_id, qs.grade_id,
-              sub.key as subcategory_key
+              sv.duration_minutes, sub.key as subcategory_key
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id = sv.question_set_id
-         join ccat.subcategories sub on sub.id = qs.subcategory_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
         where sv.id = $1`,
       [body.set_version_id],
     );
@@ -126,11 +126,14 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     }
     if (body.mode === 'practice' && !set.allowed_practice) throw Errors.validation('Practice not allowed', { code: 'MODE_NOT_ALLOWED' });
     if (body.mode === 'exam' && !set.allowed_exam) throw Errors.validation('Exam not allowed', { code: 'MODE_NOT_ALLOWED' });
-    // Exam papers are timed PER BATTERY (each battery's clock starts when the student starts it), so the
-    // session row itself is untimed — there is no single overall deadline. Practice keeps its own timer.
+    // Exam sets are single-battery and run as ONE server-timed session: the whole set has a single
+    // deadline computed from the set's own duration_minutes. The clock runs on the server (deadline_at),
+    // so leaving/closing the page does not pause it; the overdue worker (finalizeOverdueSessions) and the
+    // answer deadline-guard auto-submit at 0. Practice keeps its per-session timer choice.
     const isExam = body.mode === 'exam';
-    const timerType: 'untimed' | 'timed' = isExam ? 'untimed' : body.timer_type;
-    const durationSeconds = isExam ? null : (body.duration_seconds ?? null);
+    const examMinutes = Number(set.duration_minutes) > 0 ? Number(set.duration_minutes) : 30;
+    const timerType: 'untimed' | 'timed' = isExam ? 'timed' : body.timer_type;
+    const durationSeconds = isExam ? examMinutes * 60 : (body.duration_seconds ?? null);
     if (timerType === 'timed' && !durationSeconds) throw Errors.validation('duration_seconds required for timed');
 
     // Payments Phase 2 hard gate (flag-gated). A locked set MUST NOT start a session. Placed after the
@@ -198,7 +201,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
          join ccat.question_set_versions sv on sv.id = s.set_version_id
          join ccat.question_sets qs on qs.id = sv.question_set_id
          join ccat.categories cat on cat.id = qs.category_id
-         join ccat.subcategories sub on sub.id = qs.subcategory_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
          left join ccat.difficulties d on d.id = sv.difficulty_id
         where s.student_id = $1 and s.state = 'IN_PROGRESS'
         order by s.started_at desc
@@ -350,32 +353,8 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     if (s.rows.length === 0) throw Errors.notFound('Session not found');
     const sess = s.rows[0]!;
     if (sess.state !== 'IN_PROGRESS') throw Errors.sessionTerminal();
-    // Exam batteries are timed independently: an answer for a battery whose timer has expired (or that was
-    // never started) is rejected — that battery is locked, but the other batteries keep going.
-    if (sess.mode === 'exam' && body.answers.length > 0) {
-      const qids = body.answers.map((a) => a.question_version_id);
-      const cats = await db.query(
-        `select qv.id, qcat.key as category_key
-           from ccat.question_versions qv
-           join ccat.logical_questions lq on lq.id = qv.logical_question_id
-           join ccat.categories qcat on qcat.id = lq.category_id
-          where qv.id = any($1)`,
-        [qids],
-      );
-      const catOf = new Map<string, string>(cats.rows.map((r: any) => [r.id, r.category_key]));
-      const bat = await db.query(
-        `select category_key, deadline_at, completed_at from ccat.session_batteries where session_id = $1`,
-        [id],
-      );
-      const batBy = new Map<string, any>(bat.rows.map((r: any) => [r.category_key, r]));
-      const now = new Date();
-      for (const a of body.answers) {
-        const ck = catOf.get(a.question_version_id);
-        const b = ck ? batBy.get(ck) : undefined;
-        const expired = !b || (b.deadline_at && new Date(b.deadline_at) <= now) || !!b.completed_at;
-        if (expired) throw Errors.conflict('BATTERY_TIME_UP', 'This battery\'s time is up');
-      }
-    }
+    // Exam sets now run as a single server-timed session (one per-set deadline), so the standard
+    // deadline guard below covers them — no separate per-battery expiry check.
     // Deadline-aware guard (§14): a timed session past its deadline cannot accept answers;
     // finalize it and reject the write.
     if (sess.timer_type === 'timed' && sess.deadline_at && new Date(sess.deadline_at) <= new Date()) {
@@ -504,12 +483,14 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
 
     const res = await db.query(
       `select distinct on (qs.id)
-              s.id as session_id, s.terminal_at, r.terminal_state, r.score_correct, r.score_total, r.detail,
-              qs.name as set_name
+              s.id as session_id, qs.id as set_id, s.terminal_at, s.started_at, r.terminal_state, r.score_correct, r.score_total, r.detail,
+              qs.name as set_name, cat.key as battery_key, sv.duration_minutes,
+              greatest(0, extract(epoch from (s.terminal_at - s.started_at)))::int as elapsed_secs
          from ccat.sessions s
          join ccat.session_results r on r.session_id = s.id
          join ccat.question_set_versions sv on sv.id = s.set_version_id
          join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.categories cat on cat.id = qs.category_id
         where ${cond.join(' and ')}
         order by qs.id, s.terminal_at desc nulls last`,
       params,
@@ -518,49 +499,29 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     const rows = res.rows.slice().sort((a: any, b: any) =>
       new Date(b.terminal_at ?? 0).getTime() - new Date(a.terminal_at ?? 0).getTime()).slice(0, 25);
 
-    // Per-battery time from the exam timers (ccat.session_batteries). Time used for a battery = from when
-    // the student started it until it ended for them: completed_at if they finished it, else the battery
-    // deadline, never past the exam's own terminal time. timed_out = the battery ended by its deadline
-    // rather than being finished early.
-    const ids = rows.map((r) => r.session_id);
-    const timeByKey = new Map<string, { secs: number; timedOut: boolean }>();
-    const sessionSecs = new Map<string, number>(); // Σ per-battery time for the paper's TIME column
-    if (ids.length > 0) {
-      const bt = await db.query(
-        `select sb.session_id, sb.category_key,
-                greatest(0, extract(epoch from (least(coalesce(sb.completed_at, sb.deadline_at), s.terminal_at) - sb.started_at)))::int as secs,
-                (sb.completed_at is null or sb.completed_at >= sb.deadline_at) as timed_out
-           from ccat.session_batteries sb
-           join ccat.sessions s on s.id = sb.session_id
-          where sb.session_id = any($1::uuid[])`,
-        [ids],
-      );
-      for (const b of bt.rows as any[]) {
-        timeByKey.set(`${b.session_id}|${b.category_key}`, { secs: Number(b.secs), timedOut: b.timed_out === true });
-        sessionSecs.set(b.session_id, (sessionSecs.get(b.session_id) ?? 0) + Number(b.secs));
-      }
-    }
-
     return rows.map((r) => {
       const { byBattery, attempted } = summarizeBattery(r.detail);
       const total = r.score_total ?? 0;
-      const by_battery = byBattery.map((b) => {
-        const t = timeByKey.get(`${r.session_id}|${b.category_key}`);
-        return { ...b, time_spent_seconds: t ? t.secs : null, timed_out: t ? t.timedOut : false };
-      });
+      // Single-battery exam: paper TIME = real elapsed (terminal_at - started_at), capped at the set's own
+      // limit so it can never exceed the allotted time. null when there is no timing data.
+      const cap = Number(r.duration_minutes) > 0 ? Number(r.duration_minutes) * 60 : null;
+      const elapsed = r.elapsed_secs != null ? Number(r.elapsed_secs) : null;
+      const timeSpent = elapsed == null ? null : (cap != null ? Math.min(elapsed, cap) : elapsed);
+      const timedOut = r.terminal_state === 'AUTO_SUBMITTED';
+      // Back-compat: a single-battery breakdown (one entry) so existing Exam Progress UI keeps working.
+      const by_battery = byBattery.map((b) => ({ ...b, time_spent_seconds: timeSpent, timed_out: timedOut }));
       return {
         session_id: r.session_id,
+        set_id: r.set_id, // question_set id — opens the shared set-review drawer
         set_name: r.set_name,
+        battery_key: r.battery_key, // the set's single battery (verbal / quantitative / non_verbal)
         when: r.terminal_at,
         end_reason: r.terminal_state, // SUBMITTED | AUTO_SUBMITTED
         score_correct: r.score_correct,
         score_total: total,
         accuracy_pct: total > 0 ? Math.round((100 * r.score_correct) / total) : 0,
         attempted_count: attempted,
-        // Paper TIME = the real time spent inside the timed batteries (each capped at its deadline), so it
-        // can never exceed the allotted total AND is always consistent with the per-battery times below
-        // (both come from the same timer rows). null → shown as "—" when no timer data exists.
-        time_spent_seconds: sessionSecs.has(r.session_id) ? sessionSecs.get(r.session_id)! : null,
+        time_spent_seconds: timeSpent,
         by_battery,
       };
     });

@@ -95,19 +95,6 @@ export function SessionScreen() {
     if (!b?.deadline_at) return null;
     return Math.max(0, Math.round((new Date(b.deadline_at).getTime() - nowTs) / 1000));
   };
-  const batStatus = (key: string): 'not_started' | 'running' | 'expired' | 'done' => {
-    const b = batState[key];
-    if (batteryDone[key] || b?.completed_at) return 'done';
-    if (!b) return 'not_started';
-    return (batRemaining(key) ?? 0) > 0 ? 'running' : 'expired';
-  };
-  async function startBattery(key: string) {
-    try {
-      const r = await client.batteryStart(id, key);
-      setBatState((m) => ({ ...m, [key]: { started_at: r.started_at, deadline_at: r.deadline_at, completed_at: r.completed_at } }));
-    } catch (e) { flash(e instanceof ApiError ? e.message : (e as Error).message); return; }
-    setExamBattery(key); setIdx(0);
-  }
   async function completeBattery(key: string) {
     try { await client.batteryComplete(id, key); } catch { /* best-effort */ }
     setBatState((m) => ({ ...m, [key]: { started_at: m[key]?.started_at ?? new Date().toISOString(), deadline_at: m[key]?.deadline_at ?? new Date().toISOString(), completed_at: new Date().toISOString() } }));
@@ -235,51 +222,9 @@ export function SessionScreen() {
   if (err) return (<><AppBar title="Session" back /><div className="content"><ErrorNote error={err} /></div></>);
   if (!sess) return (<><AppBar title="Session" back /><div className="content"><Loader /></div></>);
 
-  // EXAM battery lobby — each battery is timed independently; its clock starts on Start.
-  const BATT_META: Record<string, { icon: string; tint: string }> = { verbal: { icon: '🔤', tint: 'var(--tint-blue)' }, non_verbal: { icon: '🧩', tint: 'var(--tint-lilac)' }, nonverbal: { icon: '🧩', tint: 'var(--tint-lilac)' }, quantitative: { icon: '🔢', tint: 'var(--tint-green)' } };
-  if (isExamMode && examBattery === null) {
-    const doneCount = batteries.filter((b) => batStatus(b.key) === 'done' || batStatus(b.key) === 'expired').length;
-    const durs = (sess.battery_durations ?? {}) as Record<string, number>;
-    return (
-      <>
-        <AppBar title={sess.set_name ?? 'Exam'} sub={`Pick a battery · ${doneCount}/${batteries.length} finished`} back />
-        <div className="content session-content stack">
-          <div className="card" style={{ background: 'var(--tint-blue)' }}>
-            <div className="muted">Each battery is timed on its own. The clock starts when you tap <strong>Start</strong> and keeps running until that battery's time is up — so finish one before you begin the next.</div>
-          </div>
-          {batteries.map((b) => {
-            const answered = b.questions.filter((qq) => examSel[qq.question_version_id]?.length).length;
-            const st = batStatus(b.key);
-            const rem = batRemaining(b.key);
-            const limit = Number(durs[b.key]) > 0 ? Number(durs[b.key]) : null;
-            const remColor = rem != null && rem < 60 ? 'var(--coral)' : (rem != null && rem < 180 ? 'var(--amber)' : 'var(--green)');
-            const m = BATT_META[b.key] ?? { icon: '📝', tint: 'var(--tint-blue)' };
-            const sub = st === 'done' ? `Completed · ${answered}/${b.questions.length} attempted`
-              : st === 'expired' ? `Time's up · ${answered}/${b.questions.length} attempted`
-              : st === 'running' ? `In progress · ${answered}/${b.questions.length}`
-              : `${b.questions.length} questions${limit ? ` · ${limit} min` : ''}`;
-            return (
-              <Card key={b.key}>
-                <div className="row">
-                  <div className="ic" style={{ background: m.tint }}>{m.icon}</div>
-                  <div style={{ flex: 1 }}>
-                    <h3 style={{ textTransform: 'capitalize' }}>{b.name.replace('_', '-')}</h3>
-                    <div className="muted">{sub}</div>
-                  </div>
-                  {st === 'running' && rem != null && <span className="pill" style={{ color: remColor, marginRight: 8 }}>⏳ {mmss(rem)}</span>}
-                  {st === 'done' && <span className="pill" style={{ background: 'var(--tint-green)', color: 'var(--green)' }}>Done ✓</span>}
-                  {st === 'expired' && <span className="pill" style={{ background: 'var(--coral-tint)', color: 'var(--coral)' }}>Time's up</span>}
-                  {st === 'running' && <button className="btn small" onClick={() => { setExamBattery(b.key); setIdx(0); }}>Continue</button>}
-                  {st === 'not_started' && <button className="btn small" onClick={() => void startBattery(b.key)}>Start</button>}
-                </div>
-              </Card>
-            );
-          })}
-          <button className="btn danger" disabled={submitting} onClick={submit}>{submitting ? '…' : 'End exam & see result'}</button>
-        </div>
-      </>
-    );
-  }
+  // Exam is a single-battery, single server-timed session now — no battery lobby. It flows exactly like a
+  // timed session: all questions in one list, one countdown from the session deadline, submit at the end
+  // (or auto-submit at 0 via the timed tick / server worker).
   if (!q) return (<><AppBar title="Session" back /><div className="content"><Loader /></div></>);
 
   const p = pq[q.question_version_id];
@@ -290,14 +235,6 @@ export function SessionScreen() {
   const isMulti = !isExam && q.multi === true;
   const myMulti = multiPicks[q.question_version_id] ?? [];
   const subLine = [titleCase(sess.subcategory), sess.set_name].filter(Boolean).join(' · ');
-  // This is the LAST accessible battery when every OTHER battery is already done or timed out — ending it
-  // ends the whole exam, so the end-battery button becomes "End Exam" and finalizes instead of returning
-  // to the lobby (there's nothing left to enter).
-  const examLastBattery = isExamMode && examBattery != null
-    && batteries.filter((b) => b.key !== examBattery).every((b) => {
-      const s = batStatus(b.key);
-      return s === 'done' || s === 'expired';
-    });
 
   return (
     <>
@@ -423,15 +360,12 @@ export function SessionScreen() {
           <span className="muted">{activeQuestions.filter((qq) => (isExam ? examSel[qq.question_version_id]?.length : pq[qq.question_version_id]?.locked)).length}/{total} {isExam ? 'answered' : 'done'}</span>
           {idx < total - 1
             ? <button className="btn qnav" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))}>Next ›</button>
-            : isExamMode
-              ? (examLastBattery
-                  ? <button className="btn qnav" disabled={submitting} onClick={async () => { if (examBattery) { try { await completeBattery(examBattery); } catch { /* finalize anyway */ } } await submit(); }}>{submitting ? '…' : 'End Exam ✅'}</button>
-                  : <button className="btn qnav" onClick={() => { if (examBattery) void completeBattery(examBattery); setExamBattery(null); setIdx(0); }}>End this battery ✅</button>)
-              : <button className="btn qnav" disabled={submitting} onClick={submit}>{submitting ? '…' : 'Submit ✅'}</button>}
+            : <button className="btn qnav" disabled={submitting} onClick={submit}>{submitting ? '…' : isExam ? 'End Exam ✅' : 'Submit ✅'}</button>}
         </div>
 
-        {/* Save & Leave is styled distinctly (outline, not a filled nav button) so it doesn't read as navigation. */}
-        <button className="btn qnav-leave" onClick={() => (isExamMode ? (setExamBattery(null), setIdx(0)) : setQuitConfirm(true))}>{isExamMode ? '‹ Back to batteries' : '⏸ Save & leave'}</button>
+        {/* Save & Leave is styled distinctly (outline, not a filled nav button) so it doesn't read as navigation.
+            Exam is timed: leaving keeps the session IN_PROGRESS and the server clock keeps running. */}
+        <button className="btn qnav-leave" onClick={() => setQuitConfirm(true)}>⏸ Save &amp; leave</button>
       </div>
 
       {quitConfirm && (

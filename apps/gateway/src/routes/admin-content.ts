@@ -365,7 +365,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         join ccat.question_sets qs on qs.id=sv.question_set_id
         join ccat.grades g on g.id=qs.grade_id
         join ccat.categories cat on cat.id=qs.category_id
-        join ccat.subcategories sub on sub.id=qs.subcategory_id
+        left join ccat.subcategories sub on sub.id=qs.subcategory_id
         left join ccat.difficulties d on d.id=sv.difficulty_id
         -- Canonical set order (SAME as the student catalog): active sets first (state != 'retired'),
         -- oldest→newest by created_at (a newly published set lands at the BOTTOM of the active list),
@@ -482,16 +482,15 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     const cnt = await db.query('select count(*)::int n, count(*) filter (where active)::int a from ccat.set_version_questions where set_version_id=$1', [id]);
     if (cnt.rows[0]!.n !== cur.rows[0]!.question_count) throw Errors.validation('Set membership does not match question_count');
     if (cnt.rows[0]!.a < 5) throw Errors.validation('A set needs at least 5 active questions before it can be published (§18)');
-    // Enforce this subcategory's max questions per set (45 for Combine, 15 otherwise) at publish, too.
+    // Per-set cap at publish: exam = 60 (single battery, no subcategory); practice = the subcategory's max.
     const capRow = await db.query(
       `select sv.allowed_exam, coalesce(sub.max_questions_per_set, 15) as maxq
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id = sv.question_set_id
-         join ccat.subcategories sub on sub.id = qs.subcategory_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
         where sv.id = $1`, [id]);
-    // Exam papers span three batteries; the whole-paper cap is 45 regardless of the anchor subcategory.
-    const maxq = capRow.rows[0]?.allowed_exam ? 45 : Number(capRow.rows[0]?.maxq ?? 15);
-    if (cnt.rows[0]!.n > maxq) throw Errors.validation(`This subcategory allows up to ${maxq} questions per set`, { code: 'SET_TOO_LARGE' });
+    const maxq = capRow.rows[0]?.allowed_exam ? 60 : Number(capRow.rows[0]?.maxq ?? 15);
+    if (cnt.rows[0]!.n > maxq) throw Errors.validation(`This set allows up to ${maxq} questions`, { code: 'SET_TOO_LARGE' });
     // Validate every ACTIVE member card is complete before publish (blocks an invalid publish):
     // a stem, ≥2 options, ≥1 correct answer, no empty option content.
     const memberQs = await db.query(

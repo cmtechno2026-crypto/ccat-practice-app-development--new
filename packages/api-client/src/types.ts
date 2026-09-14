@@ -92,7 +92,8 @@ export interface SessionResult {
 
 
 export interface ExamHistoryItem {
-  session_id: string; set_name: string | null; when: string | null; end_reason: SessionState;
+  session_id: string; set_id: string; set_name: string | null; battery_key: string | null;
+  when: string | null; end_reason: SessionState;
   score_correct: number; score_total: number; accuracy_pct: number; attempted_count: number;
   time_spent_seconds: number | null; by_battery: BatterySummary[];
 }

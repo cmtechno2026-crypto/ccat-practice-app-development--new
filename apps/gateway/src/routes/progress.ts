@@ -319,7 +319,7 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
          join ccat.session_results sr on sr.session_id = s.id
          join ccat.question_set_versions sv on sv.id = s.set_version_id
          join ccat.question_sets qs on qs.id = sv.question_set_id
-        where s.student_id = $1 and qs.id = $2 and s.mode <> 'exam'
+        where s.student_id = $1 and qs.id = $2
           and sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')
         order by s.terminal_at desc nulls last, sr.created_at desc
         limit 1`, [sid, setId]);
