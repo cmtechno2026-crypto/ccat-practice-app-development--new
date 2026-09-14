@@ -158,7 +158,7 @@ export function ExamPapers() {
             ctx={{ gradeId: gradeObj.id, catId, subId: subObj.id, diffId: diffObj.id,
               qType: slugKey(subObj.key) || 'verbal_analogy',
               gradeNumber: gradeObj.grade_number, categoryName: catObj.name, subcategoryName: subObj.name,
-              difficultyLabel: diffObj.name, diffKey: diffObj.key, maxPerSet: 15 }}
+              difficultyLabel: diffObj.name, diffKey: diffObj.key, maxPerSet: MAX_Q }}
             onClose={() => setBulk(false)} onDone={() => loadSets()} />
         );
       })()}
