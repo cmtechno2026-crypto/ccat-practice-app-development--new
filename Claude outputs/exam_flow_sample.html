@@ -1,0 +1,149 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exam flow — proposed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Poppins:wght@600;700&family=Nunito:wght@600;700;800&family=Inter:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--blue:#3e7bee;--blue2:#1A5EAB;--ink:#1e2233;--mid:#5b6274;--line:#e2e7f0;--sky:#eef3fc;--white:#fff;
+    --green:#12b886;--purple:#7b61ff;--amber:#E8A020;--red:#e8553d;
+    --display:"Baloo 2",system-ui,sans-serif;--head:"Poppins",system-ui,sans-serif;--body:"Nunito",system-ui,sans-serif;--util:"Inter",system-ui,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--body);color:var(--ink);background:#e9edf4;font-size:15px}
+  .page{max-width:1180px;margin:0 auto;padding:22px 18px 60px}
+  .flowtag{font-family:var(--head);font-weight:700;color:#33405c;font-size:13.5px;margin:4px 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:22px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .screen{background:var(--white);border:1px solid #cdd6e5;border-radius:16px;overflow:hidden;box-shadow:0 18px 44px -30px rgba(30,50,90,.55)}
+  .step{display:flex;align-items:center;gap:8px;background:#1A5EAB;color:#fff;padding:9px 14px;font-family:var(--head);font-weight:700;font-size:12.5px}
+  .step .num{background:#fff;color:#1A5EAB;width:19px;height:19px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+  .screen .inner{padding:16px}
+  .newpill{background:#fff3d6;color:#8a5a00;border:1px solid #f0d493;border-radius:999px;font-family:var(--head);font-weight:700;font-size:10.5px;padding:2px 8px;margin-left:6px}
+  h4{font-family:var(--display);color:var(--blue2);margin:0 0 3px;font-size:17px}
+  .muted{color:var(--mid);font-size:12.5px}
+
+  /* battery cards */
+  .bat{display:flex;align-items:center;gap:13px;border:1px solid var(--line);border-left-width:5px;border-radius:13px;padding:13px 14px;margin-bottom:11px;background:#fff}
+  .bat .ic{width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
+  .bat .t{flex:1}.bat .t b{font-family:var(--display);font-size:15.5px;color:var(--ink)}
+  .bat .t .s{color:var(--mid);font-size:12px}
+  .bat .chev{color:#b8c2d4;font-weight:800}
+  .b-v{border-left-color:var(--blue)} .b-v .ic{background:#e5edfc;color:var(--blue)}
+  .b-q{border-left-color:var(--green)} .b-q .ic{background:#e0f6ef;color:var(--green)}
+  .b-n{border-left-color:var(--purple)} .b-n .ic{background:#efeaff;color:var(--purple)}
+
+  /* set rows */
+  .setrow{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:9px;background:#fff}
+  .setrow .sn{width:34px;height:34px;border-radius:9px;background:var(--sky);color:var(--blue2);font-family:var(--display);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto}
+  .setrow .m{flex:1}.setrow .m b{font-size:14px}.setrow .m .meta{display:flex;gap:8px;margin-top:3px;flex-wrap:wrap}
+  .badge{font-family:var(--head);font-weight:700;font-size:11px;border-radius:999px;padding:2px 9px;display:inline-flex;align-items:center;gap:4px}
+  .badge.time{background:#fff1e0;color:#a55a00}
+  .badge.q{background:#eef3fc;color:var(--blue2)}
+  .badge.done{background:#e0f6ef;color:#0c8f68}
+  .startbtn{background:var(--blue2);color:#fff;border:0;border-radius:9px;font-family:var(--head);font-weight:700;font-size:12.5px;padding:8px 14px;cursor:pointer}
+
+  /* start modal */
+  .modalwrap{background:#f4f7fc;padding:26px 16px;display:flex;align-items:center;justify-content:center}
+  .modal{background:#fff;border-radius:16px;box-shadow:0 20px 50px -24px rgba(30,50,90,.5);padding:22px;max-width:340px;width:100%;text-align:center}
+  .modal .clock{width:56px;height:56px;border-radius:16px;background:#fff1e0;color:#a55a00;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 12px}
+  .modal h4{font-size:19px;margin-bottom:8px}
+  .warn{background:#fff8ec;border:1px solid #f0dcae;color:#7a5a12;border-radius:10px;font-size:12.5px;font-weight:700;padding:10px 12px;margin:12px 0;line-height:1.5}
+  .modal .go{background:var(--amber);color:#241800;border:0;border-radius:12px;font-family:var(--display);font-weight:800;font-size:15px;padding:12px;width:100%;cursor:pointer}
+  .modal .cancel{background:transparent;border:0;color:#8a90a6;font-family:var(--head);font-weight:700;font-size:13px;padding:9px;cursor:pointer;margin-top:4px}
+
+  /* question screen */
+  .qbar{background:var(--blue2);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:11px 14px;font-family:var(--head);font-weight:700;font-size:13px}
+  .qbar .timer{background:#fff;color:#b23b22;border-radius:8px;padding:4px 11px;font-family:var(--util);font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:5px}
+  .qbody{padding:16px}
+  .qtext{font-family:var(--display);font-size:17px;color:var(--ink);margin:2px 0 14px}
+  .opt{border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:9px;font-size:14px;display:flex;gap:10px;align-items:center}
+  .opt .k{width:24px;height:24px;border-radius:6px;background:var(--sky);color:var(--blue2);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .qfoot{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+  .navb{background:var(--blue2);color:#fff;border:0;border-radius:9px;font-family:var(--head);font-weight:700;font-size:13px;padding:9px 16px;cursor:pointer}
+  .navb.ghost{background:#eef3fc;color:var(--blue2)}
+
+  /* admin */
+  .adm{background:#0f1830;color:#e7ecf7}
+  .adm .step{background:#24304e}
+  .adm .inner{padding:16px}
+  .fld{margin-bottom:12px}
+  .fld label{display:block;font-family:var(--head);font-weight:700;font-size:12px;color:#aeb9d4;margin-bottom:5px}
+  .fld input{width:100%;background:#182444;border:1px solid #2e3d63;border-radius:9px;color:#fff;padding:10px 12px;font-family:var(--util);font-size:14px}
+  .fld .help{font-size:11px;color:#8493b8;margin-top:4px}
+  .fld.new label:after{content:"NEW";background:#3a5bd0;color:#fff;font-size:9px;font-weight:800;border-radius:5px;padding:1px 5px;margin-left:7px;font-family:var(--head)}
+  .capwarn{color:#ffb27a;font-size:11px;margin-top:4px;font-weight:700}
+</style></head><body>
+<div class="page">
+  <div class="flowtag">SAMPLE — proposed Exam flow (student web). Screens 1→4 are the parent/child journey; screen 5 is the matching admin change. <span class="newpill">NEW</span> marks what changes.</div>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="screen">
+      <div class="step"><span class="num">1</span> Exam page — pick a battery</div>
+      <div class="inner">
+        <div class="bat b-v"><div class="ic">🔤</div><div class="t"><b>Verbal Battery Test</b><div class="s">50 sets · 4 categories</div></div><span class="chev">›</span></div>
+        <div class="bat b-q"><div class="ic">🔢</div><div class="t"><b>Quantitative Battery Test</b><div class="s">54 sets · 4 categories</div></div><span class="chev">›</span></div>
+        <div class="bat b-n"><div class="ic">🧩</div><div class="t"><b>Non-Verbal Battery Test</b><div class="s">52 sets · 4 categories</div></div><span class="chev">›</span></div>
+        <p class="muted" style="margin-top:6px">Same as today — no change here.</p>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="screen">
+      <div class="step"><span class="num">2</span> Battery → Exam Papers (sets list)</div>
+      <div class="inner">
+        <h4>Verbal Battery Test</h4>
+        <div class="muted" style="margin-bottom:11px">Each paper has its own time limit. <span class="newpill">time badge NEW</span></div>
+        <div class="setrow"><div class="sn">1</div><div class="m"><b>Verbal — Set 1</b><div class="meta"><span class="badge time">⏱ 20 min</span><span class="badge q">15 questions</span><span class="badge done">✓ Completed</span></div></div></div>
+        <div class="setrow"><div class="sn">2</div><div class="m"><b>Verbal — Set 2</b><div class="meta"><span class="badge time">⏱ 25 min</span><span class="badge q">20 questions</span></div></div><button class="startbtn">Start ›</button></div>
+        <div class="setrow"><div class="sn">3</div><div class="m"><b>Verbal — Set 3</b><div class="meta"><span class="badge time">⏱ 30 min</span><span class="badge q">30 questions</span></div></div><button class="startbtn">Start ›</button></div>
+        <p class="muted" style="margin-top:4px">Time limit is per-set and set by admin (screen 5).</p>
+      </div>
+    </div>
+
+    <!-- 3 -->
+    <div class="screen">
+      <div class="step"><span class="num">3</span> Start confirmation <span class="newpill" style="margin-left:8px">NEW</span></div>
+      <div class="modalwrap">
+        <div class="modal">
+          <div class="clock">⏱</div>
+          <h4>Start Verbal — Set 2?</h4>
+          <div class="muted">20-minute timer · 20 questions</div>
+          <div class="warn">⚠ Once you start, the timer keeps running — even if you leave this set or close the page. It only stops when the set is submitted or time runs out.</div>
+          <button class="go">Start the timer →</button>
+          <button class="cancel">Not yet</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 -->
+    <div class="screen">
+      <div class="step"><span class="num">4</span> Questions — timer runs (won't pause)</div>
+      <div class="qbar"><span>Verbal — Set 2 · Q 8 of 20</span><span class="timer">⏱ 13:43</span></div>
+      <div class="qbody">
+        <div class="muted" style="font-family:var(--util);font-weight:700;letter-spacing:.04em">VERBAL — CLASSIFICATION</div>
+        <div class="qtext">reading, writing, spelling</div>
+        <div class="opt"><span class="k">A</span> football</div>
+        <div class="opt"><span class="k">B</span> grammar</div>
+        <div class="opt"><span class="k">C</span> cooking</div>
+        <div class="opt"><span class="k">D</span> dancing</div>
+        <div class="qfoot"><button class="navb ghost">‹ Previous</button><span class="muted">7/20 done</span><button class="navb">Next ›</button></div>
+        <p class="muted" style="margin-top:10px">Leaving and returning resumes at the same spot — the clock kept counting the whole time.</p>
+      </div>
+    </div>
+
+    <!-- 5 admin -->
+    <div class="screen adm" style="grid-column:1/-1">
+      <div class="step"><span class="num">5</span> Admin web — set editor (the matching change)</div>
+      <div class="inner">
+        <div style="max-width:420px">
+          <div class="fld"><label>Set name</label><input value="Verbal — Set 2" readonly></div>
+          <div class="fld new"><label>Time limit (minutes)</label><input value="25" ><div class="help">Per-set exam timer. Starts when the child opens the set; does not pause if they leave.</div></div>
+          <div class="fld new"><label>Questions in this set</label><input value="20"><div class="help">Maximum 75 questions per set. Above 75 is blocked on save.</div><div class="capwarn">Cap: 75 — a value over 75 shows an error and won’t save.</div></div>
+        </div>
+        <p class="muted" style="color:#8493b8;margin-top:6px">Both websites change: admin gains the per-set “Time limit” field + 75-question cap; the student web reads that limit and runs the persistent timer.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body></html>

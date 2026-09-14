@@ -67,10 +67,11 @@ export function PracticeScreen() {
 
   const practice = useMemo(() => (data ?? []).filter((c) => c.allowed_modes.includes('practice')), [data]);
 
-  // Battery meta: NAME from the catalog's category_name (DB), visuals from the token map.
+  // Battery meta: NAME from the catalog's category_name (DB), visuals from the token map. Search ALL
+  // catalog items (not just practice) so exam-only batteries still resolve their display name.
   const batteryMeta = (key: string) => {
     const vis = BATTERY_VIS[key];
-    const name = practice.find((c) => c.category_key === key)?.category_name ?? vis?.fallbackName ?? key.replace('_', '-');
+    const name = (data ?? []).find((c) => c.category_key === key)?.category_name ?? vis?.fallbackName ?? key.replace('_', '-');
     return { name, icon: vis?.icon ?? '📘', color: vis?.color ?? 'var(--primary)', tint: vis?.tint ?? 'var(--tint-blue)' };
   };
 
@@ -141,50 +142,96 @@ export function PracticeScreen() {
     } finally { setStarting(false); }
   }
 
-  // ============================ EXAM (unchanged flat paper list) ============================
+  // ============================ EXAM (battery-first → per-battery set list) ============================
+  // Exam page mirrors the Practice battery landing: 3 battery cards → click a battery → that battery's
+  // timed exam papers (sets). Each set is a single-battery timed paper with its own duration; clicking
+  // Start begins immediately (no confirmation pop-up). The whole exam surface is membership-gated.
   if (mode === 'exam') {
-    const examLocked = PAYMENTS_ENABLED && !caps.exam; // whole exam surface is membership-gated this phase
-    const papers = (data ?? []).filter((c) => c.allowed_modes.includes('exam'))
-      .slice().sort((a, b) => (a.retired ? 1 : 0) - (b.retired ? 1 : 0)); // retired (already taken) sink to bottom
+    const examLocked = PAYMENTS_ENABLED && !caps.exam;
+    const examItems = (data ?? []).filter((c) => c.allowed_modes.includes('exam'));
+    const examByBattery: Record<string, CatalogItem[]> = {};
+    for (const c of examItems) (examByBattery[c.category_key] ??= []).push(c);
+
+    const lockCard = examLocked ? (
+      <div className="card" style={{ background: 'var(--tint, #f1eefb)' }}>
+        <div className="row" style={{ alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 22 }} aria-hidden>🔒</span>
+          <div style={{ flex: 1 }}>
+            <strong>Full exams unlock with a membership</strong>
+            <div className="muted">You can still practise! Ask a grown-up to unlock timed exams.</div>
+          </div>
+          <button className="btn small" onClick={() => openUpgrade('exam')}>Learn more</button>
+        </div>
+      </div>
+    ) : null;
+
+    // ---- EXAM: sets in the chosen battery ----
+    if (battery) {
+      const bm = batteryMeta(battery);
+      const sets = (examByBattery[battery] ?? []).slice().sort((a, b) => (a.retired ? 1 : 0) - (b.retired ? 1 : 0));
+      return (
+        <>
+          <AppBar title={`${bm.name} Battery Test`} sub="Timed exam papers" back />
+          <div className="content stack">
+            <div className="crumbs">
+              <button className="crumb" onClick={() => go({ battery: null })}>CCAT Exam</button>
+              <span className="crumb-sep">›</span><button className="crumb" aria-current="page">{bm.name}</button>
+            </div>
+            {lockCard}
+            {loading && <Loader />}
+            {error && <ErrorNote error={error} onRetry={reload} />}
+            {data && sets.length === 0 && <div className="empty">No exam sets in {bm.name} yet.<br />Check back after your teacher publishes an exam.</div>}
+            {sets.map((s) => {
+              const st = s.progress?.status ?? 'not_started';
+              const cta = st === 'completed' ? 'Retake' : st === 'in_progress' ? 'Resume' : 'Start';
+              return (
+                <Card key={s.set_version_id} className={s.retired ? 'retired' : undefined}>
+                  <div className="row" style={{ alignItems: 'flex-start' }}>
+                    <div className="ic" style={{ background: 'var(--tint-lilac)' }}>📝</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h3>{s.name}</h3>
+                      <div className="muted">{s.question_count} questions{s.duration_minutes ? ` · ⏱ ${s.duration_minutes} min` : ''}
+                        {st === 'completed' && s.progress?.score_total != null && <> · ✅ {s.progress.score_correct}/{s.progress.score_total}</>}</div>
+                    </div>
+                    {s.retired
+                      ? <span className="pill" style={{ background: 'var(--tint)', color: 'var(--muted)' }}>Retired</span>
+                      : examLocked
+                        ? <button className="btn small secondary" onClick={() => openUpgrade('exam')} aria-label="Unlocks with a membership">🔒 Unlock</button>
+                        : <button className={`btn small ${st === 'completed' ? 'secondary' : ''}`} disabled={starting}
+                            onClick={() => startSet(s, st === 'in_progress' ? s.progress?.session_id : null)}>{cta}</button>}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+          {upgradeEl}
+        </>
+      );
+    }
+
+    // ---- EXAM: battery landing (the 3 cards, no category count) ----
     return (
       <>
         <AppBar title="CCAT Exam" sub="Timed mock exams" back />
         <div className="content stack">
-          {examLocked && (
-            <div className="card" style={{ background: 'var(--tint, #f1eefb)' }}>
-              <div className="row" style={{ alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 22 }} aria-hidden>🔒</span>
-                <div style={{ flex: 1 }}>
-                  <strong>Full exams unlock with a membership</strong>
-                  <div className="muted">You can still practise! Ask a grown-up to unlock timed exams.</div>
-                </div>
-                <button className="btn small" onClick={() => openUpgrade('exam')}>Learn more</button>
-              </div>
-            </div>
-          )}
+          {lockCard}
           {loading && <Loader />}
           {error && <ErrorNote error={error} onRetry={reload} />}
-          {data && papers.length === 0 && <div className="empty">No exam sets for your grade yet.<br />Check back after your teacher publishes an exam.</div>}
-          {papers.map((s) => {
-            const st = s.progress?.status ?? 'not_started';
-            const cta = st === 'completed' ? 'Retake' : st === 'in_progress' ? 'Resume' : 'Start';
+          {data && examItems.length === 0 && <div className="empty">No exam sets for your grade yet.<br />Check back after your teacher publishes an exam.</div>}
+          {data && examItems.length > 0 && BATTERY_ORDER.map((key) => {
+            const bm = batteryMeta(key);
+            const cnt = (examByBattery[key] ?? []).length;
+            const empty = cnt === 0;
             return (
-              <Card key={s.set_version_id} className={s.retired ? 'retired' : undefined}>
-                <div className="row" style={{ alignItems: 'flex-start' }}>
-                  <div className="ic" style={{ background: 'var(--tint-lilac)' }}>📝</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h3>{s.name}</h3>
-                    <div className="muted">3 batteries · {s.question_count} questions{s.duration_minutes ? ` · ⏱ ${s.duration_minutes} min` : ''}
-                      {st === 'completed' && s.progress?.score_total != null && <> · ✅ {s.progress.score_correct}/{s.progress.score_total}</>}</div>
-                  </div>
-                  {s.retired
-                    ? <span className="pill" style={{ background: 'var(--tint)', color: 'var(--muted)' }}>Retired</span>
-                    : examLocked
-                      ? <button className="btn small secondary" onClick={() => openUpgrade('exam')} aria-label="Unlocks with a membership">🔒 Unlock</button>
-                      : <button className={`btn small ${st === 'completed' ? 'secondary' : ''}`} disabled={starting}
-                          onClick={() => startSet(s, st === 'in_progress' ? s.progress?.session_id : null)}>{cta}</button>}
-                </div>
-              </Card>
+              <button key={key} className="battery-card" style={{ ['--bat' as any]: bm.color, ['--bat-tint' as any]: bm.tint }}
+                disabled={empty} onClick={() => go({ battery: key })} aria-disabled={empty}>
+                <span className="bat-ic" style={{ background: bm.tint }}>{bm.icon}</span>
+                <span className="bat-body">
+                  <span className="bat-name">{bm.name} Battery Test</span>
+                  <span className="bat-sub">{empty ? 'No exam sets yet' : `${cnt} set${cnt === 1 ? '' : 's'}`}</span>
+                </span>
+                <span className="bat-go">{empty ? '' : '›'}</span>
+              </button>
             );
           })}
         </div>
