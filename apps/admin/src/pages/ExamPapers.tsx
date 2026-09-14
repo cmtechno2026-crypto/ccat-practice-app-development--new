@@ -47,7 +47,7 @@ export function ExamPapers() {
   // Exam sets in this grade + selected battery.
   const examSets = useMemo(() => (sets || []).filter(s =>
     s.allowed_exam && (!grade || String(s.grade_number) === grade) && s.category_id === catIdFor(battery)
-  ), [sets, grade, battery, tax]); // eslint-disable-line
+  ).sort((a, b) => (a.state === 'retired' ? 1 : 0) - (b.state === 'retired' ? 1 : 0)), [sets, grade, battery, tax]); // eslint-disable-line
 
   const act = async (fn: Promise<any>, m: string) => { try { await fn; toast(m); loadSets(); } catch (e) { toast((e as Error).message); } };
   const saveDuration = async (id: string, mins: number) => {
@@ -103,7 +103,7 @@ export function ExamPapers() {
       {error ? <ErrorBox e={error} /> : sets === null ? <Loading /> : (
         <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
           <div className="tablewrap"><table>
-            <thead><tr><th>Set</th><th>Questions</th><th>Time limit</th><th>Status</th><th>Updated</th><th className="right">Actions</th></tr></thead>
+            <thead><tr><th>Set</th><th>Questions</th><th>Time limit (min)</th><th>Status</th><th>Updated</th><th className="right">Actions</th></tr></thead>
             <tbody>{examSets.map(s => {
               const pct = Math.min(100, Math.round((s.question_count / MAX_Q) * 100));
               const barc = s.question_count >= 5 ? 'var(--green)' : s.question_count >= 1 ? 'var(--amber)' : 'var(--coral)';
@@ -122,9 +122,16 @@ export function ExamPapers() {
                     <div className="rbar"><i style={{ width: `${Math.max(4, pct)}%`, background: barc }} /></div>
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    <span className="muted" style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>⏱
-                      <input key={`${s.id}-${s.duration_minutes}`} type="number" min={1} max={180} defaultValue={s.duration_minutes ?? 30} disabled={!manage}
-                        onBlur={e => saveDuration(s.id, Number(e.target.value))} style={{ width: 56 }} /> min</span>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <input key={`${s.id}-${s.duration_minutes}`} type="text" inputMode="numeric" defaultValue={s.duration_minutes ?? 30} disabled={!manage}
+                        onBlur={e => saveDuration(s.id, Number(e.target.value))} style={{ width: 52, textAlign: 'center' }} />
+                      {manage && (
+                        <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+                          <button className="btn ghost" title="+5 min" style={{ padding: '1px 6px', lineHeight: 1, fontSize: 10 }} onClick={() => saveDuration(s.id, (s.duration_minutes ?? 30) + 5)}>▲</button>
+                          <button className="btn ghost" title="-5 min" style={{ padding: '1px 6px', lineHeight: 1, fontSize: 10 }} onClick={() => saveDuration(s.id, (s.duration_minutes ?? 30) - 5)}>▼</button>
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td><span className={`pill s-${s.state}`} style={{ textTransform: 'uppercase', fontSize: 11, letterSpacing: '.03em' }}>{s.state}</span></td>
                   <td className="muted tabnum" style={{ fontSize: 12.5 }}>{fmtDate(s.updated_at)}</td>
