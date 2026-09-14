@@ -4,6 +4,7 @@ import { ApiError } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { Field } from '../components/ui';
+import { isWeakPin, WEAK_PIN_HINT } from '../lib/pin';
 import cmWordmark from '../assets/cm-wordmark.png';
 import '../landing.css';
 
@@ -52,6 +53,9 @@ export function RecoveryScreen() {
   }
 
   const pinOk = newPin.length === 4 && confirmPin.length === 4;
+  // Non-blocking weak-PIN hint (server is the authority and also checks the child's DOB). No DOB is
+  // available on this screen, so only the blocklist + all-same + sequential rules apply to the hint.
+  const newPinWeak = newPin.length === 4 && isWeakPin(newPin);
 
   return (
     <div className="a2-split">
@@ -85,7 +89,7 @@ export function RecoveryScreen() {
               <p className="muted">If that email is registered, we've emailed the username and a reset code. Enter the code and choose a new PIN.</p>
               {devCodes.length > 0 && <div className="hint">dev codes: {devCodes.map((d) => `${d.username}:${d.code}`).join(', ')}</div>}
               <Field label="Reset code"><input className="input" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} /></Field>
-              <Field label="Create new PIN"><input className="input" value={newPin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
+              <Field label="Create new PIN" hint={newPinWeak ? WEAK_PIN_HINT : undefined} hintKind={newPinWeak ? 'bad' : undefined}><input className={`input ${newPinWeak ? 'bad' : ''}`} value={newPin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
               <Field label="Confirm new PIN"><input className="input" value={confirmPin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
               <button className="a2-btn gold" disabled={code.trim().length < 4 || !pinOk || busy} onClick={complete}>{busy ? 'Setting…' : 'Set new PIN'}</button>
             </>

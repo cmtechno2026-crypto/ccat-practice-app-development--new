@@ -5,6 +5,7 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { generateOtp, hashSecret, verifySecret } from '../security/crypto.js';
 import { sendEmail, emailConfigured } from '../lib/email.js';
+import { isWeakPin } from '../lib/pin.js';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -144,6 +145,13 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
       );
       throw invalid();
     }
+
+    // Reject a trivially guessable new PIN BEFORE consuming the reset code, so a weak choice doesn't burn
+    // the one-time code — the parent can retry with a stronger PIN using the same code. DOB (month + year)
+    // is looked up for the matched child so a birthday-based PIN is caught too.
+    const stu = await db.query('select birth_month, birth_year from ccat.students where id = $1', [match.student_id]);
+    const dob = stu.rows[0] ? { year: stu.rows[0].birth_year, month: stu.rows[0].birth_month } : undefined;
+    if (isWeakPin(body.new_pin, dob)) throw Errors.weakPin();
 
     const pinHash = await hashSecret(body.new_pin, cfg.pinPepper);
     await db.query('update ccat.verification_challenges set consumed_at = now() where id = $1', [match.id]);

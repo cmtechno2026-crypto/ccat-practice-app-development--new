@@ -25,6 +25,11 @@ export const Errors = {
   // unique students.username_normalized; the DB unique constraint is the source of truth).
   usernameTaken: () =>
     new AppError(422, 'USERNAME_TAKEN', 'That username is already taken — please choose another.'),
+  // Weak PIN at account creation / PIN reset — a 422 with a form-level message. Enforced server-side via
+  // lib/pin.ts (isWeakPin); the web client also hints inline. NOT enforced at login (an existing weak PIN
+  // must still be able to sign in and change it).
+  weakPin: () =>
+    new AppError(422, 'WEAK_PIN', 'That PIN is too easy to guess — pick a less common one (avoid 1234, repeated digits, or a birthday).', { field: 'pin' }),
   rateLimited: (msg = 'Rate limited') => new AppError(429, 'RATE_LIMITED', msg),
   // Domain-specific
   activeSessionExists: () =>
@@ -36,10 +41,6 @@ export const Errors = {
     new AppError(409, 'SESSION_VERSION_CONFLICT', 'Expected session version mismatch'),
   deviceNotEnrolled: () =>
     new AppError(403, 'DEVICE_NOT_ENROLLED', 'Request device is not the enrolled device'),
-  // OTP delivery channel is unavailable (SMTP not configured, or a send failed). Returned INSTEAD of a
-  // success envelope so the caller is never told a code was sent when it wasn't.
-  emailUnavailable: (msg = 'We could not send the email right now. Please try again in a few minutes, or contact support.') =>
-    new AppError(503, 'EMAIL_UNAVAILABLE', msg),
   idempotencyReuse: () =>
     new AppError(422, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency key reused with a different body'),
 };

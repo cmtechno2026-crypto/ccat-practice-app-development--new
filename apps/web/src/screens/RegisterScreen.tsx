@@ -5,6 +5,7 @@ import { parsePhone, type CountryCode } from '../lib/phone';
 import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
 import { Field } from '../components/ui';
+import { isWeakPin, WEAK_PIN_HINT } from '../lib/pin';
 import cmWordmark from '../assets/cm-wordmark.png';
 import '../landing.css';
 
@@ -141,6 +142,9 @@ export function RegisterScreen() {
 
   const age = ageFrom(birthYear, birthMonth, birthDay);
   const usernameValid = /^[a-z][a-z0-9_]{2,19}$/.test(username);
+  // Non-blocking weak-PIN hint (server is the authority). Full DOB is available here, so a birthday-based
+  // PIN is flagged too. Warns only once all four digits are entered; does not disable Create account.
+  const pinWeak = pin.length === 4 && isWeakPin(pin, { year: birthYear, month: birthMonth, day: birthDay });
 
   const phoneObj = useMemo(() => {
     const p = parsePhone(phoneNational, phoneCountry);
@@ -423,7 +427,7 @@ export function RegisterScreen() {
               <Field label="Username" hint={!username ? 'Use 3–20 lowercase letters, numbers or _' : (usernameValid ? '✓ Nice — that one works!' : 'Start with a letter; 3–20 chars, lowercase only')} hintKind={username ? (usernameValid ? 'ok' : 'bad') : undefined}>
                 <input className={`input ${username ? (usernameValid ? 'ok' : 'bad') : ''}`} value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="e.g. aisha_k" />
               </Field>
-              <Field label="4-digit PIN"><input className="input" value={pin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
+              <Field label="4-digit PIN" hint={pinWeak ? WEAK_PIN_HINT : undefined} hintKind={pinWeak ? 'bad' : undefined}><input className={`input ${pinWeak ? 'bad' : ''}`} value={pin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
               <Field label="Confirm PIN"><input className="input" value={pin2} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setPin2(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
               <button className="btn" disabled={!usernameValid || pin.length !== 4 || pin2.length !== 4 || busy} onClick={finish}>{busy ? 'Creating…' : 'Create account 🎉'}</button>
             </>

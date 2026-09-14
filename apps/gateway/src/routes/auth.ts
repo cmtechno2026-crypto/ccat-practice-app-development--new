@@ -5,6 +5,45 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { verifySecret, hashToken } from '../security/crypto.js';
 import { signToken, newRefreshToken } from '../security/token.js';
+import { sendEmail, emailConfigured } from '../lib/email.js';
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
+// Fire-and-forget guardian alert when a login lock TRIPS for the first time in a failed-attempt streak.
+// Called with `void` from the login handler — it never awaits and swallows every error, so a slow or
+// failed email can never affect (or fail) the login request. Silent no-op when email isn't configured or
+// the account has no guardian on file. Preview accounts are filtered out by the caller.
+async function notifyGuardianOfLockout(db: DB, cfg: Config, studentId: string, log?: { info?: (...a: any[]) => void; warn?: (...a: any[]) => void }): Promise<void> {
+  try {
+    if (!emailConfigured(cfg)) return;
+    const r = await db.query(
+      `select s.display_name, gc.email as guardian_email, gc.name as guardian_name
+         from ccat.students s
+         join ccat.student_guardians sg on sg.student_id = s.id and sg.is_primary = true
+         join ccat.guardian_contacts gc on gc.id = sg.guardian_id
+        where s.id = $1
+        limit 1`,
+      [studentId],
+    );
+    const row = r.rows[0];
+    if (!row?.guardian_email) return;
+    const child = escapeHtml(row.display_name || 'your child');
+    const name = escapeHtml(row.guardian_name || 'there');
+    const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
+      <h2 style="color:#1A5EAB;margin:0 0 8px">Sign-in temporarily locked</h2>
+      <p>Hello ${name},</p>
+      <p>We blocked several failed sign-in attempts on <strong>${child}</strong>'s CCAT Practice account and locked it for a few minutes as a precaution. It unlocks automatically — you don't need to do anything.</p>
+      <p>If this was your child forgetting their PIN, they can try again in a few minutes, or you can set a new PIN using the “Forgot PIN?” link on the sign-in page.</p>
+      <p>If it wasn't your child, the account stayed protected — the PIN was not guessed. You may want to set a new PIN after it unlocks.</p>
+      <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
+    </div>`;
+    await sendEmail(cfg, { to: row.guardian_email, subject: 'CCAT Practice — sign-in temporarily locked', html }, log);
+  } catch (e) {
+    log?.warn?.({ err: (e as Error).message }, 'lockout guardian alert failed');
+  }
+}
 
 const loginSchema = z.object({
   username: z.string(),
@@ -41,6 +80,15 @@ export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           where student_id = $1`,
         [s.id],
       );
+      // Guardian alert on the FIRST trip of the lock (pre-increment failed_attempts was exactly 4, so this
+      // 5th miss is what crosses the threshold). failed_attempts resets to 0 only on a successful login, so
+      // re-locks after the 5-minute window expires (pre-increment value already >= 5) do NOT re-alert: at
+      // most one email per attack burst, achieved with no throttle column or in-memory state. Skips preview
+      // (shared teammate) accounts. Fire-and-forget — never awaited, never fails the login.
+      // TODO(security): consider a CAPTCHA / proof-of-work challenge after N lockouts as a future step.
+      if (!s.is_preview && Number(s.failed_attempts) === 4) {
+        void notifyGuardianOfLockout(db, cfg, s.id, req.log);
+      }
       throw Errors.unauthorized('Invalid credentials');
     }
     if (s.status !== 'active') {
