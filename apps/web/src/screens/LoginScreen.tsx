@@ -39,9 +39,10 @@ export function LoginScreen() {
           uname = chosen; // already picked from the multi-child list
         } else {
           const r = await client.accountByEmail(id);
-          if (!r.exists || r.usernames.length === 0) { setErr('No account found for that email.'); setBusy(false); return; }
-          if (r.usernames.length > 1) { setPickList(r.usernames); setChosen(r.usernames[0]); setBusy(false); return; }
-          uname = r.usernames[0];
+          const first = r.usernames[0];
+          if (!r.exists || !first) { setErr('No account found for that email.'); setBusy(false); return; }
+          if (r.usernames.length > 1) { setPickList(r.usernames); setChosen(first); setBusy(false); return; }
+          uname = first;
         }
       }
       await client.login(uname, pin, getDeviceHash());
