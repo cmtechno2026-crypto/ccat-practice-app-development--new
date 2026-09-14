@@ -31,6 +31,10 @@ export const Errors = {
   weakPin: () =>
     new AppError(422, 'WEAK_PIN', 'That PIN is too easy to guess — pick a less common one (avoid 1234, repeated digits, or a birthday).', { field: 'pin' }),
   rateLimited: (msg = 'Rate limited') => new AppError(429, 'RATE_LIMITED', msg),
+  // Email delivery is required to complete this request (e.g. sending a PIN-reset code) but email is not
+  // configured or the send failed. Fail CLOSED with 503 so we never claim a code was sent when it was not.
+  emailUnavailable: () =>
+    new AppError(503, 'EMAIL_UNAVAILABLE', 'Email delivery is temporarily unavailable. Please try again in a few minutes.'),
   // Domain-specific
   activeSessionExists: () =>
     new AppError(409, 'ACTIVE_SESSION_EXISTS', 'A learning session is already in progress'),
