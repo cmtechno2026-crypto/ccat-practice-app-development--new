@@ -11,17 +11,40 @@ import '../landing.css';
 export function LoginScreen() {
   const nav = useNavigate();
   const { setProfile, flash } = useApp();
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(''); // holds a username OR a parent email
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const pinRef = useRef<HTMLInputElement>(null);
   const [showPin, setShowPin] = useState(false);
+  // When an entered email maps to MORE THAN ONE child, offer a picker (PIN is per-child).
+  const [pickList, setPickList] = useState<string[] | null>(null);
+  const [chosen, setChosen] = useState<string>('');
+
+  const isEmail = (v: string) => /^\S+@\S+\.\S+$/.test(v);
+
+  // Typing in the identifier field invalidates any pending child pick.
+  function onIdentifierChange(v: string) {
+    setUsername(v.toLowerCase());
+    if (pickList) { setPickList(null); setChosen(''); }
+  }
 
   async function submit() {
     setBusy(true); setErr(null);
     try {
-      await client.login(username, pin, getDeviceHash());
+      const id = username.trim();
+      let uname = id;
+      if (isEmail(id)) {
+        if (chosen) {
+          uname = chosen; // already picked from the multi-child list
+        } else {
+          const r = await client.accountByEmail(id);
+          if (!r.exists || r.usernames.length === 0) { setErr('No account found for that email.'); setBusy(false); return; }
+          if (r.usernames.length > 1) { setPickList(r.usernames); setChosen(r.usernames[0]); setBusy(false); return; }
+          uname = r.usernames[0];
+        }
+      }
+      await client.login(uname, pin, getDeviceHash());
       const me = await client.profile();
       setProfile(me);
       flash('Welcome back! 👋');
@@ -29,7 +52,7 @@ export function LoginScreen() {
       try { const r = sessionStorage.getItem('cmPostAuthRedirect'); if (r) { dest = r; sessionStorage.removeItem('cmPostAuthRedirect'); } } catch { /* ignore */ }
       nav(dest, { replace: true });
     } catch (e) {
-      setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username or PIN.' : e.message) : (e as Error).message);
+      setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username/email or PIN.' : e.message) : (e as Error).message);
     } finally { setBusy(false); }
   }
 
@@ -53,12 +76,29 @@ export function LoginScreen() {
         <div className="a2-inner">
           <Link className="a2-back" to="/">← Back to home</Link>
           <h1>Welcome back 👋</h1>
-          <p className="a2-sub">Enter your username and 4-digit PIN.</p>
+          <p className="a2-sub">Enter your username or parent email, and the 4-digit PIN.</p>
           {err && <div className="err" role="alert">{err}</div>}
           <div className="field">
-            <label>Username</label>
-            <input className="input" value={username} autoCapitalize="none" onChange={(e) => setUsername(e.target.value.toLowerCase())} />
+            <label>Username or email</label>
+            <input className="input" value={username} autoCapitalize="none" inputMode="email"
+              placeholder="childD  or  parent@email.com"
+              onChange={(e) => onIdentifierChange(e.target.value)} />
           </div>
+          {pickList && (
+            <div className="field">
+              <label>Who’s signing in?</label>
+              <div style={{ background: '#eaf1fb', border: '1px solid #cfe0f6', borderRadius: 12, padding: 8 }}>
+                {pickList.map((u) => (
+                  <label key={u} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', background: chosen === u ? '#fff' : 'transparent',
+                    border: `2px solid ${chosen === u ? '#1A5EAB' : 'transparent'}`, borderRadius: 10, cursor: 'pointer', marginBottom: 4, fontWeight: 700 }}>
+                    <input type="radio" name="whichchild" checked={chosen === u} onChange={() => setChosen(u)} />
+                    {u}
+                  </label>
+                ))}
+              </div>
+              <div className="a2-sub" style={{ marginTop: 6, fontSize: 12.5 }}>This email has more than one child — pick one, then enter that child’s PIN.</div>
+            </div>
+          )}
           <div className="field">
             <label>Secret PIN</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
