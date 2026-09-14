@@ -5,6 +5,8 @@ import { useApp } from '../lib/store';
 import { client } from '../lib/api';
 import { AppBar, Card, Loader } from '../components/ui';
 import { PAYMENTS_ENABLED, TIER_CATALOG, TIER_SEQUENCE, tierIndex } from '../lib/entitlements';
+import { PAYPAL_INCONTEXT } from '../lib/paypal';
+import { PayPalButtonsBox } from '../components/PayPalButtonsBox';
 
 // My Plan — 4-tier pricing page (Free / Standard / Plus / Premium). Upgrades run through PayPal in-app:
 // a plan's button opens the confirm modal (pay with the registered email), which creates a PayPal order
@@ -197,16 +199,32 @@ export function MyPlanScreen() {
               <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 14, color: '#3e7bee' }}>{confirmInfo.priceLabel}</span>
             </div>
             <div className="stack" style={{ gap: 9 }}>
-              <button
-                onClick={proceedToPayPal}
-                disabled={busyTier != null}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 16, border: 'none',
-                  borderRadius: 14, padding: '13px 18px', width: '100%', cursor: 'pointer',
-                  background: '#ffc439', color: '#003087', opacity: busyTier ? 0.7 : 1 }}
-              >
-                {busyTier ? 'Redirecting…' : 'Pay Now'}
-              </button>
+              {PAYPAL_INCONTEXT ? (
+                // In-context popup: capture on approval, then run the existing activation poll.
+                <PayPalButtonsBox
+                  createOrder={() => client.paypalCreateOrder(confirmTier as 't50' | 't250' | 't500').then((o) => o.id)}
+                  onApprove={async (orderId) => {
+                    await client.paypalCapture(orderId);
+                    setConfirmTier(null);
+                    setBusyTier(null);
+                    baseline.current = null;
+                    setPhase('activating');
+                  }}
+                  onCancel={() => flash('Payment was canceled.')}
+                  onError={(m) => flash(m || 'Could not complete payment. Please try again.')}
+                />
+              ) : (
+                <button
+                  onClick={proceedToPayPal}
+                  disabled={busyTier != null}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 16, border: 'none',
+                    borderRadius: 14, padding: '13px 18px', width: '100%', cursor: 'pointer',
+                    background: '#ffc439', color: '#003087', opacity: busyTier ? 0.7 : 1 }}
+                >
+                  {busyTier ? 'Redirecting…' : 'Pay Now'}
+                </button>
+              )}
               <button onClick={() => { if (!busyTier) setConfirmTier(null); }}
                 style={{ background: 'transparent', border: 'none', color: '#8a90a6',
                   fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 15, padding: 10, cursor: 'pointer' }}>

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ApiError } from '@ccat/api-client';
 import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
 import { TIER_CATALOG, tierIndex } from '../lib/entitlements';
+import { PAYPAL_INCONTEXT } from '../lib/paypal';
+import { PayPalButtonsBox } from './PayPalButtonsBox';
 
 // Landing-page checkout modal. Opened by a "Get <plan>" button on the public landing (WelcomeScreen).
 // Fewest-clicks flow that guarantees the plan activates in both cases:
@@ -17,7 +20,10 @@ import { TIER_CATALOG, tierIndex } from '../lib/entitlements';
 // The gateway owns the amount, eligibility and return URLs; the client sends only tier / email / OTP token.
 
 type Sellable = 't50' | 't250' | 't500';
-type Step = 'email' | 'login' | 'otp';
+type Step = 'email' | 'login' | 'otp' | 'pay';
+// Which PayPal order to create on the 'pay' step: an AUTHED order (Case 1, after login) or a PUBLIC
+// order tied to the OTP-verified email (Case 2). Only used when PAYPAL_INCONTEXT is on.
+type PayFlow = { kind: 'auth' } | { kind: 'public'; email: string; token: string };
 
 const CK_EMAIL = 'cmCheckoutEmail';
 const CK_TOKEN = 'cmCheckoutEmailToken';
@@ -25,11 +31,13 @@ const CK_TIER = 'cmCheckoutTier';
 
 export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: () => void }) {
   const { setProfile } = useApp();
+  const nav = useNavigate();
   const info = TIER_CATALOG[tier];
 
   const [step, setStep] = useState<Step>('email');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [payFlow, setPayFlow] = useState<PayFlow | null>(null);
 
   const [email, setEmail] = useState('');
   const [usernames, setUsernames] = useState<string[]>([]);
@@ -109,7 +117,14 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
         setProfile(me);
         return; // landing sees a profile and navigates to /home; keep busy while it unmounts
       }
-      // Return straight to Home after PayPal (capture + activation happen there) — the plan page is skipped.
+      // In-context popup: stay in the modal and render the PayPal buttons (session is now held).
+      if (PAYPAL_INCONTEXT) {
+        setPayFlow({ kind: 'auth' });
+        setStep('pay');
+        setBusy(false);
+        return;
+      }
+      // Fallback (no client id): full redirect. Return straight to Home after PayPal (capture happens there).
       const order = await client.paypalCreateOrder(tier, 'home');
       window.location.href = order.url; // leaves the page; keep busy so the button stays disabled
     } catch (e) {
@@ -133,19 +148,52 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
       setBusy(false);
       return;
     }
-    // Step B: create the order and redirect. (Order/network errors surface in the top banner.)
+    // Step B: persist the verified email/token so /register can prefill after payment, then pay.
     try {
-      try {
-        sessionStorage.setItem(CK_EMAIL, conf.email);
-        sessionStorage.setItem(CK_TOKEN, conf.token);
-        sessionStorage.setItem(CK_TIER, tier);
-      } catch { /* private mode — register can still capture via the URL order id */ }
+      sessionStorage.setItem(CK_EMAIL, conf.email);
+      sessionStorage.setItem(CK_TOKEN, conf.token);
+      sessionStorage.setItem(CK_TIER, tier);
+    } catch { /* private mode — register can still capture via the URL order id */ }
+
+    // In-context popup: stay in the modal and render the PayPal buttons for the public order.
+    if (PAYPAL_INCONTEXT) {
+      setPayFlow({ kind: 'public', email: conf.email, token: conf.token });
+      setStep('pay');
+      setBusy(false);
+      return;
+    }
+    // Fallback (no client id): full redirect to PayPal.
+    try {
       const order = await client.paypalCreateOrderPublic(conf.email, tier, conf.token);
       window.location.href = order.url; // leaves the page; keep busy so the button stays disabled
     } catch (e) {
       setErr(msg(e, 'Could not start checkout. Please try again.'));
       setBusy(false);
     }
+  }
+
+  // ---- In-context popup handlers (only used on the 'pay' step) --------------------------------------
+  // Create the correct order for the current flow and hand PayPal the order id.
+  async function createPayOrder(): Promise<string> {
+    if (payFlow?.kind === 'public') {
+      const o = await client.paypalCreateOrderPublic(payFlow.email, tier, payFlow.token);
+      return o.id;
+    }
+    const o = await client.paypalCreateOrder(tier, 'home');
+    return o.id;
+  }
+
+  // Capture the approved order, then continue: Case 1 → into the app (Home); Case 2 → account creation.
+  async function onPayApproved(orderId: string) {
+    setErr(null);
+    if (payFlow?.kind === 'public') {
+      await client.paypalCapturePublic(orderId);
+      nav('/register?checkout=success'); // email is prefilled + verified from sessionStorage
+      return;
+    }
+    await client.paypalCapture(orderId);
+    const me = await client.profile();
+    setProfile(me); // landing sees a profile and routes into the app (/home)
   }
 
   async function resend() {
@@ -272,6 +320,22 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
                 <button style={{ ...S.link, display: 'inline', padding: 0, fontSize: 12.5, color: '#1A5EAB' }}
                   onClick={resend}>Resend code</button>
               )}
+            </div>
+          </>
+        )}
+
+        {step === 'pay' && (
+          <>
+            <h3 style={S.h3}>Complete your payment</h3>
+            <p style={S.sub}>Pay securely with PayPal or a debit/credit card. A window will open on top of this page.</p>
+            <PayPalButtonsBox
+              createOrder={createPayOrder}
+              onApprove={onPayApproved}
+              onCancel={() => setErr('Payment was canceled. You can try again.')}
+              onError={(m) => setErr(m || 'Payment could not be completed. Please try again.')}
+            />
+            <div style={{ textAlign: 'center', marginTop: 6 }}>
+              <button style={{ ...S.link, fontSize: 12.5 }} onClick={() => { if (!busy) onClose(); }}>Cancel</button>
             </div>
           </>
         )}
