@@ -41,13 +41,14 @@ type Ctx = { gradeId: string; catId: string; subId: string; diffId: string; qTyp
   maxPerSet: number };
 type Created = { name: string; id: string; count: number; full: boolean };
 
-export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
-  ctx: Ctx; existingSets: any[]; taxonomy: any; onClose: () => void; onDone: () => void;
+export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }: {
+  ctx: Ctx; existingSets: any[]; taxonomy: any; onClose: () => void; onDone: () => void; exam?: boolean;
 }) {
   const toast = useToast();
   // Per-set cap for THIS subcategory (45 for a Battery Combine, 15 otherwise) — from the catalog, never hard-coded.
   const MAX = ctx.maxPerSet && ctx.maxPerSet > 0 ? ctx.maxPerSet : DEFAULT_MAX_QUESTIONS_PER_SET;
   const [text, setText] = useState('');
+  const [examDur, setExamDur] = useState('25'); // exam mode: one time limit for every set created
   const [cards, setCards] = useState<ImportCard[] | null>(null);
   const [errors, setErrors] = useState<ImportError[] | null>(null);
   const [images, setImages] = useState<Map<string, BulkImage>>(new Map());
@@ -64,13 +65,14 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
   const [names, setNames] = useState<string[]>([]); // editable per-set names in the preview
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const ctxLine = `Grade ${ctx.gradeNumber} · ${ctx.categoryName} · ${ctx.subcategoryName} · ${ctx.difficultyLabel}`;
+  const ctxLine = exam ? `Grade ${ctx.gradeNumber} · ${ctx.categoryName} · Exam (timed)` : `Grade ${ctx.gradeNumber} · ${ctx.categoryName} · ${ctx.subcategoryName} · ${ctx.difficultyLabel}`;
 
   // A set is scoped by GRADE + subcategory + difficulty, so numbering/uniqueness must match on all three.
   // (A "Set 1" in another grade's same subcategory+difficulty must NOT reserve the number here — that made
   // Grade 4 start at "Set 2" because Grade 3 already had "Set 1".)
-  const inScope = (s: any) =>
-    String(s.grade_number) === String(ctx.gradeNumber) && s.subcategory_id === ctx.subId && s.difficulty_key === ctx.diffKey;
+  const inScope = (s: any) => exam
+    ? (s.allowed_exam && String(s.grade_number) === String(ctx.gradeNumber) && s.category_id === ctx.catId)
+    : (String(s.grade_number) === String(ctx.gradeNumber) && s.subcategory_id === ctx.subId && s.difficulty_key === ctx.diffKey);
 
   // Numbers already used by existing "Set N" names in THIS grade+subcategory+difficulty (retired sets free
   // their number). New sets start at the lowest free number.
@@ -196,7 +198,9 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
       for (let i = 0; i < chunks.length; i++) {
         const name = (names[i] ?? defaultSetName(plan.numbers[i])).trim();
         setProgress(`Creating ${name} (${i + 1}/${chunks.length})…`);
-        const r = await api.createSet({ name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
+        const r = await api.createSet(exam
+          ? { name, grade_id: ctx.gradeId, category_id: ctx.catId, allowed_practice: false, allowed_exam: true, allowed_timers: ['timed'], question_version_ids: [], duration_minutes: Math.max(1, Math.min(180, Number(examDur) || 25)) }
+          : { name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
         await api.authorSet(r.set_version_id, chunks[i].map(cardToPayload));
         done.push({ name, id: r.set_version_id, count: chunks[i].length, full: chunks[i].length >= MAX });
       }
@@ -255,6 +259,13 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
           <div style={{ fontWeight: 800 }}>{ctxLine}</div>
           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Every generated set and question inherits this context. Max {MAX} questions per set.</div>
         </div>
+
+        {exam && step !== 'created' && (
+          <div className="row" style={{ marginBottom: 12 }}>
+            <div className="grow"><label>⏱ Time limit (min) — applied to ALL sets created</label>
+              <input type="number" min={1} max={180} value={examDur} onChange={e => setExamDur(e.target.value)} /></div>
+          </div>
+        )}
 
         {step === 'input' && (
           <>
@@ -327,7 +338,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy }: {
                       <input value={names[i] ?? ''} aria-label={`Set ${i + 1} name`}
                         onChange={e => setNames(ns => ns.map((v, j) => j === i ? e.target.value : v))}
                         style={{ width: 150, fontSize: 14, padding: '4px 8px', borderColor: nameErrors[i] ? 'var(--coral)' : undefined }} />
-                      <span className="muted" style={{ fontSize: 12 }}>· {ctx.subcategoryName} · {ctx.difficultyLabel}</span>
+                      <span className="muted" style={{ fontSize: 12 }}>· {exam ? `${ctx.categoryName} · ${Math.max(1, Math.min(180, Number(examDur) || 25))} min` : `${ctx.subcategoryName} · ${ctx.difficultyLabel}`}</span>
                       {nameErrors[i] && <span className="err" style={{ fontSize: 12 }}>{nameErrors[i]}</span>}
                     </div>
                     <div className="tabnum" style={{ fontWeight: 700, color: full ? 'var(--green)' : 'var(--amber)' }}>{ch.length} / {MAX}{full ? '' : ' (partial)'}</div>

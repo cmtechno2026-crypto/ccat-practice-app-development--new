@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Loading, ErrorBox, Modal, useToast } from '../components/ui';
 import { ContentTabs } from './Content';
+import { BulkSets } from '../components/BulkSets';
 
 // EXAM PAPERS (new model): Battery (category) → Sets → Questions. No subcategory.
 // Pick a battery pill → see that battery's single-battery exam sets → add / bulk-add sets → each set has
@@ -15,6 +16,7 @@ const BATTERIES = [
   { key: 'non_verbal', label: 'Non-verbal', color: '#7b61ff' },
 ];
 const MAX_Q = 60;
+const slugKey = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
 export function ExamPapers() {
   const { can } = useAuth();
@@ -173,10 +175,21 @@ export function ExamPapers() {
         <NewExamSet gradeObj={gradeObj} categoryId={catIdFor(battery)!} batteryLabel={BATTERIES.find(b => b.key === battery)!.label}
           onClose={() => setCreating(false)} onDone={(id) => { setCreating(false); loadSets(); setSelId(id); }} />
       )}
-      {bulk && tax && gradeObj && catIdFor(battery) && (
-        <BulkExamSets gradeObj={gradeObj} categoryId={catIdFor(battery)!} batteryLabel={BATTERIES.find(b => b.key === battery)!.label}
-          existing={examSets} onClose={() => setBulk(false)} onDone={() => { setBulk(false); loadSets(); }} />
-      )}
+      {bulk && tax && gradeObj && catIdFor(battery) && (() => {
+        const catId = catIdFor(battery)!;
+        const subObj = (tax.subcategories || []).filter((s: any) => s.category_id === catId).sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))[0];
+        const diffObj = (tax.difficulties || []).find((d: any) => d.key === 'medium') || (tax.difficulties || [])[0];
+        const catObj = (tax.categories || []).find((c: any) => c.id === catId);
+        if (!subObj || !diffObj || !catObj) { toast('Add a subcategory + difficulty to this battery first'); setBulk(false); return null; }
+        return (
+          <BulkSets exam taxonomy={tax} existingSets={examSets}
+            ctx={{ gradeId: gradeObj.id, catId, subId: subObj.id, diffId: diffObj.id,
+              qType: slugKey(subObj.key) || 'verbal_analogy',
+              gradeNumber: gradeObj.grade_number, categoryName: catObj.name, subcategoryName: subObj.name,
+              difficultyLabel: diffObj.name, diffKey: diffObj.key, maxPerSet: 15 }}
+            onClose={() => setBulk(false)} onDone={() => loadSets()} />
+        );
+      })()}
       {pick && detail && (
         <QuestionPicker gradeNumber={detail.grade_number} categoryKey={battery} current={detail.questions.map((q: any) => q.id)}
           remaining={MAX_Q - detail.question_count} onClose={() => setPick(false)} onAdd={addQuestions} />
@@ -208,44 +221,6 @@ function NewExamSet({ gradeObj, categoryId, batteryLabel, onClose, onDone }: { g
       <label style={{ marginTop: 10 }}>Time limit (min)</label>
       <input type="number" min={1} max={180} value={dur} onChange={e => setDur(e.target.value)} />
       <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Single-battery ({batteryLabel}) timed set. Add up to {MAX_Q} questions next.</p>
-      <div className="err">{err}</div>
-    </Modal>
-  );
-}
-
-function BulkExamSets({ gradeObj, categoryId, batteryLabel, existing, onClose, onDone }: { gradeObj: any; categoryId: string; batteryLabel: string; existing: any[]; onClose: () => void; onDone: () => void }) {
-  const toast = useToast();
-  const [count, setCount] = useState('5'); const [prefix, setPrefix] = useState(`${batteryLabel} — Set`); const [dur, setDur] = useState('25'); const [start, setStart] = useState(String((existing?.length || 0) + 1));
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
-  const create = async () => {
-    const n = Math.max(1, Math.min(30, Number(count) || 0));
-    const from = Math.max(1, Number(start) || 1);
-    const minutes = Math.max(1, Math.min(180, Number(dur) || 25));
-    if (!prefix.trim()) { setErr('Name prefix required'); return; }
-    setBusy(true); setErr('');
-    try {
-      let made = 0;
-      for (let i = 0; i < n; i++) {
-        await api.createSet({
-          name: `${prefix.trim()} ${from + i}`, grade_id: gradeObj.id, category_id: categoryId,
-          allowed_practice: false, allowed_exam: true, allowed_timers: ['timed'],
-          question_version_ids: [], duration_minutes: minutes,
-        });
-        made++;
-      }
-      toast(`Created ${made} exam set${made === 1 ? '' : 's'}`); onDone();
-    } catch (e) { setErr(`Created some, then failed: ${(e as Error).message}`); onDone(); } finally { setBusy(false); }
-  };
-  return (
-    <Modal title={`Bulk add ${batteryLabel} exam sets`} onClose={onClose}
-      footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={busy} onClick={create}>{busy ? 'Creating…' : 'Create sets'}</button></>}>
-      <div className="row">
-        <div className="grow"><label>How many</label><input type="number" min={1} max={30} value={count} onChange={e => setCount(e.target.value)} /></div>
-        <div className="grow"><label>Start number</label><input type="number" min={1} value={start} onChange={e => setStart(e.target.value)} /></div>
-      </div>
-      <label style={{ marginTop: 10 }}>Name prefix</label><input value={prefix} onChange={e => setPrefix(e.target.value)} />
-      <label style={{ marginTop: 10 }}>Time limit (min, applied to all)</label><input type="number" min={1} max={180} value={dur} onChange={e => setDur(e.target.value)} />
-      <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Creates empty draft {batteryLabel} exam sets (e.g. “{prefix.trim()} {start}”, “{prefix.trim()} {Number(start) + 1}”, …). Add questions to each, then publish.</p>
       <div className="err">{err}</div>
     </Modal>
   );
