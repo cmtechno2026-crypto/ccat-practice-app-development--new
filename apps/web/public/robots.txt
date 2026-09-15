@@ -1,0 +1,33 @@
+# robots.txt — https://ccat.conceptmastery.com/
+# CCAT Practice App (Concept Mastery)
+# Updated: 2026-09-15
+# Note: Disallow blocks crawling, NOT indexing. See notes at bottom.
+
+User-agent: *
+
+# --- Private / authenticated app routes: do not crawl ---
+Disallow: /home
+Disallow: /practice
+Disallow: /exam
+Disallow: /session/
+Disallow: /result/
+Disallow: /rewards
+Disallow: /progress
+Disallow: /bookmarks
+Disallow: /customize
+Disallow: /store
+Disallow: /profile
+Disallow: /recovery
+Disallow: /device
+Disallow: /unavailable
+
+# --- Backend / gateway endpoints: never crawl ---
+Disallow: /api/
+Disallow: /v1/
+
+# --- Public pages (allowed by default; listed for clarity) ---
+# /            Landing / Welcome
+# /register    Guardian registration funnel
+# /login       Student login
+
+Sitemap: https://ccat.conceptmastery.com/sitemap.xml
