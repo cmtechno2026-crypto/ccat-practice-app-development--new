@@ -103,6 +103,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const SORTS: Record<string, string> = {
     last_active: 'la.last_active', xp: 's.cached_xp_total', readiness: 'r.readiness_pct',
     grade: 'g.grade_number', username: "s.username_normalized::text", created: 's.created_at',
+    registered: 's.created_at',
   };
   const STATUSES = new Set(['active', 'suspended', 'banned', 'pending_deletion', 'purged']);
   const BANDS = new Set(['ready', 'building', 'needs_work']);
@@ -116,10 +117,17 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const status = q.status && STATUSES.has(q.status) ? q.status : null;
     const band = q.band && BANDS.has(q.band) ? q.band : null;
     const search = q.q && q.q.trim() ? `%${q.q.trim()}%` : null;
+    // Registration-date range filter (Students page). ISO date (YYYY-MM-DD) or full timestamp; both
+    // optional. `to` is treated as inclusive of the whole day when a bare date is given.
+    const dateOk = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(v.trim()) ? v.trim() : null);
+    const regFrom = dateOk(q.registered_from);
+    const regToRaw = dateOk(q.registered_to);
+    // Bare date on `to` → include through end of that day.
+    const regTo = regToRaw && /^\d{4}-\d{2}-\d{2}$/.test(regToRaw) ? regToRaw + 'T23:59:59.999' : regToRaw;
 
     const { rows } = await db.query(
       `select s.id, s.display_name, s.username_normalized::text as username, s.status, s.version,
-              s.birth_month, s.birth_year, g.grade_number,
+              s.birth_month, s.birth_year, s.created_at, g.grade_number,
               gc.email as guardian_email, gc.phone as guardian_phone, gc.name as guardian_name,
               s.cached_xp_total, s.cached_coin_balance,
               r.readiness_pct, r.band as readiness_band, r.insufficient_data,
@@ -150,9 +158,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           and ($2::text is null or r.band = $2)
           and ($3::text is null or s.username_normalized::text ilike $3
                or s.display_name ilike $3 or gc.email ilike $3 or coalesce(gc.phone,'') ilike $3)
+          and ($4::timestamptz is null or s.created_at >= $4::timestamptz)
+          and ($5::timestamptz is null or s.created_at <= $5::timestamptz)
         order by (s.status = 'purged') asc, ${sortCol} ${dir} nulls last, s.created_at desc
-        limit $4 offset $5`,
-      [status, band, search, limit, offset],
+        limit $6 offset $7`,
+      [status, band, search, regFrom, regTo, limit, offset],
     );
     const matched = rows.length ? Number(rows[0]!.matched) : 0;
 
@@ -200,7 +210,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           readiness_band: r.readiness_band ?? null, readiness_insufficient: r.insufficient_data ?? false,
           sets_completed: r.sets_completed === null ? null : Number(r.sets_completed),
           progress_pct: r.progress_pct === null ? null : Number(r.progress_pct),
-          device_total: total, device_active: active, last_active: r.last_active,
+          device_total: total, device_active: active, last_active: r.last_active, created_at: r.created_at,
           streak_current: r.current_streak == null ? 0 : Number(r.current_streak),
           streak_longest: r.longest_streak == null ? 0 : Number(r.longest_streak),
           membership_tier: tierFor(r.guardian_email ? String(r.guardian_email) : null),

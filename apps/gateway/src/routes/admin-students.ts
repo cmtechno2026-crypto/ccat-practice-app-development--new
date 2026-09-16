@@ -31,7 +31,9 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   const createStudentSchema = z.object({
     display_name: z.string().trim().min(1).max(120),
     username: z.string().trim().min(3).max(40),
-    pin: z.string().regex(/^\d{4}$/),
+    // Admin-set login password: 6–8 characters (any content), matching the parent registration policy.
+    // Field kept named `pin` for wire/UI compatibility. Not weak-checked (admin is trusted).
+    pin: z.string().min(6).max(8),
     grade_id: z.string().uuid(),
     birth_month: z.number().int().min(1).max(12).optional(),
     birth_year: z.number().int().min(1990).max(2100).optional(),

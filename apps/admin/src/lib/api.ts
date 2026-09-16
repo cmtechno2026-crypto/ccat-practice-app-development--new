@@ -37,7 +37,7 @@ export const api = {
   opsInfrastructure: () => req<{ backup: any; disaster_recovery: any; failover: any }>('GET', '/v1/admin/ops/infrastructure'),
   opsProviders: () => req<{ providers: any[] }>('GET', '/v1/admin/ops/providers'),
   // students
-  students: (opts: { limit?: number; cursor?: string; q?: string; status?: string; band?: string; sort?: string; dir?: string } = {}) => {
+  students: (opts: { limit?: number; cursor?: string; q?: string; status?: string; band?: string; sort?: string; dir?: string; registered_from?: string; registered_to?: string } = {}) => {
     const p = new URLSearchParams();
     p.set('limit', String(opts.limit ?? 50));
     if (opts.cursor) p.set('cursor', opts.cursor);
@@ -46,6 +46,8 @@ export const api = {
     if (opts.band) p.set('band', opts.band);
     if (opts.sort) p.set('sort', opts.sort);
     if (opts.dir) p.set('dir', opts.dir);
+    if (opts.registered_from) p.set('registered_from', opts.registered_from);
+    if (opts.registered_to) p.set('registered_to', opts.registered_to);
     return req<{ matched: number; items: any[]; next_cursor: string | null }>('GET', `/v1/admin/students?${p.toString()}`);
   },
   studentStats: () => req<{ total: number; active: number; suspended: number; banned: number; pending_deletion: number; practised_today: number }>('GET', '/v1/admin/students/stats'),

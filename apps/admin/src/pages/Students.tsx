@@ -18,6 +18,47 @@ const REQ_TINT: Record<string, string> = { grade_change: '#eef4fc', deletion: '#
 const AVATARS = ['🦊', '🐢', '🦋', '🦖', '🐝', '🦉', '🐬', '🐼', '🦁', '🐧'];
 const avatarFor = (id: string) => AVATARS[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATARS.length];
 
+// ---- registration-date grouping (Students list grouped by the day each account registered) --------
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayKey = (iso?: string | null) => {
+  if (!iso) return 'unknown';
+  const d = new Date(iso); if (isNaN(+d)) return 'unknown';
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
+function relDay(iso: string): string | null {
+  const k = dayKey(iso);
+  const today = new Date();
+  const yest = new Date(); yest.setDate(today.getDate() - 1);
+  if (k === dayKey(today.toISOString())) return 'Today';
+  if (k === dayKey(yest.toISOString())) return 'Yesterday';
+  return null;
+}
+function groupParts(iso?: string | null): { day: string; label: string; rel: string | null } {
+  if (!iso) return { day: '—', label: 'Unknown date', rel: null };
+  const d = new Date(iso); if (isNaN(+d)) return { day: '—', label: 'Unknown date', rel: null };
+  return { day: String(d.getDate()), label: `${MONTHS[d.getMonth()]}, ${d.getFullYear()}`, rel: relDay(iso) };
+}
+const fmtRegDate = (iso?: string | null) => {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(+d)) return '';
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}, ${d.getFullYear()}`;
+};
+function GroupHeader({ iso, count }: { iso: string | null; count: number }) {
+  const { day, label, rel } = groupParts(iso);
+  return (
+    <tr className="daygroup">
+      <td colSpan={20} style={{ padding: '9px 18px', background: '#f7f9fd', borderBottom: '1px solid var(--line)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, height: 32, borderRadius: 9, background: '#fff', border: '1px solid var(--line)', fontWeight: 800, fontSize: 15, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{day}</span>
+          <span style={{ fontWeight: 800, fontSize: 13.5 }}>{label}</span>
+          {rel && <span className="tag" style={{ fontSize: 11 }}>{rel}</span>}
+          <span className="muted" style={{ fontSize: 12, marginLeft: 'auto' }}>{count} {count === 1 ? 'student' : 'students'}</span>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 const STATUS_LABEL: Record<string, string> = {
   active: 'Active', suspended: 'Suspended', banned: 'Banned',
   pending_deletion: 'Pending deletion', device_revoked: 'Device revoked', purged: 'Purged',
@@ -60,6 +101,7 @@ const SORTS = [
   { key: 'readiness', label: 'Readiness' },
   { key: 'grade', label: 'Grade' },
   { key: 'username', label: 'Username' },
+  { key: 'registered', label: 'Registered (date)' },
   { key: 'created', label: 'Newest' },
 ];
 
@@ -89,6 +131,8 @@ export function Students() {
   const [band, setBand] = useState<string | null>(null);
   const [sort, setSort] = useState('last_active');
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
+  const [regFrom, setRegFrom] = useState('');
+  const [regTo, setRegTo] = useState('');
   const [cols, setCols] = useState<Set<string>>(loadCols);
   const [menu, setMenu] = useState<string | null>(null); // 'sort' | 'cols' | 'state'
 
@@ -120,11 +164,11 @@ export function Students() {
   const load = useCallback(async (append = false, cursor?: string) => {
     setLoading(true); setError(null);
     try {
-      const r = await api.students({ q: debouncedQ || undefined, status: status || undefined, band: band || undefined, sort, dir, cursor, limit: 50 });
+      const r = await api.students({ q: debouncedQ || undefined, status: status || undefined, band: band || undefined, sort, dir, cursor, limit: 50, registered_from: regFrom || undefined, registered_to: regTo || undefined });
       setMatched(r.matched); setNextCursor(r.next_cursor);
       setItems(prev => append ? [...prev, ...r.items] : r.items);
     } catch (e) { setError(e); } finally { setLoading(false); }
-  }, [debouncedQ, status, band, sort, dir]);
+  }, [debouncedQ, status, band, sort, dir, regFrom, regTo]);
 
   useEffect(() => { load(false); }, [load]);
   useEffect(() => { api.studentStats().then(setStats).catch(() => {}); }, []);
@@ -138,8 +182,8 @@ export function Students() {
   };
 
   const exportCsv = () => {
-    const head = ['Username', 'Name', 'Grade', 'Status', ...(PAYMENTS_ENABLED ? ['Tier'] : []), 'Readiness %', 'XP', 'Coins', 'Sets', 'Parent email', 'Parent phone', 'Devices'];
-    const lines = items.map(r => [r.username, r.display_name, r.grade_number, r.display_status, ...(PAYMENTS_ENABLED ? [tierLabel(r.membership_tier)] : []), r.readiness_pct ?? '', r.xp_total, r.coins, r.sets_completed ?? '', r.guardian_email ?? '', r.guardian_phone ?? '', `${r.device_active}/${r.device_total}`]
+    const head = ['Username', 'Name', 'Grade', 'Status', ...(PAYMENTS_ENABLED ? ['Tier'] : []), 'Registered', 'Readiness %', 'XP', 'Coins', 'Sets', 'Parent email', 'Parent phone', 'Devices'];
+    const lines = items.map(r => [r.username, r.display_name, r.grade_number, r.display_status, ...(PAYMENTS_ENABLED ? [tierLabel(r.membership_tier)] : []), fmtRegDate(r.created_at), r.readiness_pct ?? '', r.xp_total, r.coins, r.sets_completed ?? '', r.guardian_email ?? '', r.guardian_phone ?? '', `${r.device_active}/${r.device_total}`]
       .map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
     const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -200,6 +244,13 @@ export function Students() {
           )}
         </button>
         <button className="chipbtn" onClick={exportCsv}>Export CSV</button>
+        <span className={`chipbtn ${regFrom || regTo ? 'on' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'default' }}>
+          <span className="muted" style={{ fontSize: 12 }}>Registered</span>
+          <input type="date" value={regFrom} max={regTo || undefined} onChange={e => setRegFrom(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '3px 6px', fontFamily: 'inherit', fontSize: 12.5 }} />
+          <span className="muted">–</span>
+          <input type="date" value={regTo} min={regFrom || undefined} onChange={e => setRegTo(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '3px 6px', fontFamily: 'inherit', fontSize: 12.5 }} />
+          {(regFrom || regTo) && <button className="btn ghost sm" onClick={() => { setRegFrom(''); setRegTo(''); }} style={{ padding: '3px 8px' }}>Clear</button>}
+        </span>
         <button className={`chipbtn ${band ? 'on' : ''}`} onClick={() => setMenu(menu === 'state' ? null : 'state')}>
           State: {stateLabel}
           {menu === 'state' && (
@@ -248,13 +299,23 @@ export function Students() {
               {cols.has('devices') && <th>Devices</th>}
               <th></th>
             </tr></thead>
-            <tbody>{items.map(r => {
+            <tbody>{(() => {
+              const grouped = sort === 'registered' || sort === 'created';
+              const counts: Record<string, number> = {};
+              if (grouped) for (const it of items) { const k = dayKey(it.created_at); counts[k] = (counts[k] || 0) + 1; }
+              let lastKey: string | null = null;
+              return items.map(r => {
               const kinds = reqMap[r.id];
               const rowStyle = kinds && kinds.length
                 ? { background: REQ_TINT[kinds[0]] || undefined, boxShadow: `inset 4px 0 0 ${NOTIF_META[kinds[0]]?.color || 'var(--amber)'}` }
                 : undefined;
+              const gk = dayKey(r.created_at);
+              const header = grouped && gk !== lastKey ? <GroupHeader iso={r.created_at ?? null} count={counts[gk] ?? 0} /> : null;
+              if (grouped) lastKey = gk;
               return (
-              <tr key={r.id} style={rowStyle}>
+              <React.Fragment key={r.id}>
+              {header}
+              <tr style={rowStyle}>
                 <td>
                   <div className="stud">
                     <span className="av">{avatarFor(r.id)}</span>
@@ -284,8 +345,10 @@ export function Students() {
                   <button className="btn ghost sm" onClick={() => nav(`/students/${r.id}`)}>View</button>
                 </div></td>
               </tr>
+              </React.Fragment>
               );
-            })}</tbody>
+            });
+            })()}</tbody>
           </table></div>
           {items.length === 0 && !loading && <div className="empty">No students match that — try a different search or clear the filters.</div>}
           {loading && items.length === 0 && <div className="empty">Loading…</div>}
@@ -335,27 +398,27 @@ function CreateStudentModal({ grades, onClose, onDone }: { grades: { id: string;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   React.useEffect(() => { if (!grade_id && grades[0]) setGrade(grades[0].id); }, [grades]); // eslint-disable-line
-  const ready = display_name.trim().length > 0 && username.trim().length >= 3 && /^\d{4}$/.test(pin) && !!grade_id;
+  const ready = display_name.trim().length > 0 && username.trim().length >= 3 && pin.length >= 6 && pin.length <= 8 && !!grade_id;
   const save = async () => {
-    if (!ready) { setErr('Name, a username (3+ chars), a 4-digit PIN and a grade are required.'); return; }
+    if (!ready) { setErr('Name, a username (3+ chars), a 6–8 character password and a grade are required.'); return; }
     setBusy(true); setErr('');
     try {
       const r = await api.createStudent({ display_name: display_name.trim(), username: username.trim().toLowerCase(), pin, grade_id, guardian_email: guardian_email.trim() || undefined });
-      onDone(`Created ${r.display_name} (@${r.username}) — PIN ${pin}`);
+      onDone(`Created ${r.display_name} (@${r.username}) — password ${pin}`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   return (
     <Modal title="New student" onClose={onClose}
       footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={busy || !ready} onClick={save}>{busy ? 'Creating…' : 'Create student'}</button></>}>
-      <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Creates the account immediately — no email or OTP. The student signs in with the username and PIN; their device enrolls on first login. Guardian email is optional (used only for PIN recovery and membership).</div>
+      <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Creates the account immediately — no email or OTP. The student signs in with the username and password; their device enrolls on first login. Guardian email is optional (used only for password recovery and membership).</div>
       <label>Display name</label>
       <input value={display_name} maxLength={40} onChange={e => setName(e.target.value)} placeholder="e.g. Aarav" />
       <label>Username</label>
       <input value={username} autoCapitalize="none" onChange={e => setUsername(e.target.value.toLowerCase())} placeholder="e.g. aarav_g3" />
       <div className="row">
-        <div className="grow"><label>4-digit PIN</label>
+        <div className="grow"><label>Password (6–8 chars)</label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={4} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="4820" style={{ width: 110, letterSpacing: 4, fontFamily: 'ui-monospace,Menlo,monospace' }} />
+            <input type={showPin ? 'text' : 'password'} maxLength={8} value={pin} onChange={e => setPin(e.target.value.slice(0, 8))} placeholder="6–8 characters" style={{ width: 160, letterSpacing: 2, fontFamily: 'ui-monospace,Menlo,monospace' }} />
             <button type="button" className="btn ghost sm" onClick={() => setShowPin(v => !v)}>{showPin ? '🙈' : '👁️'}</button>
           </div>
         </div>
