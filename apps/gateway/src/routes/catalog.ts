@@ -9,9 +9,26 @@ import { finalizeTimedOutExams } from '../lib/finalize.js';
 export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // GET /v1/grades — data-driven catalog (§29). Public-ish (no student data).
   app.get('/v1/grades', async () => {
+    // `practice_ready` = the grade has at least one PUBLISHED practice set (with active questions) in EACH of
+    // the 3 batteries (verbal / quantitative / non_verbal) — i.e. full battery coverage, min 3 sets. The
+    // registration grade picker uses this to only offer grades a learner can actually practise across all
+    // three batteries. Other consumers can ignore the flag; the row set is unchanged.
     const { rows } = await db.query(
-      `select id, grade_number, name, display_order, registration_enabled, practice_enabled
-         from ccat.grades where active = true and retired_at is null order by display_order, grade_number`,
+      `select g.id, g.grade_number, g.name, g.display_order, g.registration_enabled, g.practice_enabled,
+              (
+                select count(distinct cat.id)
+                  from ccat.question_sets qs
+                  join ccat.categories cat on cat.id = qs.category_id
+                  join ccat.question_set_versions sv on sv.question_set_id = qs.id
+                       and sv.state = 'published' and sv.allowed_practice = true
+                       and exists (select 1 from ccat.set_version_questions svq
+                                    where svq.set_version_id = sv.id and svq.active = true)
+                 where qs.grade_id = g.id
+                   and cat.key in ('verbal', 'quantitative', 'non_verbal')
+              ) >= 3 as practice_ready
+         from ccat.grades g
+        where g.active = true and g.retired_at is null
+        order by g.display_order, g.grade_number`,
     );
     return rows;
   });
