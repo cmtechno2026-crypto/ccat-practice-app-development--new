@@ -5,7 +5,7 @@ import { parsePhone, type CountryCode } from '../lib/phone';
 import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
 import { Field } from '../components/ui';
-import { isWeakPin, WEAK_PIN_HINT } from '../lib/pin';
+import { isWeakPin, WEAK_PIN_HINT, passwordRules, PW_MIN, PW_MAX } from '../lib/pin';
 import cmWordmark from '../assets/cm-wordmark.png';
 import '../landing.css';
 
@@ -139,12 +139,17 @@ export function RegisterScreen() {
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
+  const [showPin, setShowPin] = useState(false);
 
   const age = ageFrom(birthYear, birthMonth, birthDay);
   const usernameValid = /^[a-z][a-z0-9_]{2,19}$/.test(username);
-  // Non-blocking weak-PIN hint (server is the authority). Full DOB is available here, so a birthday-based
-  // PIN is flagged too. Warns only once all four digits are entered; does not disable Create account.
-  const pinWeak = pin.length === 4 && isWeakPin(pin, { year: birthYear, month: birthMonth, day: birthDay });
+  // Password (6–8 chars) rules for the live checklist. Full DOB is available here, so a birthday-based
+  // value is flagged too. `pinWeak` warns once it's long enough; `pwOk` gates the Create button.
+  const pwDob = { year: birthYear, month: birthMonth, day: birthDay };
+  const rules = passwordRules(pin, pwDob);
+  const pinWeak = pin.length >= PW_MIN && isWeakPin(pin, pwDob);
+  const pwMatch = pin.length > 0 && pin === pin2;
+  const pwOk = rules.all && pwMatch;
 
   const phoneObj = useMemo(() => {
     const p = parsePhone(phoneNational, phoneCountry);
@@ -269,7 +274,8 @@ export function RegisterScreen() {
     if (r) { setGrant(r.registration_grant); setStep('account'); }
   }
   async function finish() {
-    if (pin.length !== 4 || pin !== pin2) { setErr("PINs don't match."); return; }
+    if (!rules.all) { setErr(`Choose a valid password — ${PW_MIN}–${PW_MAX} characters, and not too easy to guess.`); return; }
+    if (pin !== pin2) { setErr("Passwords don't match."); return; }
     const created = await guard(() => client.registrationStudent({
       registration_grant: grant, display_name: displayName.trim(), username, grade_id: gradeId,
       birth_month: birthMonth, birth_year: birthYear, pin, device_hash: getDeviceHash(), referral_code: referralCode,
@@ -423,13 +429,27 @@ export function RegisterScreen() {
           {step === 'account' && (
             <>
               <h2>Create the sign-in 🔐</h2>
-              <p className="muted">Pick a username and a secret 4-digit PIN for {displayName || 'your child'}.</p>
+              <p className="muted">Pick a username and a password ({PW_MIN}–{PW_MAX} characters) for {displayName || 'your child'}.</p>
               <Field label="Username" hint={!username ? 'Use 3–20 lowercase letters, numbers or _' : (usernameValid ? '✓ Nice — that one works!' : 'Start with a letter; 3–20 chars, lowercase only')} hintKind={username ? (usernameValid ? 'ok' : 'bad') : undefined}>
                 <input className={`input ${username ? (usernameValid ? 'ok' : 'bad') : ''}`} value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="e.g. aisha_k" />
               </Field>
-              <Field label="4-digit PIN" hint={pinWeak ? WEAK_PIN_HINT : undefined} hintKind={pinWeak ? 'bad' : undefined}><input className={`input ${pinWeak ? 'bad' : ''}`} value={pin} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
-              <Field label="Confirm PIN"><input className="input" value={pin2} inputMode="numeric" maxLength={4} placeholder="••••" onChange={(e) => setPin2(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
-              <button className="btn" disabled={!usernameValid || pin.length !== 4 || pin2.length !== 4 || busy} onClick={finish}>{busy ? 'Creating…' : 'Create account 🎉'}</button>
+              <Field label="Password" hint={pinWeak ? WEAK_PIN_HINT : undefined} hintKind={pinWeak ? 'bad' : undefined}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input className={`input ${pin ? (rules.all ? 'ok' : 'bad') : ''}`} style={{ flex: 1 }} type={showPin ? 'text' : 'password'} autoComplete="new-password" maxLength={PW_MAX} value={pin} placeholder={`${PW_MIN}–${PW_MAX} characters`} onChange={(e) => setPin(e.target.value.slice(0, PW_MAX))} />
+                  <button type="button" onClick={() => setShowPin((v) => !v)} aria-label={showPin ? 'Hide password' : 'Show password'} title={showPin ? 'Hide password' : 'Show password'} style={{ background: 'transparent', border: 0, cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 6 }}>{showPin ? '🙈' : '👁️'}</button>
+                </div>
+              </Field>
+              {pin.length > 0 && (
+                <ul style={{ listStyle: 'none', padding: '8px 12px', margin: '0 0 4px', background: 'var(--tint-blue,#eef3fc)', border: '1px solid #d6e2f5', borderRadius: 11, fontSize: 12.5 }}>
+                  <li style={{ color: rules.length ? 'var(--green,#1e7a46)' : '#6b7180' }}>{rules.length ? '✓' : '•'} {PW_MIN}–{PW_MAX} characters</li>
+                  <li style={{ color: '#6b7180' }}>• Letters, numbers or symbols — your choice</li>
+                  <li style={{ color: rules.length ? (rules.notWeak ? 'var(--green,#1e7a46)' : 'var(--red,#c8362f)') : '#6b7180' }}>{rules.length ? (rules.notWeak ? '✓' : '✕') : '•'} Not an easy one (1234, repeats, or a birthday)</li>
+                </ul>
+              )}
+              <Field label="Confirm password" hint={pin2.length > 0 && !pwMatch ? "Passwords don't match" : undefined} hintKind={pin2.length > 0 && !pwMatch ? 'bad' : undefined}>
+                <input className={`input ${pin2 ? (pwMatch ? 'ok' : 'bad') : ''}`} type={showPin ? 'text' : 'password'} autoComplete="new-password" maxLength={PW_MAX} value={pin2} placeholder="Re-enter password" onChange={(e) => setPin2(e.target.value.slice(0, PW_MAX))} />
+              </Field>
+              <button className="btn" disabled={!usernameValid || !pwOk || busy} onClick={finish}>{busy ? 'Creating…' : 'Create account 🎉'}</button>
             </>
           )}
 

@@ -39,7 +39,9 @@ const studentSchema = z.object({
   grade_id: z.string().uuid(),
   birth_month: z.number().int().min(1).max(12),
   birth_year: z.number().int().min(1990).max(2100),
-  pin: z.string().regex(/^\d{4}$/),
+  // New accounts require a 6–8 character password (any letters, numbers, or symbols). The wire field is
+  // still named `pin` for client/mobile compatibility. Weak values are rejected below via isWeakPin.
+  pin: z.string().min(6).max(8),
   device_hash: z.string().min(3),
   referral_code: z.string().trim().min(4).max(16).optional(), // optional invite code (Gate 2B)
 });

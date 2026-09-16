@@ -2,6 +2,23 @@
 
 _Last updated: 2026-09-08 — feature/payments (payments + email) MERGED INTO master locally (--no-ff). Flag stays OFF. NOT pushed — operator reviews + pushes. See "Integration merge 2026-09-08" below._
 
+## PIN → password 2026-09-16 (on master working tree — AUTHORED by Claude, build check pending operator)
+Change: the 4-digit numeric PIN becomes a 6–8 character PASSWORD (any letters, numbers, or symbols) for NEW accounts and for password RESETS. Existing families are grandfathered: their stored 4-digit code keeps working forever and they are NOT forced to migrate (they only move to 6–8 if they voluntarily reset via "Forgot password?"). NOT behind PAYMENTS_ENABLED.
+WIRE COMPAT: request field names kept as `pin` / `new_pin` (login, registration, recovery) so @ccat/api-client and apps/mobile are untouched — the field just carries a password now. No api-client change, no migration (backend already scrypt-hashes any string; only the zod length/shape rules changed).
+GATEWAY:
+  - auth.ts loginSchema: `pin` regex ^\d{4}$ → `z.string().min(4).max(8)` — accepts BOTH grandfathered 4-digit PINs and new 6–8 passwords. Login is NOT weak-checked (an existing weak code must still sign in).
+  - registration.ts studentSchema: `pin` → min(6).max(8). recovery.ts completeSchema: `new_pin` → min(6).max(8). Both still call isWeakPin (422 WEAK_PIN) before hashing.
+  - lib/pin.ts isWeakPin() generalized from 4-digit-only to any 4–8 char value: common-password/PIN list (4-digit set + 6–8 common passwords/sequences, case-insensitive), all-same, ascending/descending runs, DOB-derived. Guard is now length 4–8 (was ^\d{4}$).
+WEB (apps/web):
+  - lib/pin.ts: mirrors the gateway util; adds PW_MIN=6, PW_MAX=8, passwordRules() (length + notWeak) for the live checklist, WEAK_PIN_HINT reworded for passwords.
+  - LoginScreen.tsx: 4-box PIN entry → single masked password input + show/hide; accepts 4–8 (canSubmit len 4–8); "Secret PIN"→"Password", "Forgot PIN?"→"Forgot password?", error copy; note "Existing families: your 4-digit PIN still works."
+  - RegisterScreen.tsx (Account step): PIN/Confirm PIN → Password/Confirm password (6–8), show/hide, live rules checklist, button gated on rules.all + match.
+  - RecoveryScreen.tsx: New/Confirm PIN → New/Confirm password (6–8) + checklist + show/hide; h1/quote/copy "PIN"→"password".
+  - components/PlanCheckoutModal.tsx (landing pricing popup, Case-1 LOGIN): PIN field → "Password", accepts 4–8; grandfather note added.
+NOT DONE (by explicit owner decision 2026-09-16): no forced migration of existing users; no in-app "change password" screen (reset is via the email Forgot-password flow only). apps/mobile still enforces 4-digit on its own screens (gateway accepts 6–8, so mobile won't break; mobile users can't use 6–8 until mobile is updated).
+BUILD CHECK PENDING (operator): gateway has no `build` script — use `typecheck`. Run `npx pnpm@10 --filter @ccat/gateway typecheck` and `--filter @ccat/web build`. (Note: an unrelated pre-existing gap, missing Errors.emailUnavailable, was fixed on 2026-09-14/15; if not yet committed it's in the working tree.)
+FILES (9): gateway lib/pin.ts, routes/auth.ts, routes/registration.ts, routes/recovery.ts; web lib/pin.ts, screens/LoginScreen.tsx, screens/RegisterScreen.tsx, screens/RecoveryScreen.tsx, components/PlanCheckoutModal.tsx.
+
 ## PIN hardening 2026-09-14 (branch fix/pin-hardening — AUTHORED, NOT committed/built by Claude)
 NOT a payments feature — NONE of this is behind PAYMENTS_ENABLED (always active). Branch: intended `fix/pin-hardening` off master; Claude could NOT create it (device shell offline — Sept-8 Windows update blocks the workspace mount), so edits landed in the working tree — **operator must `git checkout -b fix/pin-hardening` before committing** (uncommitted changes carry over). No commit/push by Claude.
 1. WEAK-PIN BLOCKLIST (server-authoritative): NEW `apps/gateway/src/lib/pin.ts` — `isWeakPin(pin, dob?)`: ~21 common PINs (1234 1111 0000 1212 7777 1004 2000 4444 2222 6969 9999 3333 5555 6666 1122 1313 8888 4321 2001 1010 2580) + all-same + ascending/descending runs (algorithmic) + DOB-derived (birth year YYYY, MMYY/YYMM; DDMM/MMDD only when a day is known). Enforced at `registration.ts` (student create, month+year only) and `recovery.ts` (/complete, before the reset code is consumed, DOB looked up for the child) → 422 `WEAK_PIN` (new `Errors.weakPin()` in `errors.ts`). NOT enforced at /v1/auth/login (an existing weak PIN must still sign in + change).

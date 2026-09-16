@@ -15,7 +15,9 @@ const startSchema = z.object({ email: z.string().email() });
 const completeSchema = z.object({
   email: z.string().email(),
   code: z.string(),
-  new_pin: z.string().regex(/^\d{4}$/),
+  // A reset sets a new 6–8 character password (any letters, numbers, or symbols); this moves an existing
+  // family off their old 4-digit code. Wire field kept as `new_pin`. Weak values rejected below.
+  new_pin: z.string().min(6).max(8),
 });
 
 // PIN recovery (Blueprint §4.4): a parent enters their REGISTERED email; we email the child username(s)

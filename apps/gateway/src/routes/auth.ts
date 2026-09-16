@@ -47,7 +47,10 @@ async function notifyGuardianOfLockout(db: DB, cfg: Config, studentId: string, l
 
 const loginSchema = z.object({
   username: z.string(),
-  pin: z.string().regex(/^\d{4}$/),
+  // Password login. New accounts use a 6–8 char password; existing families kept a 4-digit code. Login
+  // therefore accepts 4–8 characters (any content) so grandfathered PINs keep working. The wire field is
+  // still named `pin` for client/mobile compatibility — it now carries a password.
+  pin: z.string().min(4).max(8),
   device_hash: z.string(),
   // When true and the account is pending_deletion, cancel the deletion and sign in (self-restore).
   restore: z.boolean().optional(),

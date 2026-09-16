@@ -53,11 +53,11 @@ export function LoginScreen() {
       try { const r = sessionStorage.getItem('cmPostAuthRedirect'); if (r) { dest = r; sessionStorage.removeItem('cmPostAuthRedirect'); } } catch { /* ignore */ }
       nav(dest, { replace: true });
     } catch (e) {
-      setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username/email or PIN.' : e.message) : (e as Error).message);
+      setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username/email or password.' : e.message) : (e as Error).message);
     } finally { setBusy(false); }
   }
 
-  const canSubmit = !!username && pin.length === 4 && !busy;
+  const canSubmit = !!username && pin.length >= 4 && pin.length <= 8 && !busy;
 
   return (
     <div className="a2-split">
@@ -77,7 +77,7 @@ export function LoginScreen() {
         <div className="a2-inner">
           <Link className="a2-back" to="/">← Back to home</Link>
           <h1>Welcome back 👋</h1>
-          <p className="a2-sub">Enter your username or parent email, and the 4-digit PIN.</p>
+          <p className="a2-sub">Enter your username or parent email, and your password.</p>
           {err && <div className="err" role="alert">{err}</div>}
           <div className="field">
             <label>Username or email</label>
@@ -97,37 +97,34 @@ export function LoginScreen() {
                   </label>
                 ))}
               </div>
-              <div className="a2-sub" style={{ marginTop: 6, fontSize: 12.5 }}>This email has more than one child — pick one, then enter that child’s PIN.</div>
+              <div className="a2-sub" style={{ marginTop: 6, fontSize: 12.5 }}>This email has more than one child — pick one, then enter that child’s password.</div>
             </div>
           )}
           <div className="field">
-            <label>Secret PIN</label>
+            <label>Password</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div className="pin-entry" onClick={() => pinRef.current?.focus()}>
-                <div className="boxes">
-                  {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className={`pin-box${pin.length > i ? ' filled' : ''}${pin.length === i ? ' active' : ''}`}>{pin[i] ? (showPin ? pin[i] : '•') : ''}</div>
-                  ))}
-                </div>
-                <input
-                  ref={pinRef}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={4}
-                  value={pin}
-                  aria-label="4-digit PIN"
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) submit(); }}
-                />
-              </div>
-              <button type="button" onClick={() => setShowPin((v) => !v)} aria-pressed={showPin} aria-label={showPin ? 'Hide PIN' : 'Show PIN'} title={showPin ? 'Hide PIN' : 'Show PIN'}
+              <input
+                ref={pinRef}
+                className="input"
+                type={showPin ? 'text' : 'password'}
+                autoComplete="current-password"
+                maxLength={8}
+                value={pin}
+                aria-label="Password"
+                placeholder="Your password"
+                style={{ flex: 1 }}
+                onChange={(e) => setPin(e.target.value.slice(0, 8))}
+                onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) submit(); }}
+              />
+              <button type="button" onClick={() => setShowPin((v) => !v)} aria-pressed={showPin} aria-label={showPin ? 'Hide password' : 'Show password'} title={showPin ? 'Hide password' : 'Show password'}
                 style={{ background: 'transparent', border: 0, cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 6 }}>
                 {showPin ? '🙈' : '👁️'}
               </button>
             </div>
+            <p className="a2-sub" style={{ marginTop: 6, fontSize: 12 }}>Existing families: your 4-digit PIN still works.</p>
           </div>
           <button className="a2-btn gold" disabled={!canSubmit} onClick={submit}>Let me in! 🔓</button>
-          <div className="a2-links"><Link to="/recovery">Forgot PIN?</Link></div>
+          <div className="a2-links"><Link to="/recovery">Forgot password?</Link></div>
           <div className="a2-foot">New here? <Link to="/register">Create an account</Link></div>
         </div>
       </div>

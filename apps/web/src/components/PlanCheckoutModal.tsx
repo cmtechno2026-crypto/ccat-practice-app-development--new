@@ -68,7 +68,7 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
   function msg(e: unknown, fallback: string): string {
     if (e instanceof ApiError) {
       if (e.code === 'RATE_LIMITED') return 'Too many attempts — wait a few minutes.';
-      if (e.code === 'UNAUTHORIZED') return step === 'login' ? 'Wrong username or PIN.' : e.message;
+      if (e.code === 'UNAUTHORIZED') return step === 'login' ? 'Wrong username or password.' : e.message;
       return e.message || fallback;
     }
     return (e as Error)?.message || fallback;
@@ -108,7 +108,7 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
   // do NOT set the profile here, because that would redirect the landing to /home before the PayPal
   // redirect fires (the "visits home in between" flash the user saw).
   async function loginSubmit() {
-    if (!username || pin.length !== 4 || busy) return;
+    if (!username || pin.length < 4 || pin.length > 8 || busy) return;
     setBusy(true); setErr(null);
     try {
       await client.login(username, pin, getDeviceHash());
@@ -281,14 +281,15 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
               <input style={S.input} value={username} readOnly aria-readonly="true" />
             )}
             <div style={{ height: 12 }} />
-            <label style={S.label}>4-digit PIN</label>
-            <input style={{ ...S.input, ...S.code }} inputMode="numeric" autoComplete="one-time-code"
-              maxLength={4} autoFocus value={pin} placeholder="••••"
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            <label style={S.label}>Password</label>
+            <input style={S.input} type="password" autoComplete="current-password"
+              maxLength={8} autoFocus value={pin} placeholder="Your password"
+              onChange={(e) => setPin(e.target.value.slice(0, 8))}
               onKeyDown={(e) => { if (e.key === 'Enter') loginSubmit(); }} />
+            <div style={{ fontSize: 12, color: '#8a90a6', fontWeight: 700, marginTop: 6 }}>Existing families: your 4-digit PIN still works.</div>
             <div style={{ height: 14 }} />
-            <button style={{ ...(alreadyHas ? S.blueBtn : S.payBtn), opacity: username && pin.length === 4 && !busy ? 1 : 0.6 }}
-              disabled={!username || pin.length !== 4 || busy} onClick={loginSubmit}>
+            <button style={{ ...(alreadyHas ? S.blueBtn : S.payBtn), opacity: username && pin.length >= 4 && pin.length <= 8 && !busy ? 1 : 0.6 }}
+              disabled={!username || pin.length < 4 || pin.length > 8 || busy} onClick={loginSubmit}>
               {busy ? 'Please wait…' : alreadyHas ? 'Log in' : `Log in & pay ${info.priceLabel}`}
             </button>
             <div style={{ textAlign: 'center', marginTop: 6, fontSize: 12.5, color: '#8a90a6', fontWeight: 700 }}>
