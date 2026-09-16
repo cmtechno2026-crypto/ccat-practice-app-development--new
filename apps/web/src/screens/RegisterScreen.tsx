@@ -104,7 +104,10 @@ export function RegisterScreen() {
     client.grades()
       .then((g: any) => {
         if (ignore) return;
-        const list = (Array.isArray(g) ? g : []).filter((x: any) => Number(x?.grade_number) <= 4);
+        // Only offer grades with full practice coverage across all 3 batteries (practice_ready, computed
+        // by /v1/grades — at least one published practice set in verbal, quantitative AND non-verbal). A
+        // grade missing any battery is hidden so a new learner never lands on a grade they can't fully practise.
+        const list = (Array.isArray(g) ? g : []).filter((x: any) => x?.practice_ready === true);
         setGradeList(list);
         if (list[0]) setGradeId((cur) => cur || list[0].id);
       })
