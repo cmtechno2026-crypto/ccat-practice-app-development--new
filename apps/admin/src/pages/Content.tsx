@@ -129,7 +129,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
               <span className="muted" style={{ fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', fontWeight: 700 }}>Default per set</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', border: '1.5px solid var(--line)', borderRadius: 9, overflow: 'hidden', background: '#fff' }}>
                 <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 30 }} disabled={defPerSet <= 1} onClick={() => setDefault(defPerSet - 5)}>−</button>
-                <input type="number" min={1} max={PER_SET_CEILING} value={defPerSet} onChange={e => setDefault(Number(e.target.value))}
+                <input type="text" inputMode="numeric" pattern="[0-9]*" value={defPerSet} onChange={e => setDefault(Number(e.target.value.replace(/\D/g, '')))}
                   style={{ width: 52, textAlign: 'center', border: 0, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)', borderRadius: 0, fontWeight: 700 }} />
                 <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 30 }} disabled={defPerSet >= PER_SET_CEILING} onClick={() => setDefault(defPerSet + 5)}>+</button>
               </span>

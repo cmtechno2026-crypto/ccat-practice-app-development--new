@@ -289,8 +289,8 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
               <label>Questions per set</label>
               <div style={{ display: 'inline-flex', alignItems: 'center', border: '1.5px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
                 <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 34 }} disabled={perSet <= 1} onClick={() => setPerSet(p => clampPer(p - 5))}>−</button>
-                <input type="number" min={1} max={MAX} value={perSet}
-                  onChange={e => setPerSet(clampPer(Number(e.target.value)))}
+                <input type="text" inputMode="numeric" pattern="[0-9]*" value={perSet}
+                  onChange={e => setPerSet(clampPer(Number(e.target.value.replace(/\D/g, ''))))}
                   style={{ width: 64, textAlign: 'center', border: 0, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)', borderRadius: 0, fontWeight: 700 }} />
                 <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 34 }} disabled={perSet >= MAX} onClick={() => setPerSet(p => clampPer(p + 5))}>+</button>
               </div>
