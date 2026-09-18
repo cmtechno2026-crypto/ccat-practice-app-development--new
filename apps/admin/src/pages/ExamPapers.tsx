@@ -17,7 +17,7 @@ const BATTERIES = [
   { key: 'quantitative', label: 'Quantitative', color: '#12b886' },
   { key: 'non_verbal', label: 'Non-verbal', color: '#7b61ff' },
 ];
-const MAX_Q = 60;
+const MAX_Q = 100;
 const slugKey = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 const fmtDate = (d: string) => {
   if (!d) return '—';

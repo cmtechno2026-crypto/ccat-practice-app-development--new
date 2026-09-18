@@ -108,7 +108,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     allowed_timers: z.array(z.string()).optional(),
     // Static ceiling = 60 (the exam per-set cap). The real per-set limit is enforced below: 60 for exam,
     // the subcategory's max for practice.
-    question_version_ids: z.array(z.string().uuid()).max(60).default([]),
+    question_version_ids: z.array(z.string().uuid()).max(100).default([]),
     duration_minutes: z.number().int().min(1).max(180).optional(), // exam papers only
   });
   app.post('/v1/admin/content/sets', guard, async (req) => {
@@ -118,7 +118,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     if (!b.allowed_exam && !b.subcategory_id) throw Errors.validation('Practice sets require a subcategory', { code: 'SUBCATEGORY_REQUIRED' });
     const subId = b.allowed_exam ? null : (b.subcategory_id ?? null);
     // Per-set cap: exam = 60 (single battery); practice = the subcategory's max (45 Combine / 15 otherwise).
-    let maxq = 60;
+    let maxq = 100;
     if (!b.allowed_exam) {
       const capRow = await db.query('select coalesce(max_questions_per_set, 15) as maxq from ccat.subcategories where id = $1', [subId]);
       maxq = Number(capRow.rows[0]?.maxq ?? 15);
@@ -219,7 +219,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
 
   // Static ceiling = 60 (exam per-set cap); the real per-set limit (exam 60, practice = the
   // subcategory's max) is enforced at runtime below.
-  const membershipSchema = z.object({ question_version_ids: z.array(z.string().uuid()).min(0).max(60) });
+  const membershipSchema = z.object({ question_version_ids: z.array(z.string().uuid()).min(0).max(100) });
   app.post('/v1/admin/content/sets/:id/questions', guard, async (req) => {
     requirePermission(req, 'content.create');
     const id = (req.params as any).id;
@@ -234,7 +234,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
          join ccat.question_sets qs on qs.id = sv.question_set_id
          left join ccat.subcategories sub on sub.id = qs.subcategory_id
         where sv.id = $1`, [id]);
-    const maxq = capRow.rows[0]?.allowed_exam ? 60 : Number(capRow.rows[0]?.maxq ?? 15);
+    const maxq = capRow.rows[0]?.allowed_exam ? 100 : Number(capRow.rows[0]?.maxq ?? 15);
     if (b.question_version_ids.length > maxq)
       throw Errors.validation(`This subcategory allows up to ${maxq} questions per set`, { code: 'SET_TOO_LARGE' });
     await withTransaction(db, async (c) => {
@@ -275,7 +275,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     explanation_blocks: z.array(z.any()).nullable().optional(),
     active: z.boolean().default(true),
   });
-  const authorSchema = z.object({ questions: z.array(authorCardSchema).min(1).max(60), scope_category_id: z.string().uuid().optional() });
+  const authorSchema = z.object({ questions: z.array(authorCardSchema).min(1).max(100), scope_category_id: z.string().uuid().optional() });
 
   app.post('/v1/admin/content/sets/:id/author', guard, async (req) => {
     requirePermission(req, 'content.create');

@@ -20,7 +20,7 @@ import { FORMAT_TEXT, SAMPLE_FILE_TEXT } from './BulkImport';
 export const DEFAULT_MAX_QUESTIONS_PER_SET = 15;
 // Hard ceiling for questions per set across the app (matches the exam per-set cap and the DB
 // subcategories.max_questions_per_set). The "Questions per set" chooser is clamped to this.
-export const PER_SET_CEILING = 60;
+export const PER_SET_CEILING = 100;
 export function maxQuestionsForSub(sub: any): number {
   // Accept either key spelling the gateway may send: camelCase maxQuestionsPerSet or snake_case
   // max_questions_per_set. Fall back to the default when neither is a positive number.
