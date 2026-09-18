@@ -39,7 +39,7 @@ export function Membership() {
   const [email, setEmail] = useState('');
   const [tier, setTier] = useState<Tier>('t50');
   const [reason, setReason] = useState<string>('comp');
-  const [expiry, setExpiry] = useState<string>(''); // date (YYYY-MM-DD); empty = no expiry. Saved as 00:00 IST.
+  const [expiry, setExpiry] = useState<string>(''); // date (YYYY-MM-DD); empty = 1 year from today (paid tiers). Saved as 00:00 IST.
   const [current, setCurrent] = useState<any | null>(null);
   const [students, setStudents] = useState<LinkedStudent[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -171,7 +171,7 @@ export function Membership() {
           </label>
 
           <label>
-            <div className="muted" style={{ marginBottom: 4 }}>Expiry (optional — blank = no expiry)</div>
+            <div className="muted" style={{ marginBottom: 4 }}>Expiry (optional — blank = 1 year from today for paid tiers)</div>
             <input className="input" type="date" value={expiry} disabled={!editable} onChange={(e) => setExpiry(e.target.value)} />
             <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Expires at 12:00 am IST on this date.</div>
           </label>

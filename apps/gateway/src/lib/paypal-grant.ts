@@ -51,11 +51,11 @@ export async function grantPaidEntitlementPaypal(
 
   const up = await db.query(
     `insert into ccat.entitlements (guardian_email, guardian_id, tier, status, current_period_end, source, external_ref, grant_reason)
-     values ($1, $2, $3, 'active', now() + interval '1 year', 'webhook', $4, 'paid')
+     values ($1, $2, $3, 'active', (now() + interval '1 year')::date, 'webhook', $4, 'paid')
      on conflict (lower(guardian_email)) do update
        set tier = excluded.tier,
            status = 'active',
-           current_period_end = now() + interval '1 year',
+           current_period_end = (now() + interval '1 year')::date,
            guardian_id = coalesce(excluded.guardian_id, ccat.entitlements.guardian_id),
            source = 'webhook',
            external_ref = excluded.external_ref,

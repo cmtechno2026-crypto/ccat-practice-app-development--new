@@ -73,7 +73,7 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
 
     const { rows } = await db.query(
       `insert into ccat.entitlements (guardian_email, guardian_id, tier, status, current_period_end, source, grant_reason)
-       values ($1, $2, $3, $4, $5, 'manual', $6)
+       values ($1, $2, $3, $4, coalesce($5::date, case when $3 = 'free' then null else (now() + interval '1 year')::date end), 'manual', $6)
        on conflict (lower(guardian_email)) do update
          set tier = excluded.tier,
              status = excluded.status,
@@ -93,7 +93,7 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
         adminId,
         rows[0]!.id,
         JSON.stringify(prev.rows[0] ?? null),
-        JSON.stringify({ guardian_email: email, tier, status, current_period_end: currentPeriodEnd, grant_reason: grantReason }),
+        JSON.stringify({ guardian_email: email, tier, status, current_period_end: rows[0]!.current_period_end, grant_reason: grantReason }),
       ],
     );
 

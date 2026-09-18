@@ -232,7 +232,7 @@ export function StudentDetail() {
         )}
       </div>
       {can('config.global') && membership?.guardian_email && (
-        <div className="muted" style={{ fontSize: 11.5, margin: '6px 2px 0' }}>Applies to the guardian ({membership.guardian_email}) — all children on that guardian. Expiry blank = no expiry (12:00 am IST). “Paid” records a real payment; the rest are non-paying access.</div>
+        <div className="muted" style={{ fontSize: 11.5, margin: '6px 2px 0' }}>Applies to the guardian ({membership.guardian_email}) — all children on that guardian. Expiry blank = 1 year from today for paid plans (12:00 am IST). “Paid” records a real payment; the rest are non-paying access.</div>
       )}
 
       <div className="sdbento">
