@@ -18,11 +18,29 @@ import { FORMAT_TEXT, SAMPLE_FILE_TEXT } from './BulkImport';
 // (45 for the "… Battery Combine" subcategories, 15 for the rest). This is only the fallback used when that
 // field is absent — never hard-code 15/45 at a call site; resolve the cap with maxQuestionsForSub / ctx.maxPerSet.
 export const DEFAULT_MAX_QUESTIONS_PER_SET = 15;
+// Hard ceiling for questions per set across the app (matches the exam per-set cap and the DB
+// subcategories.max_questions_per_set). The "Questions per set" chooser is clamped to this.
+export const PER_SET_CEILING = 60;
 export function maxQuestionsForSub(sub: any): number {
   // Accept either key spelling the gateway may send: camelCase maxQuestionsPerSet or snake_case
   // max_questions_per_set. Fall back to the default when neither is a positive number.
   const n = Number(sub?.maxQuestionsPerSet ?? sub?.max_questions_per_set);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_QUESTIONS_PER_SET;
+}
+
+// Remembered "Default questions per set" — set on the Content (Practice) page, used to pre-fill the
+// Bulk-add "Questions per set" field. Per-admin (browser localStorage); best-effort.
+const DEFAULT_PER_SET_KEY = 'ccat_admin_default_perset';
+const DEFAULT_PER_SET_FALLBACK = 15;
+export function loadDefaultPerSet(): number {
+  try {
+    const v = Number(localStorage.getItem(DEFAULT_PER_SET_KEY));
+    if (Number.isFinite(v) && v >= 1 && v <= PER_SET_CEILING) return Math.round(v);
+  } catch { /* ignore */ }
+  return DEFAULT_PER_SET_FALLBACK;
+}
+export function saveDefaultPerSet(n: number): void {
+  try { localStorage.setItem(DEFAULT_PER_SET_KEY, String(Math.min(PER_SET_CEILING, Math.max(1, Math.round(n || 1))))); } catch { /* ignore */ }
 }
 
 // Sets are named "Set 1", "Set 2", … — the default name for the Nth generated set. Single source of truth.
@@ -45,8 +63,13 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
   ctx: Ctx; existingSets: any[]; taxonomy: any; onClose: () => void; onDone: () => void; exam?: boolean;
 }) {
   const toast = useToast();
-  // Per-set cap for THIS subcategory (45 for a Battery Combine, 15 otherwise) — from the catalog, never hard-coded.
-  const MAX = ctx.maxPerSet && ctx.maxPerSet > 0 ? ctx.maxPerSet : DEFAULT_MAX_QUESTIONS_PER_SET;
+  // Ceiling for THIS context — the subcategory/exam cap from the catalog, but never above the app-wide
+  // PER_SET_CEILING (60). The admin chooses how many to actually put in each set, up to this.
+  const MAX = Math.min(PER_SET_CEILING, ctx.maxPerSet && ctx.maxPerSet > 0 ? ctx.maxPerSet : DEFAULT_MAX_QUESTIONS_PER_SET);
+  const clampPer = (n: number) => Math.min(MAX, Math.max(1, Math.round(n || 1)));
+  // Questions each generated set gets (last set takes the remainder). Pre-filled from the remembered
+  // Content-page default, clamped to this context's ceiling. Changeable here for a single run.
+  const [perSet, setPerSet] = useState<number>(() => clampPer(loadDefaultPerSet()));
   const [text, setText] = useState('');
   const [examDur, setExamDur] = useState('25'); // exam mode: one time limit for every set created
   const [cards, setCards] = useState<ImportCard[] | null>(null);
@@ -103,10 +126,10 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
   const plan = useMemo(() => {
     if (!cards || !cards.length) return null;
     const chunks: ImportCard[][] = [];
-    for (let i = 0; i < cards.length; i += MAX) chunks.push(cards.slice(i, i + MAX));
+    for (let i = 0; i < cards.length; i += perSet) chunks.push(cards.slice(i, i + perSet));
     const numbers = assignNumbers(chunks.length, usedNumbers);
     return { chunks, numbers, total: cards.length };
-  }, [cards, usedNumbers]);
+  }, [cards, usedNumbers, perSet]);
 
   // Per-row validation of the (editable) names: non-empty, unique within the batch, no collision with an
   // existing set name in this subcategory + difficulty. Returns an error string per row (null = ok).
@@ -194,7 +217,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
         resolved = attachImages(cards, uploaded);
       }
       const chunks: ImportCard[][] = [];
-      for (let i = 0; i < resolved.length; i += MAX) chunks.push(resolved.slice(i, i + MAX));
+      for (let i = 0; i < resolved.length; i += perSet) chunks.push(resolved.slice(i, i + perSet));
       for (let i = 0; i < chunks.length; i++) {
         const name = (names[i] ?? defaultSetName(plan.numbers[i])).trim();
         setProgress(`Creating ${name} (${i + 1}/${chunks.length})…`);
@@ -202,7 +225,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
           ? { name, grade_id: ctx.gradeId, category_id: ctx.catId, allowed_practice: false, allowed_exam: true, allowed_timers: ['timed'], question_version_ids: [], duration_minutes: Math.max(1, Math.min(180, Number(examDur) || 25)) }
           : { name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
         await api.authorSet(r.set_version_id, chunks[i].map(cardToPayload));
-        done.push({ name, id: r.set_version_id, count: chunks[i].length, full: chunks[i].length >= MAX });
+        done.push({ name, id: r.set_version_id, count: chunks[i].length, full: chunks[i].length >= perSet });
       }
       setCreated(done);
       setStep('created');
@@ -232,7 +255,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
   };
 
   const refreshCount = async (id: string) => {
-    try { const d = await api.set(id); setCreated(cs => cs.map(c => c.id === id ? { ...c, count: (d.questions || []).length, full: (d.questions || []).length >= MAX } : c)); onDone(); } catch { /* ignore */ }
+    try { const d = await api.set(id); setCreated(cs => cs.map(c => c.id === id ? { ...c, count: (d.questions || []).length, full: (d.questions || []).length >= perSet } : c)); onDone(); } catch { /* ignore */ }
   };
 
   const shown = errors ? errors.slice(0, 10) : [];
@@ -257,13 +280,26 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
         <div className="infobox" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 12.5 }}>New sets will be created in:</div>
           <div style={{ fontWeight: 800 }}>{ctxLine}</div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Every generated set and question inherits this context. Max {MAX} questions per set.</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Every generated set and question inherits this context. Up to {MAX} questions per set.</div>
         </div>
 
-        {exam && step !== 'created' && (
-          <div className="row" style={{ marginBottom: 12 }}>
-            <div className="grow"><label>⏱ Time limit (min) — applied to ALL sets created</label>
-              <input type="number" min={1} max={180} value={examDur} onChange={e => setExamDur(e.target.value)} /></div>
+        {step !== 'created' && (
+          <div className="row" style={{ marginBottom: 12, gap: 14, flexWrap: 'wrap' }}>
+            <div>
+              <label>Questions per set</label>
+              <div style={{ display: 'inline-flex', alignItems: 'center', border: '1.5px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
+                <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 34 }} disabled={perSet <= 1} onClick={() => setPerSet(p => clampPer(p - 5))}>−</button>
+                <input type="number" min={1} max={MAX} value={perSet}
+                  onChange={e => setPerSet(clampPer(Number(e.target.value)))}
+                  style={{ width: 64, textAlign: 'center', border: 0, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)', borderRadius: 0, fontWeight: 700 }} />
+                <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 34 }} disabled={perSet >= MAX} onClick={() => setPerSet(p => clampPer(p + 5))}>+</button>
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Each set gets this many; the last set gets the remainder. Max {MAX}. (± steps by 5.)</div>
+            </div>
+            {exam && (
+              <div className="grow"><label>⏱ Time limit (min) — applied to ALL sets created</label>
+                <input type="number" min={1} max={180} value={examDur} onChange={e => setExamDur(e.target.value)} /></div>
+            )}
           </div>
         )}
 
@@ -287,7 +323,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
               <pre style={{ background: 'var(--panel, #f6f8fc)', border: '1px solid var(--line, #e3e8f0)', borderRadius: 10, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>{FORMAT_TEXT}</pre>
             )}
 
-            <label style={{ marginTop: 4 }}>✍️ Paste ALL your questions here — they'll be split into sets of {MAX} (a .zip for figures)</label>
+            <label style={{ marginTop: 4 }}>✍️ Paste ALL your questions here — they'll be split into sets of {perSet} (a .zip for figures)</label>
             <textarea rows={7} value={text}
               onChange={e => { setText(e.target.value); setCards(null); setErrors(null); setMatch(null); }}
               placeholder={'Paste the AI-formatted questions here…\n\nQ: Which one is the odd one out?\nA) Circle\nB) Square\nC) Triangle\nD) Dog\nAnswer: D\nExplanation: Dog is not a shape.'}
@@ -331,7 +367,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
             <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Edit any set name below before creating. Names must be unique here.</div>
             <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
               {plan.chunks.map((ch, i) => {
-                const full = ch.length >= MAX;
+                const full = ch.length >= perSet;
                 return (
                   <div key={i} className="pickrow" style={{ justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
@@ -341,7 +377,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
                       <span className="muted" style={{ fontSize: 12 }}>· {exam ? `${ctx.categoryName} · ${Math.max(1, Math.min(180, Number(examDur) || 25))} min` : `${ctx.subcategoryName} · ${ctx.difficultyLabel}`}</span>
                       {nameErrors[i] && <span className="err" style={{ fontSize: 12 }}>{nameErrors[i]}</span>}
                     </div>
-                    <div className="tabnum" style={{ fontWeight: 700, color: full ? 'var(--green)' : 'var(--amber)' }}>{ch.length} / {MAX}{full ? '' : ' (partial)'}</div>
+                    <div className="tabnum" style={{ fontWeight: 700, color: full ? 'var(--green)' : 'var(--amber)' }}>{ch.length} / {perSet}{full ? '' : ' (partial)'}</div>
                   </div>
                 );
               })}
@@ -357,7 +393,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
             <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
               {created.map(c => (
                 <div key={c.id} className="pickrow" style={{ justifyContent: 'space-between' }}>
-                  <div><b>{c.name}</b> <span className="tabnum muted" style={{ fontSize: 12 }}>· {c.count} / {MAX}{c.full ? '' : ' (partial)'}</span></div>
+                  <div><b>{c.name}</b> <span className="tabnum muted" style={{ fontSize: 12 }}>· {c.count} / {perSet}{c.full ? '' : ' (partial)'}</span></div>
                   <div className="rowactions">
                     <button className="btn ghost sm" onClick={() => setEditingId(c.id)}>Open / Edit</button>
                     <button className="btn sm" disabled={busy} onClick={() => publishOne(c)}>Publish</button>

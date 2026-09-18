@@ -6,7 +6,7 @@ import { Loading, ErrorBox, useToast } from '../components/ui';
 import { CreateSet } from '../components/SetsView';
 import { QuestionEditor } from '../components/QuestionEditor';
 import { SetEditor } from '../components/SetEditor';
-import { BulkSets, maxQuestionsForSub } from '../components/BulkSets';
+import { BulkSets, maxQuestionsForSub, loadDefaultPerSet, saveDefaultPerSet, PER_SET_CEILING } from '../components/BulkSets';
 import { RenameSetName } from '../components/RenameSetName';
 
 const titleCase = (v: string | null | undefined) => (v ?? '').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -53,7 +53,9 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
   const [bulkSets, setBulkSets] = useState(false);
   const [newQ, setNewQ] = useState(false);
   const [editSet, setEditSet] = useState<{ id: string; blank?: boolean; bulk?: boolean } | null>(null);
+  const [defPerSet, setDefPerSet] = useState<number>(loadDefaultPerSet);
   const isExam = mode === 'exam';
+  const setDefault = (n: number) => { const v = Math.min(PER_SET_CEILING, Math.max(1, Math.round(n || 1))); setDefPerSet(v); saveDefaultPerSet(v); };
 
   const load = () => { setError(null); api.sets().then(r => setSets(r.items)).catch(setError); };
   useEffect(() => { load(); api.taxonomy().then(setTax).catch(() => {}); }, []);
@@ -122,6 +124,17 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
           <p className="lead" style={{ marginBottom: 0 }}>Practice sets power the Practice tab; exam papers are full three-section CCAT forms.</p>
         </div>
         <div className="row" style={{ margin: 0, gap: 8 }}>
+          {!isExam && can('content.create') && (
+            <span title="Remembered default — pre-fills Questions per set in Bulk add sets" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#f7f9fd', border: '1px solid var(--line)', borderRadius: 12, padding: '5px 10px' }}>
+              <span className="muted" style={{ fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', fontWeight: 700 }}>Default per set</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', border: '1.5px solid var(--line)', borderRadius: 9, overflow: 'hidden', background: '#fff' }}>
+                <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 30 }} disabled={defPerSet <= 1} onClick={() => setDefault(defPerSet - 5)}>−</button>
+                <input type="number" min={1} max={PER_SET_CEILING} value={defPerSet} onChange={e => setDefault(Number(e.target.value))}
+                  style={{ width: 52, textAlign: 'center', border: 0, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)', borderRadius: 0, fontWeight: 700 }} />
+                <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 30 }} disabled={defPerSet >= PER_SET_CEILING} onClick={() => setDefault(defPerSet + 5)}>+</button>
+              </span>
+            </span>
+          )}
           {can('content.create') && <button className="btn ghost" onClick={() => setNewQ(true)}>+ New question</button>}
           {!isExam && can('content.create') && <button className="btn ghost" onClick={() => { if (!sub) { toast('Pick a subcategory on the left first'); return; } setBulkSets(true); }}>⤓ Bulk add sets</button>}
           {can('content.create') && <button className="btn" onClick={() => setNewSet(true)}>+ New {isExam ? 'exam set' : 'set'}</button>}
