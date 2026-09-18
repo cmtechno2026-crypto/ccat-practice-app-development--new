@@ -1,4 +1,4 @@
-import { useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/store';
 import { PlanCheckoutModal } from '../components/PlanCheckoutModal';
@@ -312,6 +312,21 @@ export function WelcomeScreen() {
   const nav = useNavigate();
   const { profile } = useApp();
   const [checkoutTier, setCheckoutTier] = useState<Sellable | null>(null);
+
+  // Direct load of a section anchor (e.g. …/#pricing): the landing HTML is injected after mount, so the
+  // browser's own on-load scroll finds nothing. After mount, scroll the hash target into view once the
+  // injected markup + images are laid out. (Hook is declared before the profile early-return so hook
+  // order stays stable.)
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.length < 2) return;
+    const id = decodeURIComponent(hash.slice(1));
+    const t = window.setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, []);
+
   if (profile) return <Navigate to="/home" replace />;
   const html = BODY
     .replace(/%WM%/g, wm)

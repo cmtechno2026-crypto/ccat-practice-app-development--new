@@ -6,8 +6,14 @@ import { useApp } from '../lib/store';
 import cmWordmark from '../assets/cm-wordmark.png';
 import '../landing.css';
 
-// Login (route "/login"). Navy split panel matching the landing page. The 4-digit PIN is shown as four
-// boxes backed by ONE hidden numeric input, so `pin` stays the single source of truth for submit.
+// Login (route "/login"). Navy split panel matching the landing page.
+// A safe internal redirect path for ?next=… — must be a same-origin path starting with a single "/"
+// (rejects "//host" and "/\host" open-redirect tricks and any absolute URL). Returns null when unsafe.
+function safeNext(raw: string | null): string | null {
+  if (!raw) return null;
+  return /^\/[^/\\]/.test(raw) ? raw : null;
+}
+
 export function LoginScreen() {
   const nav = useNavigate();
   const { setProfile, flash } = useApp();
@@ -50,7 +56,12 @@ export function LoginScreen() {
       setProfile(me);
       flash('Welcome back! 👋');
       let dest = '/home';
-      try { const r = sessionStorage.getItem('cmPostAuthRedirect'); if (r) { dest = r; sessionStorage.removeItem('cmPostAuthRedirect'); } } catch { /* ignore */ }
+      // Explicit post-login destination via ?next=… on the login URL (e.g. /login?next=/plan). Only a
+      // safe INTERNAL path is honored (must start with a single "/", never "//" or "/\" — no open redirect
+      // to another site). Falls back to the sessionStorage redirect used by the landing "Get plan" flow.
+      const nextParam = safeNext(new URLSearchParams(window.location.search).get('next'));
+      if (nextParam) dest = nextParam;
+      else { try { const r = sessionStorage.getItem('cmPostAuthRedirect'); if (r) { dest = r; sessionStorage.removeItem('cmPostAuthRedirect'); } } catch { /* ignore */ } }
       nav(dest, { replace: true });
     } catch (e) {
       setErr(e instanceof ApiError ? (e.code === 'UNAUTHORIZED' ? 'Wrong username/email or password.' : e.message) : (e as Error).message);
