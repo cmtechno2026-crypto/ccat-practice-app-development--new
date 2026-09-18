@@ -33,26 +33,22 @@ function relDay(iso: string): string | null {
   if (k === dayKey(yest.toISOString())) return 'Yesterday';
   return null;
 }
-function groupParts(iso?: string | null): { day: string; label: string; rel: string | null } {
-  if (!iso) return { day: '—', label: 'Unknown date', rel: null };
-  const d = new Date(iso); if (isNaN(+d)) return { day: '—', label: 'Unknown date', rel: null };
-  return { day: String(d.getDate()), label: `${MONTHS[d.getMonth()]}, ${d.getFullYear()}`, rel: relDay(iso) };
-}
 const fmtRegDate = (iso?: string | null) => {
   if (!iso) return '';
   const d = new Date(iso); if (isNaN(+d)) return '';
   return `${d.getDate()} ${MONTHS[d.getMonth()]}, ${d.getFullYear()}`;
 };
 function GroupHeader({ iso, count }: { iso: string | null; count: number }) {
-  const { day, label, rel } = groupParts(iso);
+  const rel = iso ? relDay(iso) : null;
+  const dateText = fmtRegDate(iso) || 'Unknown date';
+  const title = rel ? `${rel} · ${dateText}` : dateText;
   return (
     <tr className="daygroup">
-      <td colSpan={20} style={{ padding: '9px 18px', background: '#f7f9fd', borderBottom: '1px solid var(--line)' }}>
+      <td colSpan={20} style={{ padding: '9px 18px', background: '#eef3ff', borderBottom: '1px solid #dfe6fb', boxShadow: 'inset 4px 0 0 var(--primary, #1f4fd6)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, height: 32, borderRadius: 9, background: '#fff', border: '1px solid var(--line)', fontWeight: 800, fontSize: 15, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{day}</span>
-          <span style={{ fontWeight: 800, fontSize: 13.5 }}>{label}</span>
-          {rel && <span className="tag" style={{ fontSize: 11 }}>{rel}</span>}
-          <span className="muted" style={{ fontSize: 12, marginLeft: 'auto' }}>{count} {count === 1 ? 'student' : 'students'}</span>
+          <span style={{ fontWeight: 800, fontSize: 13, color: '#26308a' }}>{title}</span>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#b9c4ee', display: 'inline-block' }} />
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: '#5a63a6', marginLeft: 'auto' }}>{count} registered</span>
         </div>
       </td>
     </tr>
@@ -398,27 +394,27 @@ function CreateStudentModal({ grades, onClose, onDone }: { grades: { id: string;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   React.useEffect(() => { if (!grade_id && grades[0]) setGrade(grades[0].id); }, [grades]); // eslint-disable-line
-  const ready = display_name.trim().length > 0 && username.trim().length >= 3 && pin.length >= 6 && pin.length <= 8 && !!grade_id;
+  const ready = display_name.trim().length > 0 && username.trim().length >= 3 && /^\d{4}$/.test(pin) && !!grade_id;
   const save = async () => {
-    if (!ready) { setErr('Name, a username (3+ chars), a 6–8 character password and a grade are required.'); return; }
+    if (!ready) { setErr('Name, a username (3+ chars), a 4-digit PIN and a grade are required.'); return; }
     setBusy(true); setErr('');
     try {
       const r = await api.createStudent({ display_name: display_name.trim(), username: username.trim().toLowerCase(), pin, grade_id, guardian_email: guardian_email.trim() || undefined });
-      onDone(`Created ${r.display_name} (@${r.username}) — password ${pin}`);
+      onDone(`Created ${r.display_name} (@${r.username}) — PIN ${pin}`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   return (
     <Modal title="New student" onClose={onClose}
       footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={busy || !ready} onClick={save}>{busy ? 'Creating…' : 'Create student'}</button></>}>
-      <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Creates the account immediately — no email or OTP. The student signs in with the username and password; their device enrolls on first login. Guardian email is optional (used only for password recovery and membership).</div>
+      <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>Creates the account immediately — no email or OTP. The student signs in with the username and PIN; their device enrolls on first login. Guardian email is optional (used only for PIN recovery and membership).</div>
       <label>Display name</label>
       <input value={display_name} maxLength={40} onChange={e => setName(e.target.value)} placeholder="e.g. Aarav" />
       <label>Username</label>
       <input value={username} autoCapitalize="none" onChange={e => setUsername(e.target.value.toLowerCase())} placeholder="e.g. aarav_g3" />
       <div className="row">
-        <div className="grow"><label>Password (6–8 chars)</label>
+        <div className="grow"><label>4-digit PIN</label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input type={showPin ? 'text' : 'password'} maxLength={8} value={pin} onChange={e => setPin(e.target.value.slice(0, 8))} placeholder="6–8 characters" style={{ width: 160, letterSpacing: 2, fontFamily: 'ui-monospace,Menlo,monospace' }} />
+            <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={4} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="4820" style={{ width: 110, letterSpacing: 4, fontFamily: 'ui-monospace,Menlo,monospace' }} />
             <button type="button" className="btn ghost sm" onClick={() => setShowPin(v => !v)}>{showPin ? '🙈' : '👁️'}</button>
           </div>
         </div>
