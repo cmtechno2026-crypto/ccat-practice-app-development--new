@@ -1,0 +1,99 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sample A — 50% Off (Title Case)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Poppins:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--blue:#1A5EAB;--navy:#12336b;--ink:#1e2233;--mid:#6b7180;--line:#e0e5ef;--gold:#E8A020;--gold2:#f6b93b;--green:#1e7a46;
+    --disp:"Baloo 2",system-ui,sans-serif;--head:"Poppins",system-ui,sans-serif;--body:"Nunito",system-ui,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--body);color:var(--ink);background:#eaedf3;font-size:15px}
+  .wrap{max-width:1000px;margin:0 auto;padding:22px 16px 60px}
+  h1.top{font-family:var(--disp);font-size:23px;margin:0 0 4px}
+  .intro{color:#39455f;font-size:14px;max-width:840px;margin-bottom:6px}
+  .prices-note{font-size:12.5px;color:var(--mid);margin-bottom:14px}
+  .samp{background:#fff;border:1px solid #d7dde9;border-radius:18px;overflow:hidden;box-shadow:0 20px 44px -34px rgba(20,40,80,.55)}
+  .cap{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #eef1f7;background:#f7f9fd}
+  .cap .n{width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;font-family:var(--head);font-weight:700;font-size:13px;display:grid;place-items:center}
+  .cap .t{font-family:var(--head);font-weight:700;font-size:14px;color:#28324a}
+  .cap .d{font-size:12.5px;color:var(--mid)}
+  .hero{background:linear-gradient(135deg,#1c4f9c,#12336b);color:#fff;padding:22px 24px;position:relative;overflow:hidden}
+  .hero .kf{position:absolute;border-radius:50%;background:rgba(255,255,255,.06);width:180px;height:180px;top:-70px;right:-40px}
+  .hero h2{font-family:var(--disp);font-weight:800;font-size:22px;margin:0 0 4px}
+  .hero p{margin:0;opacity:.9;font-size:13.5px}
+  .hero .cta{margin-top:12px;display:inline-block;background:var(--gold);color:#3a2600;font-family:var(--disp);font-weight:800;font-size:13px;padding:9px 16px;border-radius:10px}
+  /* gold urgency band (attached under hero) */
+  .a-band{background:linear-gradient(90deg,#E8A020,#f6b93b);color:#3a2600;padding:12px 18px;display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;border-top:3px solid #fff}
+  .a-band .msg{font-family:var(--disp);font-weight:800;font-size:16px}
+  .a-band .msg b{background:#3a2600;color:#ffd889;border-radius:7px;padding:1px 8px}
+  .cd{display:flex;gap:6px;align-items:center}
+  .cd .u{background:#fff;border-radius:8px;min-width:44px;text-align:center;padding:5px 6px;box-shadow:0 4px 10px -6px rgba(0,0,0,.4)}
+  .cd .u b{display:block;font-family:var(--disp);font-weight:800;font-size:18px;color:var(--ink);line-height:1}
+  .cd .u span{font-size:9.5px;color:var(--mid);font-weight:700;letter-spacing:.02em}
+  .cd .colon{font-family:var(--disp);font-weight:800;font-size:16px;color:#3a2600}
+  /* pricing */
+  .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:20px 24px 26px;background:#f4f7fc}
+  .plan{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;position:relative;overflow:hidden}
+  .plan.pop{padding-top:28px}
+  .pn{font-family:var(--head);font-weight:700;font-size:14px;color:var(--navy)}
+  .price-old{color:var(--mid);text-decoration:line-through;font-weight:700;font-size:15px}
+  .price-new{font-family:var(--disp);font-weight:800;font-size:30px;color:var(--blue);line-height:1.05}
+  .price-new small{font-size:13px;font-weight:700;color:var(--mid)}
+  .save{display:inline-block;font-family:var(--head);font-weight:800;font-size:11px;color:var(--green);background:#e7f7ee;border:1px solid #bfe6cf;border-radius:999px;padding:2px 9px;margin-top:6px}
+  .feat{list-style:none;margin:12px 0 0;padding:0;font-size:12.5px;color:#42506a;line-height:1.9}
+  .feat li::before{content:"✓ ";color:var(--green);font-weight:800}
+  .buy{display:block;text-align:center;margin-top:14px;border-radius:10px;padding:11px;font-family:var(--disp);font-weight:800;font-size:14px;background:var(--blue);color:#fff}
+  .a-badge{position:absolute;top:10px;right:-30px;transform:rotate(45deg);background:var(--gold);color:#3a2600;font-family:var(--head);font-weight:800;font-size:11px;padding:3px 34px}
+  .best{position:absolute;top:0;left:0;right:0;text-align:center;font-family:var(--head);font-weight:800;font-size:10px;letter-spacing:.04em;color:#3a2600;background:var(--gold);padding:3px}
+  @media(max-width:720px){.plans{grid-template-columns:1fr}}
+</style></head><body>
+<div class="wrap">
+  <h1 class="top">Sample A — Title Case (Camel Form)</h1>
+  <p class="intro">Sample A with all promotional label text in <b>Title Case</b> — each word capitalized instead of ALL CAPS. Countdown numbers are placeholders; they'll tick live in the real build.</p>
+  <p class="prices-note">Prices: Standard $49 → <b>$24.50</b> · Plus $99 → <b>$49.50</b> · Premium $199 → <b>$99.50</b>.</p>
+
+  <div class="samp">
+    <div class="cap"><span class="n">A</span><span class="t">Gold Urgency Bar</span><span class="d">— Title Case labels</span></div>
+    <div class="hero"><span class="kf"></span>
+      <h2>Ace The CCAT With Confidence 🚀</h2><p>Timed practice &amp; full exams for Grades 2–5.</p>
+      <span class="cta">Book A Free Demo Class</span>
+    </div>
+    <div class="a-band">
+      <span class="msg">🎉 <b>50% Off</b> All Plans — Limited Time!</span>
+      <span class="cd">
+        <span class="u"><b>02</b><span>Days</span></span><span class="colon">:</span>
+        <span class="u"><b>08</b><span>Hrs</span></span><span class="colon">:</span>
+        <span class="u"><b>45</b><span>Min</span></span><span class="colon">:</span>
+        <span class="u"><b>12</b><span>Sec</span></span>
+      </span>
+    </div>
+    <div class="plans">
+      <div class="plan"><span class="a-badge">50% Off</span>
+        <div class="pn">Standard</div>
+        <div><span class="price-old">$49</span></div>
+        <div class="price-new">$24.50 <small>CAD/Yr</small></div>
+        <span class="save">You Save $24.50</span>
+        <ul class="feat"><li>All individual practice sets</li></ul>
+        <span class="buy">Get Standard</span>
+      </div>
+      <div class="plan pop"><span class="best">Most Popular</span><span class="a-badge">50% Off</span>
+        <div class="pn">Plus</div>
+        <div><span class="price-old">$99</span></div>
+        <div class="price-new">$49.50 <small>CAD/Yr</small></div>
+        <span class="save">You Save $49.50</span>
+        <ul class="feat"><li>Everything In Standard</li><li>Full battery tests + timed exams</li></ul>
+        <span class="buy">Get Plus</span>
+      </div>
+      <div class="plan"><span class="a-badge">50% Off</span>
+        <div class="pn">Premium</div>
+        <div><span class="price-old">$199</span></div>
+        <div class="price-new">$99.50 <small>CAD/Yr</small></div>
+        <span class="save">You Save $99.50</span>
+        <ul class="feat"><li>Everything + weekly test</li><li>5 live 1-on-1 sessions</li></ul>
+        <span class="buy">Get Premium</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="prices-note" style="margin-top:18px">Good to go? Before I build I still need: (1) the <b>countdown end date/time</b> and what happens at zero, (2) <b>display-only</b> or a <b>real charge</b> at half price (gateway PayPal price change), and (3) show the banner on the <b>My Plan</b> page too, or landing only.</p>
+</div>
+</body></html>

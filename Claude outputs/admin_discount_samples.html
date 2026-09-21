@@ -1,0 +1,157 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin Discount control — 2 samples</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Poppins:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--blue:#1A5EAB;--blue2:#2f6ad6;--navy:#12233f;--ink:#1f2740;--mid:#6b7180;--line:#e3e7f0;--bg:#eef1f6;
+    --gold:#E8A020;--gold2:#f6b93b;--green:#1e7a46;--red:#c8362f;--amber:#b7791f;
+    --disp:"Baloo 2",system-ui,sans-serif;--head:"Poppins",system-ui,sans-serif;--body:"Nunito",system-ui,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--body);color:var(--ink);background:var(--bg);font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:22px 16px 70px}
+  h1.top{font-family:var(--disp);font-size:23px;margin:0 0 4px}
+  .intro{color:#39455f;font-size:14px;max-width:900px;margin-bottom:6px}
+  .lab{font-family:var(--head);font-weight:700;color:#28324a;font-size:14px;margin:26px 0 10px;display:flex;align-items:center;gap:9px}
+  .lab .n{width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;font-size:13px;display:grid;place-items:center;flex:none}
+  .lab .d{color:var(--mid);font-weight:600;font-size:12.5px}
+
+  .card{background:#fff;border:1px solid #dfe4ee;border-radius:16px;box-shadow:0 16px 38px -30px rgba(20,40,80,.5)}
+  .ch{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid #eef1f7}
+  .ch h3{font-family:var(--disp);font-weight:800;font-size:17px;margin:0}
+  .ch .tag{margin-left:auto;font-family:var(--head);font-weight:800;font-size:11px;border-radius:999px;padding:3px 11px}
+  .tag.live{background:#e7f7ee;color:var(--green);border:1px solid #bfe6cf}
+  .tag.sched{background:#fff4e0;color:var(--amber);border:1px solid #f0d49a}
+  .tag.off{background:#eef1f7;color:var(--mid);border:1px solid #dfe4ee}
+  .cb{padding:18px 20px}
+  label.f{display:block;font-family:var(--head);font-weight:700;font-size:12.5px;color:#33405c;margin:0 0 6px}
+  .inp{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-family:var(--body);font-weight:700;font-size:14.5px;background:#fff}
+  .row{display:grid;gap:14px}
+  .row.c2{grid-template-columns:1fr 1fr}.row.c3{grid-template-columns:1fr 1fr 1fr}
+  .hint{font-size:11.5px;color:var(--mid);margin-top:5px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{border:1.5px solid var(--line);border-radius:999px;padding:7px 14px;font-family:var(--head);font-weight:800;font-size:13px;color:#42506a;background:#fff;cursor:pointer}
+  .chip.on{border-color:var(--blue);background:#eaf1fb;color:var(--blue)}
+  .checks{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--head);font-weight:700;font-size:13px;color:#42506a}
+  .checks label{display:flex;gap:7px;align-items:center}
+  .btn{border:0;border-radius:11px;padding:12px 18px;font-family:var(--disp);font-weight:800;font-size:14.5px;cursor:pointer}
+  .btn.primary{background:var(--blue);color:#fff}
+  .btn.danger{background:#fdecea;color:var(--red);border:1px solid #f3c4bf}
+  .btn.ghost{background:#fff;color:#42506a;border:1px solid var(--line)}
+  .foot{display:flex;gap:10px;align-items:center;padding:16px 20px;border-top:1px solid #eef1f7;background:#f8fafd;border-radius:0 0 16px 16px}
+  .foot .sp{flex:1}
+
+  /* live countdown mini */
+  .cd{display:flex;gap:6px;align-items:center}
+  .cd .u{background:var(--navy);color:#fff;border-radius:8px;min-width:42px;text-align:center;padding:5px 6px}
+  .cd .u b{display:block;font-family:var(--disp);font-weight:800;font-size:16px;line-height:1}
+  .cd .u span{font-size:8.5px;opacity:.75;font-weight:700}
+  /* banner preview */
+  .prev{margin-top:14px;border:1px dashed #ccd6e6;border-radius:12px;overflow:hidden}
+  .prev .lbl{font-size:11px;color:var(--mid);font-family:var(--head);font-weight:700;padding:7px 12px;background:#f4f7fc}
+  .band{background:linear-gradient(90deg,#E8A020,#f6b93b);color:#3a2600;padding:10px 16px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap}
+  .band .msg{font-family:var(--disp);font-weight:800;font-size:15px}
+  .band .msg b{background:#3a2600;color:#ffd889;border-radius:6px;padding:1px 7px}
+  .band .u{background:#fff;border-radius:7px;min-width:38px;text-align:center;padding:4px}
+  .band .u b{display:block;font-family:var(--disp);font-weight:800;font-size:15px;color:var(--ink);line-height:1}
+  .band .u span{font-size:8px;color:var(--mid);font-weight:700}
+
+  /* status timeline (sample 2) */
+  .tl{display:flex;align-items:center;gap:0;margin:4px 0 4px}
+  .tl .st{flex:1;text-align:center;position:relative;font-family:var(--head);font-weight:700;font-size:12px;color:var(--mid)}
+  .tl .st .dot{width:16px;height:16px;border-radius:50%;background:#cfd7e6;margin:0 auto 6px;border:3px solid #fff;box-shadow:0 0 0 2px #cfd7e6}
+  .tl .st.done .dot{background:var(--green);box-shadow:0 0 0 2px var(--green)} .tl .st.done{color:var(--green)}
+  .tl .st.now .dot{background:var(--blue);box-shadow:0 0 0 2px var(--blue)} .tl .st.now{color:var(--blue)}
+  .tl .bar{height:3px;background:#dfe4ee;flex:1}
+  .tl .bar.done{background:var(--green)}
+  .big-status{display:flex;align-items:center;gap:14px;background:#f4f8ff;border:1px solid #d8e6fb;border-radius:12px;padding:14px 16px;margin-bottom:16px}
+  .big-status .pct{font-family:var(--disp);font-weight:800;font-size:34px;color:var(--blue);line-height:1}
+</style></head><body>
+<div class="wrap">
+  <h1 class="top">Admin · Dashboard · Discount control (2 samples)</h1>
+  <p class="intro">A new control where an admin schedules a site-wide discount: percent, <b>start date &amp; time (IST)</b>, and a <b>timer/duration</b>. While live, the landing banner, landing pricing, and the in-app Plan page show the discount + countdown. When the timer ends, everything <b>auto-reverts to normal</b> — no admin action needed. Times shown in IST; stored in UTC.</p>
+
+  <!-- ===================== SAMPLE 1 ===================== -->
+  <div class="lab"><span class="n">1</span> Compact dashboard card <span class="d">— fits the existing card grid; duration-based timer</span></div>
+  <div class="card" style="max-width:560px">
+    <div class="ch"><span style="font-size:20px">🏷️</span><h3>Discount</h3><span class="tag sched">Scheduled</span></div>
+    <div class="cb">
+      <div class="row c2">
+        <div><label class="f">Discount %</label>
+          <div class="chips"><span class="chip">25%</span><span class="chip on">50%</span><span class="chip">Custom</span></div>
+        </div>
+        <div><label class="f">Applies to</label>
+          <div class="checks" style="margin-top:8px"><label><input type="checkbox" checked>Landing</label><label><input type="checkbox" checked>Pricing</label><label><input type="checkbox" checked>Plan page</label></div>
+        </div>
+      </div>
+      <div class="row c2" style="margin-top:14px">
+        <div><label class="f">Start (IST)</label><input class="inp" value="2026-09-22  09:00"></div>
+        <div><label class="f">Run for (timer)</label><input class="inp" value="3 days 00 hrs"></div>
+      </div>
+      <div class="hint">Ends automatically at <b>2026-09-25 09:00 IST</b>. When the timer hits 0, prices revert to normal on all selected pages.</div>
+
+      <div class="prev">
+        <div class="lbl">Live preview — what parents see while active</div>
+        <div class="band"><span class="msg">🎉 <b>50% Off</b> All Plans — Limited Time!</span>
+          <span class="cd" style="gap:5px">
+            <span class="u"><b>02</b><span>Days</span></span><span class="u"><b>08</b><span>Hrs</span></span>
+            <span class="u"><b>45</b><span>Min</span></span><span class="u"><b>12</b><span>Sec</span></span>
+          </span>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <span class="cd"><span style="font-family:var(--head);font-weight:700;font-size:12px;color:var(--mid)">Starts in</span>
+        <span class="u"><b>00</b><span>D</span></span><span class="u"><b>17</b><span>H</span></span><span class="u"><b>32</b><span>M</span></span></span>
+      <span class="sp"></span>
+      <button class="btn ghost">Edit</button>
+      <button class="btn primary">Schedule discount</button>
+    </div>
+  </div>
+
+  <!-- ===================== SAMPLE 2 ===================== -->
+  <div class="lab"><span class="n">2</span> Full control panel <span class="d">— status timeline, explicit end date-time, live "End now"</span></div>
+  <div class="card">
+    <div class="ch"><span style="font-size:20px">🏷️</span><h3>Discount campaign</h3><span class="tag live">● Live now</span></div>
+    <div class="cb">
+      <div class="big-status">
+        <span class="pct">50%</span>
+        <div style="flex:1">
+          <div style="font-family:var(--head);font-weight:800;font-size:14px;color:var(--ink)">Half-price on all plans is <span style="color:var(--green)">LIVE</span></div>
+          <div class="hint" style="margin-top:2px">Auto-ends in — reverts landing, pricing &amp; plan page to normal.</div>
+        </div>
+        <span class="cd">
+          <span class="u"><b>02</b><span>Days</span></span><span class="u"><b>08</b><span>Hrs</span></span>
+          <span class="u"><b>45</b><span>Min</span></span><span class="u"><b>12</b><span>Sec</span></span>
+        </span>
+      </div>
+
+      <div class="tl">
+        <div class="st done"><div class="dot"></div>Scheduled</div><div class="bar done"></div>
+        <div class="st now"><div class="dot"></div>Live · started 20 Sep 09:00</div><div class="bar"></div>
+        <div class="st"><div class="dot"></div>Ends 25 Sep 09:00 IST</div>
+      </div>
+
+      <div class="row c3" style="margin-top:16px">
+        <div><label class="f">Discount %</label><input class="inp" value="50"></div>
+        <div><label class="f">Start (IST)</label><input class="inp" value="2026-09-20  09:00"></div>
+        <div><label class="f">End (IST)</label><input class="inp" value="2026-09-25  09:00"></div>
+      </div>
+      <div class="row c2" style="margin-top:14px">
+        <div><label class="f">Banner headline</label><input class="inp" value="50% Off All Plans — Limited Time!"></div>
+        <div><label class="f">Applies to</label>
+          <div class="checks" style="margin-top:9px"><label><input type="checkbox" checked>Landing banner</label><label><input type="checkbox" checked>Pricing</label><label><input type="checkbox" checked>Plan page</label></div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:12px">Charge behaviour: <b>display + real 50% off at checkout</b> · <span style="color:var(--amber)">requires the gateway discounted price to be set</span> — toggle in settings.</div>
+    </div>
+    <div class="foot">
+      <button class="btn danger">■ End now</button>
+      <span class="sp"></span>
+      <button class="btn ghost">Save changes</button>
+      <button class="btn primary">Restart / reschedule</button>
+    </div>
+  </div>
+
+  <p class="hint" style="margin-top:20px">Pick a sample (1 or 2). Then I'll confirm: percent fixed at 50% or admin-editable; timer as <b>duration</b> (Sample 1) or explicit <b>end date-time</b> (Sample 2); and whether "Applies to" per-page toggles are needed or it's always all three. IST is entered here and stored as UTC so the countdown is correct for every visitor's timezone.</p>
+</div>
+</body></html>
