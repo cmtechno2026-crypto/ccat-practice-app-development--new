@@ -135,13 +135,21 @@ export async function verifyWebhook(cfg: Config, headers: Record<string, any>, r
   }
 }
 
-// custom_id format shared by create/capture/webhook: "<guardian_email>|<tier>|<student_id>".
-export function encodeCustomId(guardianEmail: string, tier: Tier, studentId: string): string {
-  return `${guardianEmail}|${tier}|${studentId}`;
+// custom_id format shared by create/capture/webhook: "<guardian_email>|<tier>|<student_id>|<amount>".
+// The 4th field is the exact CAD amount this order was created to charge (base price, or the promo-
+// discounted price when a site promo was live at order time). It is stamped by the server at order
+// creation and echoed back by PayPal at capture, so the grant can validate the captured amount against
+// what THIS order was legitimately created with — not against a recomputed live price, which may have
+// changed (promo ended) between order creation and capture/webhook. The field is OPTIONAL: orders created
+// before this change have no 4th segment, and decode returns amount=null so the grant falls back to the
+// full server price (old behaviour). PayPal custom_id max is 127 chars; email+tier+uuid+amount fits.
+export function encodeCustomId(guardianEmail: string, tier: Tier, studentId: string, amount?: string): string {
+  const base = `${guardianEmail}|${tier}|${studentId}`;
+  return amount ? `${base}|${amount}` : base;
 }
-export function decodeCustomId(customId: string | null | undefined): { guardianEmail: string; tier: string; studentId: string } | null {
+export function decodeCustomId(customId: string | null | undefined): { guardianEmail: string; tier: string; studentId: string; amount: string | null } | null {
   if (!customId) return null;
-  const [guardianEmail, tier, studentId] = customId.split('|');
+  const [guardianEmail, tier, studentId, amount] = customId.split('|');
   if (!guardianEmail || !tier) return null;
-  return { guardianEmail: guardianEmail.trim().toLowerCase(), tier, studentId: studentId ?? '' };
+  return { guardianEmail: guardianEmail.trim().toLowerCase(), tier, studentId: studentId ?? '', amount: amount ?? null };
 }

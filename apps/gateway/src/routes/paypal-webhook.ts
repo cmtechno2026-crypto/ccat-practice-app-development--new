@@ -56,6 +56,7 @@ export function registerPaypalWebhookRoutes(app: FastifyInstance, db: DB, cfg: C
         tier: decoded.tier,
         guardianEmail: decoded.guardianEmail,
         amount: cap.amount?.value ?? null,
+        expectedAmount: decoded.amount, // the promo-aware price stamped at order creation (null for legacy)
         eventType: event.event_type,
         log: req.log,
       });

@@ -4,7 +4,8 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors, AppError } from '../errors.js';
 import { resolveEntitlement, checkoutRejectReason, loadDefaultPlan, computeEffective, clampTier, type Tier } from '../lib/entitlements.js';
-import { createOrder, captureOrder, amountForTier, paypalConfigured, encodeCustomId, decodeCustomId } from '../lib/paypal.js';
+import { createOrder, captureOrder, paypalConfigured, encodeCustomId, decodeCustomId } from '../lib/paypal.js';
+import { effectiveAmountForTier } from '../lib/promo.js';
 import { grantPaidEntitlementPaypal } from '../lib/paypal-grant.js';
 import { verifyEmailToken } from './email-verify.js';
 
@@ -39,7 +40,9 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
     const tier = parsed.tier;
     const returnTo = parsed.return_to ?? 'plan';
 
-    const amount = amountForTier(cfg, tier);
+    // Charge = server base price discounted by the LIVE admin promo (display and charge share this number).
+    // '' when the tier is unconfigured -> fail closed exactly as the bare amountForTier did.
+    const { amount } = await effectiveAmountForTier(db, cfg, tier);
     if (!paypalConfigured(cfg) || !amount) throw new AppError(500, 'PAYMENTS_MISCONFIGURED', `PayPal not fully configured for tier ${tier}`);
     if (!cfg.webAppOrigin) throw new AppError(500, 'PAYMENTS_MISCONFIGURED', 'WEB_APP_ORIGIN is required for checkout redirect URLs');
 
@@ -53,7 +56,7 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
     const order = await createOrder(cfg, {
       tier,
       amount,
-      customId: encodeCustomId(guardianEmail, tier, req.student!.studentId),
+      customId: encodeCustomId(guardianEmail, tier, req.student!.studentId, amount),
       // Success → the requested page (Home for landing Case 1, My Plan for in-app upgrades). Cancel/decline
       // → always My Plan, which shows the "Checkout canceled" card (the buyer is signed in by this point).
       returnUrl: `${cfg.webAppOrigin}/${returnTo}?checkout=success`,
@@ -83,6 +86,7 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
       tier: decoded.tier,
       guardianEmail: decoded.guardianEmail,
       amount: cap.amount,
+      expectedAmount: decoded.amount, // the promo-aware price this order was created with (null for legacy)
       eventType: 'capture',
       log: req.log,
     });
@@ -156,7 +160,7 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
     if (!cfg.paymentsEnabled) throw Errors.notFound('Payments are not enabled');
     const { tier, email, email_verify_token } = orderPublicSchema.parse(req.body) as { tier: Tier; email: string; email_verify_token: string };
 
-    const amount = amountForTier(cfg, tier);
+    const { amount } = await effectiveAmountForTier(db, cfg, tier);
     if (!paypalConfigured(cfg) || !amount) throw new AppError(500, 'PAYMENTS_MISCONFIGURED', `PayPal not fully configured for tier ${tier}`);
     if (!cfg.webAppOrigin) throw new AppError(500, 'PAYMENTS_MISCONFIGURED', 'WEB_APP_ORIGIN is required for checkout redirect URLs');
 
@@ -180,7 +184,7 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
       tier,
       amount,
       // studentId is empty — the grant keys on the guardian email; the account is created after payment.
-      customId: encodeCustomId(email, tier, ''),
+      customId: encodeCustomId(email, tier, '', amount),
       returnUrl: `${cfg.webAppOrigin}/register?checkout=success`,
       cancelUrl: `${cfg.webAppOrigin}/?checkout=cancel`,
     });
@@ -210,6 +214,7 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
       tier: decoded.tier,
       guardianEmail: decoded.guardianEmail,
       amount: cap.amount,
+      expectedAmount: decoded.amount, // the promo-aware price this order was created with (null for legacy)
       eventType: 'capture',
       log: req.log,
     });
