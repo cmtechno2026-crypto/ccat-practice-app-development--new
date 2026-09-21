@@ -44,6 +44,7 @@ export const api = {
   teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number }>('GET', '/v1/admin/teacher/summary'),
   teacherTeachers: (search = '') => req<{ teachers: any[] }>('GET', '/v1/admin/teacher/teachers' + (search ? ('?search=' + encodeURIComponent(search)) : '')),
   teacherSlots: (teacherId = '') => req<{ slots: any[] }>('GET', '/v1/admin/teacher/slots' + (teacherId ? ('?teacher_id=' + encodeURIComponent(teacherId)) : '')),
+  teacherSetSlotStatus: (id: string, status: 'open' | 'booked') => req<any>('PATCH', '/v1/admin/teacher/slots/' + encodeURIComponent(id), { status }),
   // dashboard + health
   dashboard: (window = 7) => req<any>('GET', `/v1/admin/dashboard?window=${window}`),
   health: () => req<any>('GET', '/v1/admin/health'),

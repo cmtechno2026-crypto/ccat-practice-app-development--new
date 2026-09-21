@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 
 // Teacher Hub directory. Read-only. Click a teacher to expand and see that teacher's availability
 // slots (day, time, subject/grade, status) pulled live from the Teacher Hub backend.
@@ -16,6 +17,21 @@ export function TeacherDirectory() {
   const [slots, setSlots] = useState<Record<string, Slot[]>>({});
   const [slotErr, setSlotErr] = useState<Record<string, string>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [savingSlot, setSavingSlot] = useState<string | null>(null);
+  const { can } = useAuth();
+  const canManage = can('teacher.slots.manage');
+
+  // Book / unbook a slot from the admin. Writes to the Teacher Hub DB; the teacher app sees it (same
+  // table). Updates the cached slot in place on success.
+  const setSlotStatus = async (teacherId: string, slot: Slot) => {
+    const next = slot.status === 'open' ? 'booked' : 'open';
+    setSavingSlot(slot.id);
+    try {
+      await api.teacherSetSlotStatus(slot.id, next);
+      setSlots(m => ({ ...m, [teacherId]: (m[teacherId] || []).map(x => x.id === slot.id ? { ...x, status: next } : x) }));
+    } catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not update slot' })); }
+    finally { setSavingSlot(null); }
+  };
 
   const load = (q: string) => { setErr(''); api.teacherTeachers(q).then(r => setRows(r.teachers || [])).catch(e => setErr(e.message || 'Failed to load')); };
   useEffect(() => { load(''); }, []);
@@ -51,6 +67,12 @@ export function TeacherDirectory() {
             <span style={{ fontWeight: 700 }}>{s.subject}{s.grade != null ? (' · G' + s.grade) : ''}</span>
             <span className="muted" style={{ fontSize: 12 }}>{s.mode}</span>
             <span style={{ marginLeft: 'auto' }}>{statusPill(s.status)}</span>
+            {canManage && (
+              <button onClick={() => setSlotStatus(id, s)} disabled={savingSlot === s.id}
+                style={{ fontSize: 12, fontWeight: 700, padding: '4px 9px', borderRadius: 7, cursor: savingSlot === s.id ? 'default' : 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', opacity: savingSlot === s.id ? .6 : 1 }}>
+                {savingSlot === s.id ? '…' : (s.status === 'open' ? 'Mark booked' : 'Mark open')}
+              </button>
+            )}
           </div>
         ))}
       </div>

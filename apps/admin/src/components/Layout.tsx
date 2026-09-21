@@ -105,10 +105,13 @@ export function Layout() {
   const loc = useLocation();
   const [siteMenu, setSiteMenu] = useState(false);
   const RAIL_ACTIVE = railForSite(activeSite);
+  // Home path for the active site: the brand logo and the back-link go here, so from Teacher Hub they
+  // land on the Teacher dashboard, not the CCAT one.
+  const homePath = activeSite === 'teacher' ? '/teacher' : '/';
   const nav = useNavigate();
   // Sign out AND reset the URL to the default route, so the stale protected page can't be replayed on the
   // next sign-in (the router unmounts once logged out; without this the address bar keeps the old path).
-  const signOut = () => { logout(); nav('/', { replace: true }); };
+  const signOut = () => { logout(); nav('/', { replace: true }); }; // logout unmounts the router; '/' is fine
   // Mobile hamburger drawer (desktop uses the CSS hover-expand rail; this only matters below 860px).
   const [drawer, setDrawer] = useState(false);
   useEffect(() => { setDrawer(false); }, [loc.pathname]); // route change closes the drawer
@@ -138,7 +141,7 @@ export function Layout() {
     <div className="shell">
       <nav className={`rail ${drawer ? 'open' : ''}`} aria-label="Primary">
         <button className="railclose" onClick={() => setDrawer(false)} aria-label="Close menu">✕</button>
-        <Link to="/" className="brandhdr" aria-label="Dashboard">
+        <Link to={homePath} className="brandhdr" aria-label="Dashboard">
           <span className="logo"><span className="cm">CM</span></span>
           <span className="bt"><b>{activeSite === 'teacher' ? 'Teacher Hub' : 'CCAT Admin'}</b><span>v8.0 · ca-central-1</span></span>
         </Link>
@@ -170,7 +173,7 @@ export function Layout() {
         <div className="topbar">
           <span style={{ display: 'flex', alignItems: 'center' }}>
             <button className="iconbtn hamburger" onClick={() => setDrawer(true)} aria-label="Open menu" aria-expanded={drawer}>☰</button>
-            {offRail && <Link to="/" className="backlink">← Dashboard</Link>}
+            {offRail && <Link to={homePath} className="backlink">← Dashboard</Link>}
             {sites.length > 1 && (
               <span style={{ position: 'relative', marginRight: 10 }}>
                 <button className="btn ghost sm" onClick={() => setSiteMenu(v => !v)} aria-haspopup="menu" aria-expanded={siteMenu}

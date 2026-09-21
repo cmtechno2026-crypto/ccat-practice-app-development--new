@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
+import { z } from 'zod';
 import { makeAuthenticateAdmin, requirePermission, requireSite } from '../plugins/adminAuth.js';
-import { AppError } from '../errors.js';
+import { AppError, Errors } from '../errors.js';
 
 // Teacher Hub (TeachTime) admin surface. This site's data lives in a SEPARATE Supabase project
 // ("cm-whiteboard", public.ta_* tables), reached through a dedicated read pool (`teacherDb`, from
@@ -75,5 +76,31 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
                   s.start_time`,
       params);
     return { slots: rows };
+  });
+
+  // Book / unbook a slot from the admin. Writes status to the Teacher Hub DB (public.ta_slots), so the
+  // change is immediately visible in the teacher app (same table). Gated by teacher.slots.manage +
+  // requireSite('teacher'). The change is recorded in the CCAT audit log (best-effort).
+  const slotStatusSchema = z.object({ status: z.enum(['open', 'booked']) });
+  app.patch('/v1/admin/teacher/slots/:id', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = (req.params as { id: string }).id;
+    const b = slotStatusSchema.parse(req.body ?? {});
+    const { rows } = await tdb().query(
+      `update public.ta_slots set status = $2, updated_at = now()
+        where id = $1
+        returning id, teacher_id, teacher_name, subject, grade, day_of_week, start_time, end_time, mode, status, timezone`,
+      [id, b.status]);
+    if (rows.length === 0) throw Errors.notFound('Slot not found');
+    // Governance: record the admin action in the CCAT audit log. Best-effort — a logging failure must
+    // not fail the booking.
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1, 'admin', 'teacher.slot.status', 'ta_slot', $2, $3)`,
+        [req.admin!.adminId, id, JSON.stringify({ status: b.status, teacher: rows[0]!.teacher_name })]);
+    } catch { /* audit is best-effort */ }
+    return rows[0];
   });
 }
