@@ -3,7 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import cors from '@fastify/cors';
 import { randomUUID } from 'node:crypto';
 import type { Config } from './config.js';
-import { createPool, type DB } from './db.js';
+import { createPool, createTeacherPool, type DB } from './db.js';
 import { AppError, toEnvelope } from './errors.js';
 import { ZodError } from 'zod';
 import { makeAuthenticateStudent, type StudentContext } from './plugins/auth.js';
@@ -37,6 +37,7 @@ import { registerAdminAccountsRoutes } from './routes/admin-accounts.js';
 import { registerAdminStudentDetailRoutes } from './routes/admin-students.js';
 import { registerAdminOpsRoutes } from './routes/admin-ops.js';
 import { registerAdminEntitlementsRoutes } from './routes/admin-entitlements.js';
+import { registerAdminTeacherRoutes } from './routes/admin-teacher.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -73,6 +74,9 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
 
   const db = existingPool ?? createPool(cfg.databaseUrl);
   app.decorate('db', db);
+  // Optional second pool for the Teacher Hub site (multi-site admin). Null when TEACHER_DATABASE_URL
+  // is unset — the teacher routes then answer 503 and the rest of the admin is unaffected.
+  const teacherDb: DB | null = cfg.teacherDatabaseUrl ? createTeacherPool(cfg.teacherDatabaseUrl) : null;
   app.decorate('authenticateStudent', makeAuthenticateStudent(db, cfg.hmacSecret));
 
   // Security headers (Blueprint §33, §36.2). Minimal set; a full CSP lands with Admin Web.
@@ -176,6 +180,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerAdminAccountsRoutes(app, db, cfg);
   registerAdminOpsRoutes(app, db, cfg);
   registerAdminEntitlementsRoutes(app, db, cfg);
+  registerAdminTeacherRoutes(app, db, cfg, teacherDb);
 
   return app;
 }

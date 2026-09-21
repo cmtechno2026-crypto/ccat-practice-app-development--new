@@ -21,6 +21,8 @@ import { Flags } from './pages/Flags';
 import { Admins } from './pages/Admins';
 import { Audit } from './pages/Audit';
 import { Membership } from './pages/Membership';
+import { TeacherDashboard } from './pages/TeacherDashboard';
+import { TeacherDirectory } from './pages/TeacherDirectory';
 import { PAYMENTS_ENABLED } from './lib/payments';
 
 function Login() {
@@ -138,6 +140,9 @@ export function App() {
         <Route path="/config/flags" element={<Flags />} />
         {/* Payments Phase 2 — manual membership grant. Route exists only when the flag is on. */}
         {PAYMENTS_ENABLED && <Route path="/config/membership" element={<Membership />} />}
+        {/* Teacher Hub site (multi-site admin) */}
+        <Route path="/teacher" element={<TeacherDashboard />} />
+        <Route path="/teacher/teachers" element={<TeacherDirectory />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

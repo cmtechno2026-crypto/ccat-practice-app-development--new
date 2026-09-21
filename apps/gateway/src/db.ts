@@ -44,6 +44,19 @@ export function createPool(databaseUrl: string): pg.Pool {
   return pool;
 }
 
+// Second pool for the Teacher Hub (TeachTime) database — a DIFFERENT Supabase project. Its tables
+// live in `public` (public.ta_*), and queries fully-qualify them. Same TLS handling as the primary
+// pool; smaller max since admin traffic to this site is light.
+export function createTeacherPool(databaseUrl: string): pg.Pool {
+  const { connectionString, ssl } = pgSslConfig(databaseUrl);
+  const pool = new Pool({ connectionString, max: 5, options: '-c search_path=public', ssl });
+  pool.on('error', (err) => {
+    // eslint-disable-next-line no-console
+    console.warn('[teacher pg pool] idle client error (recovered):', err.message);
+  });
+  return pool;
+}
+
 export type DB = pg.Pool;
 export type Client = pg.PoolClient;
 

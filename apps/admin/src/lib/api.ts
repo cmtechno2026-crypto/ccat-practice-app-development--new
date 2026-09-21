@@ -40,6 +40,9 @@ export const api = {
   // auth
   login: (email: string, password: string) => req<{ access_token: string; admin: any }>('POST', '/v1/admin/auth/login', { email, password }),
   me: () => req<any>('GET', '/v1/admin/me'),
+  // Teacher Hub site (X-Admin-Site: teacher is sent automatically when the active site is set)
+  teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number }>('GET', '/v1/admin/teacher/summary'),
+  teacherTeachers: (search = '') => req<{ teachers: any[] }>('GET', '/v1/admin/teacher/teachers' + (search ? ('?search=' + encodeURIComponent(search)) : '')),
   // dashboard + health
   dashboard: (window = 7) => req<any>('GET', `/v1/admin/dashboard?window=${window}`),
   health: () => req<any>('GET', '/v1/admin/health'),

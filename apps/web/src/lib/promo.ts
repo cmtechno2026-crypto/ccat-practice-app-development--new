@@ -2,9 +2,15 @@ import { useEffect, useState } from 'react';
 import type { PromoPublic } from '@ccat/api-client';
 import { client } from './api';
 
-// Site-wide promotional discount (display-only). Fetches GET /v1/promo once, then ticks every second so the
-// countdown updates and the promo auto-hides the instant it ends (client re-checks endsAt against the clock,
-// so it reverts even without a refetch). Nothing here changes what a parent is charged.
+// Site-wide promotional discount. Fetches GET /v1/promo once, then ticks every second so the countdown
+// updates and the promo auto-hides the instant it ends (client re-checks endsAt against the clock, so it
+// reverts even without a refetch). The gateway independently charges the same discounted amount.
+//
+// Module-level cache + eager warm: the fetched promo is kept at module scope and the fetch is kicked off as
+// soon as this module loads (app boot). Consumers that mount LATER — My Plan, the checkout modal, the PayPal
+// step — seed their state from the cache and therefore paint the correct (already-discounted) price on the
+// FIRST render, instead of showing the full price for ~1s while a fresh fetch lands and then flipping. Each
+// mount still refetches to pick up an admin change mid-session; the cached value is only the instant seed.
 
 export interface PromoView {
   active: boolean;      // live now (server said active AND end is still in the future)
@@ -14,13 +20,29 @@ export interface PromoView {
   remaining: number;    // ms remaining, or -1 when there is no end date
 }
 
+let promoCache: PromoPublic | null = null;   // last successful fetch (or null); seeds new mounts synchronously
+let promoInflight: Promise<PromoPublic | null> | null = null; // dedupes concurrent fetches
+
+function fetchPromo(): Promise<PromoPublic | null> {
+  if (!promoInflight) {
+    promoInflight = client.promo()
+      .then((r) => { promoCache = r; return r; })
+      .catch(() => { promoCache = null; return null; })
+      .finally(() => { promoInflight = null; }); // allow a later mount to refetch (catch mid-session changes)
+  }
+  return promoInflight;
+}
+
+// Warm the cache at app boot so the price is known before the user ever reaches checkout.
+void fetchPromo();
+
 export function usePromo(): PromoView {
-  const [p, setP] = useState<PromoPublic | null>(null);
+  const [p, setP] = useState<PromoPublic | null>(promoCache);
   const [now, setNow] = useState<number>(() => Date.now());
 
   useEffect(() => {
     let ok = true;
-    client.promo().then((r) => { if (ok) setP(r); }).catch(() => { if (ok) setP(null); });
+    fetchPromo().then((r) => { if (ok) setP(r); });
     return () => { ok = false; };
   }, []);
 

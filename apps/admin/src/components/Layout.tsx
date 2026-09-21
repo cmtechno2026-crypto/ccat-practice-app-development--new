@@ -84,15 +84,27 @@ const RAIL: RailItem[] = PAYMENTS_ENABLED
   ? [...BASE_RAIL, { to: '/config/membership', label: 'Membership', ic: '💳', match: '/config/membership', perm: 'config.global' }]
   : BASE_RAIL;
 
-function sectionFor(path: string): RailItem | undefined {
+// Teacher Hub rail (multi-site admin). Shown when the active site is 'teacher'. Items gate on
+// teacher.* permissions; super_admin sees all.
+const TEACHER_RAIL: RailItem[] = [
+  { to: '/teacher', label: 'Dashboard', ic: '📊', match: '/teacher', perm: 'teacher.directory' },
+  { to: '/teacher/teachers', label: 'Teachers', ic: '👩\u200d🏫', match: '/teacher/teachers', perm: 'teacher.directory' },
+  { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
+];
+const SITE_NAMES: Record<string, string> = { ccat: 'CCAT Practice', teacher: 'Teacher Hub' };
+function railForSite(site: string): RailItem[] { return site === 'teacher' ? TEACHER_RAIL : RAIL; }
+
+function sectionFor(path: string, rail: RailItem[]): RailItem | undefined {
   // longest match wins so '/' doesn't swallow everything
-  return [...RAIL].filter(r => (r.match === '/' ? path === '/' : path.startsWith(r.match)))
+  return [...rail].filter(r => (r.match === '/' ? path === '/' : path.startsWith(r.match)))
     .sort((a, b) => b.match.length - a.match.length)[0];
 }
 
 export function Layout() {
-  const { me, logout, can } = useAuth();
+  const { me, logout, can, sites, activeSite, switchSite } = useAuth();
   const loc = useLocation();
+  const [siteMenu, setSiteMenu] = useState(false);
+  const RAIL_ACTIVE = railForSite(activeSite);
   const nav = useNavigate();
   // Sign out AND reset the URL to the default route, so the stale protected page can't be replayed on the
   // next sign-in (the router unmounts once logged out; without this the address bar keeps the old path).
@@ -108,8 +120,8 @@ export function Layout() {
     try { localStorage.setItem('ccat_admin_theme', next); } catch (e) { /* ignore */ }
   };
 
-  const visible = RAIL.filter(r => !r.perm || can(r.perm));
-  const section = sectionFor(loc.pathname);
+  const visible = RAIL_ACTIVE.filter(r => !r.perm || can(r.perm));
+  const section = sectionFor(loc.pathname, RAIL_ACTIVE);
   // Off-rail Super-Admin pages reached from the dashboard controls panel (mockup): show a
   // "← Dashboard" affordance + a proper title instead of falling back to the brand name.
   const OFF_RAIL: { match: string; label: string }[] = [
@@ -118,7 +130,7 @@ export function Layout() {
     { match: '/config', label: 'Configuration' },
   ];
   const offRail = section ? undefined : OFF_RAIL.find(o => loc.pathname.startsWith(o.match));
-  const title = loc.pathname.startsWith('/students/') ? 'Student detail' : (section?.label || offRail?.label || 'CCAT Admin');
+  const title = loc.pathname.startsWith('/students/') ? 'Student detail' : (section?.label || offRail?.label || SITE_NAMES[activeSite] || 'Admin');
   const initials = (me?.display_name || 'CM').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase();
   const tabs = section?.tabs?.filter(t => !t.perm || can(t.perm)) || [];
 
@@ -128,7 +140,7 @@ export function Layout() {
         <button className="railclose" onClick={() => setDrawer(false)} aria-label="Close menu">✕</button>
         <Link to="/" className="brandhdr" aria-label="Dashboard">
           <span className="logo"><span className="cm">CM</span></span>
-          <span className="bt"><b>CCAT Admin</b><span>v8.0 · ca-central-1</span></span>
+          <span className="bt"><b>{activeSite === 'teacher' ? 'Teacher Hub' : 'CCAT Admin'}</b><span>v8.0 · ca-central-1</span></span>
         </Link>
         {visible.map(r => (
           <NavLink
@@ -159,6 +171,31 @@ export function Layout() {
           <span style={{ display: 'flex', alignItems: 'center' }}>
             <button className="iconbtn hamburger" onClick={() => setDrawer(true)} aria-label="Open menu" aria-expanded={drawer}>☰</button>
             {offRail && <Link to="/" className="backlink">← Dashboard</Link>}
+            {sites.length > 1 && (
+              <span style={{ position: 'relative', marginRight: 10 }}>
+                <button className="btn ghost sm" onClick={() => setSiteMenu(v => !v)} aria-haspopup="menu" aria-expanded={siteMenu}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: activeSite === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />
+                  {SITE_NAMES[activeSite] || activeSite} <span style={{ fontSize: 10, opacity: .6 }}>▾</span>
+                </button>
+                {siteMenu && (
+                  <>
+                    <button onClick={() => setSiteMenu(false)} aria-label="Close" style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 40, cursor: 'default' }} />
+                    <div role="menu" style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', width: 210, background: 'var(--card,#fff)', color: 'var(--ink,#1a1a2e)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.18)', zIndex: 41, padding: 4 }}>
+                      <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', padding: '6px 8px 2px', fontWeight: 700 }}>Switch workspace</div>
+                      {sites.map(sid => (
+                        <button key={sid} role="menuitem" onClick={() => { setSiteMenu(false); if (sid !== activeSite) switchSite(sid); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: sid === activeSite ? 'var(--card2,#f2f5fa)' : 'transparent', border: 0, padding: '8px', borderRadius: 7, cursor: 'pointer', color: 'inherit', fontWeight: 600 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />
+                          {SITE_NAMES[sid] || sid}
+                          {sid === activeSite && <span className="muted" style={{ marginLeft: 'auto', fontSize: 11 }}>current</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </span>
+            )}
             <span className="title">{title}</span>
           </span>
           <div className="who">

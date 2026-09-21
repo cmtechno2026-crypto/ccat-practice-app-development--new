@@ -5,6 +5,7 @@ export interface Config {
   port: number;
   host: string;
   databaseUrl: string;
+  teacherDatabaseUrl: string;   // Teacher Hub (TeachTime) DB — separate Supabase project; '' when unset
   hmacSecret: string;
   env: 'local' | 'development' | 'staging' | 'production';
   // Launch defaults; all are config-versioned in production (§30).
@@ -88,6 +89,7 @@ export function loadConfig(): Config {
     port: Number(process.env.PORT ?? 8080),
     host: process.env.HOST ?? '0.0.0.0',
     databaseUrl: required('DATABASE_URL'),
+    teacherDatabaseUrl: process.env.TEACHER_DATABASE_URL ?? '',
     hmacSecret,
     env,
     pinPepper,
