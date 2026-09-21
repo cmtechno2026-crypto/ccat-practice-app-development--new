@@ -5,6 +5,7 @@ import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
 import { TIER_CATALOG, tierIndex } from '../lib/entitlements';
 import { PAYPAL_INCONTEXT } from '../lib/paypal';
+import { usePromo, discountPrice } from '../lib/promo';
 import { PayPalButtonsBox } from './PayPalButtonsBox';
 
 // Landing-page checkout modal. Opened by a "Get <plan>" button on the public landing (WelcomeScreen).
@@ -33,6 +34,12 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
   const { setProfile } = useApp();
   const nav = useNavigate();
   const info = TIER_CATALOG[tier];
+  // Live site promo: when active, show (and charge) the discounted price everywhere this modal shows a
+  // price. disc.newStr is the discounted amount; disc.oldStr the struck original. The gateway independently
+  // charges the same discounted amount, so this display matches what PayPal bills.
+  const promo = usePromo();
+  const disc = promo.active ? discountPrice(info.price, promo.percent) : null;
+  const payLabel = disc ? `${disc.newStr} CAD` : info.priceLabel;
 
   const [step, setStep] = useState<Step>('email');
   const [busy, setBusy] = useState(false);
@@ -244,7 +251,10 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
 
         <div style={S.planRow}>
           <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 15 }}>{info.name} plan</span>
-          <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 15, color: '#1A5EAB' }}>{info.priceLabel}</span>
+          <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 15, color: '#1A5EAB' }}>
+            {disc ? `${disc.newStr} CAD` : info.priceLabel}
+            {disc && <span style={{ textDecoration: 'line-through', opacity: 0.5, fontWeight: 700, marginLeft: 6 }}>{disc.oldStr}</span>}
+          </span>
         </div>
 
         {err && <div style={S.err} role="alert">{err}</div>}
@@ -290,7 +300,7 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
             <div style={{ height: 14 }} />
             <button style={{ ...(alreadyHas ? S.blueBtn : S.payBtn), opacity: username && pin.length >= 4 && pin.length <= 8 && !busy ? 1 : 0.6 }}
               disabled={!username || pin.length < 4 || pin.length > 8 || busy} onClick={loginSubmit}>
-              {busy ? 'Please wait…' : alreadyHas ? 'Log in' : `Log in & pay ${info.priceLabel}`}
+              {busy ? 'Please wait…' : alreadyHas ? 'Log in' : `Log in & pay ${payLabel}`}
             </button>
             <div style={{ textAlign: 'center', marginTop: 6, fontSize: 12.5, color: '#8a90a6', fontWeight: 700 }}>
               Not you? <button style={{ ...S.link, display: 'inline', padding: 0, fontSize: 12.5, color: '#1A5EAB' }}
@@ -314,7 +324,7 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
             <div style={{ height: 14 }} />
             <button style={{ ...S.payBtn, opacity: otp.length === 6 && !busy ? 1 : 0.6 }}
               disabled={otp.length !== 6 || busy} onClick={verifyAndPay}>
-              {busy ? 'Please wait…' : `Verify & pay ${info.priceLabel}`}
+              {busy ? 'Please wait…' : `Verify & pay ${payLabel}`}
             </button>
             <div style={{ textAlign: 'center', marginTop: 8, fontSize: 12.5, color: '#8a90a6', fontWeight: 700 }}>
               {resendIn > 0 ? `Resend in 0:${String(resendIn).padStart(2, '0')}` : (
