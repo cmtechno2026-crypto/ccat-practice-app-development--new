@@ -263,14 +263,16 @@ function addDaysStr(dateStr: string, days: number): string {
   const d = new Date(Date.UTC(Y!, (M! - 1), D!)); d.setUTCDate(d.getUTCDate() + days);
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 }
-function ampmBtn(on: boolean): React.CSSProperties {
-  return { border: `1px solid ${on ? 'var(--primary,#1A5EAB)' : 'var(--line,#e3e7f0)'}`, background: on ? 'var(--primary,#1A5EAB)' : '#fff', color: on ? '#fff' : '#6b7180', fontWeight: 800, fontSize: 11, borderRadius: 6, padding: '2px 8px', cursor: 'pointer', lineHeight: 1.3 };
-}
-
-// Time box: type the hour/minute or adjust with the mouse wheel; AM/PM beside it. No calendar icon, no arrows.
+// Time box: type the hour/minute freely (backspace to empty; an empty field defaults to 12:00 on blur) or
+// adjust with the mouse wheel; ONE AM/PM button toggles between AM and PM on each click. No icons/arrows.
 function TimeField({ h12, m, pm, onChange }: { h12: number; m: number; pm: boolean; onChange: (h: number, m: number, pm: boolean) => void }) {
   const hRef = useRef<HTMLInputElement>(null);
   const mRef = useRef<HTMLInputElement>(null);
+  // Local strings so backspacing to empty works while typing (the parent only ever holds a valid number).
+  const [hStr, setHStr] = useState(pad2(h12));
+  const [mStr, setMStr] = useState(pad2(m));
+  useEffect(() => { setHStr(pad2(h12)); }, [h12]);
+  useEffect(() => { setMStr(pad2(m)); }, [m]);
   useEffect(() => {
     const hEl = hRef.current, mEl = mRef.current; if (!hEl || !mEl) return;
     const wh = (e: WheelEvent) => { e.preventDefault(); let n = h12 + (e.deltaY < 0 ? 1 : -1); if (n > 12) n = 1; if (n < 1) n = 12; onChange(n, m, pm); };
@@ -278,18 +280,21 @@ function TimeField({ h12, m, pm, onChange }: { h12: number; m: number; pm: boole
     hEl.addEventListener('wheel', wh, { passive: false }); mEl.addEventListener('wheel', wm, { passive: false });
     return () => { hEl.removeEventListener('wheel', wh); mEl.removeEventListener('wheel', wm); };
   }, [h12, m, pm, onChange]);
-  const box: React.CSSProperties = { width: 44, textAlign: 'center', fontWeight: 800, fontSize: 18, border: 0, background: 'transparent', outline: 'none' };
+
+  const onHChange = (v: string) => { const digits = v.replace(/\D/g, '').slice(0, 2); setHStr(digits); if (digits !== '') { let n = parseInt(digits, 10); if (n > 12) n = 12; if (n < 1) n = 1; onChange(n, m, pm); } };
+  const onMChange = (v: string) => { const digits = v.replace(/\D/g, '').slice(0, 2); setMStr(digits); if (digits !== '') { let n = parseInt(digits, 10); if (n > 59) n = 59; if (n < 0) n = 0; onChange(h12, n, pm); } };
+  // On blur an empty field falls back to a clean default (12 for the hour, 00 for minutes).
+  const onHBlur = () => { if (hStr === '') { setHStr('12'); onChange(12, m, pm); } else setHStr(pad2(h12)); };
+  const onMBlur = () => { if (mStr === '') { setMStr('00'); onChange(h12, 0, pm); } else setMStr(pad2(m)); };
+
+  const box: React.CSSProperties = { width: 36, minWidth: 36, boxSizing: 'border-box', textAlign: 'center', fontWeight: 800, fontSize: 18, border: 0, background: 'transparent', outline: 'none', padding: 0 };
+  const toggle: React.CSSProperties = { border: '1px solid var(--primary,#1A5EAB)', background: 'var(--primary,#1A5EAB)', color: '#fff', fontWeight: 800, fontSize: 12, borderRadius: 8, padding: '7px 14px', cursor: 'pointer', minWidth: 48 };
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 2, border: '1px solid var(--line,#e3e7f0)', borderRadius: 10, background: '#fff', padding: '6px 8px' }}>
-      <input ref={hRef} inputMode="numeric" value={pad2(h12)} style={box}
-        onChange={(e) => { let n = parseInt(e.target.value.replace(/\D/g, ''), 10); if (isNaN(n)) n = 12; onChange(Math.max(1, Math.min(12, n)), m, pm); }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--line,#e3e7f0)', borderRadius: 10, background: '#fff', padding: '6px 12px' }}>
+      <input ref={hRef} inputMode="numeric" value={hStr} style={box} onChange={(e) => onHChange(e.target.value)} onBlur={onHBlur} aria-label="Hour" />
       <span style={{ fontWeight: 800, fontSize: 18, color: '#6b7180' }}>:</span>
-      <input ref={mRef} inputMode="numeric" value={pad2(m)} style={box}
-        onChange={(e) => { let n = parseInt(e.target.value.replace(/\D/g, ''), 10); if (isNaN(n)) n = 0; onChange(h12, Math.max(0, Math.min(59, n)), pm); }} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginLeft: 6 }}>
-        <button type="button" onClick={() => onChange(h12, m, false)} style={ampmBtn(!pm)}>AM</button>
-        <button type="button" onClick={() => onChange(h12, m, true)} style={ampmBtn(pm)}>PM</button>
-      </div>
+      <input ref={mRef} inputMode="numeric" value={mStr} style={box} onChange={(e) => onMChange(e.target.value)} onBlur={onMBlur} aria-label="Minute" />
+      <button type="button" onClick={() => onChange(h12, m, !pm)} title="Click to switch AM / PM" style={toggle}>{pm ? 'PM' : 'AM'}</button>
     </div>
   );
 }
