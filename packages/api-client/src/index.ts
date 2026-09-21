@@ -7,6 +7,7 @@ import type {
   ContactValidated, ProgressSummary, ProgressBreakdownCategory, ProgressQuery, ProgressSetsQuery, ProgressSetRow, ProgressSetReview,
   EntitlementsMe,
   GradeChangeStatus, GradeChangeRequest,
+  PromoPublic,
 } from './types.js';
 
 export * from './types.js';
@@ -88,6 +89,8 @@ export class CcatClient {
   // ---- catalog / health -----------------------------------------------------
   health() { return this.request<{ status: string }>('GET', '/health/ready'); }
   grades() { return this.request<Grade[]>('GET', '/v1/grades'); }
+  // Public site-wide promotional discount (display-only). No auth. active:false when nothing is live.
+  promo() { return this.request<PromoPublic>('GET', '/v1/promo'); }
 
   // ---- registration (§4) ----------------------------------------------------
   // Validate + persist the unified guardian contact (name + email + E.164 phone). No OTP. Returns a

@@ -1,7 +1,10 @@
-import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/store';
 import { PlanCheckoutModal } from '../components/PlanCheckoutModal';
+import { DiscountBanner } from '../components/DiscountBanner';
+import { usePromo, discountPrice } from '../lib/promo';
 import { PAYMENTS_ENABLED } from '../lib/entitlements';
 import '../landing2.css';
 import wm from '../assets/cm-wordmark.png';
@@ -33,6 +36,8 @@ const BODY = `
   </div>
 </header>
 
+<!-- Promo banner mounts here (React portal) when a discount is live; empty otherwise. -->
+<div id="cml-promo"></div>
 
 <section class="hero">
   <div class="wrap">
@@ -312,6 +317,33 @@ export function WelcomeScreen() {
   const nav = useNavigate();
   const { profile } = useApp();
   const [checkoutTier, setCheckoutTier] = useState<Sellable | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [promoSlot, setPromoSlot] = useState<HTMLElement | null>(null);
+  const promo = usePromo();
+
+  // Find the #cml-promo slot inside the injected landing HTML so the banner can portal into it (directly
+  // under the header). Runs after mount, when the HTML is in the DOM.
+  useEffect(() => { setPromoSlot(containerRef.current?.querySelector<HTMLElement>('#cml-promo') ?? null); }, []);
+
+  // Discount the landing pricing while a promo is live: rewrite each paid plan's price to a struck old
+  // price + the discounted price; restore the original when the promo ends. Free ($0) is left untouched.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    root.querySelectorAll<HTMLElement>('.plan .priced .now').forEach((node) => {
+      const original = node.getAttribute('data-orig') ?? node.textContent ?? '';
+      if (!promo.active) {
+        if (node.getAttribute('data-orig') != null) { node.textContent = original; node.removeAttribute('data-disc'); }
+        return;
+      }
+      if (node.getAttribute('data-disc') === String(promo.percent)) return; // already applied at this %
+      node.setAttribute('data-orig', original);
+      const d = discountPrice(original, promo.percent);
+      if (!d) return;
+      node.innerHTML = `<s style="opacity:.55;font-weight:700;margin-right:6px">${d.oldStr}</s>${d.newStr}`;
+      node.setAttribute('data-disc', String(promo.percent));
+    });
+  }, [promo.active, promo.percent]);
 
   // Direct load of a section anchor (e.g. …/#pricing): the landing HTML is injected after mount, so the
   // browser's own on-load scroll finds nothing. After mount, scroll the hash target into view once the
@@ -355,7 +387,8 @@ export function WelcomeScreen() {
 
   return (
     <>
-      <div className="cml" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+      <div ref={containerRef} className="cml" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+      {promoSlot && createPortal(<DiscountBanner />, promoSlot)}
       {checkoutTier && <PlanCheckoutModal tier={checkoutTier} onClose={() => setCheckoutTier(null)} />}
     </>
   );

@@ -320,3 +320,13 @@ export interface EntitlementsMe {
   status: string;                         // 'active' | 'canceled' | 'expired' | 'pending' | 'inactive'
   currentPeriodEnd: string | null;        // ISO timestamp, or null for no expiry
 }
+
+// Public site-wide promotional discount (display-only). GET /v1/promo. active:false / percent:0 when no
+// promo is live, so clients render normal prices with no banner.
+export interface PromoPublic {
+  active: boolean;
+  percent: number;          // 0–90; the % off to display
+  startsAt: string | null;  // ISO (UTC) or null
+  endsAt: string | null;    // ISO (UTC) or null — drives the countdown
+  headline: string;
+}

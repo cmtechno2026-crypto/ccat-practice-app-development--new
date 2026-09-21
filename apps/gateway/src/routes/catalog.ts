@@ -5,8 +5,23 @@ import { deriveAgeYears } from '../lib/age.js';
 import { Errors } from '../errors.js';
 import { resolveEntitlement, computeDemoSetIds, isCombineSubcategory, isSetLockedForPractice, type Capabilities } from '../lib/entitlements.js';
 import { finalizeTimedOutExams } from '../lib/finalize.js';
+import { loadPromo } from '../lib/promo.js';
 
 export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config) {
+  // GET /v1/promo — PUBLIC. The active site-wide promotional discount (display-only), read by the landing
+  // page + pricing + My Plan to show the banner/countdown and halved prices. Returns active:false (and
+  // percent 0) whenever no promo is live, so clients render normal prices. Safe before migration 0047.
+  app.get('/v1/promo', async () => {
+    const p = await loadPromo(db);
+    return {
+      active: p.liveNow,
+      percent: p.liveNow ? p.percent : 0,
+      startsAt: p.startsAt,
+      endsAt: p.endsAt,
+      headline: p.headline,
+    };
+  });
+
   // GET /v1/grades — data-driven catalog (§29). Public-ish (no student data).
   app.get('/v1/grades', async () => {
     // `practice_ready` = the grade has at least one PUBLISHED practice set (with active questions) in EACH of

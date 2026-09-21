@@ -5,6 +5,7 @@ import { useApp } from '../lib/store';
 import { client } from '../lib/api';
 import { AppBar, Card, Loader } from '../components/ui';
 import { PAYMENTS_ENABLED, TIER_CATALOG, TIER_SEQUENCE, tierIndex } from '../lib/entitlements';
+import { usePromo, discountPrice } from '../lib/promo';
 import { PAYPAL_INCONTEXT } from '../lib/paypal';
 import { PayPalButtonsBox } from '../components/PayPalButtonsBox';
 
@@ -32,6 +33,7 @@ export function MyPlanScreen() {
   const [confirmTier, setConfirmTier] = useState<EntitlementTier | null>(null);
   const [acctEmail, setAcctEmail] = useState<string | null | undefined>(undefined);
   const baseline = useRef<number | null>(null);
+  const promo = usePromo(); // display-only site-wide discount
 
   useEffect(() => { if (!entitlements) refreshEntitlements(); }, [entitlements, refreshEntitlements]);
 
@@ -140,11 +142,16 @@ export function MyPlanScreen() {
               const ti = tierIndex(t);
               const isCurrent = t === current;
               const isUpgrade = ti > curIdx;
+              const disc = promo.active ? discountPrice(info.price, promo.percent) : null;
               return (
                 <article key={t} className={`pp-card${info.badge ? ' premium' : ''}`}>
                   {info.badge && <div className="pp-badge">{info.badge}</div>}
                   <div className="pp-name">{info.name}</div>
-                  <div className="pp-price-row"><span className="pp-price">{info.price}</span><span className="pp-currency">CAD</span></div>
+                  <div className="pp-price-row">
+                    <span className="pp-price">{disc ? disc.newStr : info.price}</span>
+                    {disc && <span className="pp-price-old" style={{ textDecoration: 'line-through', opacity: 0.5, fontWeight: 700, margin: '0 6px' }}>{disc.oldStr}</span>}
+                    <span className="pp-currency">CAD</span>
+                  </div>
                   {info.accessTerm && <p className="pp-term">{info.accessTerm}</p>}
                   {info.desc && <p className="pp-desc">{info.desc}</p>}
                   <div className="pp-divider" />
@@ -157,7 +164,7 @@ export function MyPlanScreen() {
                     <button className="pp-btn secondary" type="button" disabled>Current Plan</button>
                   ) : isUpgrade ? (
                     <button className="pp-btn primary" type="button" disabled={busyTier != null} onClick={() => openConfirm(t)}>
-                      {busyTier === t ? 'Redirecting…' : `Get ${info.name} — ${info.priceLabel}`}
+                      {busyTier === t ? 'Redirecting…' : `Get ${info.name} — ${disc ? `${disc.newStr} CAD` : info.priceLabel}`}
                     </button>
                   ) : (
                     <button className="pp-btn secondary" type="button" disabled>Included</button>

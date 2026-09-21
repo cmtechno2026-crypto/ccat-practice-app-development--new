@@ -33,6 +33,10 @@ export const api = {
   // dashboard + health
   dashboard: (window = 7) => req<any>('GET', `/v1/admin/dashboard?window=${window}`),
   health: () => req<any>('GET', '/v1/admin/health'),
+  // Promotional discount (display-only) — Dashboard control. Timestamps are ISO (UTC).
+  getPromo: () => req<{ active: boolean; live_now: boolean; percent: number; starts_at: string | null; ends_at: string | null; headline: string }>('GET', '/v1/admin/promo'),
+  setPromo: (b: { active: boolean; percent: number; starts_at: string | null; ends_at: string | null; headline: string }) =>
+    req<{ ok: boolean; live_now: boolean }>('POST', '/v1/admin/promo', b),
   opsJobs: () => req<{ jobs: any[] }>('GET', '/v1/admin/ops/jobs'),
   opsInfrastructure: () => req<{ backup: any; disaster_recovery: any; failover: any }>('GET', '/v1/admin/ops/infrastructure'),
   opsProviders: () => req<{ providers: any[] }>('GET', '/v1/admin/ops/providers'),

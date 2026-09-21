@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -131,6 +131,7 @@ export function Dashboard() {
                 );
               })}
           </div>
+          {isSuper && <DiscountControl />}
           {isSuper && <SuperControls d={d} />}
         </div>
 
@@ -238,6 +239,140 @@ function MiniCard({ loading, ico, bg, n, label, sub }: { loading: boolean; ico: 
       <div className="klabel">{label}</div>
       {loading ? <div className="skeleton" style={{ height: 28, width: 48, marginTop: 8 }} /> : <div className="n tabnum">{typeof n === 'number' ? n.toLocaleString() : (n ?? 0)}</div>}
       {sub && <div className="sub">{sub}</div>}
+    </div>
+  );
+}
+
+// ---- Discount control (Super-Admin) — schedules the site-wide half-price promo -------------------------
+// Times are entered in IST and stored as UTC. Display-only: this drives the landing banner/countdown and
+// the halved prices on landing pricing + My Plan; it does NOT change the PayPal charge amount.
+const pad2 = (n: number) => String(n).padStart(2, '0');
+function to24(h12: number, pm: boolean): number { const h = h12 % 12; return pm ? h + 12 : h; }
+function istToUtcIso(dateStr: string, h12: number, m: number, pm: boolean): string {
+  const [Y, M, D] = dateStr.split('-').map(Number);
+  const utc = Date.UTC(Y!, (M! - 1), D!, to24(h12, pm), m) - 330 * 60000; // IST = UTC+5:30
+  return new Date(utc).toISOString();
+}
+function utcIsoToIst(iso: string): { date: string; h12: number; m: number; pm: boolean } {
+  const d = new Date(new Date(iso).getTime() + 330 * 60000);
+  const h24 = d.getUTCHours(); const pm = h24 >= 12; let h12 = h24 % 12; if (h12 === 0) h12 = 12;
+  return { date: `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`, h12, m: d.getUTCMinutes(), pm };
+}
+function addDaysStr(dateStr: string, days: number): string {
+  const [Y, M, D] = dateStr.split('-').map(Number);
+  const d = new Date(Date.UTC(Y!, (M! - 1), D!)); d.setUTCDate(d.getUTCDate() + days);
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+function ampmBtn(on: boolean): React.CSSProperties {
+  return { border: `1px solid ${on ? 'var(--primary,#1A5EAB)' : 'var(--line,#e3e7f0)'}`, background: on ? 'var(--primary,#1A5EAB)' : '#fff', color: on ? '#fff' : '#6b7180', fontWeight: 800, fontSize: 11, borderRadius: 6, padding: '2px 8px', cursor: 'pointer', lineHeight: 1.3 };
+}
+
+// Time box: type the hour/minute or adjust with the mouse wheel; AM/PM beside it. No calendar icon, no arrows.
+function TimeField({ h12, m, pm, onChange }: { h12: number; m: number; pm: boolean; onChange: (h: number, m: number, pm: boolean) => void }) {
+  const hRef = useRef<HTMLInputElement>(null);
+  const mRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const hEl = hRef.current, mEl = mRef.current; if (!hEl || !mEl) return;
+    const wh = (e: WheelEvent) => { e.preventDefault(); let n = h12 + (e.deltaY < 0 ? 1 : -1); if (n > 12) n = 1; if (n < 1) n = 12; onChange(n, m, pm); };
+    const wm = (e: WheelEvent) => { e.preventDefault(); let n = m + (e.deltaY < 0 ? 1 : -1); if (n > 59) n = 0; if (n < 0) n = 59; onChange(h12, n, pm); };
+    hEl.addEventListener('wheel', wh, { passive: false }); mEl.addEventListener('wheel', wm, { passive: false });
+    return () => { hEl.removeEventListener('wheel', wh); mEl.removeEventListener('wheel', wm); };
+  }, [h12, m, pm, onChange]);
+  const box: React.CSSProperties = { width: 44, textAlign: 'center', fontWeight: 800, fontSize: 18, border: 0, background: 'transparent', outline: 'none' };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2, border: '1px solid var(--line,#e3e7f0)', borderRadius: 10, background: '#fff', padding: '6px 8px' }}>
+      <input ref={hRef} inputMode="numeric" value={pad2(h12)} style={box}
+        onChange={(e) => { let n = parseInt(e.target.value.replace(/\D/g, ''), 10); if (isNaN(n)) n = 12; onChange(Math.max(1, Math.min(12, n)), m, pm); }} />
+      <span style={{ fontWeight: 800, fontSize: 18, color: '#6b7180' }}>:</span>
+      <input ref={mRef} inputMode="numeric" value={pad2(m)} style={box}
+        onChange={(e) => { let n = parseInt(e.target.value.replace(/\D/g, ''), 10); if (isNaN(n)) n = 0; onChange(h12, Math.max(0, Math.min(59, n)), pm); }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginLeft: 6 }}>
+        <button type="button" onClick={() => onChange(h12, m, false)} style={ampmBtn(!pm)}>AM</button>
+        <button type="button" onClick={() => onChange(h12, m, true)} style={ampmBtn(pm)}>PM</button>
+      </div>
+    </div>
+  );
+}
+
+function DiscountControl() {
+  const [loaded, setLoaded] = useState(false);
+  const [active, setActive] = useState(false);
+  const [liveNow, setLiveNow] = useState(false);
+  const [percent, setPercent] = useState(50);
+  const [headline, setHeadline] = useState('50% Off All Plans — Limited Time!');
+  const [sDate, setSDate] = useState(''); const [sH, setSH] = useState(9); const [sM, setSM] = useState(0); const [sPM, setSPM] = useState(false);
+  const [eDate, setEDate] = useState(''); const [eH, setEH] = useState(9); const [eM, setEM] = useState(0); const [ePM, setEPM] = useState(false);
+  const [saving, setSaving] = useState(false); const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const today = utcIsoToIst(new Date().toISOString()).date;
+    api.getPromo().then((p) => {
+      setActive(p.active); setLiveNow(p.live_now); setPercent(p.percent || 50);
+      setHeadline(p.headline || '50% Off All Plans — Limited Time!');
+      if (p.starts_at) { const s = utcIsoToIst(p.starts_at); setSDate(s.date); setSH(s.h12); setSM(s.m); setSPM(s.pm); } else setSDate(today);
+      if (p.ends_at) { const e = utcIsoToIst(p.ends_at); setEDate(e.date); setEH(e.h12); setEM(e.m); setEPM(e.pm); } else setEDate(addDaysStr(today, 3));
+    }).catch(() => { setSDate(today); setEDate(addDaysStr(today, 3)); }).finally(() => setLoaded(true));
+  }, []);
+
+  async function save(nextActive: boolean) {
+    setSaving(true); setMsg(null);
+    try {
+      const starts_at = sDate ? istToUtcIso(sDate, sH, sM, sPM) : null;
+      const ends_at = eDate ? istToUtcIso(eDate, eH, eM, ePM) : null;
+      const r = await api.setPromo({ active: nextActive, percent, starts_at, ends_at, headline: headline.trim() || '50% Off All Plans — Limited Time!' });
+      setActive(nextActive); setLiveNow(r.live_now);
+      setMsg(nextActive ? (r.live_now ? 'Saved — discount is LIVE.' : 'Saved — scheduled.') : 'Discount ended.');
+    } catch (e: any) { setMsg(e?.message || 'Could not save.'); }
+    finally { setSaving(false); }
+  }
+
+  if (!loaded) return <div className="panel"><div className="panelhead"><h3>Discount</h3></div><div className="empty">Loading…</div></div>;
+
+  const tag = liveNow ? { t: '● Live now', bg: 'var(--green-bg)', c: 'var(--green)' } : active ? { t: 'Scheduled', bg: 'var(--amber-bg)', c: 'var(--amber)' } : { t: 'Off', bg: 'var(--tint,#eef1f7)', c: 'var(--muted)' };
+  const lab: React.CSSProperties = { fontWeight: 700, fontSize: 12.5, color: '#33405c', margin: '0 0 6px', display: 'block' };
+  const dinput: React.CSSProperties = { border: '1px solid var(--line,#e3e7f0)', borderRadius: 10, padding: '10px 12px', fontWeight: 700, fontSize: 14, background: '#fff' };
+
+  return (
+    <div className="panel">
+      <div className="panelhead" style={{ alignItems: 'center' }}>
+        <h3>🏷️ Discount</h3>
+        <span style={{ marginLeft: 'auto', fontWeight: 800, fontSize: 11, borderRadius: 999, padding: '3px 11px', background: tag.bg, color: tag.c }}>{tag.t}</span>
+      </div>
+      <p className="muted" style={{ fontSize: 12.5, marginTop: -4 }}>Half-price banner + prices on the landing page, pricing &amp; Plan page. Times are IST; ends automatically.</p>
+
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
+        <div><label style={lab}>Discount %</label>
+          <input value={percent} inputMode="numeric" style={{ ...dinput, width: 80 }}
+            onChange={(e) => { let n = parseInt(e.target.value.replace(/\D/g, ''), 10); if (isNaN(n)) n = 0; setPercent(Math.max(1, Math.min(90, n))); }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 200 }}><label style={lab}>Banner headline</label>
+          <input value={headline} maxLength={120} style={{ ...dinput, width: '100%' }} onChange={(e) => setHeadline(e.target.value)} />
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <label style={lab}>▶ Start (IST)</label>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input type="date" value={sDate} onChange={(e) => setSDate(e.target.value)} style={dinput} />
+          <TimeField h12={sH} m={sM} pm={sPM} onChange={(h, m, pm) => { setSH(h); setSM(m); setSPM(pm); }} />
+        </div>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <label style={lab}>■ End (IST)</label>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input type="date" value={eDate} onChange={(e) => setEDate(e.target.value)} style={dinput} />
+          <TimeField h12={eH} m={eM} pm={ePM} onChange={(h, m, pm) => { setEH(h); setEM(m); setEPM(pm); }} />
+        </div>
+      </div>
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Tip: type the time, or hover the hour/minute and scroll the mouse wheel.</div>
+
+      {msg && <div className="muted" style={{ fontSize: 12.5, marginTop: 10, fontWeight: 700 }}>{msg}</div>}
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
+        {active && <button className="btn ghost" disabled={saving} onClick={() => save(false)}>End now</button>}
+        <span style={{ flex: 1 }} />
+        <button className="btn" disabled={saving} onClick={() => save(true)}>{saving ? 'Saving…' : active ? 'Update discount' : 'Start discount'}</button>
+      </div>
     </div>
   );
 }
