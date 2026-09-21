@@ -93,7 +93,7 @@ export function Figure({ url, blocks, kind, alt }: { url?: string | null; blocks
   );
 }
 
-export function AppBar({ title, sub, back, right, wide }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; wide?: boolean }) {
+export function AppBar({ title, sub, back, right, wide, below }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; wide?: boolean; below?: React.ReactNode }) {
   const nav = useNavigate();
   const { profile } = useApp();
   return (
@@ -105,6 +105,8 @@ export function AppBar({ title, sub, back, right, wide }: { title: string; sub?:
         <div style={{ flex: 1 }}>
           <h1>{title}</h1>
           {sub && <div className="sub">{sub}</div>}
+          {/* Optional inline content under the title, inside the blue bar (e.g. the discount countdown). */}
+          {below}
         </div>
         {right}
         {/* Grade + membership plan (single chip, links to /plan), just left of the avatar — on every in-app page. */}

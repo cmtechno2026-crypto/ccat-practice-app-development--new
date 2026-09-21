@@ -46,3 +46,43 @@ export function DiscountBanner({ onClick, cta }: { onClick?: () => void; cta?: s
     </div>
   );
 }
+
+// Inline discount line for the in-app BLUE headers (Sample C): "⚡ NN% OFF ALL PLANS  DD:HH:MM:SS  View plans →".
+// Sits inside the blue panel under the greeting/title (Home, Practice, Plan). Styled for a dark/blue
+// background: gold pill + gold "View plans →", white countdown segments. Renders nothing when no promo is
+// live and auto-hides when the timer ends. Pass `onClick` on Home/Practice to link to the Plan page; omit
+// it on the Plan page itself. Display-only — the gateway charges the same discounted amount.
+export function PromoInline({ onClick }: { onClick?: () => void } = {}) {
+  const promo = usePromo();
+  if (!promo.active) return null;
+  const t = promo.remaining >= 0 ? splitRemaining(promo.remaining) : null;
+  const clickable = typeof onClick === 'function';
+  const baloo = "'Baloo 2', system-ui, sans-serif";
+
+  const seg = (v: string) => (
+    <span style={{ background: 'rgba(0,0,0,.22)', borderRadius: 6, padding: '3px 6px', fontSize: 14, color: '#fff', minWidth: 26, textAlign: 'center' as const }}>{v}</span>
+  );
+  const colon = <span style={{ opacity: 0.7 }}>:</span>;
+
+  return (
+    <div
+      onClick={onClick}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick!(); } } : undefined}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginTop: 8,
+        cursor: clickable ? 'pointer' : 'default', fontFamily: baloo, fontWeight: 800 }}>
+      <span style={{ background: '#ffd45e', color: '#5a3d00', borderRadius: 999, padding: '3px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+        ⚡ {promo.percent}% OFF ALL PLANS
+      </span>
+      {t && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#fff' }}>
+          {seg(t.days)}{colon}{seg(t.hrs)}{colon}{seg(t.min)}{colon}{seg(t.sec)}
+        </span>
+      )}
+      {clickable && (
+        <span style={{ color: '#ffd45e', fontSize: 12.5, whiteSpace: 'nowrap' }}>View plans →</span>
+      )}
+    </div>
+  );
+}

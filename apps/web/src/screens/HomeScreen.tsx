@@ -6,7 +6,7 @@ import { useApp } from '../lib/store';
 import { Card, Loader, ErrorNote, useAsync, GradePlanChip } from '../components/ui';
 import { AvatarControl } from '../components/AvatarControl';
 import { Avatar } from '../components/Avatar';
-import { DiscountBanner } from '../components/DiscountBanner';
+import { PromoInline } from '../components/DiscountBanner';
 import { capsOf, PAYMENTS_ENABLED } from '../lib/entitlements';
 
 // HOME — "Option A": a two-column dashboard for kids (grade 3–6). Purple header band (greeting,
@@ -78,8 +78,6 @@ export function HomeScreen() {
 
   return (
     <div className="home-a">
-      {/* Site-wide discount countdown (shows only while a promo is live). Whole bar links to the Plan page. */}
-      <DiscountBanner onClick={() => nav('/plan')} cta="View plans →" />
       {/* HEADER BAND (purple gradient) — greeting, streak, Continue, avatar */}
       <header className="home-hero">
         <div className="hh-text">
@@ -87,6 +85,8 @@ export function HomeScreen() {
           <div className="hh-streak">
             {streak > 0 ? `🔥 ${streak}-day streak — let's keep it alive!` : "Ready to practise? Let's go!"}
           </div>
+          {/* Discount countdown inside the blue header (shows only while a promo is live). Links to Plan. */}
+          <PromoInline onClick={() => nav('/plan')} />
         </div>
         <div className="hh-actions">
           {active && (
