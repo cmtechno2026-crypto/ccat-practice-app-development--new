@@ -322,8 +322,26 @@ export function WelcomeScreen() {
   const promo = usePromo();
 
   // Find the #cml-promo slot inside the injected landing HTML so the banner can portal into it (directly
-  // under the header). Runs after mount, when the HTML is in the DOM.
-  useEffect(() => { setPromoSlot(containerRef.current?.querySelector<HTMLElement>('#cml-promo') ?? null); }, []);
+  // under the header). Make the slot sticky so the discount panel stays pinned right below the sticky
+  // header (header.nav is position:sticky;top:0;z-index:50) instead of scrolling away. The slot's `top`
+  // is set to the live header height and kept in sync on resize; z-index 49 keeps it just under the header.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    const slot = root.querySelector<HTMLElement>('#cml-promo');
+    setPromoSlot(slot ?? null);
+    if (!slot) return;
+    const header = root.querySelector<HTMLElement>('header.nav');
+    const sync = () => {
+      const h = header?.offsetHeight ?? 0;
+      slot.style.position = 'sticky';
+      slot.style.top = `${h}px`;
+      slot.style.zIndex = '49';
+    };
+    sync();
+    window.addEventListener('resize', sync);
+    return () => window.removeEventListener('resize', sync);
+  }, []);
 
   // Discount the landing pricing while a promo is live: rewrite each paid plan's price to a struck old
   // price + the discounted price; restore the original when the promo ends. Free ($0) is left untouched.
