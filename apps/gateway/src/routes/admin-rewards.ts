@@ -217,13 +217,18 @@ export function registerAdminRewardsRoutes(app: FastifyInstance, db: DB, cfg: Co
       if (s.rows.length === 0) throw Errors.notFound('Student not found');
       const table = b.kind === 'xp' ? 'xp_transactions' : 'coin_transactions';
       const cacheCol = b.kind === 'xp' ? 'cached_xp_total' : 'cached_coin_balance';
-      const adjId = 'adj_' + Date.now() + '_' + Math.floor(req.id ? 0 : 0);
+      // Defense-in-depth: these two identifiers are interpolated into SQL below. They are already
+      // derived from a fixed ternary, but assert membership so no future edit can route user input
+      // into a table/column name.
+      if (!['xp_transactions', 'coin_transactions'].includes(table) ||
+          !['cached_xp_total', 'cached_coin_balance'].includes(cacheCol)) {
+        throw Errors.validation('Invalid reward kind');
+      }
       await c.query(`insert into ccat.${table}(student_id,delta,source_kind,source_id,reason,actor_admin_id) values ($1,$2,'admin_adjustment',$3,$4,$5)`,
         [b.student_id, b.delta, `${req.admin!.adminId}:${b.reference}`, b.reason, req.admin!.adminId]);
       await c.query(`update ccat.students set ${cacheCol}=${cacheCol}+$2 where id=$1`, [b.student_id, b.delta]);
       await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,reason,reference)
           values ($1,'admin','reward.adjusted','student',$2,$3,$4)`, [req.admin!.adminId, b.student_id, `${b.kind} ${b.delta}: ${b.reason}`, b.reference]);
-      void adjId;
     }).catch((e: any) => { if (e?.code === '23505') throw Errors.conflict('DUPLICATE_ADJUSTMENT', 'Adjustment reference already used'); throw e; });
     return { adjusted: true };
   });

@@ -28,7 +28,16 @@ export function generateOtp(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, '0');
 }
 
-export function hashToken(token: string): string {
-  // Non-reversible lookup hash for refresh tokens / device hashes stored at rest.
-  return createHmac('sha256', 'ccat-token-hash').update(token).digest('hex');
+export function hashToken(token: string, key: string): string {
+  // Non-reversible lookup hash for refresh tokens / device hashes stored at rest. Keyed with the
+  // server pepper (not a hardcoded constant) so a DB leak alone can't recompute lookup hashes.
+  // NOTE: changing `key` invalidates previously stored hashes — rotate only during a re-auth window.
+  return createHmac('sha256', key).update(token).digest('hex');
+}
+
+// Short, non-reversible fingerprint of an admin's stored password hash. Embedded in the admin
+// access token (claim `pv`) and re-checked each request, so resetting/unlocking an admin's
+// password (which changes the stored hash) invalidates every token issued before the change.
+export function credentialFingerprint(passwordHash: string): string {
+  return createHmac('sha256', 'ccat-admin-pv').update(passwordHash).digest('base64url').slice(0, 16);
 }

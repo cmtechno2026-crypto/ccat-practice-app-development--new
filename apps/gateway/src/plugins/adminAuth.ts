@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { DB } from '../db.js';
 import { verifyAdminToken } from '../security/token.js';
+import { credentialFingerprint } from '../security/crypto.js';
 import { Errors } from '../errors.js';
 
 // Admin request-time enforcement (Blueprint §22.1): validate the token, then load CURRENT
@@ -42,12 +43,22 @@ export function makeAuthenticateAdmin(db: DB, hmacSecret: string) {
     const payload = verifyAdminToken(header.slice(7), hmacSecret);
     if (!payload) throw Errors.unauthorized('Invalid or expired admin token');
     const { rows } = await db.query(
-      'select id, security_role, status, mfa_enrolled from ccat.admin_profiles where id=$1',
+      `select p.id, p.security_role, p.status, p.mfa_enrolled, c.password_hash
+         from ccat.admin_profiles p
+         left join ccat.admin_local_credentials c on c.admin_id = p.id
+        where p.id=$1`,
       [payload.sub],
     );
     if (rows.length === 0) throw Errors.unauthorized('Admin not found');
     const a = rows[0]!;
     if (a.status !== 'active') throw Errors.forbidden('ADMIN_DISABLED', 'Admin account is disabled');
+    // Token revocation: a token carries a fingerprint (`pv`) of the password hash it was minted
+    // against. If the admin's password was reset/unlocked since, the stored hash changed and the
+    // fingerprint no longer matches — reject, forcing re-login. Legacy tokens without `pv`, and
+    // accounts with no local-credential row, skip the check (backward-compatible rollout).
+    if (payload.pv && a.password_hash && credentialFingerprint(a.password_hash) !== payload.pv) {
+      throw Errors.unauthorized('Session no longer valid; sign in again');
+    }
     const permissions = await loadAdminPermissions(db, a.id, a.security_role);
     req.admin = { adminId: a.id, role: a.security_role, permissions };
   };

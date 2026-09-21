@@ -170,7 +170,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const authSession = await db.query(
       `insert into ccat.auth_sessions(student_id, device_id, refresh_hash, expires_at)
        values ($1,$2,$3, now() + ($4 || ' seconds')::interval) returning id`,
-      [s.id, enrolled.id, hashToken(refresh), String(cfg.refreshTokenTtlSeconds)],
+      [s.id, enrolled.id, hashToken(refresh, cfg.pinPepper), String(cfg.refreshTokenTtlSeconds)],
     );
     const sid = authSession.rows[0]!.id;
     const access = signToken(

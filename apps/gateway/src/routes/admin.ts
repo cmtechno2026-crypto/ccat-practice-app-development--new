@@ -6,6 +6,7 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { verifySecret } from '../security/crypto.js';
 import { signAdminToken } from '../security/token.js';
+import { credentialFingerprint } from '../security/crypto.js';
 import { makeAuthenticateAdmin, loadAdminPermissions, requirePermission } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { computeEffective, loadDefaultPlan, isPromoActive } from '../lib/entitlements.js';
@@ -81,7 +82,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     }
     // MFA enrollment is not required to sign in (removed by owner decision). Admins authenticate with
     // work email + password only; account lockout after 5 failed attempts remains the brute-force guard.
-    const token = signAdminToken({ sub: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds }, cfg.hmacSecret);
+    const token = signAdminToken({ sub: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds, pv: credentialFingerprint(a.password_hash) }, cfg.hmacSecret);
     const permissions = await loadAdminPermissions(db, a.id, a.security_role);
     return {
       access_token: token,

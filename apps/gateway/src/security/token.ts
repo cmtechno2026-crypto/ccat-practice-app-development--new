@@ -44,7 +44,7 @@ export function newRefreshToken(): string {
 }
 
 // Admin access token — HMAC signed, re-validated against the DB on every request (§22.1).
-export interface AdminTokenPayload { sub: string; exp: number; }
+export interface AdminTokenPayload { sub: string; exp: number; pv?: string; }
 export function signAdminToken(payload: AdminTokenPayload, secret: string): string {
   const body = b64url(Buffer.from(JSON.stringify(payload)));
   const sig = b64url(createHmac('sha256', secret + ':admin-session').update(body).digest());

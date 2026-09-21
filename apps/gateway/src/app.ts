@@ -49,6 +49,10 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   const app = Fastify({
     genReqId: () => randomUUID(),
     logger: cfg.env === 'local' ? { level: 'warn' } : { level: 'info' },
+    // Behind Render's load balancer the socket peer is the proxy, not the client. Trust the
+    // proxy so `req.ip` (and the per-IP rate-limit key) resolves to the real caller, not one
+    // shared upstream address. Render terminates TLS and sets X-Forwarded-For.
+    trustProxy: true,
   });
 
   // Tolerate an empty body on JSON requests (e.g. bodyless DELETE/POST that still send
@@ -76,6 +80,9 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'no-referrer');
+    // HSTS: pin the API to HTTPS for a year (incl. subdomains). Safe on the gateway — it is
+    // always served over TLS in production; ignored by browsers over plain HTTP/localhost.
+    if (cfg.env !== 'local') reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     return payload;
   });
 
