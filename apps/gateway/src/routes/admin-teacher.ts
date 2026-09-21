@@ -51,4 +51,29 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       params);
     return { teachers: rows };
   });
+
+  // Slots for one teacher (teacher_id) or all teachers. Ordered by teacher, then weekday, then start
+  // time so the admin UI can group them under each teacher.
+  app.get('/v1/admin/teacher/slots', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.directory');
+    requireSite(req, 'teacher');
+    const q = req.query as { teacher_id?: string };
+    const teacherId = (q.teacher_id ?? '').trim();
+    const params: any[] = [];
+    let where = '';
+    if (teacherId) { params.push(teacherId); where = 'where s.teacher_id = $1'; }
+    const { rows } = await tdb().query(
+      `select s.id, s.teacher_id, s.teacher_name, s.subject, s.grade, s.day_of_week,
+              s.start_time, s.end_time, s.mode, s.status, s.timezone, s.notes
+         from public.ta_slots s
+         ${where}
+         order by s.teacher_name,
+                  case s.day_of_week
+                    when 'Monday' then 1 when 'Tuesday' then 2 when 'Wednesday' then 3
+                    when 'Thursday' then 4 when 'Friday' then 5 when 'Saturday' then 6
+                    when 'Sunday' then 7 else 8 end,
+                  s.start_time`,
+      params);
+    return { slots: rows };
+  });
 }

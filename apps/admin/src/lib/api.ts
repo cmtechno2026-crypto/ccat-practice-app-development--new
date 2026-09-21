@@ -43,6 +43,7 @@ export const api = {
   // Teacher Hub site (X-Admin-Site: teacher is sent automatically when the active site is set)
   teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number }>('GET', '/v1/admin/teacher/summary'),
   teacherTeachers: (search = '') => req<{ teachers: any[] }>('GET', '/v1/admin/teacher/teachers' + (search ? ('?search=' + encodeURIComponent(search)) : '')),
+  teacherSlots: (teacherId = '') => req<{ slots: any[] }>('GET', '/v1/admin/teacher/slots' + (teacherId ? ('?teacher_id=' + encodeURIComponent(teacherId)) : '')),
   // dashboard + health
   dashboard: (window = 7) => req<any>('GET', `/v1/admin/dashboard?window=${window}`),
   health: () => req<any>('GET', '/v1/admin/health'),
