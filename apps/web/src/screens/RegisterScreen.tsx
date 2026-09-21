@@ -104,10 +104,13 @@ export function RegisterScreen() {
     client.grades()
       .then((g: any) => {
         if (ignore) return;
-        // Only offer grades with full practice coverage across all 3 batteries (practice_ready, computed
-        // by /v1/grades — at least one published practice set in verbal, quantitative AND non-verbal). A
-        // grade missing any battery is hidden so a new learner never lands on a grade they can't fully practise.
-        const list = (Array.isArray(g) ? g : []).filter((x: any) => x?.practice_ready === true);
+        // Offer Grades 2–5 in the account picker (owner decision 2026-09-21: Grade 2 and 5 added alongside
+        // 3 and 4). Note this no longer gates on full 3-battery practice coverage, so a grade without a
+        // complete practice set (e.g. 2 or 5 today) is still selectable — content can be filled in after.
+        const list = (Array.isArray(g) ? g : []).filter((x: any) => {
+          const gn = Number(x?.grade_number);
+          return gn >= 2 && gn <= 5;
+        });
         setGradeList(list);
         if (list[0]) setGradeId((cur) => cur || list[0].id);
       })
