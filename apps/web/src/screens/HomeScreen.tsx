@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { firstName , titleCase} from '@ccat/client-core';
 import type { Achievement, ProgressSummary } from '@ccat/api-client';
 import { client } from '../lib/api';
@@ -7,6 +6,7 @@ import { useApp } from '../lib/store';
 import { Card, Loader, ErrorNote, useAsync, GradePlanChip } from '../components/ui';
 import { AvatarControl } from '../components/AvatarControl';
 import { Avatar } from '../components/Avatar';
+import { DiscountBanner } from '../components/DiscountBanner';
 import { capsOf, PAYMENTS_ENABLED } from '../lib/entitlements';
 
 // HOME — "Option A": a two-column dashboard for kids (grade 3–6). Purple header band (greeting,
@@ -58,30 +58,10 @@ function mascotLine(streak: number, completion: number | null): string {
 
 export function HomeScreen() {
   const nav = useNavigate();
-  const { profile, entitlements, entitlementsLoaded, refreshEntitlements, flash } = useApp();
-  const [params] = useSearchParams();
-
-  // Landing-page Case 1 checkout returns straight here (?checkout=success&token=<orderId>). Capture the
-  // order so the plan activates, refresh entitlements so the unlock shows, then strip the query. The
-  // capture + PayPal webhook are both idempotent, so a re-run or a lost redirect still grants exactly once.
-  const captured = useRef(false);
-  useEffect(() => {
-    if (captured.current) return;
-    if (params.get('checkout') !== 'success') return;
-    captured.current = true;
-    const orderId = params.get('token');
-    const done = () => { refreshEntitlements(); nav('/home', { replace: true }); };
-    if (orderId) {
-      flash('Payment confirmed — activating your plan… 🎉');
-      client.paypalCapture(orderId).catch(() => { /* webhook is the backstop */ }).finally(done);
-    } else { done(); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { profile, entitlements, entitlementsLoaded } = useApp();
   // Payments Phase 2: when the flag is off, capsOf() unlocks everything, so examLocked is always false
   // and the exam entry tile renders exactly as today.
   const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements, entitlementsLoaded).exam;
-  // Free plan (demo-level practice) → progress tracking is a membership feature. Lock the home Progress card.
-  const progressLocked = PAYMENTS_ENABLED && capsOf(entitlements, entitlementsLoaded).practice !== 'all';
   const { loading, error, data, reload } = useAsync(async () => {
     const [summary, readiness, progress, announcements, active, achievements, analytics] = await Promise.all([
       client.rewardsSummary(), client.readiness(), client.progress(), client.announcements(),
@@ -98,6 +78,8 @@ export function HomeScreen() {
 
   return (
     <div className="home-a">
+      {/* Site-wide discount countdown (shows only while a promo is live). Whole bar links to the Plan page. */}
+      <DiscountBanner onClick={() => nav('/plan')} cta="View plans →" />
       {/* HEADER BAND (purple gradient) — greeting, streak, Continue, avatar */}
       <header className="home-hero">
         <div className="hh-text">
@@ -176,21 +158,10 @@ export function HomeScreen() {
                   accuracy rings. Every value is real; honest empty states ("—" / 0 / rings at 0). */}
               <Card className="home-progress">
                 <div className="hp-head">
-                  <div className="eyebrow">📊 Progress</div>
-                  {!progressLocked && <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>}
+                  <div className="eyebrow">📊 Progress &amp; Analytics</div>
+                  <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>
                 </div>
-                {progressLocked ? (
-                  <button onClick={() => nav('/plan')}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
-                      background: 'var(--tint-lilac, #eef3fb)', border: 0, borderRadius: 12, padding: '14px 16px', cursor: 'pointer', marginTop: 8 }}>
-                    <span style={{ fontSize: 26 }} aria-hidden>🔒</span>
-                    <span style={{ flex: 1 }}>
-                      <strong>Progress tracking is a membership feature</strong>
-                      <div className="muted" style={{ fontSize: 13 }}>Upgrade to see your battery breakdowns and exam analytics.</div>
-                    </span>
-                    <span className="pill" style={{ background: '#fdf3e0', color: '#a5731a', whiteSpace: 'nowrap' }}>🔒 Membership</span>
-                  </button>
-                ) : (() => {
+                {(() => {
                   // Sample 4 — one tile per battery: progress-% ring on the left, "N sets done" on the right.
                   const batteries = data.analytics?.batteries ?? [];
                   return (

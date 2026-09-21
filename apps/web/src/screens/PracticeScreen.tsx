@@ -8,6 +8,7 @@ import { useApp } from '../lib/store';
 import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
 import { capsOf, PAYMENTS_ENABLED, type UpgradeFeature } from '../lib/entitlements';
 import { UpgradePanel, LockBadge } from '../components/UpgradePanel';
+import { DiscountBanner } from '../components/DiscountBanner';
 
 // Live countdown for an in-progress (Resume) exam set — the clock keeps running server-side, so this
 // shows the true remaining time and ticks every second, turning amber then red as it runs low.
@@ -468,6 +469,8 @@ export function PracticeScreen() {
     <>
       <AppBar title="Practice" sub="Pick a battery to begin" back />
       <div className="content stack">
+        {/* Site-wide discount countdown (shows only while a promo is live). Whole bar links to the Plan page. */}
+        <DiscountBanner onClick={() => nav('/plan')} cta="View plans →" />
         {loading && <Loader />}
         {error && <ErrorNote error={error} onRetry={reload} />}
         {data && BATTERY_ORDER.map((key) => {

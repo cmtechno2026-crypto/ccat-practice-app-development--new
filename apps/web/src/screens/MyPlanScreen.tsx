@@ -6,6 +6,7 @@ import { client } from '../lib/api';
 import { AppBar, Card, Loader } from '../components/ui';
 import { PAYMENTS_ENABLED, TIER_CATALOG, TIER_SEQUENCE, tierIndex } from '../lib/entitlements';
 import { usePromo, discountPrice } from '../lib/promo';
+import { DiscountBanner } from '../components/DiscountBanner';
 import { PAYPAL_INCONTEXT } from '../lib/paypal';
 import { PayPalButtonsBox } from '../components/PayPalButtonsBox';
 
@@ -99,6 +100,9 @@ export function MyPlanScreen() {
     <>
       <AppBar title="My Plan" sub="Your membership & upgrades" back wide />
       <div className="plan-wrap stack">
+        {/* Site-wide discount countdown above the pricing (shows only while a promo is live). Not clickable
+            here — the parent is already on the Plan page; the plan cards below show the discounted prices. */}
+        <DiscountBanner />
         <div className="stack" style={{ maxWidth: 760, width: '100%', margin: '0 auto' }}>
         {phase === 'activating' && (
           <Card className="stack">
