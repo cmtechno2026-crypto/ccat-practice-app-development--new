@@ -105,8 +105,9 @@ export function Dashboard() {
       </div>
 
       <div className="dashcols">
-        {/* LEFT column: students preview, then (super only) Super-Admin controls */}
+        {/* LEFT column: (super only) Discount, then students preview, then Super-Admin controls */}
         <div className="dashcol">
+          {isSuper && <DiscountControl />}
           <div className="panel">
             <div className="panelhead"><h3>Students</h3><Link to="/students">View all →</Link></div>
             <p className="muted" style={{ fontSize: 13, marginTop: -4, marginBottom: 6 }}>Most recently active · click a name for the full record</p>
@@ -131,7 +132,6 @@ export function Dashboard() {
                 );
               })}
           </div>
-          {isSuper && <DiscountControl />}
           {isSuper && <SuperControls d={d} />}
         </div>
 
@@ -299,6 +299,39 @@ function TimeField({ h12, m, pm, onChange }: { h12: number; m: number; pm: boole
   );
 }
 
+// Live countdown for the Discount panel: counts to go-live while Scheduled, to end while Live, and
+// hides once ended. Phase is derived from the saved start/end each tick, so it flips over on its own.
+function fmtDur(ms: number): string {
+  if (ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const hms = `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
+  return d > 0 ? `${d}d ${hms}` : hms;
+}
+function CountdownBanner({ startIso, endIso }: { startIso: string | null; endIso: string | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  const start = startIso ? new Date(startIso).getTime() : null;
+  const end = endIso ? new Date(endIso).getTime() : null;
+  let phase: 'scheduled' | 'live' | 'ended';
+  if (start !== null && now < start) phase = 'scheduled';
+  else if (end !== null && now >= end) phase = 'ended';
+  else phase = 'live';
+  if (phase === 'ended') return null;
+  const isLive = phase === 'live';
+  const target = isLive ? end : start;
+  const label = isLive ? (end !== null ? 'Ends in' : '') : 'Goes live in';
+  const cd = target !== null ? fmtDur(target - now) : '';
+  const bg = isLive ? 'var(--green-bg)' : 'var(--amber-bg)';
+  const c = isLive ? 'var(--green)' : 'var(--amber)';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: bg, color: c, borderRadius: 10, padding: '10px 14px', fontWeight: 800, fontSize: 13, margin: '4px 0 10px' }}>
+      <span>{isLive ? '\u25CF Discount live' : '\u23F3 Discount scheduled'}</span>
+      <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>{label}{cd ? ` ${cd}` : (isLive ? 'Live now' : '')}</span>
+    </div>
+  );
+}
+
 function DiscountControl() {
   const [loaded, setLoaded] = useState(false);
   const [active, setActive] = useState(false);
@@ -308,6 +341,8 @@ function DiscountControl() {
   const [sDate, setSDate] = useState(''); const [sH, setSH] = useState(9); const [sM, setSM] = useState(0); const [sPM, setSPM] = useState(false);
   const [eDate, setEDate] = useState(''); const [eH, setEH] = useState(9); const [eM, setEM] = useState(0); const [ePM, setEPM] = useState(false);
   const [saving, setSaving] = useState(false); const [msg, setMsg] = useState<string | null>(null);
+  const [savedStart, setSavedStart] = useState<string | null>(null);
+  const [savedEnd, setSavedEnd] = useState<string | null>(null);
 
   useEffect(() => {
     const today = utcIsoToIst(new Date().toISOString()).date;
@@ -316,6 +351,7 @@ function DiscountControl() {
       setHeadline(p.headline || '50% Off All Plans — Limited Time!');
       if (p.starts_at) { const s = utcIsoToIst(p.starts_at); setSDate(s.date); setSH(s.h12); setSM(s.m); setSPM(s.pm); } else setSDate(today);
       if (p.ends_at) { const e = utcIsoToIst(p.ends_at); setEDate(e.date); setEH(e.h12); setEM(e.m); setEPM(e.pm); } else setEDate(addDaysStr(today, 3));
+      setSavedStart(p.starts_at || null); setSavedEnd(p.ends_at || null);
     }).catch(() => { setSDate(today); setEDate(addDaysStr(today, 3)); }).finally(() => setLoaded(true));
   }, []);
 
@@ -326,6 +362,7 @@ function DiscountControl() {
       const ends_at = eDate ? istToUtcIso(eDate, eH, eM, ePM) : null;
       const r = await api.setPromo({ active: nextActive, percent, starts_at, ends_at, headline: headline.trim() || '50% Off All Plans — Limited Time!' });
       setActive(nextActive); setLiveNow(r.live_now);
+      setSavedStart(starts_at); setSavedEnd(ends_at);
       setMsg(nextActive ? (r.live_now ? 'Saved — discount is LIVE.' : 'Saved — scheduled.') : 'Discount ended.');
     } catch (e: any) { setMsg(e?.message || 'Could not save.'); }
     finally { setSaving(false); }
@@ -343,6 +380,7 @@ function DiscountControl() {
         <h3>🏷️ Discount</h3>
         <span style={{ marginLeft: 'auto', fontWeight: 800, fontSize: 11, borderRadius: 999, padding: '3px 11px', background: tag.bg, color: tag.c }}>{tag.t}</span>
       </div>
+      {active && <CountdownBanner startIso={savedStart} endIso={savedEnd} />}
       <p className="muted" style={{ fontSize: 12.5, marginTop: -4 }}>Half-price banner + prices on the landing page, pricing &amp; Plan page. Times are IST; ends automatically.</p>
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>

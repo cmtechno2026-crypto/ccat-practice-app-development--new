@@ -12,6 +12,8 @@ export interface AdminContext {
   adminId: string;
   role: 'admin' | 'super_admin';
   permissions: Set<string>;
+  sites: string[];      // site ids this admin may access (super_admin => every active site)
+  activeSite: string;   // the site this request is scoped to (from X-Admin-Site, default 'ccat')
 }
 
 declare module 'fastify' {
@@ -34,6 +36,24 @@ export async function loadAdminPermissions(db: DB, adminId: string, role: string
     [adminId],
   );
   return new Set([...direct.rows, ...viaBundle.rows].map((r) => r.permission_key as string));
+}
+
+// Sites an admin may access. super_admin implicitly reaches every ACTIVE site; a normal admin is
+// limited to ccat.admin_sites. Defensive: if the multi-site tables are not present yet (pre-0048),
+// fall back to the single legacy site so the gateway is safe to deploy before the migration runs.
+export async function loadAdminSites(db: DB, adminId: string, role: string): Promise<string[]> {
+  try {
+    if (role === 'super_admin') {
+      const all = await db.query('select id from ccat.sites where is_active = true order by sort_order');
+      const ids = all.rows.map((r) => r.id as string);
+      return ids.length ? ids : ['ccat'];
+    }
+    const r = await db.query('select site_id from ccat.admin_sites where admin_id=$1', [adminId]);
+    const ids = r.rows.map((x) => x.site_id as string);
+    return ids.length ? ids : ['ccat'];
+  } catch {
+    return ['ccat'];
+  }
 }
 
 export function makeAuthenticateAdmin(db: DB, hmacSecret: string) {
@@ -60,7 +80,11 @@ export function makeAuthenticateAdmin(db: DB, hmacSecret: string) {
       throw Errors.unauthorized('Session no longer valid; sign in again');
     }
     const permissions = await loadAdminPermissions(db, a.id, a.security_role);
-    req.admin = { adminId: a.id, role: a.security_role, permissions };
+    const sites = await loadAdminSites(db, a.id, a.security_role);
+    // Active site comes from the client (X-Admin-Site); fall back to ccat, then the first granted site.
+    const requested = String(req.headers['x-admin-site'] || '').trim().toLowerCase();
+    const activeSite = sites.includes(requested) ? requested : (sites.includes('ccat') ? 'ccat' : sites[0]!);
+    req.admin = { adminId: a.id, role: a.security_role, permissions, sites, activeSite };
   };
 }
 
@@ -70,6 +94,15 @@ export function requirePermission(req: FastifyRequest, key: string): void {
   if (!admin) throw Errors.unauthorized();
   if (admin.role === 'super_admin') return;
   if (!admin.permissions.has(key)) throw Errors.forbidden('PERMISSION_DENIED', `Missing permission: ${key}`);
+}
+
+// Guard: require access to a specific site (super_admin reaches every active site). New per-site
+// routes (e.g. teacher.*) call this alongside requirePermission.
+export function requireSite(req: FastifyRequest, siteId: string): void {
+  const admin = req.admin;
+  if (!admin) throw Errors.unauthorized();
+  if (admin.role === 'super_admin') return;
+  if (!admin.sites.includes(siteId)) throw Errors.forbidden('SITE_DENIED', `No access to site: ${siteId}`);
 }
 
 // Guard: Super-Admin only (no permission grants this — used for the Service-health surface, §27).

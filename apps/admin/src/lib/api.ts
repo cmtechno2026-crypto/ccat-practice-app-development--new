@@ -14,9 +14,19 @@ export function setToken(t: string | null) {
 }
 export function getToken() { return token; }
 
+// Active site (multi-site admin). Sent as X-Admin-Site so the gateway scopes reads/writes; the
+// gateway defaults to 'ccat' when this is absent, so it is safe to leave unset.
+let site: string | null = sessionStorage.getItem('ccat_admin_site');
+export function setSite(s: string | null) {
+  site = s;
+  if (s) sessionStorage.setItem('ccat_admin_site', s); else sessionStorage.removeItem('ccat_admin_site');
+}
+export function getSite() { return site; }
+
 async function req<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
   const h: Record<string, string> = { ...(headers || {}) };
   if (token) h['authorization'] = `Bearer ${token}`;
+  if (site) h['x-admin-site'] = site;
   if (body !== undefined) h['content-type'] = 'application/json';
   const res = await fetch(GATEWAY + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();

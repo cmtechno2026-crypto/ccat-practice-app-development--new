@@ -7,7 +7,7 @@ import { Errors } from '../errors.js';
 import { verifySecret } from '../security/crypto.js';
 import { signAdminToken } from '../security/token.js';
 import { credentialFingerprint } from '../security/crypto.js';
-import { makeAuthenticateAdmin, loadAdminPermissions, requirePermission } from '../plugins/adminAuth.js';
+import { makeAuthenticateAdmin, loadAdminPermissions, loadAdminSites, requirePermission } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { computeEffective, loadDefaultPlan, isPromoActive } from '../lib/entitlements.js';
 
@@ -84,9 +84,14 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     // work email + password only; account lockout after 5 failed attempts remains the brute-force guard.
     const token = signAdminToken({ sub: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds, pv: credentialFingerprint(a.password_hash) }, cfg.hmacSecret);
     const permissions = await loadAdminPermissions(db, a.id, a.security_role);
+    const sites = await loadAdminSites(db, a.id, a.security_role);
     return {
       access_token: token,
-      admin: { id: a.id, role: a.security_role, must_change_password: a.must_change_password, permissions: [...permissions] },
+      admin: {
+        id: a.id, role: a.security_role, must_change_password: a.must_change_password,
+        permissions: [...permissions],
+        sites, active_site: sites.includes('ccat') ? 'ccat' : sites[0]!,
+      },
     };
   });
 
@@ -94,7 +99,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   app.get('/v1/admin/me', { preHandler: [authenticateAdmin] }, async (req) => {
     const a = req.admin!;
     const p = await db.query('select email, display_name from ccat.admin_profiles where id=$1', [a.adminId]);
-    return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions] };
+    return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions], sites: a.sites, active_site: a.activeSite };
   });
 
   // GET /v1/admin/students — directory: computed Age + raw guardian PII for authorized users (§24).
