@@ -60,11 +60,12 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
     grantReason: string,
   ) {
     const gc = await db.query(
-      `select id, name from ccat.guardian_contacts where lower(email::text) = $1 limit 1`,
+      `select id, name, phone from ccat.guardian_contacts where lower(email::text) = $1 limit 1`,
       [email],
     );
     const guardianId = gc.rows[0]?.id ?? null;
     const guardianName = gc.rows[0]?.name ?? '';
+    const guardianPhone = gc.rows[0]?.phone ?? '';
 
     const prev = await db.query(
       `select tier, status, current_period_end, grant_reason from ccat.entitlements where lower(guardian_email) = $1 limit 1`,
@@ -116,6 +117,48 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
           <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
         </div>`;
         void sendEmail(cfg, { to: email, subject: 'Your CCAT Practice plan has been updated', html }, app.log);
+
+        // Admin notification (fire-and-forget) — mirrors the purchase notification, but marked as an
+        // admin-initiated upgrade. Recipients from ADMIN_NOTIFY_EMAILS or the CM admin addresses.
+        try {
+          let students = 'No student linked to this guardian email.';
+          if (guardianId) {
+            const stu = await db.query(
+              `select s.display_name, g.grade_number, g.name as grade_name
+                 from ccat.student_guardians sg
+                 join ccat.students s on s.id = sg.student_id and s.status <> 'purged'
+                 left join ccat.grades g on g.id = s.grade_id
+                where sg.guardian_id = $1
+                order by sg.is_primary desc, s.display_name`,
+              [guardianId],
+            );
+            if (stu.rows.length > 0) {
+              students = stu.rows.map((r: any) => {
+                const grade = r.grade_name || (r.grade_number != null ? `Grade ${r.grade_number}` : '—');
+                return `${escapeHtml(r.display_name || '—')} (${escapeHtml(grade)})`;
+              }).join(', ');
+            }
+          }
+          const cell = 'padding:5px 12px;border:1px solid #e7eaf3';
+          const rowsHtml = ([
+            ['Plan', escapeHtml(label)],
+            ['Student(s) &amp; grade', students],
+            ['Parent name', escapeHtml(guardianName || '—')],
+            ['Parent email', escapeHtml(email)],
+            ['Parent phone', escapeHtml(guardianPhone || '—')],
+            ['Changed by', 'Admin (manual grant)'],
+          ] as [string, string][]).map(([k, v]) => `<tr><td style="${cell};font-weight:600">${k}</td><td style="${cell}">${v}</td></tr>`).join('');
+          const adminHtml = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
+            <h2 style="color:#5b3ff0;margin:0 0 8px">Plan upgrade by admin — ${escapeHtml(label)}</h2>
+            <table style="border-collapse:collapse;margin:8px 0">${rowsHtml}</table>
+            <p style="color:#8a90a6;font-size:13px">— CCAT Practice (automated admin notification)</p>
+          </div>`;
+          const admins = (process.env.ADMIN_NOTIFY_EMAILS || 'cmtechno2026@gmail.com,admin@conceptmastery.ca')
+            .split(',').map((e) => e.trim()).filter(Boolean);
+          for (const to of admins) {
+            void sendEmail(cfg, { to, subject: `Plan upgrade by admin: ${label} — ${guardianName || email}`, html: adminHtml }, app.log);
+          }
+        } catch (err) { app.log.warn({ err: (err as Error).message }, 'admin upgrade notification failed'); }
       }
     }
     return rows[0];
