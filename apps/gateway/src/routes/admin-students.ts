@@ -7,7 +7,7 @@ import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { hashSecret } from '../security/crypto.js';
-import { progressCardTotals } from './progress.js';
+import { progressCardTotals, computeProgressSummary, computeProgressSets, computeSetReview, pickRange } from './progress.js';
 
 // Shared break-glass enrollment: revoke any active device + live sessions, then enroll the new device
 // as the sole active one. Runs inside a caller-provided transaction so approve/direct share one path.
@@ -124,6 +124,32 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
       grade_change_request: gradeReq.rows[0] ?? null,
       progress_totals,
     };
+  });
+
+  // Per-student progress for the Student Detail progress panels (Battery Practice + Exam Progress + the
+  // per-set review). Read-only; returns the SAME shape as the student's own /v1/progress/* endpoints, but
+  // admin-scoped: requires student.directory and takes the target student id from the path (never a
+  // session/client id). Children's data — behind the same admin auth as the rest of this page.
+  app.get('/v1/admin/students/:id/progress/summary', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    return computeProgressSummary(db, id, pickRange(req.query));
+  });
+  app.get('/v1/admin/students/:id/progress/sets', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    const q: any = req.query || {};
+    const battery = typeof q.battery === 'string' ? q.battery.trim() : '';
+    const subRaw = typeof q.subcategory === 'string' ? q.subcategory.trim() : '';
+    const sub = subRaw && subRaw.toLowerCase() !== 'all' ? subRaw : null;
+    return computeProgressSets(db, id, battery, sub, pickRange(req.query));
+  });
+  app.get('/v1/admin/students/:id/progress/set-review', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    const q: any = req.query || {};
+    const setId = typeof q.setId === 'string' ? q.setId.trim() : '';
+    return computeSetReview(db, id, setId);
   });
 
   // Edit student profile fields (STUDENTS — granular). Requires `student.update` (Super-Admin passes

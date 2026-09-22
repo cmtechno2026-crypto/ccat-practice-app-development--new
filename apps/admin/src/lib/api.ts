@@ -71,6 +71,12 @@ export const api = {
   },
   studentStats: () => req<{ total: number; active: number; suspended: number; banned: number; pending_deletion: number; practised_today: number }>('GET', '/v1/admin/students/stats'),
   studentDetail: (id: string) => req<any>('GET', `/v1/admin/students/${id}/detail`),
+  // Per-student progress for the Student Detail panels (read-only; same shape as the student Progress page).
+  getStudentProgress: (id: string) => req<any>('GET', `/v1/admin/students/${id}/progress/summary`),
+  getStudentProgressSets: (id: string, battery: string, subcategory: string) =>
+    req<any>('GET', `/v1/admin/students/${id}/progress/sets?battery=${encodeURIComponent(battery)}&subcategory=${encodeURIComponent(subcategory)}`),
+  getStudentSetReview: (id: string, setId: string) =>
+    req<any>('GET', `/v1/admin/students/${id}/progress/set-review?setId=${encodeURIComponent(setId)}`),
   createStudent: (b: { display_name: string; username: string; pin: string; grade_id: string; birth_month?: number; birth_year?: number; guardian_email?: string; guardian_name?: string; guardian_phone?: string }) =>
     req<{ id: string; username: string; display_name: string; status: string }>('POST', '/v1/admin/students', b),
   studentStatus: (id: string, version: number, to_status: string, reason_code: string, reason_text?: string) =>
