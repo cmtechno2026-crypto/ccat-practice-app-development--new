@@ -7,6 +7,7 @@ import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { hashSecret } from '../security/crypto.js';
+import { progressCardTotals } from './progress.js';
 
 // Shared break-glass enrollment: revoke any active device + live sessions, then enroll the new device
 // as the sole active one. Runs inside a caller-provided transaction so approve/direct share one path.
@@ -107,6 +108,10 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const streak = streakRow.rows[0]
       ? { current: Number(streakRow.rows[0].current), longest: Number(streakRow.rows[0].longest), last_active_day: streakRow.rows[0].last_active_day }
       : { current: 0, longest: 0, last_active_day: null };
+    // Per-student practice/exam sets-done totals for the detail cards (reconciles with the student's own
+    // Progress page). Best-effort: never fail the detail load if this aggregate errors.
+    let progress_totals: { practiceSetsDone: number; practiceSetsTotal: number; examPapersDone: number; examPapersTotal: number } | null = null;
+    try { progress_totals = await progressCardTotals(db, id); } catch { progress_totals = null; }
     return {
       id: st.id, display_name: st.display_name, username: st.username_normalized,
       grade_number: st.grade_number, grade_name: st.grade_name, status: st.status, version: st.version,
@@ -117,6 +122,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
       recent_sessions: sessions.rows, consents: consents.rows, streak,
       break_glass_requests: breakGlass.rows,
       grade_change_request: gradeReq.rows[0] ?? null,
+      progress_totals,
     };
   });
 

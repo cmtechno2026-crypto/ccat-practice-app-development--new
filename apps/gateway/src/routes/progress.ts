@@ -119,6 +119,66 @@ function avgPerQ(seconds: number | null, answered: number): number | null {
 }
 const pct = (correct: number, total: number): number | null => (total > 0 ? Math.round((100 * correct) / total) : null);
 
+// Compact per-student totals for the admin Student Detail cards (Practice sets done/total, Exam
+// papers done/total). Reuses the exact finished-set model + grade-total SQL used by /summary so the
+// admin numbers reconcile with what the student sees on their own Progress page. Combine excluded from
+// practice (mirrors the battery boxes). Takes an explicit student id (admin passes the target student).
+export async function progressCardTotals(
+  db: DB,
+  sid: string,
+): Promise<{ practiceSetsDone: number; practiceSetsTotal: number; examPapersDone: number; examPapersTotal: number }> {
+  const gradeRow = await db.query('select grade_id from ccat.students where id=$1', [sid]);
+  const gradeId = gradeRow.rows[0]?.grade_id as string | undefined;
+
+  // Practice sets DONE — finished sets, combine excluded (same rows as /summary).
+  const rows = await finishedSetRows(db, sid, {});
+  let practiceSetsDone = 0;
+  for (const row of rows) if (!isCombine(row.sub_key)) practiceSetsDone += 1;
+
+  // Practice sets TOTAL — available published sets for the grade, combine excluded.
+  let practiceSetsTotal = 0;
+  let examPapersTotal = 0;
+  let examPapersDone = 0;
+  if (gradeId) {
+    const totalRows = await db.query(
+      `select count(distinct qs.id)::int as total
+         from ccat.question_sets qs
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
+        where qs.grade_id = $1
+          and (sub.key is null or right(sub.key, 16) <> '_battery_combine')
+          and exists (select 1 from ccat.question_set_versions sv
+                       where sv.question_set_id = qs.id and sv.state = 'published'
+                         and exists (select 1 from ccat.set_version_questions svq
+                                      where svq.set_version_id = sv.id and svq.active = true))`,
+      [gradeId]);
+    practiceSetsTotal = Number(totalRows.rows[0]?.total ?? 0);
+
+    const et = await db.query(
+      `select count(distinct qs.id)::int as total
+         from ccat.question_sets qs
+        where qs.grade_id = $1
+          and exists (select 1 from ccat.question_set_versions sv
+                       where sv.question_set_id = qs.id and sv.state = 'published' and sv.allowed_exam = true
+                         and exists (select 1 from ccat.set_version_questions svq
+                                      where svq.set_version_id = sv.id and svq.active = true))`,
+      [gradeId]);
+    examPapersTotal = Number(et.rows[0]?.total ?? 0);
+
+    const doneRow = await db.query(
+      `select count(distinct qs.id)::int as done
+         from ccat.sessions s
+         join ccat.session_results r on r.session_id = s.id
+         join ccat.question_set_versions sv on sv.id = s.set_version_id
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+        where s.student_id = $1 and s.mode = 'exam'
+          and r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')
+          and qs.grade_id = $2 and sv.allowed_exam = true`,
+      [sid, gradeId]);
+    examPapersDone = Number(doneRow.rows[0]?.done ?? 0);
+  }
+  return { practiceSetsDone, practiceSetsTotal, examPapersDone, examPapersTotal };
+}
+
 export function registerProgressRoutes(app: FastifyInstance, db: DB) {
   // GET /v1/progress/summary?from=&to=
   app.get('/v1/progress/summary', { preHandler: [app.authenticateStudent] }, async (req) => {

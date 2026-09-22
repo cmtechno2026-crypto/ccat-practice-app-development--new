@@ -165,8 +165,8 @@ export function StudentDetail() {
         <Stat n={d.age_years} label="Age (computed)" />
         <Stat n={d.xp_total} label="XP" color="var(--green)" />
         <Stat n={d.coins} label="Coins" color="var(--purple)" />
-        <Stat n={d.readiness?.insufficient_data ? '—' : (d.readiness?.readiness_pct ?? '—') + '%'} label="Readiness" />
-        <Stat n={d.streak ? `🔥 ${d.streak.current}d` : '—'} label={`Streak · best ${d.streak?.longest ?? 0}d`} color="var(--amber)" />
+        <Stat n={d.progress_totals ? `${d.progress_totals.practiceSetsDone} / ${d.progress_totals.practiceSetsTotal}` : '—'} label="Practice sets done" color="var(--blue, #2f6fd0)" />
+        <Stat n={d.progress_totals ? `${d.progress_totals.examPapersDone} / ${d.progress_totals.examPapersTotal}` : '—'} label="Exam sets done" color="var(--blue, #2f6fd0)" />
       </div>
 
       <style>{`
@@ -185,24 +185,26 @@ export function StudentDetail() {
         .sd-green .sdic{background:var(--green,#1f9d6b)} .sd-blue .sdic{background:#2f6fd0}
         .sd-amber .sdic{background:var(--amber,#c9820e)} .sd-purple .sdic{background:var(--purple,#6d4dd6)} .sd-coral .sdic{background:var(--coral,#e0533d)}
         .sdbignum{font-weight:800;font-size:26px;line-height:1}
-        .sdmember{--m-card:#fff;--m-line:#e7e8f2;display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:15px 18px;border:1px solid var(--m-line);border-radius:16px;background:var(--m-card);box-shadow:0 1px 2px rgba(31,35,64,.05);margin-top:16px}
+        .sdmember{--m-card:#fff;--m-line:#e7e8f2;display:flex;align-items:center;gap:16px;flex-wrap:nowrap;padding:14px 18px;border:1px solid var(--m-line);border-radius:16px;background:var(--m-card);box-shadow:0 1px 2px rgba(31,35,64,.05);margin-top:16px}
         @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdmember{--m-card:#1c1e2b;--m-line:#2b2e40}}
         :root[data-theme="dark"] .sdmember{--m-card:#1c1e2b;--m-line:#2b2e40}
         .sdmember .sdm-badge{width:42px;height:42px;border-radius:12px;background:var(--purple,#6d4dd6);color:#fff;display:grid;place-items:center;font-size:19px;flex:none}
         .sdmember .sdm-l{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#6b6f8a);font-weight:700}
         .sdmember .sdm-v{font-weight:800;font-size:16px}
         .sdmember .sdm-sub{font-size:12px;color:var(--muted,#6b6f8a);margin-top:3px}
-        .sdmember .sdm-controls{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-left:auto}
+        .sdmember .sdm-controls{display:flex;align-items:flex-end;gap:10px;flex-wrap:nowrap;margin-left:auto}
+        .sdmember .sdm-info{min-width:0}
         .sdmember .sdm-fld{display:flex;flex-direction:column;gap:3px}
         .sdmember .sdm-fld > span{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#6b6f8a)}
         .sdmember .sdm-controls .input{font-size:13px}
-        .sdmember .sdm-controls select.input{min-width:150px}
-        @media (max-width:900px){.sdbento{grid-template-columns:repeat(2,1fr)}.sdtile.sdbig{grid-column:span 2}}
+        .sdmember .sdm-controls select.input{min-width:128px}
+        @media (max-width:900px){.sdbento{grid-template-columns:repeat(2,1fr)}.sdtile.sdbig{grid-column:span 2}
+          .sdmember{flex-wrap:wrap}.sdmember .sdm-controls{flex-wrap:wrap;margin-left:0}.sdmember .sdm-controls select.input{min-width:150px}}
         @media (max-width:560px){.sdbento{grid-template-columns:1fr;grid-auto-rows:auto}.sdtile,.sdtile.sdbig{grid-column:span 1;grid-row:auto}.sdbody{overflow:visible}}
       `}</style>
       <div className="sdmember">
         <span className="sdm-badge">⭐</span>
-        <div>
+        <div className="sdm-info">
           <div className="sdm-l">Membership</div>
           <div className="sdm-v">{planLabel}</div>
           <div className="sdm-sub">
