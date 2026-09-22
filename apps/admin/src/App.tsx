@@ -16,6 +16,7 @@ import { Customization } from './pages/Customization';
 import { CoinsXp } from './pages/CoinsXp';
 import { Announcements } from './pages/Announcements';
 import { Teachers } from './pages/Teachers';
+import { TeacherPractice, TeacherExam } from './pages/TeacherContent';
 import { Grades } from './pages/Grades';
 import { Flags } from './pages/Flags';
 import { Admins } from './pages/Admins';
@@ -188,6 +189,9 @@ export function App() {
         <Route element={<Layout />}>
           <Route path="/students" element={<Students />} />
           <Route path="/students/:id" element={<StudentDetail />} />
+          {/* Teachers can browse & preview published Practice / Exam content (grade-selectable). */}
+          <Route path="/teacher-practice" element={<TeacherPractice />} />
+          <Route path="/teacher-exam" element={<TeacherExam />} />
           <Route path="*" element={<Navigate to="/students" replace />} />
         </Route>
       </Routes>
@@ -199,6 +203,8 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/students" element={<Students />} />
         <Route path="/students/:id" element={<StudentDetail />} />
+        <Route path="/teacher-practice" element={<TeacherPractice />} />
+        <Route path="/teacher-exam" element={<TeacherExam />} />
         {/* Content: set browser (category tree + difficulty tabs) is the home; exam papers 2nd tab. */}
         <Route path="/content" element={<Content />} />
         <Route path="/content/exams" element={<ExamPapers />} />

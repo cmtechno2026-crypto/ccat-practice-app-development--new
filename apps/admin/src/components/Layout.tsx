@@ -98,6 +98,8 @@ function railForSite(site: string): RailItem[] { return site === 'teacher' ? TEA
 // rail here and the routes in App.tsx). Their student reads are scoped to assigned students server-side.
 const TEACHER_ONLY_RAIL: RailItem[] = [
   { to: '/students', label: 'Students', ic: '🧒', match: '/students' },
+  { to: '/teacher-practice', label: 'Practice', ic: '📚', match: '/teacher-practice' },
+  { to: '/teacher-exam', label: 'Exam', ic: '📝', match: '/teacher-exam' },
 ];
 
 function sectionFor(path: string, rail: RailItem[]): RailItem | undefined {

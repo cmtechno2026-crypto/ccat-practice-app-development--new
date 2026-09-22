@@ -263,6 +263,108 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     return { added };
   });
 
+  // ---- Teacher Practice/Exam browse (read-only) ------------------------------------------------------
+  // Teachers get the SAME published content the web client shows, but they aren't students, so they pick
+  // a grade explicitly. These two routes are read-only and grade-parameterised; any signed-in admin may
+  // call them (published content only — nothing student-specific, no scoring, no writes).
+  const teacherImgUrl = (blocks: unknown): string | null => {
+    if (!Array.isArray(blocks)) return null;
+    const img = (blocks as any[]).find((b) => b && b.type === 'image' && typeof b.url === 'string');
+    return img ? (img.url as string) : null;
+  };
+
+  // GET /v1/admin/teacher/catalog?grade_id=  → published sets for that grade, one row per set, grouped
+  // client-side into battery → subcategory (practice) and a flat paper list (exam). Mirrors /v1/catalog
+  // minus per-student progress and payment locks.
+  app.get('/v1/admin/teacher/catalog', guard, async (req) => {
+    const gradeId = String((req.query as any)?.grade_id ?? '').trim();
+    if (!gradeId) throw Errors.validation('grade_id is required');
+    const { rows } = await db.query(
+      `select sv.id as set_version_id, qs.name, cat.key as category_key, cat.name as category_name,
+              sub.name as subcategory, sub.key as subcategory_key,
+              cat.display_order as cat_order, sub.display_order as sub_order,
+              d.key as difficulty, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.duration_minutes,
+              g.practice_enabled as grade_practice_enabled
+         from ccat.grades g
+         join ccat.question_sets qs on qs.grade_id = g.id
+         join ccat.categories cat on cat.id = qs.category_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
+         join ccat.question_set_versions sv on sv.question_set_id = qs.id
+              and sv.state = 'published'
+              and exists (select 1 from ccat.set_version_questions svq where svq.set_version_id = sv.id and svq.active = true)
+         left join ccat.difficulties d on d.id = sv.difficulty_id
+        where g.id = $1
+        order by cat.display_order, sub.display_order, sv.created_at asc, sv.id asc`,
+      [gradeId],
+    );
+    return rows.map((r: any) => ({
+      set_version_id: r.set_version_id,
+      name: r.name,
+      category_key: r.category_key,
+      category_name: r.category_name,
+      subcategory: r.subcategory ?? null,
+      subcategory_key: r.subcategory_key ?? null,
+      difficulty: r.difficulty ?? null,
+      question_count: r.question_count,
+      duration_minutes: r.duration_minutes ?? null,
+      allowed_modes: [
+        (r.allowed_practice && r.grade_practice_enabled !== false) ? 'practice' : null,
+        r.allowed_exam ? 'exam' : null,
+      ].filter(Boolean),
+    }));
+  });
+
+  // GET /v1/admin/teacher/set-preview?setId=  → the set's questions with prompts, options (correct flag)
+  // and explanations, in set order. Read-only; no attempt, no scoring. Shape matches the Student Detail
+  // set-review modal so the admin can reuse its renderer.
+  app.get('/v1/admin/teacher/set-preview', guard, async (req) => {
+    const setId = String((req.query as any)?.setId ?? '').trim();
+    if (!setId) throw Errors.validation('setId is required');
+    const head = await db.query(
+      `select qs.name as set_name, cat.name as category_name, sub.name as subcategory, sv.duration_minutes, sv.allowed_exam
+         from ccat.question_set_versions sv
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.categories cat on cat.id = qs.category_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
+        where sv.id = $1`, [setId]);
+    if (head.rows.length === 0) throw Errors.notFound('Set not found');
+    const h = head.rows[0]!;
+    const { rows } = await db.query(
+      `select svq.position, qv.id as question_version_id, qv.question_type,
+              qv.prompt_blocks, qv.option_blocks, qv.correct_option_ids, qv.explanation_blocks
+         from ccat.set_version_questions svq
+         join ccat.question_versions qv on qv.id = svq.question_version_id
+        where svq.set_version_id = $1 and svq.active = true
+        order by svq.position asc`, [setId]);
+    const questions = rows.map((r: any) => {
+      const correctIds: string[] = Array.isArray(r.correct_option_ids) ? r.correct_option_ids : [];
+      const options = (Array.isArray(r.option_blocks) ? r.option_blocks : []).map((o: any) => ({
+        option_id: o.option_id,
+        content: o.content,
+        image_url: teacherImgUrl(o?.content),
+        correct: correctIds.includes(o.option_id),
+        selected: false,
+      }));
+      return {
+        position: r.position,
+        question_version_id: r.question_version_id,
+        question_type: r.question_type,
+        prompt_blocks: r.prompt_blocks,
+        image_url: teacherImgUrl(r.prompt_blocks),
+        explanation_blocks: r.explanation_blocks ?? null,
+        options,
+      };
+    });
+    return {
+      set_name: h.set_name,
+      category_name: h.category_name,
+      subcategory: h.subcategory ?? null,
+      duration_minutes: h.duration_minutes ?? null,
+      is_exam: h.allowed_exam === true,
+      questions,
+    };
+  });
+
   // Edit student profile fields (STUDENTS — granular). Requires `student.update` (Super-Admin passes
   // via role). Optimistic concurrency via If-Match against students.version (same as status changes).
   // Only display_name and grade_id are editable here; grade is a plain FK, so changing it does NOT

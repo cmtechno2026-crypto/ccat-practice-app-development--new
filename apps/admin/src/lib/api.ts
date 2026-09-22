@@ -205,6 +205,10 @@ export const api = {
   setTeacherStudents: (id: string, student_ids: string[]) => req<{ student_ids: string[] }>('PUT', `/v1/admin/teachers/${id}/students`, { student_ids }),
   // Additive assign — add students to a teacher without touching existing assignments (Students-page bulk assign).
   addTeacherStudents: (id: string, student_ids: string[]) => req<{ added: number }>('POST', `/v1/admin/teachers/${id}/students/add`, { student_ids }),
+  // Teacher Practice/Exam browse (read-only, grade-parameterised — mirrors the web CCAT client).
+  publicGrades: () => req<{ id: string; grade_number: number; name: string; display_order: number }[]>('GET', '/v1/grades'),
+  teacherCatalog: (gradeId: string) => req<any[]>('GET', `/v1/admin/teacher/catalog?grade_id=${encodeURIComponent(gradeId)}`),
+  teacherSetPreview: (setId: string) => req<any>('GET', `/v1/admin/teacher/set-preview?setId=${encodeURIComponent(setId)}`),
   // accounts
   accounts: () => req<{ items: any[] }>('GET', '/v1/admin/accounts'),
   createAccount: (b: { email: string; display_name: string; role: string; permissions: string[]; temp_password?: string; recovery_channel?: 'email' | 'phone' }) => req<{ id: string; temp_password: string; generated: boolean }>('POST', '/v1/admin/accounts', b),
