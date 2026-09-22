@@ -17,6 +17,6 @@ create table if not exists ccat.teacher_students (
 create index if not exists teacher_students_by_student on ccat.teacher_students(student_id);
 
 -- Permission to manage teacher accounts + their assignments (super_admin bypasses this anyway).
-insert into ccat.permissions(key, description, dangerous) values
+insert into ccat.permissions(key, description, super_admin_only) values
   ('teacher.students.manage', 'Manage teacher accounts and their assigned students', false)
 on conflict (key) do nothing;

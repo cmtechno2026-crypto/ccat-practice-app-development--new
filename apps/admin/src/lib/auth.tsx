@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { api, setToken, getToken, setSite, getSite } from './api';
 
-export interface Me { id: string; role: 'admin' | 'super_admin'; email: string; display_name: string; permissions: string[]; sites?: string[]; active_site?: string; }
+export interface Me { id: string; role: 'admin' | 'super_admin'; email: string; display_name: string; permissions: string[]; sites?: string[]; active_site?: string; is_teacher?: boolean; }
 interface AuthState {
   me: Me | null; ready: boolean;
   login: (email: string, password: string) => Promise<void>;

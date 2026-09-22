@@ -99,7 +99,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   app.get('/v1/admin/me', { preHandler: [authenticateAdmin] }, async (req) => {
     const a = req.admin!;
     const p = await db.query('select email, display_name from ccat.admin_profiles where id=$1', [a.adminId]);
-    return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions], sites: a.sites, active_site: a.activeSite };
+    return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions], sites: a.sites, active_site: a.activeSite, is_teacher: a.isTeacher };
   });
 
   // GET /v1/admin/students — directory: computed Age + raw guardian PII for authorized users (§24).

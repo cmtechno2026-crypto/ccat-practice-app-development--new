@@ -94,6 +94,12 @@ const TEACHER_RAIL: RailItem[] = [
 const SITE_NAMES: Record<string, string> = { ccat: 'CCAT Practice', teacher: 'Teacher Hub' };
 function railForSite(site: string): RailItem[] { return site === 'teacher' ? TEACHER_RAIL : RAIL; }
 
+// Teacher accounts see ONLY the student directory — every other admin feature is locked away (both the
+// rail here and the routes in App.tsx). Their student reads are scoped to assigned students server-side.
+const TEACHER_ONLY_RAIL: RailItem[] = [
+  { to: '/students', label: 'Students', ic: '🧒', match: '/students' },
+];
+
 function sectionFor(path: string, rail: RailItem[]): RailItem | undefined {
   // longest match wins so '/' doesn't swallow everything
   return [...rail].filter(r => (r.match === '/' ? path === '/' : path.startsWith(r.match)))
@@ -104,10 +110,10 @@ export function Layout() {
   const { me, logout, can, sites, activeSite, switchSite } = useAuth();
   const loc = useLocation();
   const [siteMenu, setSiteMenu] = useState(false);
-  const RAIL_ACTIVE = railForSite(activeSite);
+  const RAIL_ACTIVE = me?.is_teacher ? TEACHER_ONLY_RAIL : railForSite(activeSite);
   // Home path for the active site: the brand logo and the back-link go here, so from Teacher Hub they
   // land on the Teacher dashboard, not the CCAT one.
-  const homePath = activeSite === 'teacher' ? '/teacher' : '/';
+  const homePath = me?.is_teacher ? '/students' : (activeSite === 'teacher' ? '/teacher' : '/');
   const nav = useNavigate();
   // Sign out AND reset the URL to the default route, so the stale protected page can't be replayed on the
   // next sign-in (the router unmounts once logged out; without this the address bar keeps the old path).

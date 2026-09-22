@@ -103,6 +103,19 @@ export function App() {
   const { me, ready } = useAuth();
   if (!ready) return <div className="empty" style={{ paddingTop: 80 }}>Loading…</div>;
   if (!me) return <Login />;
+  // Teacher accounts are LOCKED to the student directory + read-only student detail. Every other route
+  // redirects to /students, so nothing they can't use is reachable (the gateway also enforces scope).
+  if (me.is_teacher) {
+    return (
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/students" element={<Students />} />
+          <Route path="/students/:id" element={<StudentDetail />} />
+          <Route path="*" element={<Navigate to="/students" replace />} />
+        </Route>
+      </Routes>
+    );
+  }
   return (
     <Routes>
       <Route element={<Layout />}>
