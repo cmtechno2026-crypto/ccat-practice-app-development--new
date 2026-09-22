@@ -28,14 +28,17 @@ export async function loadAdminPermissions(db: DB, adminId: string, role: string
     const all = await db.query('select key from ccat.permissions');
     return new Set(all.rows.map((r) => r.key as string));
   }
-  const direct = await db.query('select permission_key from ccat.admin_permissions where admin_id=$1', [adminId]);
-  const viaBundle = await db.query(
-    `select bp.permission_key
-       from ccat.admin_profile_bundles apb
-       join ccat.admin_bundle_permissions bp on bp.bundle_id = apb.bundle_id
-      where apb.admin_id = $1`,
-    [adminId],
-  );
+  // Independent queries — run concurrently (one DB round-trip instead of two, sequentially).
+  const [direct, viaBundle] = await Promise.all([
+    db.query('select permission_key from ccat.admin_permissions where admin_id=$1', [adminId]),
+    db.query(
+      `select bp.permission_key
+         from ccat.admin_profile_bundles apb
+         join ccat.admin_bundle_permissions bp on bp.bundle_id = apb.bundle_id
+        where apb.admin_id = $1`,
+      [adminId],
+    ),
+  ]);
   return new Set([...direct.rows, ...viaBundle.rows].map((r) => r.permission_key as string));
 }
 
@@ -102,12 +105,16 @@ export function makeAuthenticateAdmin(db: DB, hmacSecret: string) {
     if (payload.pv && a.password_hash && credentialFingerprint(a.password_hash) !== payload.pv) {
       throw Errors.unauthorized('Session no longer valid; sign in again');
     }
-    const permissions = await loadAdminPermissions(db, a.id, a.security_role);
-    const sites = await loadAdminSites(db, a.id, a.security_role);
+    // These three lookups are independent — run them concurrently to cut per-request auth latency
+    // (previously three sequential round-trips to the DB on EVERY admin request).
+    const [permissions, sites, isTeacher] = await Promise.all([
+      loadAdminPermissions(db, a.id, a.security_role),
+      loadAdminSites(db, a.id, a.security_role),
+      loadIsTeacher(db, a.id),
+    ]);
     // Active site comes from the client (X-Admin-Site); fall back to ccat, then the first granted site.
     const requested = String(req.headers['x-admin-site'] || '').trim().toLowerCase();
     const activeSite = sites.includes(requested) ? requested : (sites.includes('ccat') ? 'ccat' : sites[0]!);
-    const isTeacher = await loadIsTeacher(db, a.id);
     req.admin = { adminId: a.id, role: a.security_role, permissions, sites, activeSite, isTeacher };
   };
 }
