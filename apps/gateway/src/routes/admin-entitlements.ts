@@ -127,10 +127,11 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
               `select s.display_name, g.grade_number, g.name as grade_name
                  from ccat.student_guardians sg
                  join ccat.students s on s.id = sg.student_id and s.status <> 'purged'
+                 join ccat.guardian_contacts gc2 on gc2.id = sg.guardian_id
                  left join ccat.grades g on g.id = s.grade_id
-                where sg.guardian_id = $1
+                where lower(gc2.email::text) = $1
                 order by sg.is_primary desc, s.display_name`,
-              [guardianId],
+              [email.toLowerCase()],
             );
             if (stu.rows.length > 0) {
               students = stu.rows.map((r: any) => {
