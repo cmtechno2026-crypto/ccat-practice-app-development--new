@@ -13,3 +13,6 @@ dist/
 
 *.zip
 unnecessary/
+
+# Local working artifacts (mockups, prompt files) — not part of the app
+Claude outputs/
