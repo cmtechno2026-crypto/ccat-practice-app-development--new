@@ -156,7 +156,7 @@ const BODY = `
   <div class="wrap">
     <div class="center sectlabel"><span class="eyebrow">Pricing</span>
     <h2>Pick a plan that fits your child.</h2>
-    <p class="lede">Start free. Standard unlocks all practice · Plus adds full timed exams · Premium adds live mentoring. Prices in CAD, 1-year access from purchase.</p></div>
+    <p class="lede">Start free. Standard unlocks all practice · Plus adds full timed exams · Premium adds live mentoring. Prices in CAD, 1-year access from purchase. 13% HST added at checkout.</p></div>
 
     <div class="price-grid">
       <div class="plan free">

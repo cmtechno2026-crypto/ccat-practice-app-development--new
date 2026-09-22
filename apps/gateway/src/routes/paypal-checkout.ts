@@ -6,6 +6,7 @@ import { Errors, AppError } from '../errors.js';
 import { resolveEntitlement, checkoutRejectReason, loadDefaultPlan, computeEffective, clampTier, type Tier } from '../lib/entitlements.js';
 import { createOrder, captureOrder, paypalConfigured, encodeCustomId, decodeCustomId } from '../lib/paypal.js';
 import { effectiveAmountForTier } from '../lib/promo.js';
+import { withHst } from '../lib/tax.js';
 import { grantPaidEntitlementPaypal } from '../lib/paypal-grant.js';
 import { verifyEmailToken } from './email-verify.js';
 
@@ -53,10 +54,15 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
     const reason = checkoutRejectReason(ent.tier, tier);
     if (reason) throw Errors.forbidden('UPGRADE_NOT_ELIGIBLE', `Cannot upgrade from ${ent.tier} to ${tier} (${reason})`);
 
+    // 13% HST added on top of the (promo-discounted) subtotal. The TOTAL is what PayPal charges and what
+    // is stamped into custom_id, so the grant validates against the tax-inclusive amount PayPal captures.
+    const priced = withHst(amount);
     const order = await createOrder(cfg, {
       tier,
-      amount,
-      customId: encodeCustomId(guardianEmail, tier, req.student!.studentId, amount),
+      amount: priced.total,
+      itemTotal: priced.subtotal,
+      taxTotal: priced.tax,
+      customId: encodeCustomId(guardianEmail, tier, req.student!.studentId, priced.total),
       // Success → the requested page (Home for landing Case 1, My Plan for in-app upgrades). Cancel/decline
       // → always My Plan, which shows the "Checkout canceled" card (the buyer is signed in by this point).
       returnUrl: `${cfg.webAppOrigin}/${returnTo}?checkout=success`,
@@ -180,11 +186,15 @@ export function registerPaypalCheckoutRoutes(app: FastifyInstance, db: DB, cfg: 
       throw Errors.conflict('EMAIL_IN_USE', 'This email already has an account — please log in to upgrade.', { field: 'email' });
     }
 
+    // 13% HST added on top of the (promo-discounted) subtotal — same as the authed path above.
+    const priced = withHst(amount);
     const order = await createOrder(cfg, {
       tier,
-      amount,
+      amount: priced.total,
+      itemTotal: priced.subtotal,
+      taxTotal: priced.tax,
       // studentId is empty — the grant keys on the guardian email; the account is created after payment.
-      customId: encodeCustomId(email, tier, '', amount),
+      customId: encodeCustomId(email, tier, '', priced.total),
       returnUrl: `${cfg.webAppOrigin}/register?checkout=success`,
       cancelUrl: `${cfg.webAppOrigin}/?checkout=cancel`,
     });

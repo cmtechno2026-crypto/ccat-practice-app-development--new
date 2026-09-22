@@ -47,17 +47,28 @@ export interface CreatedOrder { id: string; approveUrl: string | null; status: s
 // Create a one-time CAPTURE order. custom_id carries the guardian key + tier + student so the capture
 // and webhook can grant to the right guardian without trusting the client.
 export async function createOrder(cfg: Config, args: {
+  // `amount` is the TOTAL charged (pre-tax subtotal + HST). When itemTotal/taxTotal are given, they are sent
+  // as a PayPal amount breakdown so tax shows on PayPal's own receipt too; PayPal requires itemTotal +
+  // taxTotal === amount, which withHst() guarantees.
   tier: Tier; amount: string; customId: string; returnUrl: string; cancelUrl: string;
+  itemTotal?: string; taxTotal?: string;
 }): Promise<CreatedOrder> {
   const base = paypalBase(cfg);
   const token = await getAccessToken(cfg);
+  const amount: any = { currency_code: 'CAD', value: args.amount };
+  if (args.itemTotal != null && args.taxTotal != null) {
+    amount.breakdown = {
+      item_total: { currency_code: 'CAD', value: args.itemTotal },
+      tax_total: { currency_code: 'CAD', value: args.taxTotal },
+    };
+  }
   const res = await fetch(`${base}/v2/checkout/orders`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       intent: 'CAPTURE',
       purchase_units: [{
-        amount: { currency_code: 'CAD', value: args.amount },
+        amount,
         custom_id: args.customId.slice(0, 127),
         description: `CCAT membership (${args.tier})`.slice(0, 127),
       }],

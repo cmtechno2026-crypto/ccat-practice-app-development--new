@@ -5,7 +5,7 @@ import { useApp } from '../lib/store';
 import { client } from '../lib/api';
 import { AppBar, Card, Loader } from '../components/ui';
 import { PAYMENTS_ENABLED, TIER_CATALOG, TIER_SEQUENCE, tierIndex } from '../lib/entitlements';
-import { usePromo, discountPrice } from '../lib/promo';
+import { usePromo, discountPrice, withHstDisplay } from '../lib/promo';
 import { PromoInline } from '../components/DiscountBanner';
 import { PAYPAL_INCONTEXT } from '../lib/paypal';
 import { PayPalButtonsBox } from '../components/PayPalButtonsBox';
@@ -146,6 +146,8 @@ export function MyPlanScreen() {
               const isCurrent = t === current;
               const isUpgrade = ti > curIdx;
               const disc = promo.active ? discountPrice(info.price, promo.percent) : null;
+              // 13% HST added at checkout; hst.total is the amount actually charged (shown on the button).
+              const hst = t === 'free' ? null : withHstDisplay(disc ? disc.newStr : info.price);
               return (
                 <article key={t} className={`pp-card${info.badge ? ' premium' : ''}`}>
                   {info.badge && <div className="pp-badge">{info.badge}</div>}
@@ -155,6 +157,7 @@ export function MyPlanScreen() {
                     {disc && <span className="pp-price-old" style={{ textDecoration: 'line-through', opacity: 0.5, fontWeight: 700, margin: '0 6px' }}>{disc.oldStr}</span>}
                     <span className="pp-currency">CAD</span>
                   </div>
+                  {hst && <p className="pp-term" style={{ opacity: 0.75 }}>+ 13% HST · {hst.total} CAD total</p>}
                   {info.accessTerm && <p className="pp-term">{info.accessTerm}</p>}
                   {info.desc && <p className="pp-desc">{info.desc}</p>}
                   <div className="pp-divider" />
@@ -167,7 +170,7 @@ export function MyPlanScreen() {
                     <button className="pp-btn secondary" type="button" disabled>Current Plan</button>
                   ) : isUpgrade ? (
                     <button className="pp-btn primary" type="button" disabled={busyTier != null} onClick={() => openConfirm(t)}>
-                      {busyTier === t ? 'Redirecting…' : `Get ${info.name} — ${disc ? `${disc.newStr} CAD` : info.priceLabel}`}
+                      {busyTier === t ? 'Redirecting…' : `Get ${info.name} — ${hst ? `${hst.total} CAD` : (disc ? `${disc.newStr} CAD` : info.priceLabel)}`}
                     </button>
                   ) : (
                     <button className="pp-btn secondary" type="button" disabled>Included</button>

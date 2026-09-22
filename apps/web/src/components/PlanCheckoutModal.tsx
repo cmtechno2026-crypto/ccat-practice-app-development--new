@@ -5,7 +5,7 @@ import { client, getDeviceHash } from '../lib/api';
 import { useApp } from '../lib/store';
 import { TIER_CATALOG, tierIndex } from '../lib/entitlements';
 import { PAYPAL_INCONTEXT } from '../lib/paypal';
-import { usePromo, discountPrice } from '../lib/promo';
+import { usePromo, discountPrice, withHstDisplay } from '../lib/promo';
 import { PayPalButtonsBox } from './PayPalButtonsBox';
 
 // Landing-page checkout modal. Opened by a "Get <plan>" button on the public landing (WelcomeScreen).
@@ -39,7 +39,11 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
   // charges the same discounted amount, so this display matches what PayPal bills.
   const promo = usePromo();
   const disc = promo.active ? discountPrice(info.price, promo.percent) : null;
-  const payLabel = disc ? `${disc.newStr} CAD` : info.priceLabel;
+  // Effective pre-tax price (after any live promo), then + 13% HST. hst.total is what PayPal actually
+  // charges, so every "pay" label and the box total use it; the gateway computes the same number.
+  const subtotalStr = disc ? disc.newStr : info.price;
+  const hst = withHstDisplay(subtotalStr);
+  const payLabel = hst ? `${hst.total} CAD` : (disc ? `${disc.newStr} CAD` : info.priceLabel);
 
   const [step, setStep] = useState<Step>('email');
   const [busy, setBusy] = useState(false);
@@ -256,6 +260,22 @@ export function PlanCheckoutModal({ tier, onClose }: { tier: Sellable; onClose: 
             {disc && <span style={{ textDecoration: 'line-through', opacity: 0.5, fontWeight: 700, marginLeft: 6 }}>{disc.oldStr}</span>}
           </span>
         </div>
+
+        {hst && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13,
+              color: '#5b6b86', padding: '4px 2px 0' }}>
+              <span>HST (13%)</span>
+              <span>{hst.tax} CAD</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between',
+              fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 15, color: '#1A5EAB',
+              borderTop: '1px solid #e7eaf3', marginTop: 6, paddingTop: 6 }}>
+              <span>Total</span>
+              <span>{hst.total} CAD</span>
+            </div>
+          </>
+        )}
 
         {err && <div style={S.err} role="alert">{err}</div>}
 

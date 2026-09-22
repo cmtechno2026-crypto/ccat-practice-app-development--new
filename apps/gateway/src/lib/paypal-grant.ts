@@ -2,6 +2,7 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { SELLABLE_TIERS, tierRank, tierUnlocksText, TIER_LABELS, type Tier } from './entitlements.js';
 import { amountForTier } from './paypal.js';
+import { withHst, HST_RATE } from './tax.js';
 import { sendEmail } from './email.js';
 
 function escapeHtml(s: string): string {
@@ -30,25 +31,27 @@ export async function grantPaidEntitlementPaypal(
     return 'ignored';
   }
 
-  // Defence in depth: the captured amount must match what this order was created to charge. That is the
-  // full server base price, OR the promo-discounted price stamped into custom_id at order creation
-  // (args.expectedAmount) — validating against the ORDER's own amount, not a recomputed live promo which
-  // may have ended before capture/webhook arrived. The stamped amount is trusted only when it falls within
-  // the allowed discount band [10%..100%] of the base (promo percent is capped at 90), so a malformed or
-  // out-of-band stamp falls back to the full base price rather than being honoured. Legacy orders (no 4th
-  // custom_id segment) pass expectedAmount=null and validate against the base, exactly as before.
+  // Defence in depth: the captured amount must match what this order was created to charge. Every charge is
+  // the (promo-discounted) subtotal PLUS 13% HST, so `expected` here is TAX-INCLUSIVE. The order stamps the
+  // exact tax-inclusive total into custom_id (args.expectedAmount) — validating against the ORDER's own
+  // amount, not a recomputed live promo which may have ended before capture/webhook arrived. The stamp is
+  // trusted only when its implied pre-tax subtotal (stamp / 1.13) falls within the allowed discount band
+  // [10%..100%] of the base (promo percent is capped at 90); a malformed or out-of-band stamp falls back to
+  // the full base price + HST rather than being honoured. Legacy orders (no 4th custom_id segment) pass
+  // expectedAmount=null and validate against base + HST.
   const base = amountForTier(cfg, tier);
-  let expected = base;
+  let expected = withHst(base).total;
   if (args.expectedAmount != null && args.expectedAmount !== '') {
     const stamped = Number(args.expectedAmount);
     const b = Number(base);
-    if (Number.isFinite(stamped) && b > 0 && stamped >= b * 0.10 - 0.005 && stamped <= b + 0.005) {
+    const impliedSubtotal = stamped / (1 + HST_RATE);
+    if (Number.isFinite(stamped) && b > 0 && impliedSubtotal >= b * 0.10 - 0.005 && impliedSubtotal <= b + 0.005) {
       expected = args.expectedAmount;
     } else {
-      args.log?.warn?.({ tier, stamped: args.expectedAmount, base }, 'paypal grant: stamped amount out of band — using base');
+      args.log?.warn?.({ tier, stamped: args.expectedAmount, base }, 'paypal grant: stamped amount out of band — using base + HST');
     }
   }
-  if (args.amount != null && expected && Number(args.amount) !== Number(expected)) {
+  if (args.amount != null && expected && Math.abs(Number(args.amount) - Number(expected)) > 0.005) {
     args.log?.error?.({ tier, paid: args.amount, expected }, 'paypal grant: amount/tier mismatch — refusing');
     return 'amount_mismatch';
   }

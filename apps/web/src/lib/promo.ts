@@ -84,3 +84,23 @@ export function discountPrice(priceStr: string, percent: number): { oldStr: stri
   const fmt = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
   return { oldStr: fmt(amt), newStr: fmt(next) };
 }
+
+// 13% HST is added on top of every plan price at checkout and CHARGED by the gateway. This mirrors the
+// gateway's withHst() (apps/gateway/src/lib/tax.ts) so the amount shown equals the amount billed; if the
+// rate changes, update BOTH constants together.
+export const HST_RATE = 0.13;
+
+// Split a displayed price string ("$49.50", "$99", "49") into { subtotal, tax, total } display strings
+// (each "$"-prefixed). Returns null on an unparsable/<=0 price so callers can fall back to the plain label.
+export function withHstDisplay(priceStr: string): { subtotal: string; tax: string; total: string } | null {
+  const m = priceStr.match(/([\d.]+)/);
+  const raw = m?.[1];
+  if (!raw) return null;
+  const sub = parseFloat(raw);
+  if (!Number.isFinite(sub) || sub <= 0) return null;
+  const s = Math.round(sub * 100) / 100;
+  const tax = Math.round(s * HST_RATE * 100) / 100;
+  const total = Math.round((s + tax) * 100) / 100;
+  const fmt = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
+  return { subtotal: fmt(s), tax: fmt(tax), total: fmt(total) };
+}
