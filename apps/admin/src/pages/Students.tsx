@@ -111,7 +111,9 @@ function loadCols(): Set<string> {
 
 // ---- component -------------------------------------------------------------
 export function Students() {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
+  // Teachers must not see guardian contact info — hide the Parent email / phone columns for them.
+  const isTeacher = !!me?.is_teacher;
   const nav = useNavigate();
   const toast = useToast();
 
@@ -200,8 +202,8 @@ export function Students() {
   };
 
   const exportCsv = () => {
-    const head = ['Username', 'Name', 'Grade', 'Status', ...(PAYMENTS_ENABLED ? ['Tier'] : []), 'Registered', 'Readiness %', 'XP', 'Coins', 'Sets', 'Parent email', 'Parent phone', 'Devices'];
-    const lines = items.map(r => [r.username, r.display_name, r.grade_number, r.display_status, ...(PAYMENTS_ENABLED ? [tierLabel(r.membership_tier)] : []), fmtRegDate(r.created_at), r.readiness_pct ?? '', r.xp_total, r.coins, r.sets_completed ?? '', r.guardian_email ?? '', r.guardian_phone ?? '', `${r.device_active}/${r.device_total}`]
+    const head = ['Username', 'Name', 'Grade', 'Status', ...(PAYMENTS_ENABLED ? ['Tier'] : []), 'Registered', 'Readiness %', 'XP', 'Coins', 'Sets', ...(isTeacher ? [] : ['Parent email', 'Parent phone']), 'Devices'];
+    const lines = items.map(r => [r.username, r.display_name, r.grade_number, r.display_status, ...(PAYMENTS_ENABLED ? [tierLabel(r.membership_tier)] : []), fmtRegDate(r.created_at), r.readiness_pct ?? '', r.xp_total, r.coins, r.sets_completed ?? '', ...(isTeacher ? [] : [r.guardian_email ?? '', r.guardian_phone ?? '']), `${r.device_active}/${r.device_total}`]
       .map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
     const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -257,7 +259,7 @@ export function Students() {
             <div className="popover" onClick={e => e.stopPropagation()}>
               <div className="ph">Show columns</div>
               <label style={{ opacity: .5 }}><input type="checkbox" checked disabled />Student</label>
-              {ALL_COLS.map(c => <label key={c.key}><input type="checkbox" checked={cols.has(c.key)} onChange={() => toggleCol(c.key)} />{c.label}</label>)}
+              {ALL_COLS.filter(c => !(isTeacher && (c.key === 'email' || c.key === 'phone'))).map(c => <label key={c.key}><input type="checkbox" checked={cols.has(c.key)} onChange={() => toggleCol(c.key)} />{c.label}</label>)}
             </div>
           )}
         </button>
@@ -293,7 +295,7 @@ export function Students() {
 
       {/* filter chips */}
       <div className="filterchips">
-        <input className="searchbox" placeholder="Search username, name, email or phone…" value={q} onChange={e => setQ(e.target.value)} />
+        <input className="searchbox" placeholder={isTeacher ? 'Search username or name…' : 'Search username, name, email or phone…'} value={q} onChange={e => setQ(e.target.value)} />
         {chip(null, 'All', stats?.total)}
         {chip('active', 'Active', stats?.active)}
         {chip('suspended', 'Suspended', stats?.suspended)}
@@ -333,8 +335,8 @@ export function Students() {
               {cols.has('tier') && <th>Tier</th>}
               {cols.has('readiness') && <th>Readiness</th>}
               {cols.has('progress') && <th>Progress</th>}
-              {cols.has('email') && <th>Parent email</th>}
-              {cols.has('phone') && <th>Parent phone</th>}
+              {cols.has('email') && !isTeacher && <th>Parent email</th>}
+              {cols.has('phone') && !isTeacher && <th>Parent phone</th>}
               {cols.has('devices') && <th>Devices</th>}
               <th></th>
             </tr></thead>
@@ -376,8 +378,8 @@ export function Students() {
                 {cols.has('tier') && <td>{r.membership_tier ? <span className="tag">{tierLabel(r.membership_tier)}</span> : <span className="muted">—</span>}</td>}
                 {cols.has('readiness') && <td><Readiness pct={r.readiness_pct} band={r.readiness_band} insufficient={r.readiness_insufficient} /></td>}
                 {cols.has('progress') && <td><div className="progx"><span className="xp tabnum">{r.xp_total.toLocaleString()} XP</span><div className="sub tabnum">🪙 {r.coins}{r.streak_current > 0 ? ` · 🔥 ${r.streak_current}d` : ''} · {r.sets_completed ?? 0} sets</div></div></td>}
-                {cols.has('email') && <td>{r.guardian_email || <span className="muted">—</span>}</td>}
-                {cols.has('phone') && <td className="tabnum">{r.guardian_phone || <span className="muted">—</span>}</td>}
+                {cols.has('email') && !isTeacher && <td>{r.guardian_email || <span className="muted">—</span>}</td>}
+                {cols.has('phone') && !isTeacher && <td className="tabnum">{r.guardian_phone || <span className="muted">—</span>}</td>}
                 {cols.has('devices') && <td>{r.device_total === 0 ? <span className="muted">None</span> : r.device_active < r.device_total ? `${r.device_active} of ${r.device_total} active` : `${r.device_total} device${r.device_total > 1 ? 's' : ''}`}</td>}
                 <td><div className="rowactions">
                   {r.status === 'active' && can('student.suspend') && <button className="btn warn sm" onClick={() => act(r, 'suspended', 'Suspend')}>Suspend</button>}
