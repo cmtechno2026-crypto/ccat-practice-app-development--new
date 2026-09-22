@@ -6,7 +6,8 @@ import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors, AppError } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../plugins/adminAuth.js';
-import { hashSecret } from '../security/crypto.js';
+import { hashSecret, generateOtp, verifySecret } from '../security/crypto.js';
+import { sendEmail, emailConfigured } from '../lib/email.js';
 import { PERMISSION_BUNDLES } from '../lib/permissionBundles.js';
 
 // Server-side strength gate for a Super-Admin-SUPPLIED admin password (a generated one is always strong).
@@ -44,6 +45,74 @@ const patchSchema = z.object({
 export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
   const guard = { preHandler: [authenticateAdmin] };
+
+  // ---- Self-service admin password reset via email OTP (PUBLIC — the admin is locked out, so no auth) --
+  // Mirrors the student PIN-recovery flow: UNIFORM response that never reveals whether the email is an
+  // admin, a hashed single-use code with a short TTL, rate-limited, and FAIL-CLOSED when email isn't
+  // configured (never claim a code was sent when it wasn't). Requires EMAIL_* to be configured to work.
+  const startResetSchema = z.object({ email: z.string().email() });
+  const completeResetSchema = z.object({ email: z.string().email(), code: z.string().min(4).max(10), new_password: z.string().min(1) });
+  const resetMax = cfg.env === 'production' ? 5 : 500;
+
+  app.post('/v1/admin/password/reset/start', { config: { rateLimit: { max: resetMax, timeWindow: '15 minutes' } } }, async (req, reply) => {
+    const { email } = startResetSchema.parse(req.body ?? {});
+    const em = email.trim().toLowerCase();
+    if (cfg.env !== 'local' && !emailConfigured(cfg)) throw Errors.emailUnavailable();
+    const rows = await db.query(`select id, display_name from ccat.admin_profiles where lower(email)=$1 and status='active'`, [em]);
+    const admin = rows.rows[0];
+    if (admin) {
+      const code = generateOtp();
+      const codeHash = await hashSecret(code, cfg.pinPepper);
+      const expires = new Date(Date.now() + cfg.otpTtlSeconds * 1000);
+      const mins = Math.round(cfg.otpTtlSeconds / 60);
+      await db.query('update ccat.admin_password_resets set consumed_at=now() where admin_id=$1 and consumed_at is null', [admin.id]);
+      await db.query('insert into ccat.admin_password_resets(admin_id, code_hash, expires_at) values ($1,$2,$3)', [admin.id, codeHash, expires]);
+      const html = `<div style="font-family:Arial,sans-serif;color:#1a1a1a">
+        <h2 style="color:#1A5EAB">Reset your Concept Mastery admin password</h2>
+        <p>Hi ${admin.display_name}, use this one-time code to reset your admin password:</p>
+        <div style="font-size:26px;font-weight:800;letter-spacing:6px;background:#0f1b2d;color:#fff;display:inline-block;padding:12px 20px;border-radius:10px;margin:8px 0">${code}</div>
+        <p>This code expires in ${mins} minutes. If you didn't request this, ignore this email — your password stays unchanged.</p>
+        <p style="color:#8a90a6;font-size:13px">— Concept Mastery · Admin</p></div>`;
+      const sent = await sendEmail(cfg, { to: em, subject: 'Reset your Concept Mastery admin password', html }, req.log);
+      if (!sent) throw Errors.emailUnavailable();
+    }
+    reply.code(202);
+    return { ok: true }; // uniform — never reveals whether the email belongs to an admin
+  });
+
+  app.post('/v1/admin/password/reset/complete', { config: { rateLimit: { max: resetMax, timeWindow: '15 minutes' } } }, async (req) => {
+    const b = completeResetSchema.parse(req.body ?? {});
+    const em = b.email.trim().toLowerCase();
+    const invalid = () => Errors.unauthorized('Invalid or expired code');
+    const pwProblem = passwordProblem(b.new_password, em);
+    if (pwProblem) throw Errors.validation(pwProblem);
+
+    const rows = await db.query(
+      `select r.id, r.admin_id, r.code_hash, r.attempts, r.max_attempts, r.expires_at
+         from ccat.admin_password_resets r
+         join ccat.admin_profiles p on p.id = r.admin_id and p.status='active'
+        where lower(p.email)=$1 and r.consumed_at is null
+        order by r.created_at desc`,
+      [em]);
+    let match: { id: string; admin_id: string } | null = null;
+    for (const c of rows.rows) {
+      if (new Date(c.expires_at) < new Date()) continue;
+      if (c.attempts >= c.max_attempts) continue;
+      if (await verifySecret(b.code, cfg.pinPepper, c.code_hash)) { match = { id: c.id, admin_id: c.admin_id }; break; }
+    }
+    if (!match) {
+      await db.query(`update ccat.admin_password_resets set attempts=attempts+1 where consumed_at is null and admin_id in (select id from ccat.admin_profiles where lower(email)=$1)`, [em]);
+      throw invalid();
+    }
+    const hash = await hashSecret(b.new_password, cfg.pinPepper);
+    await withTransaction(db, async (c) => {
+      await c.query('update ccat.admin_password_resets set consumed_at=now() where id=$1', [match!.id]);
+      await c.query(`insert into ccat.admin_local_credentials(admin_id,password_hash,failed_attempts,locked_until) values ($1,$2,0,null)
+                     on conflict (admin_id) do update set password_hash=excluded.password_hash, failed_attempts=0, locked_until=null`, [match!.admin_id, hash]);
+      await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','admin.password.self_reset','admin',$1)`, [match!.admin_id]);
+    });
+    return { ok: true };
+  });
 
   app.get('/v1/admin/permissions', guard, async () => {
     const rows = await db.query('select key, description, super_admin_only from ccat.permissions order by key');

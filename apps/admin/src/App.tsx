@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/auth';
-import { ApiError } from './lib/api';
+import { ApiError, api } from './lib/api';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Health } from './pages/Health';
@@ -34,6 +34,7 @@ function Login() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [fails, setFails] = useState(0);
+  const [mode, setMode] = useState<'login' | 'reset'>('login');
   const locked = fails >= 5;
 
   const submit = async (e: React.FormEvent) => {
@@ -70,6 +71,9 @@ function Login() {
       </div>
 
       <div className="formside">
+        {mode === 'reset' ? (
+          <ResetPasswordForm initialEmail={email} onBack={() => setMode('login')} />
+        ) : (
         <form className="formcard" onSubmit={submit}>
           <h3>Welcome back</h3>
           <p className="sub">Admins sign in with their work email and password. Five failed attempts locks the account.</p>
@@ -93,9 +97,82 @@ function Login() {
           {locked
             ? <div className="locknote">This account is locked — too many attempts. Contact a Super-Admin.</div>
             : fails > 0 && <div className="locknote">{fails} of 5 failed attempts</div>}
+
+          <button type="button" onClick={() => setMode('reset')}
+            style={{ background: 'transparent', border: 0, color: 'var(--primary, #1A5EAB)', fontWeight: 600, cursor: 'pointer', marginTop: 14, padding: 0, fontSize: 13.5 }}>
+            Forgot password?
+          </button>
         </form>
+        )}
       </div>
     </div>
+  );
+}
+
+// Self-service password reset (email OTP). Two steps: request a code to the login email, then enter the
+// code + a new password. The gateway response is uniform (never reveals whether the email is an admin).
+function ResetPasswordForm({ initialEmail, onBack }: { initialEmail: string; onBack: () => void }) {
+  const [step, setStep] = useState<'email' | 'code' | 'done'>('email');
+  const [email, setEmail] = useState(initialEmail || '');
+  const [code, setCode] = useState('');
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const sendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) { setErr('Enter your work email.'); return; }
+    setBusy(true); setErr('');
+    try { await api.requestPasswordReset(email.trim()); setStep('code'); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const complete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{4,10}$/.test(code.trim())) { setErr('Enter the code from your email.'); return; }
+    if (pw.length < 10) { setErr('New password must be at least 10 characters.'); return; }
+    if (pw !== pw2) { setErr('Passwords do not match.'); return; }
+    setBusy(true); setErr('');
+    try { await api.completePasswordReset(email.trim(), code.trim(), pw); setStep('done'); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const backLink = (
+    <button type="button" onClick={onBack} style={{ background: 'transparent', border: 0, color: 'var(--primary, #1A5EAB)', fontWeight: 600, cursor: 'pointer', marginTop: 14, padding: 0, fontSize: 13.5 }}>← Back to sign in</button>
+  );
+
+  if (step === 'done') {
+    return (
+      <div className="formcard">
+        <h3>Password reset</h3>
+        <p className="sub">Your admin password has been changed. Sign in with your new password.</p>
+        <button className="btn" style={{ width: '100%', marginTop: 14, justifyContent: 'center' }} onClick={onBack}>Back to sign in</button>
+      </div>
+    );
+  }
+  return step === 'email' ? (
+    <form className="formcard" onSubmit={sendCode}>
+      <h3>Reset your password</h3>
+      <p className="sub">Enter your admin login email. If it belongs to an account, we’ll email a one-time code.</p>
+      <label>Work email</label>
+      <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" placeholder="you@conceptmastery.com" />
+      <button className="btn" style={{ width: '100%', marginTop: 18, justifyContent: 'center' }} disabled={busy}>{busy ? 'Sending…' : 'Send reset code'}</button>
+      <div className="err">{err}</div>
+      {backLink}
+    </form>
+  ) : (
+    <form className="formcard" onSubmit={complete}>
+      <h3>Enter your code</h3>
+      <p className="sub">If <b>{email}</b> is an admin account, a one-time code was emailed to it. Enter it and choose a new password.</p>
+      <label>Reset code</label>
+      <input inputMode="numeric" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="6-digit code" />
+      <label>New password</label>
+      <input type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" placeholder="At least 10 characters" />
+      <label>Confirm new password</label>
+      <input type="password" value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" />
+      <button className="btn" style={{ width: '100%', marginTop: 18, justifyContent: 'center' }} disabled={busy}>{busy ? 'Resetting…' : 'Reset password'}</button>
+      <div className="err">{err}</div>
+      {backLink}
+    </form>
   );
 }
 
