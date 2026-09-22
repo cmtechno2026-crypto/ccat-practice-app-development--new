@@ -12,7 +12,9 @@ const toDateInputIST = (iso?: string | null): string => { if (!iso) return ''; c
 export function StudentDetail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const { can } = useAuth();
+  const { can, me } = useAuth();
+  // Teachers get read-only student detail with guardian CONTACT info withheld (no email / phone).
+  const hideContact = !!me?.is_teacher;
   const toast = useToast();
   const { data, loading, error, reload } = useAsync(() => api.studentDetail(id!), [id]);
   const [adjust, setAdjust] = useState(false);
@@ -276,14 +278,14 @@ export function StudentDetail() {
                 {d.guardians.length === 0 ? <div className="muted">None on file.</div> : O('guardians') ? (
                   d.guardians.map((g: any, i: number) => (
                     <div key={i} className="kvs" style={{ marginBottom: 8 }}>
-                      <span className="k">Email</span><span>{g.email || '—'} {g.email_verified_at && <span className="tag">verified</span>}</span>
-                      <span className="k">Phone</span><span>{g.phone || '—'} {g.phone_verified_at && <span className="tag">verified</span>}</span>
+                      {!hideContact && <><span className="k">Email</span><span>{g.email || '—'} {g.email_verified_at && <span className="tag">verified</span>}</span></>}
+                      {!hideContact && <><span className="k">Phone</span><span>{g.phone || '—'} {g.phone_verified_at && <span className="tag">verified</span>}</span></>}
                       <span className="k">Relationship</span><span>{g.relationship || '—'}{g.is_primary ? ' · primary' : ''}</span>
                     </div>
                   ))
                 ) : (
-                  <div><div style={{ fontSize: 13 }}>{g0.email || g0.phone || '—'}</div>
-                    <div className="muted" style={{ fontSize: 12.5 }}>{g0.relationship || 'guardian'}{g0.is_primary ? ' · primary' : ''}</div></div>
+                  <div><div style={{ fontSize: 13 }}>{hideContact ? (g0.relationship ? (g0.relationship[0].toUpperCase() + g0.relationship.slice(1)) : 'Guardian') : (g0.email || g0.phone || '—')}</div>
+                    {!hideContact && <div className="muted" style={{ fontSize: 12.5 }}>{g0.relationship || 'guardian'}{g0.is_primary ? ' · primary' : ''}</div>}</div>
                 )}
               </div>
               <div className="sdfoot"><ExpBtn k="guardians" /></div>
