@@ -618,7 +618,8 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
       const qImg = q.image_url ? `<img src="${q.image_url}" style="max-width:340px;display:block;margin:6px 0">` : '';
       const expl = blockText(q.explanation_blocks);
       const status = q.correct ? '✓ Correct' : (q.answered ? '✗ Incorrect' : 'Not answered');
-      return `<div style="padding:12px 0;border-bottom:1px solid #eee"><div style="font-weight:700">Q${i + 1}. ${esc(blockText(q.prompt_blocks))} <span style="color:#666;font-weight:400">(${status})</span></div>${qImg}<div style="margin-top:6px">${opts}</div>${expl ? `<div style="margin-top:8px;background:#eef3fc;border:1px solid #d9e4f7;border-radius:8px;padding:8px 10px;font-size:13px"><b>Why:</b> ${esc(expl)}</div>` : ''}</div>`;
+      const correctTxt = (q.options || []).filter((o: any) => o.correct).map((o: any) => esc(blockText(o.content) || o.option_id)).join(', ');
+      return `<div style="padding:12px 0;border-bottom:1px solid #eee"><div style="font-weight:700">Q${i + 1}. ${esc(blockText(q.prompt_blocks))} <span style="color:#666;font-weight:400">(${status})</span></div>${qImg}<div style="margin-top:6px">${opts}</div>${correctTxt ? `<div style="margin-top:6px;font-weight:700;color:#166534">Correct: ${correctTxt}</div>` : ''}${expl ? `<div style="margin-top:8px;background:#eef3fc;border:1px solid #d9e4f7;border-radius:8px;padding:8px 10px;font-size:13px"><b>Why:</b> ${esc(expl)}</div>` : ''}</div>`;
     }).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(studentName)} — ${esc(rv.setName || label)}</title>
       <style>body{font-family:Arial,sans-serif;color:#1a1a1a;max-width:780px;margin:24px auto;padding:0 16px}
