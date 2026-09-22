@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Email OTP — Formats & Cases (Mockup)</title>
+<style>
+  :root{
+    --blue:#1A5EAB; --gold:#E8A020; --sky:#EAF1FB; --orange:#D4620E; --line:#E2E8F0;
+    --dark:#1A1A1A; --mid:#6B7280; --white:#fff; --bg:#F4F6FA; --green:#16A34A; --amber:#B45309;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,Helvetica,sans-serif;color:var(--dark);background:var(--bg);padding:24px;}
+  .banner{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:10px;padding:9px 14px;font-size:12px;margin-bottom:16px;}
+
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:18px;}
+  .card h3{font-size:16px;font-weight:bold;margin-bottom:14px;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{text-align:left;font-size:10.5px;letter-spacing:.5px;color:var(--mid);padding:8px 10px;border-bottom:1px solid var(--line);}
+  tbody td{padding:13px 10px;border-bottom:1px solid #F0F3F8;font-size:13px;vertical-align:top;}
+  .prov{font-weight:bold;}
+  .kind{color:var(--mid);}
+  .state{display:inline-block;background:#FEF3C7;color:var(--amber);font-weight:bold;font-size:11px;padding:5px 10px;border-radius:8px;}
+  .notes{color:var(--mid);}
+  tr.clickable{cursor:pointer;}
+  tr.clickable:hover{background:var(--sky);}
+  .view{color:var(--blue);font-weight:bold;font-size:12px;white-space:nowrap;}
+  .rowflag{display:inline-block;background:var(--sky);color:var(--blue);font-size:10px;font-weight:bold;padding:2px 7px;border-radius:8px;margin-left:8px;}
+
+  /* Modal */
+  .wrap{position:fixed;inset:0;background:rgba(17,28,46,.55);display:none;align-items:flex-start;justify-content:center;padding:34px 20px;z-index:50;}
+  .wrap.open{display:flex;}
+  .modal{background:#fff;border-radius:16px;width:900px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;display:flex;flex-direction:column;max-height:88vh;}
+  .mhead{background:var(--blue);color:#fff;padding:15px 20px;display:flex;align-items:center;gap:12px;}
+  .mhead .t{font-size:16px;font-weight:bold;}
+  .mhead .s{font-size:11.5px;color:#CFE0F5;margin-top:2px;}
+  .mhead .x{margin-left:auto;font-size:20px;cursor:pointer;opacity:.85;}
+  .mbody{display:flex;min-height:0;flex:1;}
+  .cases{width:250px;border-right:1px solid var(--line);background:#FAFBFD;overflow:auto;flex-shrink:0;}
+  .case{padding:13px 16px;border-bottom:1px solid #EEF2F7;cursor:pointer;}
+  .case:hover{background:var(--sky);}
+  .case.on{background:var(--sky);border-left:3px solid var(--blue);padding-left:13px;}
+  .case .cn{font-size:13px;font-weight:bold;}
+  .case .ct{font-size:10.5px;color:var(--mid);margin-top:3px;display:flex;gap:6px;align-items:center;}
+  .tag{font-size:9px;font-weight:bold;padding:1px 6px;border-radius:7px;}
+  .tag.otp{background:#E0EDFB;color:var(--blue);}
+  .tag.notif{background:#EDE7FA;color:#6D4AC7;}
+  .tag.live{background:#DCFCE7;color:var(--green);}
+  .tag.plan{background:#FEF3C7;color:var(--amber);}
+
+  .preview{flex:1;overflow:auto;padding:18px 22px;min-width:0;}
+  .field{font-size:10.5px;letter-spacing:.5px;color:var(--mid);font-weight:bold;margin:14px 0 4px;}
+  .subj{font-size:15px;font-weight:bold;}
+  .email{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:6px;}
+  .email .top{background:var(--sky);padding:14px 18px;border-bottom:1px solid var(--line);}
+  .email .top .from{font-size:11px;color:var(--mid);}
+  .email .body{padding:20px 22px;font-size:13.5px;line-height:1.6;color:var(--dark);}
+  .email .body h1{font-size:18px;color:var(--blue);margin-bottom:10px;}
+  .code{display:inline-block;background:#0F1B2D;color:#fff;font-family:monospace;font-size:24px;letter-spacing:6px;padding:12px 20px;border-radius:10px;margin:8px 0;}
+  .btn-cta{display:inline-block;background:var(--blue);color:#fff;font-weight:bold;font-size:13px;padding:11px 20px;border-radius:8px;margin:10px 0;}
+  .muted{color:var(--mid);font-size:11.5px;}
+  var{background:#FFF7E6;color:#92400E;font-style:normal;font-family:monospace;font-size:12px;padding:1px 5px;border-radius:5px;border:1px solid #FCE8B8;}
+  .vars{margin-top:14px;background:#FAFBFD;border:1px solid var(--line);border-radius:10px;padding:12px 14px;}
+  .vars .h{font-size:10.5px;letter-spacing:.5px;color:var(--mid);font-weight:bold;margin-bottom:8px;}
+  .vars code{font-family:monospace;font-size:11.5px;background:#FFF7E6;color:#92400E;border:1px solid #FCE8B8;border-radius:5px;padding:1px 6px;margin:0 4px 4px 0;display:inline-block;}
+  .mfoot{border-top:1px solid var(--line);padding:12px 20px;display:flex;gap:10px;align-items:center;}
+  .mfoot .hint{margin-left:auto;font-size:11px;color:var(--mid);font-style:italic;}
+  .b{border:1px solid var(--line);background:#fff;border-radius:9px;padding:9px 14px;font-size:12.5px;font-weight:bold;cursor:pointer;}
+  .b.primary{background:var(--blue);color:#fff;border:none;}
+</style>
+</head>
+<body>
+  <div class="banner">MOCKUP — placeholder template copy. Real subjects/bodies come from the email service; the point here is the click-through and the per-case layout.</div>
+
+  <div class="card">
+    <h3>Third-party providers</h3>
+    <table>
+      <thead><tr><th>PROVIDER</th><th>KIND</th><th>STATE</th><th>NOTES</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="prov">SMS OTP</td><td class="kind">sms</td>
+          <td><span class="state">Not configured</span></td>
+          <td class="notes">Guardian phone verification — not configured (SMS_PROVIDER_KEY).</td><td></td>
+        </tr>
+        <tr class="clickable" onclick="openModal()">
+          <td class="prov">Email OTP <span class="rowflag">5 formats ›</span></td><td class="kind">email</td>
+          <td><span class="state">Not configured</span></td>
+          <td class="notes">Guardian email verification — not configured (EMAIL_PROVIDER_KEY).</td>
+          <td><span class="view">View formats ›</span></td>
+        </tr>
+        <tr>
+          <td class="prov">Push delivery</td><td class="kind">push</td>
+          <td><span class="state">Not configured</span></td>
+          <td class="notes">APNs / FCM campaign delivery — not configured (PUSH_PROVIDER_KEY).</td><td></td>
+        </tr>
+        <tr>
+          <td class="prov">Object storage</td><td class="kind">storage</td>
+          <td><span class="state">Not configured</span></td>
+          <td class="notes">Content asset storage — not configured (STORAGE_PROVIDER).</td><td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- MODAL -->
+  <div class="wrap open" id="modal">
+    <div class="modal">
+      <div class="mhead">
+        <div>
+          <div class="t">Email OTP — Formats &amp; Cases</div>
+          <div class="s">email · every email the platform can send · EMAIL_PROVIDER_KEY not set (previews only)</div>
+        </div>
+        <div class="x" onclick="closeModal()">✕</div>
+      </div>
+      <div class="mbody">
+        <!-- CASE LIST -->
+        <div class="cases" id="caselist">
+          <div class="case on" data-i="0">
+            <div class="cn">Guardian Email Verification</div>
+            <div class="ct"><span class="tag otp">OTP</span><span class="tag plan">not wired</span></div>
+          </div>
+          <div class="case" data-i="1">
+            <div class="cn">PIN Reset</div>
+            <div class="ct"><span class="tag otp">OTP</span><span class="tag plan">not wired</span></div>
+          </div>
+          <div class="case" data-i="2">
+            <div class="cn">Welcome</div>
+            <div class="ct"><span class="tag notif">Notification</span><span class="tag plan">not wired</span></div>
+          </div>
+          <div class="case" data-i="3">
+            <div class="cn">Plan Upgraded</div>
+            <div class="ct"><span class="tag notif">Notification</span><span class="tag plan">not wired</span></div>
+          </div>
+          <div class="case" data-i="4">
+            <div class="cn">Sign-in Blocked (Guardian alert)</div>
+            <div class="ct"><span class="tag notif">Notification</span><span class="tag plan">not wired</span></div>
+          </div>
+        </div>
+        <!-- PREVIEW -->
+        <div class="preview" id="preview"><!-- filled by JS --></div>
+      </div>
+      <div class="mfoot">
+        <button class="b">Send test to myself</button>
+        <button class="b primary">Copy HTML</button>
+        <span class="hint">Read-only preview. Sending requires EMAIL_PROVIDER_KEY configured.</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const cases = [
+    { subj:"Verify your email for Concept Mastery CCAT",
+      from:"Concept Mastery CCAT &lt;no-reply@conceptmastery.com&gt; · to {{guardian_email}}",
+      html:`<h1>Confirm your email</h1><p>Hi {{guardian_name}}, use this code to verify your email for <b>{{child_name}}</b>'s CCAT account:</p><div class="code">{{code}}</div><p class="muted">This code expires in {{ttl_minutes}} minutes. If you didn't request this, ignore this email.</p>`,
+      vars:["{{guardian_name}}","{{guardian_email}}","{{child_name}}","{{code}}","{{ttl_minutes}}"] },
+    { subj:"Your CCAT PIN reset code",
+      from:"Concept Mastery CCAT &lt;no-reply@conceptmastery.com&gt; · to {{guardian_email}}",
+      html:`<h1>Reset your child's PIN</h1><p>Hi {{guardian_name}}, here is the code to reset the 4-digit PIN for <b>{{child_name}}</b> (@{{username}}):</p><div class="code">{{code}}</div><p class="muted">Expires in {{ttl_minutes}} minutes. For a child's safety, never share this code.</p>`,
+      vars:["{{guardian_name}}","{{child_name}}","{{username}}","{{code}}","{{ttl_minutes}}"] },
+    { subj:"Welcome to Concept Mastery CCAT, {{child_name}}!",
+      from:"Concept Mastery CCAT &lt;hello@conceptmastery.com&gt; · to {{guardian_email}}",
+      html:`<h1>Welcome aboard 🎉</h1><p>Hi {{guardian_name}}, {{child_name}}'s CCAT Practice account is ready. Username <b>@{{username}}</b>, Grade {{grade}}.</p><p>Your plan: <b>{{tier_name}}</b>.</p><a class="btn-cta">Open the app</a><p class="muted">Questions? Just reply to this email.</p>`,
+      vars:["{{guardian_name}}","{{child_name}}","{{username}}","{{grade}}","{{tier_name}}","{{app_url}}"] },
+    { subj:"Your CCAT plan is now {{tier_name}}",
+      from:"Concept Mastery CCAT &lt;hello@conceptmastery.com&gt; · to {{guardian_email}}",
+      html:`<h1>Plan upgraded</h1><p>Hi {{guardian_name}}, {{child_name}}'s access has been upgraded to <b>{{tier_name}}</b>, valid until {{expiry_date}}.</p><p>Newly unlocked: {{unlocked_features}}.</p><a class="btn-cta">See what's new</a>`,
+      vars:["{{guardian_name}}","{{child_name}}","{{tier_name}}","{{expiry_date}}","{{unlocked_features}}"] },
+    { subj:"We blocked some sign-in attempts for {{child_name}}",
+      from:"Concept Mastery CCAT &lt;no-reply@conceptmastery.com&gt; · to {{guardian_email}}",
+      html:`<h1>Sign-in attempts blocked</h1><p>Hi {{guardian_name}}, we temporarily blocked several failed sign-in attempts on <b>{{child_name}}</b>'s account (@{{username}}). It unlocks automatically in a few minutes.</p><p class="muted">If this was you or {{child_name}}, no action is needed. If not, consider resetting the PIN.</p>`,
+      vars:["{{guardian_name}}","{{child_name}}","{{username}}"] },
+  ];
+  function render(i){
+    const c = cases[i];
+    document.getElementById('preview').innerHTML =
+      '<div class="field">SUBJECT</div><div class="subj">'+c.subj+'</div>'+
+      '<div class="field">EMAIL</div><div class="email"><div class="top"><div class="from">'+c.from+'</div></div><div class="body">'+c.html+'</div></div>'+
+      '<div class="vars"><div class="h">TEMPLATE VARIABLES</div>'+c.vars.map(v=>'<code>'+v+'</code>').join('')+'</div>';
+    document.querySelectorAll('.case').forEach(el=>el.classList.toggle('on', +el.dataset.i===i));
+  }
+  document.getElementById('caselist').addEventListener('click',e=>{
+    const c=e.target.closest('.case'); if(c) render(+c.dataset.i);
+  });
+  function openModal(){document.getElementById('modal').classList.add('open');render(0);}
+  function closeModal(){document.getElementById('modal').classList.remove('open');}
+  render(0);
+</script>
+</body>
+</html>
