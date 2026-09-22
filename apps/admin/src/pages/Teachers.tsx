@@ -11,12 +11,14 @@ export function Teachers() {
   const { data, loading, error, reload } = useAsync(() => api.teachers(), []);
   const teachers = data?.teachers ?? [];
   const [create, setCreate] = useState(false);
-  const [manage, setManage] = useState<{ id: string; name: string } | null>(null);
+  // Click a teacher row → open an inline "Add students" panel below the table (no modal).
+  const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
 
   const toggle = async (t: any) => {
     try { await api.setTeacherStatus(t.id, t.status === 'active' ? 'disabled' : 'active'); toast('Teacher updated.'); reload(); }
     catch (e) { toast((e as Error).message); }
   };
+  const pick = (t: any) => setSelected(prev => prev?.id === t.id ? null : { id: t.id, name: t.display_name });
 
   return (
     <>
@@ -25,7 +27,7 @@ export function Teachers() {
       </div>
       <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>
         Teachers get <b>read-only</b> access to their assigned students — including Battery Practice &amp; Exam Progress.
-        They can’t edit students, change membership, reset PINs, delete or ban. Assign students per teacher below.
+        They can’t edit students, change membership, reset PINs, delete or ban. Click a teacher to add students.
       </div>
 
       {loading ? <Loading /> : error ? <ErrorBox e={error} /> : (
@@ -35,26 +37,30 @@ export function Teachers() {
             <tbody>
               {teachers.length === 0 ? (
                 <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>No teachers yet — add one to give read-only student access.</td></tr>
-              ) : teachers.map((t: any) => (
-                <tr key={t.id}>
-                  <td><b>{t.display_name}</b></td>
+              ) : teachers.map((t: any) => {
+                const on = selected?.id === t.id;
+                return (
+                <tr key={t.id} onClick={() => pick(t)} style={{ cursor: 'pointer', ...(on ? { background: '#e8f0fb', boxShadow: 'inset 4px 0 0 var(--primary, #1f4fd6)' } : {}) }}>
+                  <td><b>{t.display_name}</b>{on && <span className="tag" style={{ marginLeft: 8 }}>selected</span>}</td>
                   <td className="muted">{t.email}</td>
                   <td className="tabnum">{t.student_count}</td>
                   <td><span className="tag">View only</span></td>
                   <td><StatusPill status={t.status} /></td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button className="btn ghost sm" onClick={() => setManage({ id: t.id, name: t.display_name })}>Manage students</button>{' '}
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
+                    <button className="btn ghost sm" onClick={() => pick(t)}>{on ? '▾ Open' : 'Add students ›'}</button>{' '}
                     <button className="btn ghost sm" onClick={() => toggle(t)}>{t.status === 'active' ? 'Disable' : 'Enable'}</button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table></div>
         </div>
       )}
 
+      {selected && <AddStudentsPanel key={selected.id} teacher={selected} onClose={() => setSelected(null)} onSaved={() => reload()} toast={toast} />}
+
       {create && <CreateTeacherModal onClose={() => setCreate(false)} onCreated={() => { setCreate(false); reload(); }} toast={toast} />}
-      {manage && <ManageStudentsModal teacher={manage} onClose={() => { setManage(null); reload(); }} toast={toast} />}
     </>
   );
 }
@@ -106,13 +112,15 @@ function CreateTeacherModal({ onClose, onCreated, toast }: { onClose: () => void
   );
 }
 
-function ManageStudentsModal({ teacher, onClose, toast }: { teacher: { id: string; name: string }; onClose: () => void; toast: (m: string) => void }) {
+// Inline panel (below the Teachers table) for the picked teacher. Ticks are the teacher's full assigned
+// set — pre-loaded and saved with setTeacherStudents (tick = has access, untick = removed).
+function AddStudentsPanel({ teacher, onClose, onSaved, toast }: { teacher: { id: string; name: string }; onClose: () => void; onSaved: () => void; toast: (m: string) => void }) {
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
-  // Current assignments (ids).
+  // Current assignments (ids) — pre-tick these.
   const assignedAsync = useAsync(() => api.teacherStudents(teacher.id), [teacher.id]);
   useEffect(() => { if (assignedAsync.data) setAssigned(new Set(assignedAsync.data.student_ids)); }, [assignedAsync.data]);
 
@@ -124,16 +132,19 @@ function ManageStudentsModal({ teacher, onClose, toast }: { teacher: { id: strin
 
   const save = async () => {
     setBusy(true); setErr('');
-    try { await api.setTeacherStudents(teacher.id, Array.from(assigned)); toast(`Saved — ${assigned.size} student(s) assigned to ${teacher.name}.`); onClose(); }
+    try { await api.setTeacherStudents(teacher.id, Array.from(assigned)); toast(`Saved — ${assigned.size} student(s) assigned to ${teacher.name}.`); onSaved(); onClose(); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
 
   return (
-    <Modal title={`Manage students — ${teacher.name}`} onClose={onClose} wide
-      footer={<><button className="btn ghost grow" onClick={onClose}>Cancel</button><button className="btn grow" disabled={busy} onClick={save}>{busy ? 'Saving…' : `Save (${assigned.size})`}</button></>}>
-      <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{assigned.size} assigned. Tick students to grant this teacher read-only access to them.</div>
+    <div style={{ border: '1px dashed var(--primary, #1A5EAB)', background: '#f7faff', borderRadius: 12, padding: '14px 16px', marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--primary, #1A5EAB)', letterSpacing: .3 }}>ADD STUDENTS → {teacher.name}</div>
+        <span className="muted" style={{ fontSize: 12 }}>{assigned.size} assigned</span>
+        <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onClose}>✕ Close</button>
+      </div>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students by name, username, or guardian…" />
-      <div style={{ maxHeight: 340, overflow: 'auto', marginTop: 10, border: '1px solid var(--line)', borderRadius: 10 }}>
+      <div style={{ maxHeight: 320, overflow: 'auto', marginTop: 10, border: '1px solid var(--line)', borderRadius: 10, background: '#fff' }}>
         {assignedAsync.loading || listAsync.loading ? <Loading /> : listAsync.error ? <ErrorBox e={listAsync.error} /> : students.length === 0 ? (
           <div className="muted" style={{ padding: 14 }}>No students match.</div>
         ) : students.map((s: any) => (
@@ -145,6 +156,10 @@ function ManageStudentsModal({ teacher, onClose, toast }: { teacher: { id: strin
         ))}
       </div>
       {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
-    </Modal>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+        <button className="btn ghost" onClick={onClose}>Cancel</button>
+        <button className="btn" disabled={busy} onClick={save}>{busy ? 'Saving…' : `Save (${assigned.size})`}</button>
+      </div>
+    </div>
   );
 }

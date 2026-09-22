@@ -244,6 +244,25 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     return { student_ids: ids };
   });
 
+  // ADDITIVE assign — add a set of students to a teacher without removing the teacher's existing ones
+  // (used by the Students-page "Assign to teacher" bulk action). Returns how many were newly added.
+  app.post('/v1/admin/teachers/:id/students/add', guard, async (req) => {
+    requirePermission(req, 'teacher.students.manage');
+    const id = (req.params as any).id;
+    const ids: string[] = Array.isArray((req.body as any)?.student_ids) ? (req.body as any).student_ids : [];
+    const chk = await db.query('select 1 from ccat.admin_profiles where id=$1 and is_teacher=true', [id]);
+    if (chk.rows.length === 0) throw Errors.notFound('Teacher not found');
+    let added = 0;
+    await withTransaction(db, async (c) => {
+      for (const sid of ids) {
+        const r = await c.query('insert into ccat.teacher_students(teacher_admin_id,student_id,assigned_by) values ($1,$2,$3) on conflict do nothing returning student_id', [id, sid, req.admin!.adminId]);
+        if (r.rows.length) added++;
+      }
+      if (added > 0) await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','teacher.students.add','admin',$2,$3)`, [req.admin!.adminId, id, JSON.stringify({ added })]);
+    });
+    return { added };
+  });
+
   // Edit student profile fields (STUDENTS — granular). Requires `student.update` (Super-Admin passes
   // via role). Optimistic concurrency via If-Match against students.version (same as status changes).
   // Only display_name and grade_id are editable here; grade is a plain FK, so changing it does NOT

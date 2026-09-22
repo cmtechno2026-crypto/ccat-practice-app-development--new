@@ -138,6 +138,28 @@ export function Students() {
   const [create, setCreate] = useState(false);
   const [grades, setGrades] = useState<{ id: string; grade_number: number; name: string }[]>([]);
 
+  // ---- Assign-to-teacher (bulk) — Super-Admins / accounts with teacher.students.manage only. Selecting
+  // rows and picking a teacher ADDS them to that teacher (additive; never wipes existing assignments).
+  const canAssign = can('teacher.students.manage');
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [teacherList, setTeacherList] = useState<{ id: string; display_name: string; status: string }[]>([]);
+  const [assignTo, setAssignTo] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
+  useEffect(() => { if (canAssign) api.teachers().then(r => setTeacherList(r.teachers)).catch(() => {}); }, [canAssign]);
+  const toggleSel = (id: string) => setSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const clearSel = () => setSel(new Set());
+  const assignSelected = async () => {
+    if (!assignTo || sel.size === 0) return;
+    setAssignBusy(true);
+    try {
+      const r = await api.addTeacherStudents(assignTo, Array.from(sel));
+      const tName = teacherList.find(t => t.id === assignTo)?.display_name || 'teacher';
+      toast(`Assigned ${r.added} student${r.added === 1 ? '' : 's'} to ${tName}.`);
+      clearSel(); setAssignTo('');
+      api.teachers().then(rr => setTeacherList(rr.teachers)).catch(() => {});
+    } catch (e) { toast((e as Error).message); } finally { setAssignBusy(false); }
+  };
+
   // Pending requests keyed by student, for row highlighting (grade-change / deletion / break-glass).
   const [reqMap, setReqMap] = useState<Record<string, string[]>>({});
   useEffect(() => { api.grades().then((r) => setGrades(r.items)).catch(() => {}); }, []);
@@ -281,10 +303,31 @@ export function Students() {
         <span className="muted" style={{ fontSize: 12.5 }}>Sorted by {sortLabel} {dir === 'asc' ? '↑' : '↓'}</span>
       </div>
 
+      {canAssign && sel.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#111c2e', color: '#fff', borderRadius: 12, padding: '10px 14px', margin: '4px 0 12px', flexWrap: 'wrap' }}>
+          <b style={{ background: '#25344b', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>{sel.size} selected</b>
+          <span style={{ fontSize: 12.5 }}>Assign to</span>
+          <select value={assignTo} onChange={e => setAssignTo(e.target.value)} style={{ border: 'none', borderRadius: 8, padding: '6px 9px', fontSize: 12.5, fontFamily: 'inherit' }}>
+            <option value="">Choose teacher…</option>
+            {teacherList.filter(t => t.status === 'active').map(t => <option key={t.id} value={t.id}>{t.display_name}</option>)}
+          </select>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button className="btn ghost sm" style={{ color: '#fff', background: 'transparent', borderColor: '#3a4a63' }} onClick={clearSel}>Clear</button>
+            <button className="btn sm" disabled={!assignTo || assignBusy} onClick={assignSelected}>{assignBusy ? 'Assigning…' : 'Assign'}</button>
+          </span>
+        </div>
+      )}
+
       {error ? <ErrorBox e={error} /> : (
         <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
           <div className="tablewrap"><table>
             <thead><tr>
+              {canAssign && <th style={{ width: 34 }}>
+                <input type="checkbox" style={{ width: 15, height: 15 }}
+                  checked={items.length > 0 && items.every(r => sel.has(r.id))}
+                  ref={el => { if (el) el.indeterminate = sel.size > 0 && !items.every(r => sel.has(r.id)); }}
+                  onChange={e => setSel(e.target.checked ? new Set(items.map(r => r.id)) : new Set())} />
+              </th>}
               <th>Student</th>
               {cols.has('grade') && <th>Grade &amp; status</th>}
               {cols.has('tier') && <th>Tier</th>}
@@ -311,7 +354,10 @@ export function Students() {
               return (
               <React.Fragment key={r.id}>
               {header}
-              <tr style={rowStyle}>
+              <tr style={sel.has(r.id) ? { ...rowStyle, background: '#e8f0fb', boxShadow: 'inset 4px 0 0 var(--primary, #1f4fd6)' } : rowStyle}>
+                {canAssign && <td onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" style={{ width: 15, height: 15 }} checked={sel.has(r.id)} onChange={() => toggleSel(r.id)} />
+                </td>}
                 <td>
                   <div className="stud">
                     <span className="av">{avatarFor(r.id)}</span>
