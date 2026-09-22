@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
-import { Loading, ErrorBox, Modal } from '../components/ui';
+import { Loading, ErrorBox } from '../components/ui';
 
 // Teacher Practice / Exam browse — the SAME published content the web CCAT client shows, but a teacher
 // isn't tied to one grade, so they pick the grade on top. Practice = battery → subcategory → set;
@@ -99,57 +99,48 @@ function TeacherContent({ mode }: { mode: 'practice' | 'exam' }) {
 
       {loading ? <Loading /> : error ? <ErrorBox e={error} /> : !items ? null : forMode.length === 0 ? (
         <div className="empty">No published {mode} content for {gradeLabel || 'this grade'} yet.</div>
-      ) : mode === 'exam' ? (
-        // EXAM — flat paper list grouped by battery.
-        <div className="panel" style={{ padding: 16 }}>
-          {BATTERY_ORDER.filter(k => grouped[k]).map(k => {
-            const vis = BATTERY_VIS[k]; const papers = Object.values(grouped[k]).flat();
-            return (
-              <div key={k} style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ width: 30, height: 30, borderRadius: 9, background: vis.tint, display: 'grid', placeItems: 'center', fontSize: 16 }}>{vis.icon}</span>
-                  <b style={{ fontSize: 14 }}>{vis.name}</b>
-                </div>
-                {papers.map(setRow)}
-              </div>
-            );
-          })}
-        </div>
       ) : battery == null ? (
-        // PRACTICE level 1 — the three batteries.
+        // LEVEL 1 — the three batteries (both Practice and Exam). Click one to drill in.
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
           {BATTERY_ORDER.filter(k => grouped[k]).map(k => {
             const vis = BATTERY_VIS[k]; const count = Object.values(grouped[k]).flat().length;
             const subs = Object.keys(grouped[k]);
+            const unit = mode === 'exam' ? 'paper' : 'set';
             return (
-              <button key={k} onClick={() => { setBattery(k); setSub(subs[0] ?? null); }}
+              <button key={k} onClick={() => { setBattery(k); setSub(mode === 'practice' ? (subs[0] ?? null) : null); }}
                 style={{ textAlign: 'left', border: '1px solid var(--line, #e4e9f2)', borderRadius: 16, padding: 16, background: 'var(--card, #fff)', cursor: 'pointer', position: 'relative' }}>
-                <span style={{ position: 'absolute', top: 14, right: 14, fontSize: 11, fontWeight: 800, color: '#33405c', background: '#f3f6fb', borderRadius: 8, padding: '3px 8px' }}>{count} set{count === 1 ? '' : 's'}</span>
+                <span style={{ position: 'absolute', top: 14, right: 14, fontSize: 11, fontWeight: 800, color: '#33405c', background: '#f3f6fb', borderRadius: 8, padding: '3px 8px' }}>{count} {unit}{count === 1 ? '' : 's'}</span>
                 <div style={{ width: 44, height: 44, borderRadius: 12, background: vis.tint, display: 'grid', placeItems: 'center', fontSize: 22, marginBottom: 10 }}>{vis.icon}</div>
                 <div style={{ fontWeight: 800, fontSize: 14.5 }}>{vis.name}</div>
-                <div className="muted" style={{ fontSize: 12 }}>{subs.slice(0, 3).join(' · ')}</div>
+                <div className="muted" style={{ fontSize: 12 }}>{mode === 'exam' ? `${count} exam ${count === 1 ? 'paper' : 'papers'}` : subs.slice(0, 3).join(' · ')}</div>
               </button>
             );
           })}
         </div>
       ) : (
-        // PRACTICE level 2/3 — subcategory tabs + set rows.
+        // LEVEL 2 — inside a battery. Practice shows subcategory tabs + sets; Exam shows its papers flat.
         <div>
           <div style={{ fontSize: 12, color: 'var(--muted, #6b7280)', marginBottom: 10 }}>
             <button className="btn ghost sm" onClick={() => { setBattery(null); setSub(null); }}>← All batteries</button>
             <span style={{ marginLeft: 10 }}><b style={{ color: '#33405c' }}>{BATTERY_VIS[battery]?.name || battery}</b></span>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-            {Object.keys(grouped[battery] || {}).map(sk => (
-              <button key={sk} onClick={() => setSub(sk)}
-                className="chipbtn" style={sub === sk ? { background: 'var(--primary, #1A5EAB)', color: '#fff', borderColor: 'var(--primary, #1A5EAB)' } : undefined}>
-                {sk} <span style={{ opacity: .7 }}>· {grouped[battery][sk].length}</span>
-              </button>
-            ))}
-          </div>
-          <div className="panel" style={{ padding: 14, marginTop: 8 }}>
-            {(grouped[battery]?.[sub || ''] || []).map(setRow)}
-          </div>
+          {mode === 'practice' ? (<>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+              {Object.keys(grouped[battery] || {}).map(sk => (
+                <button key={sk} onClick={() => setSub(sk)}
+                  className="chipbtn" style={sub === sk ? { background: 'var(--primary, #1A5EAB)', color: '#fff', borderColor: 'var(--primary, #1A5EAB)' } : undefined}>
+                  {sk} <span style={{ opacity: .7 }}>· {grouped[battery][sk].length}</span>
+                </button>
+              ))}
+            </div>
+            <div className="panel" style={{ padding: 14, marginTop: 8 }}>
+              {(grouped[battery]?.[sub || ''] || []).map(setRow)}
+            </div>
+          </>) : (
+            <div className="panel" style={{ padding: 14 }}>
+              {Object.values(grouped[battery] || {}).flat().map(setRow)}
+            </div>
+          )}
         </div>
       )}
 
@@ -292,10 +283,15 @@ function PreviewModal({ setId, label, onClose }: { setId: string; label: string;
   useEffect(() => { setLoading(true); api.teacherSetPreview(setId).then(setData).catch(setError).finally(() => setLoading(false)); }, [setId]);
 
   return (
-    <Modal title={`Preview — ${label}`} onClose={onClose} wide
-      footer={<button className="btn grow" onClick={onClose}>Close</button>}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg, #eef1f7)', zIndex: 60, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--line, #e4e9f2)', background: 'var(--card, #fff)' }}>
+        <b style={{ fontSize: 15 }}>Preview — {label}</b>
+        {data && <span className="tag">answers shown</span>}
+        <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onClose}>✕ Close</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: '18px', maxWidth: 820, width: '100%', margin: '0 auto' }}>
       {loading ? <Loading /> : error ? <ErrorBox e={error} /> : !data ? null : (
-        <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+        <div>
           <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
             {data.category_name}{data.subcategory ? ` · ${data.subcategory}` : ''} · {data.questions.length} question{data.questions.length === 1 ? '' : 's'}
             {data.is_exam && data.duration_minutes ? ` · ${data.duration_minutes} min (exam)` : ''} · answers shown
@@ -324,6 +320,7 @@ function PreviewModal({ setId, label, onClose }: { setId: string; label: string;
           })}
         </div>
       )}
-    </Modal>
+      </div>
+    </div>
   );
 }
