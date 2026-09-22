@@ -239,6 +239,9 @@ export function StudentDetail() {
         <div className="muted" style={{ fontSize: 11.5, margin: '6px 2px 0' }}>Applies to the guardian ({membership.guardian_email}) — all children on that guardian. Expiry blank = 1 year from today for paid plans (12:00 am IST). “Paid” records a real payment; the rest are non-paying access.</div>
       )}
 
+      <AdminProgressSections studentId={id!} onOpenSet={(sid, label) => setReviewSet({ id: sid, label })} />
+      {reviewSet && <SetReviewModal studentId={id!} setId={reviewSet.id} label={reviewSet.label} studentName={d.display_name} onClose={() => setReviewSet(null)} />}
+
       <div className="sdbento">
         {(() => {
           const ExpBtn = ({ k }: { k: typeof openPanel }) => (
@@ -337,9 +340,6 @@ export function StudentDetail() {
           </>;
         })()}
       </div>
-
-      <AdminProgressSections studentId={id!} onOpenSet={(sid, label) => setReviewSet({ id: sid, label })} />
-      {reviewSet && <SetReviewModal studentId={id!} setId={reviewSet.id} label={reviewSet.label} studentName={d.display_name} onClose={() => setReviewSet(null)} />}
 
       {adjust && (
         <Modal title={`Adjust reward — ${d.display_name}`} onClose={() => setAdjust(false)}
@@ -610,10 +610,9 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
     const esc = (s: string) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } as any)[c]);
     const qHtml = all.map((q: any, i: number) => {
       const opts = (q.options || []).map((o: any) => {
-        const mark = o.correct ? ' ✓ correct' : (o.selected ? ' ✗ chosen' : '');
         const style = o.correct ? 'background:#dcfce7;border-color:#86efac' : (o.selected ? 'background:#fee2e2;border-color:#fca5a5' : '');
         const img = o.image_url ? `<img src="${o.image_url}" style="max-width:180px;display:block;margin:4px 0">` : '';
-        return `<span style="display:inline-block;border:1px solid #d0d0d0;border-radius:8px;padding:4px 10px;margin:0 6px 6px 0;${style}">${esc(blockText(o.content))}${img}${mark}</span>`;
+        return `<span style="display:inline-block;border:1px solid #d0d0d0;border-radius:8px;padding:4px 10px;margin:0 6px 6px 0;${style}">${esc(blockText(o.content))}${img}</span>`;
       }).join('');
       const qImg = q.image_url ? `<img src="${q.image_url}" style="max-width:340px;display:block;margin:6px 0">` : '';
       const expl = blockText(q.explanation_blocks);
