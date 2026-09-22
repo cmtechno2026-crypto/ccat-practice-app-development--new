@@ -15,7 +15,7 @@ import { Achievements } from './pages/Achievements';
 import { Customization } from './pages/Customization';
 import { CoinsXp } from './pages/CoinsXp';
 import { Announcements } from './pages/Announcements';
-import { Books } from './pages/Books';
+import { Teachers } from './pages/Teachers';
 import { Grades } from './pages/Grades';
 import { Flags } from './pages/Flags';
 import { Admins } from './pages/Admins';
@@ -129,8 +129,7 @@ export function App() {
         <Route path="/announcements" element={<Announcements />} />
         <Route path="/comms/announcements" element={<Navigate to="/announcements" replace />} />
         <Route path="/comms/push" element={<Navigate to="/announcements" replace />} />
-        <Route path="/books" element={<Books />} />
-        <Route path="/comms/books" element={<Navigate to="/books" replace />} />
+        <Route path="/teachers" element={<Teachers />} />
         <Route path="/audit" element={<Audit />} />
         {/* Reached from the Super-Admin dashboard controls panel (R2), not the rail. */}
         <Route path="/health" element={<Health />} />

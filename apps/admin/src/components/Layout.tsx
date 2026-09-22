@@ -73,7 +73,7 @@ const BASE_RAIL: RailItem[] = [
   { to: '/students', label: 'Students', ic: '🧒', match: '/students' },
   // Gamification's Achievements/Avatars/Themes toggle is rendered in-page as pills (mockup).
   { to: '/gamification/achievements', label: 'Gamification', ic: '🏆', match: '/gamification' },
-  { to: '/books', label: 'Book Store', ic: '📖', match: '/books' },
+  { to: '/teachers', label: 'Teachers', ic: '👩‍🏫', match: '/teachers', perm: 'teacher.students.manage' },
   { to: '/announcements', label: 'Announcements', ic: '📣', match: '/announcements' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
 ];

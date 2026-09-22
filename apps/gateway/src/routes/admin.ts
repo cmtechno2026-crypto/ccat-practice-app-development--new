@@ -166,9 +166,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
                or s.display_name ilike $3 or gc.email ilike $3 or coalesce(gc.phone,'') ilike $3)
           and ($4::timestamptz is null or s.created_at >= $4::timestamptz)
           and ($5::timestamptz is null or s.created_at <= $5::timestamptz)
+          -- Teacher scope: a teacher account only sees students assigned to it ($8 = teacher id, else null).
+          and ($8::uuid is null or s.id in (select student_id from ccat.teacher_students where teacher_admin_id = $8::uuid))
         order by (s.status = 'purged') asc, ${sortCol} ${dir} nulls last, s.created_at desc
         limit $6 offset $7`,
-      [status, band, search, regFrom, regTo, limit, offset],
+      [status, band, search, regFrom, regTo, limit, offset, req.admin!.isTeacher ? req.admin!.adminId : null],
     );
     const matched = rows.length ? Number(rows[0]!.matched) : 0;
 

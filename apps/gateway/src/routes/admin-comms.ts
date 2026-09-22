@@ -5,7 +5,6 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
 import { checkPushPii } from '../lib/comms.js';
-import { isAllowlistedRetailerUrl, RETAILER_ALLOWLIST } from '../lib/books.js';
 
 // Announcements, push campaigns, Book Store management (Blueprint §21, §26).
 const annSchema = z.object({
@@ -20,20 +19,6 @@ const pushSchema = z.object({
   scheduled_at: z.string().datetime().optional(),
   audience_grade_ids: z.array(z.string().uuid()).optional(),
 });
-const bookSchema = z.object({ title: z.string().min(1), author: z.string().optional(), description: z.string().optional(),
-  price_cents: z.number().int().nonnegative().optional(), subject: z.string().optional(), grade_ids: z.array(z.string().uuid()).optional(),
-  retailer: z.string().min(1), url: z.string().url() });
-const bookPatchSchema = z.object({
-  title: z.string().min(1).optional(), author: z.string().nullable().optional(),
-  description: z.string().nullable().optional(), active: z.boolean().optional(),
-  price_cents: z.number().int().nonnegative().nullable().optional(), subject: z.string().nullable().optional(),
-  grade_ids: z.array(z.string().uuid()).nullable().optional(),
-}).refine((b) => Object.keys(b).length > 0, { message: 'No fields to update' });
-const linkSchema = z.object({ retailer: z.string().min(1), url: z.string().url(), kind: z.string().optional(), display_order: z.number().int().min(0).optional() });
-const linkPatchSchema = z.object({
-  retailer: z.string().min(1).optional(), url: z.string().url().optional(), kind: z.string().nullable().optional(),
-  active: z.boolean().optional(), display_order: z.number().int().min(0).optional(),
-}).refine((b) => Object.keys(b).length > 0, { message: 'No fields to update' });
 
 export function registerAdminCommsRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
@@ -192,84 +177,5 @@ export function registerAdminCommsRoutes(app: FastifyInstance, db: DB, cfg: Conf
     await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,reason) values ($1,'admin',$2,'push',$3,$4)`,
       [req.admin!.adminId, b.decision === 'approved' ? 'push.approved' : 'push.rejected', id, b.reason ?? null]);
     return { state };
-  });
-
-  // Book store management (§21). External retailer links only; each book can carry multiple
-  // per-platform buy links. Destinations must be HTTPS + on the retailer allowlist.
-  app.get('/v1/admin/books', guard, async () => {
-    const rows = await db.query(`select b.id,b.title,b.author,b.description,b.active,b.price_cents,b.subject,b.grade_ids,
-        coalesce(json_agg(json_build_object('id',l.id,'retailer',l.retailer,'url',l.destination_url,'kind',l.kind,'active',l.active,'display_order',l.display_order) order by l.display_order,l.retailer) filter (where l.id is not null),'[]') retailers
-        from ccat.books b left join ccat.book_retailer_links l on l.book_id=b.id group by b.id order by b.title`);
-    return { items: rows.rows };
-  });
-  // The allowlisted retailer platforms, surfaced so the UI can offer a picker + explain rejections.
-  app.get('/v1/admin/books/retailers', guard, async () => {
-    return { platforms: RETAILER_ALLOWLIST.map((p) => ({ key: p.key, label: p.label, domains: p.domains })) };
-  });
-  app.post('/v1/admin/books', guard, async (req) => {
-    requirePermission(req, 'book.manage');
-    const b = bookSchema.parse(req.body);
-    const chk = isAllowlistedRetailerUrl(b.url);
-    if (!chk.ok) throw Errors.validation(chk.reason!);
-    const book = await db.query('insert into ccat.books(title,author,description,price_cents,subject,grade_ids,active,created_by) values ($1,$2,$3,$4,$5,$6,true,$7) returning id',
-      [b.title, b.author ?? null, b.description ?? null, b.price_cents ?? null, b.subject ?? null, b.grade_ids ?? null, req.admin!.adminId]);
-    await db.query('insert into ccat.book_retailer_links(book_id,retailer,destination_url,display_order,active) values ($1,$2,$3,0,true)',
-      [book.rows[0]!.id, b.retailer, b.url]);
-    await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','book.created','book',$2)`, [req.admin!.adminId, book.rows[0]!.id]);
-    return { id: book.rows[0]!.id };
-  });
-  app.patch('/v1/admin/books/:id', guard, async (req) => {
-    requirePermission(req, 'book.manage');
-    const id = (req.params as any).id;
-    const b = bookPatchSchema.parse(req.body);
-    const fields = ['title', 'author', 'description', 'active', 'price_cents', 'subject', 'grade_ids'] as const;
-    const before = await db.query(`select ${fields.join(',')} from ccat.books where id=$1`, [id]);
-    if (before.rows.length === 0) throw Errors.notFound('Book not found');
-    const sets: string[] = []; const vals: any[] = [id]; let i = 2;
-    const oldVal: any = {}; const newVal: any = {};
-    for (const k of fields) {
-      if (b[k] !== undefined) { sets.push(`${k}=$${i++}`); vals.push(b[k]); oldVal[k] = before.rows[0]![k]; newVal[k] = b[k]; }
-    }
-    await db.query(`update ccat.books set ${sets.join(',')} where id=$1 returning id`, vals);
-    await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value) values ($1,'admin','book.updated','book',$2,$3,$4)`, [req.admin!.adminId, id, JSON.stringify(oldVal), JSON.stringify(newVal)]);
-    return { id };
-  });
-  // Per-platform buy link management.
-  app.post('/v1/admin/books/:id/links', guard, async (req) => {
-    requirePermission(req, 'book.manage');
-    const id = (req.params as any).id;
-    const b = linkSchema.parse(req.body);
-    const chk = isAllowlistedRetailerUrl(b.url);
-    if (!chk.ok) throw Errors.validation(chk.reason!);
-    const book = await db.query('select id from ccat.books where id=$1', [id]);
-    if (book.rows.length === 0) throw Errors.notFound('Book not found');
-    const ord = b.display_order ?? (await db.query('select coalesce(max(display_order),-1)+1 n from ccat.book_retailer_links where book_id=$1', [id])).rows[0]!.n;
-    const r = await db.query('insert into ccat.book_retailer_links(book_id,retailer,destination_url,kind,display_order,active) values ($1,$2,$3,$4,$5,true) returning id',
-      [id, b.retailer, b.url, b.kind ?? null, ord]);
-    await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','book.link.added','book',$2)`, [req.admin!.adminId, id]);
-    return { id: r.rows[0]!.id };
-  });
-  app.patch('/v1/admin/books/:id/links/:linkId', guard, async (req) => {
-    requirePermission(req, 'book.manage');
-    const { id, linkId } = req.params as any;
-    const b = linkPatchSchema.parse(req.body);
-    if (b.url !== undefined) { const chk = isAllowlistedRetailerUrl(b.url); if (!chk.ok) throw Errors.validation(chk.reason!); }
-    const sets: string[] = []; const vals: any[] = [linkId, id]; let i = 3;
-    if (b.retailer !== undefined) { sets.push(`retailer=$${i++}`); vals.push(b.retailer); }
-    if (b.url !== undefined) { sets.push(`destination_url=$${i++}`); vals.push(b.url); }
-    if (b.active !== undefined) { sets.push(`active=$${i++}`); vals.push(b.active); }
-    if (b.kind !== undefined) { sets.push(`kind=$${i++}`); vals.push(b.kind); }
-    if (b.display_order !== undefined) { sets.push(`display_order=$${i++}`); vals.push(b.display_order); }
-    const r = await db.query(`update ccat.book_retailer_links set ${sets.join(',')} where id=$1 and book_id=$2 returning id`, vals);
-    if (r.rows.length === 0) throw Errors.notFound('Retailer link not found');
-    return { id: linkId };
-  });
-  app.delete('/v1/admin/books/:id/links/:linkId', guard, async (req) => {
-    requirePermission(req, 'book.manage');
-    const { id, linkId } = req.params as any;
-    const r = await db.query('delete from ccat.book_retailer_links where id=$1 and book_id=$2 returning id', [linkId, id]);
-    if (r.rows.length === 0) throw Errors.notFound('Retailer link not found');
-    await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id) values ($1,'admin','book.link.removed','book',$2)`, [req.admin!.adminId, id]);
-    return { deleted: true };
   });
 }

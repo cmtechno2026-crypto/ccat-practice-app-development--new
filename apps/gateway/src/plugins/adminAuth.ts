@@ -14,6 +14,7 @@ export interface AdminContext {
   permissions: Set<string>;
   sites: string[];      // site ids this admin may access (super_admin => every active site)
   activeSite: string;   // the site this request is scoped to (from X-Admin-Site, default 'ccat')
+  isTeacher: boolean;   // restricted TEACHER account — student reads are scoped to assigned students
 }
 
 declare module 'fastify' {
@@ -56,6 +57,28 @@ export async function loadAdminSites(db: DB, adminId: string, role: string): Pro
   }
 }
 
+// Whether an admin is a restricted TEACHER account. Defensive: if the is_teacher column doesn't exist
+// yet (pre-0050), treat as a normal admin so the gateway is safe to deploy before the migration runs.
+export async function loadIsTeacher(db: DB, adminId: string): Promise<boolean> {
+  try {
+    const r = await db.query('select is_teacher from ccat.admin_profiles where id=$1', [adminId]);
+    return r.rows[0]?.is_teacher === true;
+  } catch {
+    return false;
+  }
+}
+
+// Scope guard for STUDENT reads. A teacher account may only see students explicitly assigned to it;
+// non-teachers and super_admins pass through. Call this after requirePermission('student.directory')
+// on every per-student read (detail / progress / exams). Throws 403 for an unassigned student.
+export async function assertStudentVisible(db: DB, req: FastifyRequest, studentId: string): Promise<void> {
+  const admin = req.admin;
+  if (!admin) throw Errors.unauthorized();
+  if (admin.role === 'super_admin' || !admin.isTeacher) return;
+  const r = await db.query('select 1 from ccat.teacher_students where teacher_admin_id=$1 and student_id=$2', [admin.adminId, studentId]);
+  if (r.rows.length === 0) throw Errors.forbidden('STUDENT_NOT_ASSIGNED', 'This student is not assigned to you');
+}
+
 export function makeAuthenticateAdmin(db: DB, hmacSecret: string) {
   return async function authenticateAdmin(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
     const header = req.headers['authorization'];
@@ -84,7 +107,8 @@ export function makeAuthenticateAdmin(db: DB, hmacSecret: string) {
     // Active site comes from the client (X-Admin-Site); fall back to ccat, then the first granted site.
     const requested = String(req.headers['x-admin-site'] || '').trim().toLowerCase();
     const activeSite = sites.includes(requested) ? requested : (sites.includes('ccat') ? 'ccat' : sites[0]!);
-    req.admin = { adminId: a.id, role: a.security_role, permissions, sites, activeSite };
+    const isTeacher = await loadIsTeacher(db, a.id);
+    req.admin = { adminId: a.id, role: a.security_role, permissions, sites, activeSite, isTeacher };
   };
 }
 

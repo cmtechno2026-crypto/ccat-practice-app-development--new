@@ -4,9 +4,10 @@ import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
-import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../plugins/adminAuth.js';
+import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin, assertStudentVisible } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
 import { hashSecret } from '../security/crypto.js';
+import { randomBytes } from 'node:crypto';
 import { progressCardTotals, computeProgressSummary, computeProgressSets, computeSetReview, pickRange } from './progress.js';
 import { computeExamHistory } from './sessions.js';
 
@@ -78,6 +79,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   app.get('/v1/admin/students/:id/detail', guard, async (req) => {
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
     const s = await db.query(`select s.*, g.grade_number, g.name grade_name from ccat.students s join ccat.grades g on g.id=s.grade_id where s.id=$1`, [id]);
     if (s.rows.length === 0) throw Errors.notFound('Student not found');
     const st = s.rows[0]!;
@@ -134,11 +136,13 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   app.get('/v1/admin/students/:id/progress/summary', guard, async (req) => {
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
     return computeProgressSummary(db, id, pickRange(req.query));
   });
   app.get('/v1/admin/students/:id/progress/sets', guard, async (req) => {
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
     const q: any = req.query || {};
     const battery = typeof q.battery === 'string' ? q.battery.trim() : '';
     const subRaw = typeof q.subcategory === 'string' ? q.subcategory.trim() : '';
@@ -148,6 +152,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   app.get('/v1/admin/students/:id/progress/set-review', guard, async (req) => {
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
     const q: any = req.query || {};
     const setId = typeof q.setId === 'string' ? q.setId.trim() : '';
     return computeSetReview(db, id, setId);
@@ -156,8 +161,87 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   app.get('/v1/admin/students/:id/exams/history', guard, async (req) => {
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
     const r = pickRange(req.query);
     return computeExamHistory(db, id, { from: r.from, to: r.to });
+  });
+
+  // ---- Teacher accounts (restricted admins) + student assignments ------------------------------------
+  // A teacher = an admin account with is_teacher=true, security_role='admin', and only student.directory.
+  // Managed by super-admin (or an admin holding teacher.students.manage). Teachers sign in with the normal
+  // admin login and are scoped to their assigned students everywhere (see assertStudentVisible + the
+  // student-list filter). They cannot edit/membership/PIN/delete/ban — those endpoints are permission-gated.
+  const teacherCreateSchema = z.object({
+    display_name: z.string().trim().min(1).max(120),
+    email: z.string().trim().toLowerCase().email(),
+    temp_password: z.string().min(10).optional(),
+  });
+
+  app.get('/v1/admin/teachers', guard, async (req) => {
+    requirePermission(req, 'teacher.students.manage');
+    const rows = await db.query(
+      `select p.id, p.display_name, p.email, p.status,
+              (select count(*)::int from ccat.teacher_students ts where ts.teacher_admin_id = p.id) as student_count
+         from ccat.admin_profiles p
+        where p.is_teacher = true
+        order by p.display_name`);
+    return { teachers: rows.rows };
+  });
+
+  app.post('/v1/admin/teachers', guard, async (req) => {
+    requireSuperAdmin(req);
+    const b = teacherCreateSchema.parse(req.body ?? {});
+    const tempPassword = b.temp_password ?? randomBytes(9).toString('base64url');
+    const hash = await hashSecret(tempPassword, cfg.pinPepper);
+    const out = await withTransaction(db, async (c) => {
+      const dupe = await c.query('select 1 from ccat.admin_profiles where email=$1', [b.email]);
+      if (dupe.rows.length > 0) throw Errors.conflict('EMAIL_TAKEN', 'An admin with that email already exists');
+      const p = await c.query(
+        `insert into ccat.admin_profiles(id,email,display_name,security_role,status,mfa_enrolled,must_change_password,is_teacher,created_by)
+         values (gen_random_uuid(),$1,$2,'admin','active',false,false,true,$3) returning id`,
+        [b.email, b.display_name, req.admin!.adminId]);
+      const pid = p.rows[0]!.id as string;
+      await c.query('insert into ccat.admin_local_credentials(admin_id,password_hash) values ($1,$2)', [pid, hash]);
+      await c.query('insert into ccat.admin_permissions(admin_id,permission_key,granted_by) values ($1,$2,$3) on conflict do nothing', [pid, 'student.directory', req.admin!.adminId]);
+      await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','teacher.created','admin',$2,$3)`, [req.admin!.adminId, pid, JSON.stringify({ email: b.email })]);
+      return { id: pid };
+    });
+    return { id: out.id, temp_password: tempPassword, note: 'Password — shown once. The teacher signs in with it (view-only, assigned students).' };
+  });
+
+  app.post('/v1/admin/teachers/:id/status', guard, async (req) => {
+    requirePermission(req, 'teacher.students.manage');
+    const id = (req.params as any).id;
+    const st = (req.body as any)?.status;
+    if (st !== 'active' && st !== 'disabled') throw Errors.validation('status must be "active" or "disabled"');
+    const chk = await db.query('select 1 from ccat.admin_profiles where id=$1 and is_teacher=true', [id]);
+    if (chk.rows.length === 0) throw Errors.notFound('Teacher not found');
+    await db.query('update ccat.admin_profiles set status=$2 where id=$1', [id, st]);
+    await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','teacher.status','admin',$2,$3)`, [req.admin!.adminId, id, JSON.stringify({ status: st })]);
+    return { status: st };
+  });
+
+  app.get('/v1/admin/teachers/:id/students', guard, async (req) => {
+    requirePermission(req, 'teacher.students.manage');
+    const id = (req.params as any).id;
+    const r = await db.query('select student_id from ccat.teacher_students where teacher_admin_id=$1', [id]);
+    return { student_ids: r.rows.map((x: any) => x.student_id as string) };
+  });
+
+  app.put('/v1/admin/teachers/:id/students', guard, async (req) => {
+    requirePermission(req, 'teacher.students.manage');
+    const id = (req.params as any).id;
+    const ids: string[] = Array.isArray((req.body as any)?.student_ids) ? (req.body as any).student_ids : [];
+    const chk = await db.query('select 1 from ccat.admin_profiles where id=$1 and is_teacher=true', [id]);
+    if (chk.rows.length === 0) throw Errors.notFound('Teacher not found');
+    await withTransaction(db, async (c) => {
+      await c.query('delete from ccat.teacher_students where teacher_admin_id=$1', [id]);
+      for (const sid of ids) {
+        await c.query('insert into ccat.teacher_students(teacher_admin_id,student_id,assigned_by) values ($1,$2,$3) on conflict do nothing', [id, sid, req.admin!.adminId]);
+      }
+      await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','teacher.students.set','admin',$2,$3)`, [req.admin!.adminId, id, JSON.stringify({ count: ids.length })]);
+    });
+    return { student_ids: ids };
   });
 
   // Edit student profile fields (STUDENTS — granular). Requires `student.update` (Super-Admin passes
