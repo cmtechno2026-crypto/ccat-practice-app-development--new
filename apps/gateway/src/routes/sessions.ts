@@ -62,6 +62,61 @@ function seedFrom(...parts: string[]): number {
   return (h >>> 0);
 }
 
+// Exam history for a given student — the LATEST finished attempt per exam paper, newest first, with a
+// per-battery breakdown. Same shape as GET /v1/exams/history. Used read-only by the admin Student Detail
+// Exam Progress panel (no finalize side-effects there). The student route below still owns its own copy
+// with finalize; this function takes the student id explicitly so admin can pass the target student.
+export async function computeExamHistory(db: DB, sid: string, range: { from?: string; to?: string } = {}) {
+  const params: any[] = [sid];
+  const cond: string[] = [
+    "s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')",
+    "not exists (select 1 from ccat.sessions s2 join ccat.question_set_versions sv2 on sv2.id = s2.set_version_id where s2.student_id = $1 and s2.mode = 'exam' and s2.state = 'IN_PROGRESS' and sv2.question_set_id = qs.id)",
+  ];
+  if (range.from) { params.push(range.from); cond.push(`s.terminal_at >= $${params.length}`); }
+  if (range.to) { params.push(range.to); cond.push(`s.terminal_at < $${params.length}`); }
+
+  const res = await db.query(
+    `select distinct on (qs.id)
+            s.id as session_id, qs.id as set_id, s.terminal_at, s.started_at, r.terminal_state, r.score_correct, r.score_total, r.detail,
+            qs.name as set_name, cat.key as battery_key, sv.duration_minutes,
+            greatest(0, extract(epoch from (s.terminal_at - s.started_at)))::int as elapsed_secs
+       from ccat.sessions s
+       join ccat.session_results r on r.session_id = s.id
+       join ccat.question_set_versions sv on sv.id = s.set_version_id
+       join ccat.question_sets qs on qs.id = sv.question_set_id
+       join ccat.categories cat on cat.id = qs.category_id
+      where ${cond.join(' and ')}
+      order by qs.id, s.terminal_at desc nulls last`,
+    params,
+  );
+  const rows = res.rows.slice().sort((a: any, b: any) =>
+    new Date(b.terminal_at ?? 0).getTime() - new Date(a.terminal_at ?? 0).getTime()).slice(0, 25);
+
+  return rows.map((r) => {
+    const { byBattery, attempted } = summarizeBattery(r.detail);
+    const total = r.score_total ?? 0;
+    const cap = Number(r.duration_minutes) > 0 ? Number(r.duration_minutes) * 60 : null;
+    const elapsed = r.elapsed_secs != null ? Number(r.elapsed_secs) : null;
+    const timeSpent = elapsed == null ? null : (cap != null ? Math.min(elapsed, cap) : elapsed);
+    const timedOut = r.terminal_state === 'AUTO_SUBMITTED';
+    const by_battery = byBattery.map((b) => ({ ...b, time_spent_seconds: timeSpent, timed_out: timedOut }));
+    return {
+      session_id: r.session_id,
+      set_id: r.set_id,
+      set_name: r.set_name,
+      battery_key: r.battery_key,
+      when: r.terminal_at,
+      end_reason: r.terminal_state,
+      score_correct: r.score_correct,
+      score_total: total,
+      accuracy_pct: total > 0 ? Math.round((100 * r.score_correct) / total) : 0,
+      attempted_count: attempted,
+      time_spent_seconds: timeSpent,
+      by_battery,
+    };
+  });
+}
+
 export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // Payments Phase 2 — the HARD gate. Server-side enforcement that cannot be bypassed by the client.
   // Throws 403 { code:'upgrade_required', details:{ requiredTier, feature } } when the student's

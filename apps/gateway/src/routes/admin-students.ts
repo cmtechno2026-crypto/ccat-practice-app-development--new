@@ -8,6 +8,7 @@ import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin } from '../
 import { deriveAgeYears } from '../lib/age.js';
 import { hashSecret } from '../security/crypto.js';
 import { progressCardTotals, computeProgressSummary, computeProgressSets, computeSetReview, pickRange } from './progress.js';
+import { computeExamHistory } from './sessions.js';
 
 // Shared break-glass enrollment: revoke any active device + live sessions, then enroll the new device
 // as the sole active one. Runs inside a caller-provided transaction so approve/direct share one path.
@@ -150,6 +151,13 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const q: any = req.query || {};
     const setId = typeof q.setId === 'string' ? q.setId.trim() : '';
     return computeSetReview(db, id, setId);
+  });
+  // Exam papers the student has finished (latest attempt per paper) for the Exam Progress panel. Read-only.
+  app.get('/v1/admin/students/:id/exams/history', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    const r = pickRange(req.query);
+    return computeExamHistory(db, id, { from: r.from, to: r.to });
   });
 
   // Edit student profile fields (STUDENTS — granular). Requires `student.update` (Super-Admin passes

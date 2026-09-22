@@ -424,33 +424,43 @@ function ResetPinModal({ studentName, onClose, onDone, submit }: { studentName: 
 
 // ---- Progress panels (Battery Practice + Exam Progress) — read-only, per-student ----------------------
 // Best-effort plain-text from a rich prompt/option block array (admin review is text-level; images noted).
+// Plain text from a rich block array. Blocks store text as { type:'text', value:'…' } (same as the
+// student Progress page's blocksText) — images are separate { type:'image', url } blocks (see image_url).
 function blockText(blocks: any): string {
-  if (blocks == null) return '';
-  if (typeof blocks === 'string') return blocks;
-  if (Array.isArray(blocks)) {
-    return blocks.map((b: any) => {
-      if (b == null) return '';
-      if (typeof b === 'string') return b;
-      if (typeof b.text === 'string') return b.text;
-      if (b.type === 'image') return '[image]';
-      if (typeof b.content === 'string') return b.content;
-      return '';
-    }).filter(Boolean).join(' ').trim();
-  }
-  if (typeof blocks?.text === 'string') return blocks.text;
-  return '';
+  if (!Array.isArray(blocks)) return typeof blocks === 'string' ? blocks : '';
+  return blocks.filter((b: any) => b && b.type === 'text' && typeof b.value === 'string').map((b: any) => b.value).join(' ').trim();
 }
+const CAT_VIS: Record<string, { name: string; color: string }> = {
+  verbal: { name: 'Verbal', color: '#2f6fd0' },
+  quantitative: { name: 'Quantitative', color: '#1f9d6b' },
+  non_verbal: { name: 'Non-verbal', color: '#6d4dd6' },
+};
+const catVis = (k: string) => CAT_VIS[k] || { name: k, color: '#2f6fd0' };
+const fmtMMSS = (secs: number | null | undefined) => {
+  if (secs == null) return '—';
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return `${m}m ${String(s).padStart(2, '0')}s`;
+};
 
 function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; onOpenSet: (setId: string, label: string) => void }) {
   const { data, loading, error } = useAsync(() => api.getStudentProgress(studentId), [studentId]);
-  const [tab, setTab] = useState<string>('');
   const batteries: any[] = data?.batteries ?? [];
-  const activeKey = tab || batteries[0]?.key || '';
+  const [battery, setBattery] = useState<string>('');
+  const activeKey = battery || batteries[0]?.key || '';
+  const activeBattery = batteries.find((b: any) => b.key === activeKey);
+  const [sub, setSub] = useState<string>('all');
   const setsAsync = useAsync(
-    async () => (activeKey ? await api.getStudentProgressSets(studentId, activeKey, 'all') : []),
-    [studentId, activeKey],
+    async () => (activeKey ? await api.getStudentProgressSets(studentId, activeKey, sub) : []),
+    [studentId, activeKey, sub],
   );
   const sets: any[] = setsAsync.data ?? [];
+  const subOptions: any[] = activeBattery?.subcategories ?? [];
+
+  // Exam papers (finished attempts) for the Exam Progress panel.
+  const examAsync = useAsync(() => api.getStudentExamHistory(studentId), [studentId]);
+  const papers: any[] = examAsync.data ?? [];
+  const [examBattery, setExamBattery] = useState<string>('verbal');
+  const examPapers = papers.filter((p: any) => (p.battery_key ?? 'verbal') === examBattery);
 
   return (
     <>
@@ -460,7 +470,9 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
         @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .apx-card{background:#1c1e2b;border-color:#2b2e40}}
         :root[data-theme="dark"] .apx-card{background:#1c1e2b;border-color:#2b2e40}
         .apx-boxes{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-        .apx-box{border:1px solid var(--sd-line,#e7e8f2);border-radius:12px;padding:14px;background:var(--sky,#eef4fd);text-align:center}
+        .apx-box{border:1px solid var(--sd-line,#e7e8f2);border-radius:12px;padding:14px;background:var(--sky,#eef4fd);text-align:center;cursor:pointer;transition:border-color .1s,box-shadow .1s}
+        .apx-box.on{border-color:var(--blue,#2f6fd0);box-shadow:inset 0 0 0 1px var(--blue,#2f6fd0)}
+        .apx-box.static{cursor:default}
         .apx-box .fr{font-size:22px;font-weight:800;color:var(--blue,#2f6fd0)}
         .apx-box .fr small{font-size:12px;color:var(--muted,#6b6f8a);font-weight:600}
         .apx-box .lb{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#6b6f8a);margin-top:6px;font-weight:700}
@@ -470,6 +482,7 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
         .apx-tab{border:1px solid var(--sd-line,#e7e8f2);background:transparent;border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:700;color:var(--muted,#6b6f8a);cursor:pointer}
         .apx-tab.on{border-color:var(--blue,#2f6fd0);color:var(--blue,#2f6fd0)}
         .apx-setlink{color:var(--blue,#2f6fd0);font-weight:700;background:none;border:none;cursor:pointer;padding:0;font-size:13px}
+        .apx-hint{font-size:11px;color:var(--muted,#6b6f8a);margin:2px 2px 0}
       `}</style>
 
       <div className="apx-h">Battery Practice</div>
@@ -482,23 +495,25 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
               const total = b.setsTotal || 0; const done = b.setsDone || 0;
               const w = total > 0 ? Math.min(100, Math.round((100 * done) / total)) : 0;
               return (
-                <div className="apx-box" key={b.key}>
+                <button className={`apx-box ${activeKey === b.key ? 'on' : ''}`} key={b.key} onClick={() => { setBattery(b.key); setSub('all'); }} style={{ font: 'inherit' }}>
                   <div className="fr">{done} <small>/ {total}</small></div>
                   <div className="lb">{b.name}</div>
                   <div className="bar"><i style={{ width: `${w}%` }} /></div>
-                </div>
+                </button>
               );
             })}
           </div>
+          <div className="apx-hint">Click a battery box to see its subcategories and sets below.</div>
 
           <div className="apx-tabs">
-            {batteries.map((b: any) => (
-              <button key={b.key} className={`apx-tab ${activeKey === b.key ? 'on' : ''}`} onClick={() => setTab(b.key)}>{b.name}</button>
+            <button className={`apx-tab ${sub === 'all' ? 'on' : ''}`} onClick={() => setSub('all')}>All subcategories</button>
+            {subOptions.map((sc: any) => (
+              <button key={sc.key} className={`apx-tab ${sub === sc.key ? 'on' : ''}`} onClick={() => setSub(sc.key)}>{sc.name}</button>
             ))}
           </div>
 
           {setsAsync.loading ? <Loading /> : setsAsync.error ? <ErrorBox e={setsAsync.error} /> : sets.length === 0 ? (
-            <div className="muted">No finished sets in this battery yet.</div>
+            <div className="muted">No finished sets for this selection yet.</div>
           ) : (
             <div className="tablewrap"><table>
               <thead><tr><th>Set</th><th>Subcategory</th><th>Score</th><th>Accuracy</th><th>Avg time/q</th><th></th></tr></thead>
@@ -519,40 +534,94 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
 
       <div className="apx-h">Exam Progress</div>
       <div className="apx-card">
-        {loading ? <Loading /> : error ? <ErrorBox e={error} /> : (
-          <div className="apx-boxes">
-            <div className="apx-box">
+        {loading ? null : error ? null : (
+          <div className="apx-boxes" style={{ marginBottom: 14 }}>
+            <div className="apx-box static">
               <div className="fr">{data?.exam?.papersDone ?? 0} <small>/ {data?.exam?.papersTotal ?? 0}</small></div>
               <div className="lb">Exam papers done</div>
               <div className="bar"><i style={{ width: `${data?.exam?.papersTotal > 0 ? Math.min(100, Math.round((100 * (data.exam.papersDone || 0)) / data.exam.papersTotal)) : 0}%` }} /></div>
             </div>
           </div>
         )}
-        <div className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>Per-paper review &amp; download shows the same way as Battery sets once exam-paper history is wired for admin.</div>
+
+        <div className="apx-tabs">
+          {['verbal', 'quantitative', 'non_verbal'].map((k) => (
+            <button key={k} className={`apx-tab ${examBattery === k ? 'on' : ''}`} onClick={() => setExamBattery(k)}>{catVis(k).name}</button>
+          ))}
+        </div>
+
+        {examAsync.loading ? <Loading /> : examAsync.error ? <ErrorBox e={examAsync.error} /> : examPapers.length === 0 ? (
+          <div className="muted">No {catVis(examBattery).name} exam papers finished yet.</div>
+        ) : (
+          <div className="tablewrap"><table>
+            <thead><tr><th>Paper</th><th>Score</th><th>Accuracy</th><th>Time</th><th>Status</th><th></th></tr></thead>
+            <tbody>{examPapers.map((p: any) => {
+              const noEngagement = (p.attempted_count ?? 0) === 0 && !p.time_spent_seconds;
+              const status = noEngagement ? 'Not attempted' : (p.end_reason === 'AUTO_SUBMITTED' ? 'Timed out' : 'Completed');
+              const clickable = !noEngagement && !!p.set_id;
+              return (
+                <tr key={p.session_id}>
+                  <td>{clickable
+                    ? <button className="apx-setlink" onClick={() => onOpenSet(p.set_id, p.set_name || 'Exam paper')}>{p.set_name || 'Exam paper'}</button>
+                    : <span className="muted">{p.set_name || 'Exam paper'}</span>}</td>
+                  <td className="tabnum">{p.score_total > 0 ? `${p.score_correct}/${p.score_total}` : '—'}</td>
+                  <td className="tabnum">{p.score_total > 0 ? `${p.accuracy_pct}%` : '—'}</td>
+                  <td className="tabnum">{fmtMMSS(p.time_spent_seconds)}</td>
+                  <td className="muted">{status}</td>
+                  <td>{clickable ? <button className="btn ghost sm" onClick={() => onOpenSet(p.set_id, p.set_name || 'Exam paper')}>⬇ Review / Download</button> : null}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+        )}
       </div>
     </>
   );
 }
 
-// Set-review modal — the student's latest submitted attempt of a set (questions + their answers vs the
-// key), with a Download (opens a print-friendly page → Save as PDF). Reuses the admin set-review endpoint.
+// Full-screen set/paper review — fills the content area (to the right of the sidebar). Shows real
+// questions + options with correct/selected marks and images, filter checkboxes (Correct / Wrong &
+// unattempted / Explanations), and a Download (opens a print-friendly page → Save as PDF).
 function SetReviewModal({ studentId, setId, label, studentName, onClose }: { studentId: string; setId: string; label: string; studentName: string; onClose: () => void }) {
   const { data, loading, error } = useAsync(() => api.getStudentSetReview(studentId, setId), [studentId, setId]);
   const rv: any = data;
+  const [showCorrect, setShowCorrect] = useState(true);
+  const [showWrong, setShowWrong] = useState(true);
+  const [showExpl, setShowExpl] = useState(true);
+  const [leftPx, setLeftPx] = useState(0);
+
+  useEffect(() => {
+    const measure = () => {
+      const el = document.querySelector('.content') as HTMLElement | null;
+      setLeftPx(el ? Math.round(el.getBoundingClientRect().left) : 0);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('resize', measure); document.body.style.overflow = ''; };
+  }, []);
+
+  const all: any[] = rv?.questions ?? [];
+  // "Wrong" covers unanswered (anything not correct).
+  const shown = all.filter((q: any) => (q.correct ? showCorrect : showWrong));
 
   const download = () => {
     if (!rv?.found) return;
     const esc = (s: string) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } as any)[c]);
-    const qHtml = (rv.questions || []).map((q: any, i: number) => {
+    const qHtml = all.map((q: any, i: number) => {
       const opts = (q.options || []).map((o: any) => {
         const mark = o.correct ? ' ✓ correct' : (o.selected ? ' ✗ chosen' : '');
         const style = o.correct ? 'background:#dcfce7;border-color:#86efac' : (o.selected ? 'background:#fee2e2;border-color:#fca5a5' : '');
-        return `<span style="display:inline-block;border:1px solid #d0d0d0;border-radius:8px;padding:4px 10px;margin:0 6px 6px 0;${style}">${esc(blockText(o.content) || o.option_id)}${mark}</span>`;
+        const img = o.image_url ? `<img src="${o.image_url}" style="max-width:180px;display:block;margin:4px 0">` : '';
+        return `<span style="display:inline-block;border:1px solid #d0d0d0;border-radius:8px;padding:4px 10px;margin:0 6px 6px 0;${style}">${esc(blockText(o.content))}${img}${mark}</span>`;
       }).join('');
-      return `<div style="padding:10px 0;border-bottom:1px solid #eee"><div style="font-weight:700">Q${i + 1}. ${esc(blockText(q.prompt_blocks))}${q.image_url ? ' [image]' : ''}</div><div style="margin-top:6px">${opts}</div></div>`;
+      const qImg = q.image_url ? `<img src="${q.image_url}" style="max-width:340px;display:block;margin:6px 0">` : '';
+      const expl = blockText(q.explanation_blocks);
+      const status = q.correct ? '✓ Correct' : (q.answered ? '✗ Incorrect' : 'Not answered');
+      return `<div style="padding:12px 0;border-bottom:1px solid #eee"><div style="font-weight:700">Q${i + 1}. ${esc(blockText(q.prompt_blocks))} <span style="color:#666;font-weight:400">(${status})</span></div>${qImg}<div style="margin-top:6px">${opts}</div>${expl ? `<div style="margin-top:8px;background:#eef3fc;border:1px solid #d9e4f7;border-radius:8px;padding:8px 10px;font-size:13px"><b>Why:</b> ${esc(expl)}</div>` : ''}</div>`;
     }).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(studentName)} — ${esc(rv.setName || label)}</title>
-      <style>body{font-family:Arial,sans-serif;color:#1a1a1a;max-width:760px;margin:24px auto;padding:0 16px}
+      <style>body{font-family:Arial,sans-serif;color:#1a1a1a;max-width:780px;margin:24px auto;padding:0 16px}
       h1{color:#1A5EAB;font-size:20px} .meta{color:#666;font-size:13px;margin-bottom:14px}</style></head>
       <body><h1>${esc(rv.setName || label)}</h1>
       <div class="meta">${esc(studentName)} · Score ${rv.score?.correct ?? 0}/${rv.score?.total ?? 0} · Accuracy ${rv.accuracyPct != null ? rv.accuracyPct + '%' : '—'} · Time ${rv.timeSeconds != null ? Math.round(rv.timeSeconds / 60) + 'm' : '—'}</div>
@@ -562,33 +631,73 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
     if (w) { w.document.write(html); w.document.close(); }
   };
 
+  const chk = (checked: boolean, onChange: () => void, labelTxt: string) => (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+      <input type="checkbox" checked={checked} onChange={onChange} style={{ width: 15, height: 15 }} />{labelTxt}
+    </label>
+  );
+
   return (
-    <Modal title={`${label} — review`} onClose={onClose}
-      footer={<><button className="btn ghost grow" onClick={onClose}>Close</button>
-        <button className="btn grow" disabled={!rv?.found} onClick={download}>⬇ Download (PDF)</button></>}>
-      {loading ? <Loading /> : error ? <ErrorBox e={error} /> : !rv?.found ? (
-        <div className="muted">No submitted attempt found for this set.</div>
-      ) : (<>
-        <div className="aihint" style={{ background: 'var(--tint, #E6F0FD)', color: '#1C4D8C' }}>
-          Score <b>{rv.score?.correct ?? 0}/{rv.score?.total ?? 0}</b> · Accuracy <b>{rv.accuracyPct != null ? `${rv.accuracyPct}%` : '—'}</b> · Time <b>{rv.timeSeconds != null ? `${Math.round(rv.timeSeconds / 60)}m` : '—'}</b>
+    <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: leftPx, background: 'var(--bg, #f4f6fc)', zIndex: 60, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', background: 'var(--blue, #1A5EAB)', color: '#fff', flexShrink: 0 }}>
+        <button className="btn ghost sm" style={{ background: 'rgba(255,255,255,.15)', color: '#fff', border: '1px solid rgba(255,255,255,.4)' }} onClick={onClose}>← Back</button>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>{label} — review</div>
+        <button aria-label="Close" onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+      </div>
+
+      {rv?.found && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--line, #e6e6ef)', background: 'var(--card, #fff)', flexShrink: 0 }}>
+          <span style={{ fontSize: 13, color: 'var(--muted, #6b6f8a)' }}>Score <b>{rv.score?.correct ?? 0}/{rv.score?.total ?? 0}</b> · Accuracy <b>{rv.accuracyPct != null ? `${rv.accuracyPct}%` : '—'}</b> · Time <b>{rv.timeSeconds != null ? `${Math.round(rv.timeSeconds / 60)}m` : '—'}</b></span>
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 18, flexWrap: 'wrap' }}>
+            {chk(showCorrect, () => setShowCorrect(v => !v), 'Correct')}
+            {chk(showWrong, () => setShowWrong(v => !v), 'Wrong / unattempted')}
+            {chk(showExpl, () => setShowExpl(v => !v), 'Explanations')}
+          </span>
+          <button className="btn" onClick={download}>⬇ Download (PDF)</button>
         </div>
-        <div style={{ maxHeight: 360, overflow: 'auto', marginTop: 8 }}>
-          {(rv.questions || []).map((q: any, i: number) => (
-            <div key={i} style={{ padding: '10px 0', borderBottom: '1px solid var(--sd-line, #eee)' }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>Q{i + 1}. {blockText(q.prompt_blocks) || '(question)'} {q.image_url ? <span className="muted">[image]</span> : null}</div>
-              <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      )}
+
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', maxWidth: 900, width: '100%', margin: '0 auto' }}>
+        {loading ? <Loading /> : error ? <ErrorBox e={error} /> : !rv?.found ? (
+          <div className="muted">No submitted attempt found for this set.</div>
+        ) : shown.length === 0 ? (
+          <div className="muted">Nothing to show — adjust the filters above.</div>
+        ) : shown.map((q: any) => {
+          const n = all.indexOf(q) + 1;
+          const expl = blockText(q.explanation_blocks);
+          return (
+            <div key={q.question_version_id ?? n} style={{ padding: '14px 0', borderBottom: '1px solid var(--line, #e6e6ef)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontWeight: 800, fontSize: 14 }}>Question {n}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: q.correct ? '#1e7a46' : (q.answered ? '#b3261e' : 'var(--muted,#6b6f8a)') }}>
+                  {q.correct ? '✓ Correct' : (q.answered ? '✗ Incorrect' : 'Not answered')}
+                </span>
+              </div>
+              {blockText(q.prompt_blocks) && <div style={{ marginTop: 6, fontSize: 14.5, lineHeight: 1.5 }}>{blockText(q.prompt_blocks)}</div>}
+              {q.image_url && <img src={q.image_url} alt="" style={{ maxWidth: 340, display: 'block', margin: '8px 0', borderRadius: 8 }} />}
+              <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {(q.options || []).map((o: any, j: number) => (
-                  <span key={j} className="tag" style={{
-                    background: o.correct ? '#dcfce7' : (o.selected ? '#fee2e2' : undefined),
-                    color: o.correct ? '#166534' : (o.selected ? '#991b1b' : undefined),
+                  <span key={o.option_id ?? j} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--line, #d0d0d0)', borderRadius: 9, padding: '6px 11px', fontSize: 13,
+                    background: o.correct ? '#dcfce7' : (o.selected ? '#fee2e2' : 'var(--card, #fff)'),
+                    color: o.correct ? '#166534' : (o.selected ? '#991b1b' : 'inherit'),
                     fontWeight: (o.correct || o.selected) ? 700 : 400,
-                  }}>{blockText(o.content) || o.option_id}{o.correct ? ' ✓' : (o.selected ? ' ✗' : '')}</span>
+                  }}>
+                    {o.image_url ? <img src={o.image_url} alt="" style={{ maxWidth: 90, display: 'block' }} /> : (blockText(o.content) || o.option_id)}
+                    {o.correct ? ' ✓' : (o.selected ? ' ✗' : '')}
+                  </span>
                 ))}
               </div>
+              {showExpl && expl && (
+                <div style={{ marginTop: 10, background: 'var(--sky, #eef3fc)', border: '1px solid #d9e4f7', borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: '#2f62c8', marginBottom: 3 }}>💡 Why</div>
+                  <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>{expl}</div>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      </>)}
-    </Modal>
+          );
+        })}
+      </div>
+    </div>
   );
 }

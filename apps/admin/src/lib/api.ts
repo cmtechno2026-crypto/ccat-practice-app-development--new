@@ -77,6 +77,7 @@ export const api = {
     req<any>('GET', `/v1/admin/students/${id}/progress/sets?battery=${encodeURIComponent(battery)}&subcategory=${encodeURIComponent(subcategory)}`),
   getStudentSetReview: (id: string, setId: string) =>
     req<any>('GET', `/v1/admin/students/${id}/progress/set-review?setId=${encodeURIComponent(setId)}`),
+  getStudentExamHistory: (id: string) => req<any[]>('GET', `/v1/admin/students/${id}/exams/history`),
   createStudent: (b: { display_name: string; username: string; pin: string; grade_id: string; birth_month?: number; birth_year?: number; guardian_email?: string; guardian_name?: string; guardian_phone?: string }) =>
     req<{ id: string; username: string; display_name: string; status: string }>('POST', '/v1/admin/students', b),
   studentStatus: (id: string, version: number, to_status: string, reason_code: string, reason_text?: string) =>
