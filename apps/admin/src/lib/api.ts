@@ -71,6 +71,8 @@ export const api = {
   login: (email: string, password: string) => req<{ access_token: string; refresh_token?: string; admin: any }>('POST', '/v1/admin/auth/login', { email, password }),
   refresh: () => refreshOnce(),
   me: () => req<any>('GET', '/v1/admin/me'),
+  requestPasswordReset: (email: string) => req<{ ok: boolean }>('POST', '/v1/admin/password/reset/start', { email }),
+  completePasswordReset: (email: string, code: string, new_password: string) => req<{ ok: boolean }>('POST', '/v1/admin/password/reset/complete', { email, code, new_password }),
   // dashboard + health
   dashboard: (window = 7) => req<any>('GET', `/v1/admin/dashboard?window=${window}`),
   health: () => req<any>('GET', '/v1/admin/health'),
@@ -115,11 +117,17 @@ export const api = {
   setTeacherStatus: (id: string, status: 'active' | 'disabled') => req<{ status: string }>('POST', `/v1/admin/teachers/${id}/status`, { status }),
   teacherStudents: (id: string) => req<{ student_ids: string[] }>('GET', `/v1/admin/teachers/${id}/students`),
   setTeacherStudents: (id: string, student_ids: string[]) => req<{ student_ids: string[] }>('PUT', `/v1/admin/teachers/${id}/students`, { student_ids }),
+  addTeacherStudents: (id: string, student_ids: string[]) => req<{ added: number }>('POST', `/v1/admin/teachers/${id}/students/add`, { student_ids }),
   teacherCatalog: (grade_id: string) => req<any>('GET', `/v1/admin/teacher/catalog?grade_id=${encodeURIComponent(grade_id)}`),
   teacherSetPreview: (setId: string) => req<any>('GET', `/v1/admin/teacher/set-preview?setId=${encodeURIComponent(setId)}`),
   publicGrades: () => req<any[]>('GET', '/v1/grades'),
   studentStats: () => req<{ total: number; active: number; suspended: number; banned: number; pending_deletion: number; practised_today: number }>('GET', '/v1/admin/students/stats'),
   studentDetail: (id: string) => req<any>('GET', `/v1/admin/students/${id}/detail`),
+  // ---- Student detail: progress, set review, exam history (admin-students.ts) ----
+  getStudentProgress: (id: string) => req<any>('GET', `/v1/admin/students/${id}/progress/summary`),
+  getStudentProgressSets: (id: string, battery?: string, subcategory?: string) => { const p = new URLSearchParams(); if (battery) p.set('battery', battery); if (subcategory) p.set('subcategory', subcategory); const qs = p.toString(); return req<any>('GET', `/v1/admin/students/${id}/progress/sets${qs ? '?' + qs : ''}`); },
+  getStudentSetReview: (id: string, setId: string) => req<any>('GET', `/v1/admin/students/${id}/progress/set-review?setId=${encodeURIComponent(setId)}`),
+  getStudentExamHistory: (id: string) => req<any>('GET', `/v1/admin/students/${id}/exams/history`),
   createStudent: (b: { display_name: string; username: string; pin: string; grade_id: string; birth_month?: number; birth_year?: number; guardian_email?: string; guardian_name?: string; guardian_phone?: string }) =>
     req<{ id: string; username: string; display_name: string; status: string }>('POST', '/v1/admin/students', b),
   studentStatus: (id: string, version: number, to_status: string, reason_code: string, reason_text?: string) =>
