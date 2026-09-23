@@ -238,7 +238,9 @@ export function isCombineSubcategory(subcategoryKey: string | null | undefined, 
 
 // Compute the FREE demo sets for a grade: Set 1 (the first published set) of EVERY non-combine
 // subcategory (sub-battery), derived deterministically from the DB (never hard-coded ids). Combine
-// subcategories are excluded (key contains 'combine' or 45+ questions per set) — combine stays paid.
+// subcategories are excluded BY KEY (key contains 'combine') — combine stays paid. We deliberately do NOT
+// exclude by a size cap: normal subcategories can carry a large per-set cap (e.g. 100), which would wrongly
+// drop every demo set. Combine is a keyed concept, so key is the sole signal (mirrors isCombineSubcategory).
 // Sets are ordered (created_at, id) among PUBLISHED sets with active questions (published excludes
 // retired). DISTINCT ON (sub.id) with a matching leading ORDER BY picks Set 1 for each subcategory.
 export async function computeDemoSetIds(db: DB, gradeId: string): Promise<Set<string>> {
@@ -252,7 +254,6 @@ export async function computeDemoSetIds(db: DB, gradeId: string): Promise<Set<st
         and sv.state = 'published'
         and sub.active = true
         and lower(coalesce(sub.key, '')) not like '%combine%'
-        and coalesce(sub.max_questions_per_set, 15) < 45
         and exists (select 1 from ccat.set_version_questions svq
                      where svq.set_version_id = sv.id and svq.active = true)
       order by sub.id, sv.created_at asc, sv.id asc`,
