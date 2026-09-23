@@ -4,12 +4,10 @@ import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
-import { verifySecret } from '../security/crypto.js';
-import { signAdminToken } from '../security/token.js';
-import { credentialFingerprint } from '../security/crypto.js';
-import { makeAuthenticateAdmin, loadAdminPermissions, loadAdminSites, requirePermission } from '../plugins/adminAuth.js';
+import { verifySecret, hashToken } from '../security/crypto.js';
+import { signAdminToken, newRefreshToken } from '../security/token.js';
+import { makeAuthenticateAdmin, loadAdminPermissions, requirePermission } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
-import { computeEffective, loadDefaultPlan, isPromoActive } from '../lib/entitlements.js';
 
 // Audit event categories (mockup: Content / Student accounts / Economy / Governance). Each maps to
 // a set of event_type prefixes; used for the category filter chips and the colored row grouping.
@@ -82,16 +80,67 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     }
     // MFA enrollment is not required to sign in (removed by owner decision). Admins authenticate with
     // work email + password only; account lockout after 5 failed attempts remains the brute-force guard.
-    const token = signAdminToken({ sub: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds, pv: credentialFingerprint(a.password_hash) }, cfg.hmacSecret);
+    const token = signAdminToken({ sub: a.id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds }, cfg.hmacSecret);
+    // Mint a refresh token so the admin console can renew the short-lived access token instead of forcing a
+    // re-login every ~15 min. Best-effort: if ccat.admin_sessions doesn't exist yet (migration 0048 not
+    // applied), login still succeeds — just without a refresh token, i.e. exactly the old behaviour.
+    let refresh_token: string | undefined;
+    try {
+      const rt = newRefreshToken();
+      await db.query(
+        `insert into ccat.admin_sessions(admin_id, refresh_hash, expires_at)
+         values ($1, $2, now() + ($3 || ' seconds')::interval)`,
+        [a.id, hashToken(rt, cfg.pinPepper), String(cfg.refreshTokenTtlSeconds)],
+      );
+      refresh_token = rt;
+    } catch (e) {
+      req.log.warn({ err: (e as Error).message }, 'admin session insert failed (login ok, no refresh token)');
+    }
     const permissions = await loadAdminPermissions(db, a.id, a.security_role);
-    const sites = await loadAdminSites(db, a.id, a.security_role);
     return {
       access_token: token,
-      admin: {
-        id: a.id, role: a.security_role, must_change_password: a.must_change_password,
-        permissions: [...permissions],
-        sites, active_site: sites.includes('ccat') ? 'ccat' : sites[0]!,
-      },
+      refresh_token,
+      admin: { id: a.id, role: a.security_role, must_change_password: a.must_change_password, permissions: [...permissions] },
+    };
+  });
+
+  // Exchange an admin refresh token for a fresh access token (+ rotated refresh). The admin console calls
+  // this automatically when an authed request 401s. Rotation invalidates the previous refresh token; the
+  // per-request admin auth still re-checks status/permissions from the DB, so a disabled admin is cut off
+  // on the next request regardless of token lifetime.
+  app.post('/v1/admin/auth/refresh', async (req) => {
+    const body = z.object({ refresh_token: z.string().min(1) }).parse(req.body);
+    const presented = hashToken(body.refresh_token, cfg.pinPepper);
+    let rows: any[] = [];
+    try {
+      ({ rows } = await db.query(
+        `select se.id as sid, se.admin_id, p.security_role, p.status
+           from ccat.admin_sessions se
+           join ccat.admin_profiles p on p.id = se.admin_id
+          where se.refresh_hash = $1 and se.revoked_at is null and se.expires_at > now()`,
+        [presented],
+      ));
+    } catch {
+      // Table missing (pre-migration) — treat as no valid session.
+      throw Errors.unauthorized('Invalid or expired refresh token');
+    }
+    if (rows.length === 0) throw Errors.unauthorized('Invalid or expired refresh token');
+    const r = rows[0]!;
+    if (r.status !== 'active') throw Errors.forbidden('ADMIN_DISABLED', 'Admin account is disabled');
+
+    const nextRefresh = newRefreshToken();
+    await db.query(
+      `update ccat.admin_sessions
+          set refresh_hash = $2, expires_at = now() + ($3 || ' seconds')::interval, last_used_at = now()
+        where id = $1`,
+      [r.sid, hashToken(nextRefresh, cfg.pinPepper), String(cfg.refreshTokenTtlSeconds)],
+    );
+    const access = signAdminToken({ sub: r.admin_id, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds }, cfg.hmacSecret);
+    const permissions = await loadAdminPermissions(db, r.admin_id, r.security_role);
+    return {
+      access_token: access,
+      refresh_token: nextRefresh,
+      admin: { id: r.admin_id, role: r.security_role, permissions: [...permissions] },
     };
   });
 
@@ -99,7 +148,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   app.get('/v1/admin/me', { preHandler: [authenticateAdmin] }, async (req) => {
     const a = req.admin!;
     const p = await db.query('select email, display_name from ccat.admin_profiles where id=$1', [a.adminId]);
-    return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions], sites: a.sites, active_site: a.activeSite, is_teacher: a.isTeacher };
+    return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions] };
   });
 
   // GET /v1/admin/students — directory: computed Age + raw guardian PII for authorized users (§24).
@@ -109,7 +158,6 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const SORTS: Record<string, string> = {
     last_active: 'la.last_active', xp: 's.cached_xp_total', readiness: 'r.readiness_pct',
     grade: 'g.grade_number', username: "s.username_normalized::text", created: 's.created_at',
-    registered: 's.created_at',
   };
   const STATUSES = new Set(['active', 'suspended', 'banned', 'pending_deletion', 'purged']);
   const BANDS = new Set(['ready', 'building', 'needs_work']);
@@ -123,17 +171,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const status = q.status && STATUSES.has(q.status) ? q.status : null;
     const band = q.band && BANDS.has(q.band) ? q.band : null;
     const search = q.q && q.q.trim() ? `%${q.q.trim()}%` : null;
-    // Registration-date range filter (Students page). ISO date (YYYY-MM-DD) or full timestamp; both
-    // optional. `to` is treated as inclusive of the whole day when a bare date is given.
-    const dateOk = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(v.trim()) ? v.trim() : null);
-    const regFrom = dateOk(q.registered_from);
-    const regToRaw = dateOk(q.registered_to);
-    // Bare date on `to` → include through end of that day.
-    const regTo = regToRaw && /^\d{4}-\d{2}-\d{2}$/.test(regToRaw) ? regToRaw + 'T23:59:59.999' : regToRaw;
 
     const { rows } = await db.query(
       `select s.id, s.display_name, s.username_normalized::text as username, s.status, s.version,
-              s.birth_month, s.birth_year, s.created_at, g.grade_number,
+              s.birth_month, s.birth_year, g.grade_number,
               gc.email as guardian_email, gc.phone as guardian_phone, gc.name as guardian_name,
               s.cached_xp_total, s.cached_coin_balance,
               r.readiness_pct, r.band as readiness_band, r.insufficient_data,
@@ -164,46 +205,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           and ($2::text is null or r.band = $2)
           and ($3::text is null or s.username_normalized::text ilike $3
                or s.display_name ilike $3 or gc.email ilike $3 or coalesce(gc.phone,'') ilike $3)
-          and ($4::timestamptz is null or s.created_at >= $4::timestamptz)
-          and ($5::timestamptz is null or s.created_at <= $5::timestamptz)
-          -- Teacher scope: a teacher account only sees students assigned to it ($8 = teacher id, else null).
-          and ($8::uuid is null or s.id in (select student_id from ccat.teacher_students where teacher_admin_id = $8::uuid))
-        order by (s.status = 'purged') asc, ${sortCol} ${dir} nulls last, s.created_at desc
-        limit $6 offset $7`,
-      [status, band, search, regFrom, regTo, limit, offset, req.admin!.isTeacher ? req.admin!.adminId : null],
+        order by ${sortCol} ${dir} nulls last, s.created_at desc
+        limit $4 offset $5`,
+      [status, band, search, limit, offset],
     );
     const matched = rows.length ? Number(rows[0]!.matched) : 0;
-
-    // Payments: attach each student's EFFECTIVE membership tier (via primary guardian email + default plan).
-    // Defensive + flag-gated: only when PAYMENTS_ENABLED, and wrapped so a missing app_settings/grant_reason
-    // (migration 0043 not yet applied) can NEVER break the directory — it just leaves tier null.
-    let pay: { dp: Awaited<ReturnType<typeof loadDefaultPlan>>; byEmail: Map<string, string> } | null = null;
-    if (cfg.paymentsEnabled) {
-      try {
-        const dp = await loadDefaultPlan(db);
-        const emails = [...new Set(rows.map((r) => (r.guardian_email ? String(r.guardian_email).toLowerCase() : null)).filter(Boolean) as string[])];
-        const byEmail = new Map<string, string>();
-        if (emails.length) {
-          const ent = await db.query(
-            `select lower(guardian_email) as email, tier, status, current_period_end, grant_reason
-               from ccat.entitlements where lower(guardian_email) = any($1::text[])`,
-            [emails],
-          );
-          for (const e of ent.rows) {
-            const notExpired = e.current_period_end == null || new Date(e.current_period_end) > new Date();
-            const rowActive = e.status === 'active' && notExpired;
-            byEmail.set(String(e.email), computeEffective({ rowActive, rowTier: e.tier, grantReason: e.grant_reason ?? null, promo: dp }).rawTier);
-          }
-        }
-        pay = { dp, byEmail };
-      } catch { pay = null; }
-    }
-    const tierFor = (email: string | null): string | null => {
-      if (!pay) return null;
-      const em = email ? email.toLowerCase() : null;
-      return (em && pay.byEmail.get(em)) || (isPromoActive(pay.dp) ? pay.dp.defaultTier : 'free');
-    };
-
     return {
       matched,
       items: rows.map((r) => {
@@ -218,10 +224,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           readiness_band: r.readiness_band ?? null, readiness_insufficient: r.insufficient_data ?? false,
           sets_completed: r.sets_completed === null ? null : Number(r.sets_completed),
           progress_pct: r.progress_pct === null ? null : Number(r.progress_pct),
-          device_total: total, device_active: active, last_active: r.last_active, created_at: r.created_at,
+          device_total: total, device_active: active, last_active: r.last_active,
           streak_current: r.current_streak == null ? 0 : Number(r.current_streak),
           streak_longest: r.longest_streak == null ? 0 : Number(r.longest_streak),
-          membership_tier: tierFor(r.guardian_email ? String(r.guardian_email) : null),
         };
       }),
       next_cursor: rows.length === limit ? String(offset + limit) : null,

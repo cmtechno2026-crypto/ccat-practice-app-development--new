@@ -88,12 +88,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     applyStoredPalette(); // paint the last-equipped theme before any fetch, so no flash of base colors
     (async () => {
+      // Resume if we have EITHER a live access token OR a refresh token: profile() auto-refreshes on a 401,
+      // so a returning visitor whose 15-min access token expired (or whose tab cleared sessionStorage) is
+      // silently re-issued a token from the long-lived refresh token instead of being bounced to sign-in.
       const tok = await client.tokens.getAccess();
-      if (tok) {
+      const rt = await client.tokens.getRefresh();
+      if (tok || rt) {
         try {
           setProfileState(await client.profile());
           if (PAYMENTS_ENABLED) await refreshEntitlements();
-        } catch { /* invalid */ }
+        } catch { /* refresh failed / truly signed out */ }
       }
       setReady(true);
     })();

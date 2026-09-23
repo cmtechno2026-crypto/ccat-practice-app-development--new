@@ -181,6 +181,48 @@ export function registerAuthRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     return { access_token: access, refresh_token: refresh, expires_in: cfg.accessTokenTtlSeconds };
   });
 
+  // Exchange a valid refresh token for a fresh access token (and a rotated refresh token). This is what
+  // keeps a signed-in student signed in past the short access-token TTL: the web/mobile client calls this
+  // automatically when an authed request returns 401. The session id (sid) is preserved so the new access
+  // token points at the same auth_sessions row — device binding, revocation and status checks all still
+  // apply on every subsequent request. Rotation (new refresh_hash each call) means a leaked/older refresh
+  // token stops working once a newer one is minted.
+  const refreshSchema = z.object({ refresh_token: z.string().min(1), device_hash: z.string().optional() });
+  app.post('/v1/auth/refresh', { config: { rateLimit: { max: cfg.env === 'production' ? 60 : 2000, timeWindow: '1 minute' } } }, async (req) => {
+    const body = refreshSchema.parse(req.body);
+    const presented = hashToken(body.refresh_token, cfg.pinPepper);
+    const { rows } = await db.query(
+      `select a.id as sid, a.student_id, a.device_id,
+              s.status as student_status, d.status as device_status, d.device_hash
+         from ccat.auth_sessions a
+         join ccat.students s on s.id = a.student_id
+         join ccat.student_devices d on d.id = a.device_id
+        where a.refresh_hash = $1 and a.revoked_at is null and a.expires_at > now()`,
+      [presented],
+    );
+    if (rows.length === 0) throw Errors.unauthorized('Invalid or expired refresh token');
+    const row = rows[0]!;
+    if (row.student_status !== 'active') throw Errors.forbidden('ACCOUNT_NOT_ACTIVE', `Account is ${row.student_status}`);
+    if (row.device_status !== 'active') throw Errors.deviceNotEnrolled();
+    // If the client sends its device hash, it must match the enrolled device (defence in depth; the
+    // session's device binding + revocation already enforce single-device switching).
+    if (body.device_hash && body.device_hash !== row.device_hash) throw Errors.unauthorized('Device mismatch');
+
+    const nextRefresh = newRefreshToken();
+    await db.query(
+      `update ccat.auth_sessions
+          set refresh_hash = $2, expires_at = now() + ($3 || ' seconds')::interval, last_used_at = now()
+        where id = $1`,
+      [row.sid, hashToken(nextRefresh, cfg.pinPepper), String(cfg.refreshTokenTtlSeconds)],
+    );
+    await db.query('update ccat.student_devices set last_seen_at = now() where id = $1', [row.device_id]);
+    const access = signToken(
+      { sub: row.student_id, did: row.device_id, sid: row.sid, exp: Math.floor(Date.now() / 1000) + cfg.accessTokenTtlSeconds },
+      cfg.hmacSecret,
+    );
+    return { access_token: access, refresh_token: nextRefresh, expires_in: cfg.accessTokenTtlSeconds };
+  });
+
   app.post('/v1/auth/logout', { preHandler: [app.authenticateStudent] }, async (req, reply) => {
     await db.query('update ccat.auth_sessions set revoked_at = now(), revoked_reason = $2 where id = $1', [
       req.student!.authSessionId,

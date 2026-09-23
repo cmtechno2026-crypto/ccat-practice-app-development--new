@@ -7,47 +7,70 @@ export class ApiError extends Error {
   }
 }
 
+// Access token in memory + sessionStorage (per-tab); refresh token in localStorage so it survives a
+// browser restart and can renew the short-lived access token without a re-login.
 let token: string | null = sessionStorage.getItem('ccat_admin_token');
+let refreshToken: string | null = (() => { try { return localStorage.getItem('ccat_admin_refresh'); } catch { return null; } })();
 export function setToken(t: string | null) {
   token = t;
   if (t) sessionStorage.setItem('ccat_admin_token', t); else sessionStorage.removeItem('ccat_admin_token');
 }
-export function getToken() { return token; }
-
-// Active site (multi-site admin). Sent as X-Admin-Site so the gateway scopes reads/writes; the
-// gateway defaults to 'ccat' when this is absent, so it is safe to leave unset.
-let site: string | null = sessionStorage.getItem('ccat_admin_site');
-export function setSite(s: string | null) {
-  site = s;
-  if (s) sessionStorage.setItem('ccat_admin_site', s); else sessionStorage.removeItem('ccat_admin_site');
+export function setRefresh(t: string | null) {
+  refreshToken = t;
+  try { if (t) localStorage.setItem('ccat_admin_refresh', t); else localStorage.removeItem('ccat_admin_refresh'); } catch { /* private mode */ }
 }
-export function getSite() { return site; }
+export function getToken() { return token; }
+export function getRefresh() { return refreshToken; }
 
-async function req<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
+// Single-flight refresh shared by all in-flight 401s (a page mounts and fires several calls at once).
+let refreshing: Promise<boolean> | null = null;
+async function doRefresh(): Promise<boolean> {
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch(GATEWAY + '/v1/admin/auth/refresh', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return false;
+    const text = await res.text();
+    const j = text ? JSON.parse(text) : null;
+    if (!j?.access_token) return false;
+    setToken(j.access_token);
+    if (j.refresh_token) setRefresh(j.refresh_token);
+    return true;
+  } catch { return false; }
+}
+function refreshOnce(): Promise<boolean> {
+  if (!refreshing) refreshing = doRefresh().finally(() => { refreshing = null; });
+  return refreshing;
+}
+export function refreshSession() { return refreshOnce(); }
+
+async function req<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>, retried = false): Promise<T> {
   const h: Record<string, string> = { ...(headers || {}) };
   if (token) h['authorization'] = `Bearer ${token}`;
-  if (site) h['x-admin-site'] = site;
   if (body !== undefined) h['content-type'] = 'application/json';
   const res = await fetch(GATEWAY + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();
   const json = text ? JSON.parse(text) : null;
-  if (!res.ok) { const e = json?.error || {}; throw new ApiError(res.status, e.code || 'UNKNOWN', e.message || res.statusText, e.details); }
+  if (!res.ok) {
+    // Transparent refresh on the first 401, then replay once. Skip for the auth endpoints themselves so
+    // this never recurses. On refresh failure, drop the dead tokens and surface the 401 (routes to login).
+    if (res.status === 401 && !retried && !path.startsWith('/v1/admin/auth/')) {
+      if (await refreshOnce()) return req<T>(method, path, body, headers, true);
+      setToken(null); setRefresh(null);
+    }
+    const e = json?.error || {}; throw new ApiError(res.status, e.code || 'UNKNOWN', e.message || res.statusText, e.details);
+  }
   return json as T;
 }
 
 export const api = {
   gateway: GATEWAY,
   // auth
-  login: (email: string, password: string) => req<{ access_token: string; admin: any }>('POST', '/v1/admin/auth/login', { email, password }),
+  login: (email: string, password: string) => req<{ access_token: string; refresh_token?: string; admin: any }>('POST', '/v1/admin/auth/login', { email, password }),
+  refresh: () => refreshOnce(),
   me: () => req<any>('GET', '/v1/admin/me'),
-  // Self-service password reset via email OTP (public; the admin is locked out).
-  requestPasswordReset: (email: string) => req<{ ok: boolean }>('POST', '/v1/admin/password/reset/start', { email }),
-  completePasswordReset: (email: string, code: string, new_password: string) => req<{ ok: boolean }>('POST', '/v1/admin/password/reset/complete', { email, code, new_password }),
-  // Teacher Hub site (X-Admin-Site: teacher is sent automatically when the active site is set)
-  teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number }>('GET', '/v1/admin/teacher/summary'),
-  teacherTeachers: (search = '') => req<{ teachers: any[] }>('GET', '/v1/admin/teacher/teachers' + (search ? ('?search=' + encodeURIComponent(search)) : '')),
-  teacherSlots: (teacherId = '') => req<{ slots: any[] }>('GET', '/v1/admin/teacher/slots' + (teacherId ? ('?teacher_id=' + encodeURIComponent(teacherId)) : '')),
-  teacherSetSlotStatus: (id: string, status: 'open' | 'booked') => req<any>('PATCH', '/v1/admin/teacher/slots/' + encodeURIComponent(id), { status }),
   // dashboard + health
   dashboard: (window = 7) => req<any>('GET', `/v1/admin/dashboard?window=${window}`),
   health: () => req<any>('GET', '/v1/admin/health'),
@@ -74,13 +97,6 @@ export const api = {
   },
   studentStats: () => req<{ total: number; active: number; suspended: number; banned: number; pending_deletion: number; practised_today: number }>('GET', '/v1/admin/students/stats'),
   studentDetail: (id: string) => req<any>('GET', `/v1/admin/students/${id}/detail`),
-  // Per-student progress for the Student Detail panels (read-only; same shape as the student Progress page).
-  getStudentProgress: (id: string) => req<any>('GET', `/v1/admin/students/${id}/progress/summary`),
-  getStudentProgressSets: (id: string, battery: string, subcategory: string) =>
-    req<any>('GET', `/v1/admin/students/${id}/progress/sets?battery=${encodeURIComponent(battery)}&subcategory=${encodeURIComponent(subcategory)}`),
-  getStudentSetReview: (id: string, setId: string) =>
-    req<any>('GET', `/v1/admin/students/${id}/progress/set-review?setId=${encodeURIComponent(setId)}`),
-  getStudentExamHistory: (id: string) => req<any[]>('GET', `/v1/admin/students/${id}/exams/history`),
   createStudent: (b: { display_name: string; username: string; pin: string; grade_id: string; birth_month?: number; birth_year?: number; guardian_email?: string; guardian_name?: string; guardian_phone?: string }) =>
     req<{ id: string; username: string; display_name: string; status: string }>('POST', '/v1/admin/students', b),
   studentStatus: (id: string, version: number, to_status: string, reason_code: string, reason_text?: string) =>
@@ -197,18 +213,13 @@ export const api = {
   pushPiiCheck: (message: string) => req<{ safe: boolean; reason?: string }>('POST', '/v1/admin/push/pii-check', { message }),
   requestPush: (b: { title: string; message: string; scheduled_at?: string; audience_grade_ids?: string[] }) => req<any>('POST', '/v1/admin/push/campaigns', b),
   approvePush: (id: string, decision: string, reason?: string) => req<any>('POST', `/v1/admin/push/campaigns/${id}/approval`, { decision, reason }),
-  // Teachers (restricted admin accounts, scoped to assigned students)
-  teachers: () => req<{ teachers: { id: string; display_name: string; email: string; status: string; student_count: number }[] }>('GET', '/v1/admin/teachers'),
-  createTeacher: (b: { display_name: string; email: string; temp_password?: string }) => req<{ id: string; temp_password: string }>('POST', '/v1/admin/teachers', b),
-  setTeacherStatus: (id: string, status: 'active' | 'disabled') => req<any>('POST', `/v1/admin/teachers/${id}/status`, { status }),
-  teacherStudents: (id: string) => req<{ student_ids: string[] }>('GET', `/v1/admin/teachers/${id}/students`),
-  setTeacherStudents: (id: string, student_ids: string[]) => req<{ student_ids: string[] }>('PUT', `/v1/admin/teachers/${id}/students`, { student_ids }),
-  // Additive assign — add students to a teacher without touching existing assignments (Students-page bulk assign).
-  addTeacherStudents: (id: string, student_ids: string[]) => req<{ added: number }>('POST', `/v1/admin/teachers/${id}/students/add`, { student_ids }),
-  // Teacher Practice/Exam browse (read-only, grade-parameterised — mirrors the web CCAT client).
-  publicGrades: () => req<{ id: string; grade_number: number; name: string; display_order: number }[]>('GET', '/v1/grades'),
-  teacherCatalog: (gradeId: string) => req<any[]>('GET', `/v1/admin/teacher/catalog?grade_id=${encodeURIComponent(gradeId)}`),
-  teacherSetPreview: (setId: string) => req<any>('GET', `/v1/admin/teacher/set-preview?setId=${encodeURIComponent(setId)}`),
+  books: () => req<{ items: any[] }>('GET', '/v1/admin/books'),
+  bookRetailers: () => req<{ platforms: { key: string; label: string; domains: string[] }[] }>('GET', '/v1/admin/books/retailers'),
+  createBook: (b: { title: string; author?: string; description?: string; price_cents?: number; subject?: string; grade_ids?: string[]; retailer: string; url: string }) => req<{ id: string }>('POST', '/v1/admin/books', b),
+  patchBook: (id: string, b: { title?: string; author?: string | null; description?: string | null; active?: boolean; price_cents?: number | null; subject?: string | null; grade_ids?: string[] | null }) => req<any>('PATCH', `/v1/admin/books/${id}`, b),
+  addBookLink: (id: string, b: { retailer: string; url: string; kind?: string; display_order?: number }) => req<{ id: string }>('POST', `/v1/admin/books/${id}/links`, b),
+  patchBookLink: (id: string, linkId: string, b: { retailer?: string; url?: string; kind?: string | null; active?: boolean; display_order?: number }) => req<any>('PATCH', `/v1/admin/books/${id}/links/${linkId}`, b),
+  deleteBookLink: (id: string, linkId: string) => req<any>('DELETE', `/v1/admin/books/${id}/links/${linkId}`),
   // accounts
   accounts: () => req<{ items: any[] }>('GET', '/v1/admin/accounts'),
   createAccount: (b: { email: string; display_name: string; role: string; permissions: string[]; temp_password?: string; recovery_channel?: 'email' | 'phone' }) => req<{ id: string; temp_password: string; generated: boolean }>('POST', '/v1/admin/accounts', b),

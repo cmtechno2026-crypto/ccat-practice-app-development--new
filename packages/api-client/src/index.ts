@@ -57,6 +57,9 @@ export class CcatClient {
   readonly baseUrl: string;
   readonly tokens: TokenStore;
   private readonly f: typeof fetch;
+  // Single-flight refresh: many authed requests can 401 at once (a page mounts and fires several calls);
+  // they must all share ONE /v1/auth/refresh instead of each rotating the token and invalidating the others.
+  private refreshing: Promise<boolean> | null = null;
 
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
@@ -64,7 +67,33 @@ export class CcatClient {
     this.f = opts.fetchImpl ?? fetch;
   }
 
-  private async request<T>(method: string, path: string, opts: { body?: unknown; auth?: boolean; headers?: Record<string, string> } = {}): Promise<T> {
+  // Exchange the stored refresh token for a fresh access+refresh pair and persist it. Returns false when
+  // there is no refresh token or the gateway rejects it (expired/revoked) — the caller then treats the
+  // original request as truly unauthorized. Never throws.
+  async refreshSession(): Promise<boolean> {
+    const rt = await this.tokens.getRefresh();
+    if (!rt) return false;
+    try {
+      const res = await this.f(`${this.baseUrl}/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refresh_token: rt }),
+      });
+      if (!res.ok) return false;
+      const text = await res.text();
+      const pair = (text ? JSON.parse(text) : null) as TokenPair | null;
+      if (!pair?.access_token) return false;
+      await this.tokens.set(pair);
+      return true;
+    } catch { return false; }
+  }
+
+  private refreshOnce(): Promise<boolean> {
+    if (!this.refreshing) this.refreshing = this.refreshSession().finally(() => { this.refreshing = null; });
+    return this.refreshing;
+  }
+
+  private async request<T>(method: string, path: string, opts: { body?: unknown; auth?: boolean; headers?: Record<string, string> } = {}, retried = false): Promise<T> {
     // Only send a JSON content-type when there is actually a body (bodyless GET/DELETE).
     const headers: Record<string, string> = { ...(opts.headers ?? {}) };
     if (opts.body !== undefined) headers['content-type'] = 'application/json';
@@ -80,6 +109,14 @@ export class CcatClient {
     const text = await res.text();
     const json = text ? JSON.parse(text) : null;
     if (!res.ok) {
+      // Transparent session refresh: on the first 401 of an authenticated call, try to refresh the access
+      // token (shared single-flight) and replay the request once. If refresh fails, clear the dead tokens
+      // and surface the 401 so the app routes to the sign-in screen. Login/refresh calls are not `auth`, so
+      // this never recurses into itself.
+      if (res.status === 401 && opts.auth && !retried) {
+        if (await this.refreshOnce()) return this.request<T>(method, path, opts, true);
+        await this.tokens.clear();
+      }
       const e = (json as ApiErrorBody | null)?.error;
       throw new ApiError(res.status, e?.code ?? 'UNKNOWN', e?.message ?? res.statusText, e?.request_id);
     }

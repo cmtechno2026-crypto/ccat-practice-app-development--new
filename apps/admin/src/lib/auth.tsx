@@ -1,15 +1,12 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api, setToken, getToken, setSite, getSite } from './api';
+import { api, setToken, setRefresh, getToken, getRefresh } from './api';
 
-export interface Me { id: string; role: 'admin' | 'super_admin'; email: string; display_name: string; permissions: string[]; sites?: string[]; active_site?: string; is_teacher?: boolean; }
+export interface Me { id: string; role: 'admin' | 'super_admin'; email: string; display_name: string; permissions: string[]; }
 interface AuthState {
   me: Me | null; ready: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   can: (perm: string) => boolean;
-  sites: string[];               // sites this admin may access (>=1)
-  activeSite: string;            // site the console is currently scoped to
-  switchSite: (site: string) => void;
 }
 const Ctx = createContext<AuthState | null>(null);
 
@@ -19,7 +16,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      if (getToken()) { try { setMe(await api.me()); } catch { setToken(null); } }
+      // Resume when we have an access token OR just a refresh token: api.me() auto-refreshes on a 401, so an
+      // expired 15-min access token (or a tab that cleared sessionStorage) renews silently from the stored
+      // refresh token instead of bouncing the admin to the sign-in screen.
+      if (getToken() || getRefresh()) {
+        try { setMe(await api.me()); } catch { setToken(null); setRefresh(null); }
+      }
       setReady(true);
     })();
   }, []);
@@ -27,19 +29,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const r = await api.login(email, password);
     setToken(r.access_token);
+    if (r.refresh_token) setRefresh(r.refresh_token);
     setMe(await api.me());
   }, []);
-  const logout = useCallback(() => { setToken(null); setMe(null); }, []);
+  const logout = useCallback(() => { setToken(null); setRefresh(null); setMe(null); }, []);
   const can = useCallback((perm: string) => !!me && (me.role === 'super_admin' || me.permissions.includes(perm)), [me]);
 
-  const sites = (me?.sites && me.sites.length ? me.sites : ['ccat']);
-  const activeSite = (getSite() || me?.active_site || 'ccat');
-  // Switching reloads to the target site's home so every page re-fetches under the new site header.
-  const switchSite = useCallback((site: string) => {
-    setSite(site === 'ccat' ? null : site); // ccat is the gateway default → no header needed
-    window.location.assign(site === 'teacher' ? '/teacher' : '/');
-  }, []);
-
-  return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ me, ready, login, logout, can }}>{children}</Ctx.Provider>;
 }
 export function useAuth() { const v = useContext(Ctx); if (!v) throw new Error('useAuth outside provider'); return v; }
