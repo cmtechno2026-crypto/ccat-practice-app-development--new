@@ -71,17 +71,29 @@ export function TeacherDirectory() {
   };
 
 
-// Grade label: prefer the grade_min/grade_max range (new schema); fall back to the legacy single grade.
-function gradeLabel(s: { grade: number | null; grade_min?: number | null; grade_max?: number | null }): string {
-  const lo = s.grade_min, hi = s.grade_max;
-  if (lo != null && hi != null) return lo === hi ? (' · G' + lo) : (' · G' + lo + '–' + hi);
-  return s.grade != null ? (' · G' + s.grade) : '';
+// Subject-colour palette + grade helpers, ported from the TeachTime teacher app so the admin's slot
+// cards read as the same slot table. comboColor hashes (subject|grade) to a stable pastel.
+const PALETTE = [
+  { bg: '#eef2ff', tx: '#4338ca', bd: '#c7d2fe' }, { bg: '#e2f6f3', tx: '#0f766e', bd: '#b7e6df' },
+  { bg: '#fef6e7', tx: '#b45309', bd: '#fde3ad' }, { bg: '#fdeef2', tx: '#be123c', bd: '#fbcfe0' },
+  { bg: '#f5edff', tx: '#7c3aed', bd: '#ddc9fb' }, { bg: '#e8f4fd', tx: '#0369a1', bd: '#bae0fb' },
+  { bg: '#eafbf0', tx: '#067647', bd: '#bfe6cf' }, { bg: '#fdefe6', tx: '#c2410c', bd: '#f7ccae' },
+  { bg: '#e6f7fb', tx: '#0e7490', bd: '#b3e6f0' }, { bg: '#fbecfb', tx: '#a21caf', bd: '#f2c9f0' },
+];
+function slotGrades(s: Slot) {
+  const lo = s.grade_min != null ? Number(s.grade_min) : (s.grade != null ? Number(s.grade) : 1);
+  const hi = s.grade_max != null ? Number(s.grade_max) : (s.grade != null ? Number(s.grade) : 12);
+  return { lo, hi };
+}
+function gkey(s: Slot) { const g = slotGrades(s); return (g.lo === 1 && g.hi === 12) ? 'all' : (g.lo === g.hi ? String(g.lo) : (g.lo + '-' + g.hi)); }
+function gradeShort(s: Slot) { const g = slotGrades(s); if (g.lo === 1 && g.hi === 12) return ''; return g.lo === g.hi ? ('G' + g.lo) : ('G' + g.lo + '-' + g.hi); }
+function gradeLong(s: Slot) { const g = slotGrades(s); if (g.lo === 1 && g.hi === 12) return 'All grades'; return g.lo === g.hi ? ('Grade ' + g.lo) : ('Grades ' + g.lo + '\u2013' + g.hi); }
+function comboColor(subject: string, grade: string) {
+  const k = String(subject || '').toLowerCase().trim() + '|' + (grade || 'all');
+  let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
+  return PALETTE[h % PALETTE.length];
 }
 
-  const statusPill = (status: string) => {
-    const open = status === 'available';
-    return <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', padding: '2px 8px', borderRadius: 999, background: open ? 'var(--good-soft,#dcf5ea)' : 'var(--coral-soft,#fdece9)', color: open ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)' }}>{status}</span>;
-  };
   const initials = (n: string) => (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   const inp = { padding: '7px 9px', border: '1px solid var(--line,#d7dce8)', borderRadius: 8, background: 'var(--card2,#f7f9fc)', color: 'inherit', width: '100%' } as React.CSSProperties;
 
@@ -95,27 +107,37 @@ function gradeLabel(s: { grade: number | null; grade_min?: number | null; grade_
         {list.map(s => {
           const booked = s.status === 'booked';
           return (
-            <div key={s.id} style={{ position: 'relative', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 8, padding: '7px 10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 800, minWidth: 34 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{s.start_time} – {s.end_time}</span>
-                <span className="muted" style={{ fontSize: 12 }}>{s.timezone}</span>
-                <span style={{ fontWeight: 700 }}>{s.subject}{gradeLabel(s)}</span>
-                <span className="muted" style={{ fontSize: 12 }}>{s.mode}</span>
-                <span style={{ marginLeft: 'auto' }}>{statusPill(s.status)}</span>
-                {canManage && (booked
-                  ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ fontSize: 12, fontWeight: 700, padding: '4px 9px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>Mark open</button>
-                  : <button onClick={() => openPopover(s.id)} disabled={savingSlot === s.id} style={{ fontSize: 12, fontWeight: 800, padding: '4px 11px', borderRadius: 7, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer' }}>Book</button>)}
+            <div key={s.id} style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 12, background: booked ? 'var(--coral-soft,#fdecea)' : 'var(--card,#fff)', border: '1px solid ' + (booked ? 'var(--coral-line,#f4c6c0)' : 'var(--line,#e6e6ef)'), borderRadius: 11, padding: '10px 12px' }}>
+              <div style={{ minWidth: 52, textAlign: 'center', background: 'var(--sky,#eaf1fb)', borderRadius: 9, padding: '6px 4px', flex: 'none' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--brand,#2f6fd0)' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</div>
               </div>
-
-              {booked && s.booked_student && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--teal-soft,#dbf1ee)', color: 'var(--teal-ink,#0b5a54)', borderRadius: 999, padding: '2px 9px 2px 3px', fontWeight: 700, fontSize: 12 }}>
-                    <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--teal,#0f766e)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800 }}>{initials(s.booked_student)}</span>
-                    {s.booked_student}
-                  </span>
-                  {s.booked_note && <span className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</span>}
-                  {s.booked_by && <span className="muted" style={{ fontSize: 11 }}>· by {s.booked_by}</span>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 15 }}>{s.start_time}–{s.end_time}<span style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted,#64748b)', letterSpacing: '.04em', marginLeft: 6 }}>{s.timezone}</span></div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, alignItems: 'center' }}>
+                  {(() => { const c = comboColor(s.subject, gkey(s)); const gs = gradeShort(s); return (
+                    <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '3px 9px', borderRadius: 20, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>{s.subject}{gs ? (' ' + gs) : ''}</span>
+                  ); })()}
+                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '3px 9px', borderRadius: 20, background: 'var(--amber-bg,#fdf3e0)', color: 'var(--amber,#b45309)' }}>{gradeLong(s)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '3px 9px', borderRadius: 20, background: booked ? '#fdecea' : '#e2f6f3', color: booked ? '#c0392b' : '#0f766e' }}>{booked ? 'Booked' : 'Available'}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted,#64748b)' }}>{s.mode}</span>
+                </div>
+                {booked && s.booked_student && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--teal-soft,#dbf1ee)', color: 'var(--teal-ink,#0b5a54)', borderRadius: 999, padding: '2px 9px 2px 3px', fontWeight: 700, fontSize: 12 }}>
+                      <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--teal,#0f766e)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800 }}>{initials(s.booked_student)}</span>
+                      {s.booked_student}
+                    </span>
+                    {s.booked_note && <span className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</span>}
+                    {s.booked_by && <span className="muted" style={{ fontSize: 11 }}>· by {s.booked_by}</span>}
+                  </div>
+                )}
+                {s.notes && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>📘 {s.notes}</div>}
+              </div>
+              {canManage && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 'none' }}>
+                  {booked
+                    ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>Mark open</button>
+                    : <button onClick={() => openPopover(s.id)} disabled={savingSlot === s.id} style={{ fontSize: 12, fontWeight: 800, padding: '5px 13px', borderRadius: 7, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer' }}>Book</button>}
                 </div>
               )}
 
