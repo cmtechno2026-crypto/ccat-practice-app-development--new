@@ -27,6 +27,7 @@ export function TeacherDirectory() {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [savingSlot, setSavingSlot] = useState<string | null>(null);
   const [popSlot, setPopSlot] = useState<string | null>(null);
+  const [comboSel, setComboSel] = useState<Record<string, string>>({}); // teacherId -> selected subject|grade combo ('all' = no filter)
   const [pStudent, setPStudent] = useState('');
   const [pNote, setPNote] = useState('');
   const [pErr, setPErr] = useState('');
@@ -158,10 +159,30 @@ function comboColor(subject: string, grade: string) {
     const list = slots[id] || [];
     if (list.length === 0) return <div className="muted" style={{ padding: '10px 14px' }}>No slots for this teacher.</div>;
     const timeMin = (t: string) => { const p = String(t).split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); };
+    // Subject+Grade combinations offered by this teacher (from their own slots), with slot counts.
+    const comboMap = new Map<string, { key: string; label: string; count: number }>();
+    list.forEach(s => { const key = s.subject + '|' + gkey(s); const gs = gradeShort(s); const label = s.subject + (gs ? ' · ' + gs : ''); const e = comboMap.get(key); if (e) e.count++; else comboMap.set(key, { key, label, count: 1 }); });
+    const combos = [...comboMap.values()].sort((a, b) => a.label.localeCompare(b.label));
+    const sel = comboSel[id] || 'all';
+    const filtered = sel === 'all' ? list : list.filter(s => (s.subject + '|' + gkey(s)) === sel);
     const byDay: Record<string, Slot[]> = {}; WEEK_FULL.forEach(d => { byDay[d] = []; });
-    list.forEach(s => { (byDay[s.day_of_week] || (byDay[s.day_of_week] = [])).push(s); });
+    filtered.forEach(s => { (byDay[s.day_of_week] || (byDay[s.day_of_week] = [])).push(s); });
     return (
-      <div className="cm-week">
+      <>
+        {combos.length > 1 && (
+          <div style={{ display: 'flex', gap: 2, borderBottom: '2px solid var(--line,#e6e6ef)', padding: '8px 14px 0', flexWrap: 'wrap' }}>
+            {[{ key: 'all', label: 'All', count: list.length }, ...combos].map(c => {
+              const on = sel === c.key;
+              return (
+                <button key={c.key} onClick={() => setComboSel(m => ({ ...m, [id]: c.key }))}
+                  style={{ cursor: 'pointer', fontSize: 13, fontWeight: 800, padding: '8px 14px', background: 'transparent', border: 0, borderBottom: '3px solid ' + (on ? 'var(--brand,#2f6fd0)' : 'transparent'), color: on ? 'var(--brand,#2f6fd0)' : 'var(--muted,#64748b)', marginBottom: -2 }}>
+                  {c.label}<span style={{ fontSize: 11, opacity: .7, marginLeft: 5 }}>{c.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="cm-week">
         {WEEK_FULL.map(day => {
           const items = (byDay[day] || []).slice().sort((a, b) => timeMin(a.start_time) - timeMin(b.start_time));
           const abbr = DAY_ABBR[day] || day.slice(0, 3);
@@ -178,7 +199,8 @@ function comboColor(subject: string, grade: string) {
             </div>
           );
         })}
-      </div>
+        </div>
+      </>
     );
   };
 
