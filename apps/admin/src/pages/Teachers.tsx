@@ -75,6 +75,7 @@ function CreateTeacherModal({ onClose, onCreated, toast }: { onClose: () => void
 
   const submit = async () => {
     if (!name.trim() || !email.trim()) { setErr('Name and login email are required.'); return; }
+    if (pw.trim() && pw.trim().length < 6) { setErr('Temporary password must be at least 6 characters — or leave it blank to auto-generate one.'); return; }
     setBusy(true); setErr('');
     try {
       const r = await api.createTeacher({ display_name: name.trim(), email: email.trim(), temp_password: pw.trim() || undefined });
@@ -106,7 +107,7 @@ function CreateTeacherModal({ onClose, onCreated, toast }: { onClose: () => void
       <label>Login email</label>
       <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="teacher@conceptmastery.ca" />
       <label>Temporary password <span className="muted" style={{ fontWeight: 400 }}>(optional — leave blank to auto-generate)</span></label>
-      <input value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 10 characters" />
+      <input value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 6 characters" />
       {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
     </Modal>
   );

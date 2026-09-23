@@ -174,7 +174,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   const teacherCreateSchema = z.object({
     display_name: z.string().trim().min(1).max(120),
     email: z.string().trim().toLowerCase().email(),
-    temp_password: z.string().min(10).optional(),
+    temp_password: z.string().min(6).optional(),
   });
 
   app.get('/v1/admin/teachers', guard, async (req) => {
