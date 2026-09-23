@@ -82,12 +82,37 @@ export async function assertStudentVisible(db: DB, req: FastifyRequest, studentI
   if (r.rows.length === 0) throw Errors.forbidden('STUDENT_NOT_ASSIGNED', 'This student is not assigned to you');
 }
 
+// Short-lived cache of the RESOLVED admin context, keyed by the exact bearer token. A single admin
+// page fires several API calls at once; without this each one re-runs the auth queries (profile +
+// permissions + sites + is_teacher) against the DB, which dominates page latency when the gateway is
+// far from the database. Caching the resolved identity for a few seconds collapses that burst into one
+// resolution. TTL is deliberately short so a disabled/reset admin is blocked within a few seconds
+// (not instantly, as before) — the token itself still expires normally, and a re-login mints a new
+// token (new `pv`) that misses this cache. activeSite is NOT cached — it depends on the per-request
+// X-Admin-Site header, so it is recomputed every request from the cached site list.
+type CachedAdmin = { adminId: string; role: 'admin' | 'super_admin'; permissions: Set<string>; sites: string[]; isTeacher: boolean; pv?: string; expires: number };
+const ADMIN_AUTH_TTL_MS = 15000;
+const adminAuthCache = new Map<string, CachedAdmin>();
+
 export function makeAuthenticateAdmin(db: DB, hmacSecret: string) {
   return async function authenticateAdmin(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
     const header = req.headers['authorization'];
     if (!header || !header.startsWith('Bearer ')) throw Errors.unauthorized();
-    const payload = verifyAdminToken(header.slice(7), hmacSecret);
+    const rawToken = header.slice(7);
+    const payload = verifyAdminToken(rawToken, hmacSecret);
     if (!payload) throw Errors.unauthorized('Invalid or expired admin token');
+
+    // Cache hit: the same token was fully resolved within the TTL. Reuse it and only recompute the
+    // per-request active site. `pv` must match so a re-login (new token → new pv) never reuses stale perms.
+    const now = Date.now();
+    const cached = adminAuthCache.get(rawToken);
+    if (cached && cached.expires > now && cached.pv === payload.pv) {
+      const requested = String(req.headers['x-admin-site'] || '').trim().toLowerCase();
+      const activeSite = cached.sites.includes(requested) ? requested : (cached.sites.includes('ccat') ? 'ccat' : cached.sites[0]!);
+      req.admin = { adminId: cached.adminId, role: cached.role, permissions: cached.permissions, sites: cached.sites, activeSite, isTeacher: cached.isTeacher };
+      return;
+    }
+
     const { rows } = await db.query(
       `select p.id, p.security_role, p.status, p.mfa_enrolled, c.password_hash
          from ccat.admin_profiles p
@@ -116,6 +141,11 @@ export function makeAuthenticateAdmin(db: DB, hmacSecret: string) {
     const requested = String(req.headers['x-admin-site'] || '').trim().toLowerCase();
     const activeSite = sites.includes(requested) ? requested : (sites.includes('ccat') ? 'ccat' : sites[0]!);
     req.admin = { adminId: a.id, role: a.security_role, permissions, sites, activeSite, isTeacher };
+
+    // Cache the resolved identity (not activeSite — that's per-request) for the burst of calls a page makes.
+    adminAuthCache.set(rawToken, { adminId: a.id, role: a.security_role, permissions, sites, isTeacher, pv: payload.pv, expires: now + ADMIN_AUTH_TTL_MS });
+    // Opportunistic eviction so the map can't grow without bound (expired tokens, sign-outs, etc.).
+    if (adminAuthCache.size > 500) { for (const [k, v] of adminAuthCache) if (v.expires <= now) adminAuthCache.delete(k); }
   };
 }
 

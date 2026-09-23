@@ -100,6 +100,10 @@ const SORTS = [
   { key: 'registered', label: 'Registered (date)' },
   { key: 'created', label: 'Newest' },
 ];
+// Teacher login: a slimmed-down directory — fewer sort options, a fixed column set (no tier / contact),
+// and no bulk tools. Order here is the order shown in the Sort menu.
+const TEACHER_SORTS = ['grade', 'username', 'created', 'readiness'];
+const TEACHER_COLS = new Set(['grade', 'readiness', 'progress', 'devices']);
 
 function loadCols(): Set<string> {
   try {
@@ -127,7 +131,7 @@ export function Students() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [band, setBand] = useState<string | null>(null);
-  const [sort, setSort] = useState('last_active');
+  const [sort, setSort] = useState(me?.is_teacher ? 'grade' : 'last_active');
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
   const [regFrom, setRegFrom] = useState('');
   const [regTo, setRegTo] = useState('');
@@ -139,6 +143,11 @@ export function Students() {
   const [del, setDel] = useState<any>(null); const [delBusy, setDelBusy] = useState(false); const [delErr, setDelErr] = useState(''); const [delAck, setDelAck] = useState(false);
   const [create, setCreate] = useState(false);
   const [grades, setGrades] = useState<{ id: string; grade_number: number; name: string }[]>([]);
+
+  // Teacher login: the "Total students" count is this teacher's OWN assigned students (the list is already
+  // scoped server-side), so read it from an unfiltered match count rather than the global studentStats.
+  const [teacherTotal, setTeacherTotal] = useState<number | null>(null);
+  useEffect(() => { if (isTeacher) api.students({ limit: 1 }).then(r => setTeacherTotal(r.matched)).catch(() => {}); }, [isTeacher]);
 
   // ---- Assign-to-teacher (bulk) — Super-Admins / accounts with teacher.students.manage only. Selecting
   // rows and picking a teacher ADDS them to that teacher (additive; never wipes existing assignments).
@@ -230,7 +239,10 @@ export function Students() {
     </button>
   );
 
-  const sortLabel = SORTS.find(s => s.key === sort)?.label ?? 'Last active';
+  // Teacher: reduced sort menu (Grade, Username, Newest, Readiness) and a fixed column set.
+  const sortsList = isTeacher ? TEACHER_SORTS.map(k => SORTS.find(s => s.key === k)!).filter(Boolean) : SORTS;
+  const colOn = (k: string) => isTeacher ? TEACHER_COLS.has(k) : cols.has(k);
+  const sortLabel = sortsList.find(s => s.key === sort)?.label ?? sortsList[0]?.label ?? 'Sort';
   const stateLabel = band ? { ready: 'Ready', building: 'Building', needs_work: 'Needs work' }[band] : 'All readiness';
 
   return (
@@ -246,32 +258,32 @@ export function Students() {
           {menu === 'sort' && (
             <div className="popover" onClick={e => e.stopPropagation()}>
               <div className="ph">Sort by</div>
-              {SORTS.map(s => <label key={s.key}><input type="radio" checked={sort === s.key} onChange={() => setSort(s.key)} />{s.label}</label>)}
+              {sortsList.map(s => <label key={s.key}><input type="radio" checked={sort === s.key} onChange={() => setSort(s.key)} />{s.label}</label>)}
               <div className="ph">Direction</div>
               <label><input type="radio" checked={dir === 'desc'} onChange={() => setDir('desc')} />Descending ↓</label>
               <label><input type="radio" checked={dir === 'asc'} onChange={() => setDir('asc')} />Ascending ↑</label>
             </div>
           )}
         </button>
-        <button className="chipbtn" onClick={() => setMenu(menu === 'cols' ? null : 'cols')}>
+        {!isTeacher && <button className="chipbtn" onClick={() => setMenu(menu === 'cols' ? null : 'cols')}>
           Columns · {cols.size + 1}
           {menu === 'cols' && (
             <div className="popover" onClick={e => e.stopPropagation()}>
               <div className="ph">Show columns</div>
               <label style={{ opacity: .5 }}><input type="checkbox" checked disabled />Student</label>
-              {ALL_COLS.filter(c => !(isTeacher && (c.key === 'email' || c.key === 'phone'))).map(c => <label key={c.key}><input type="checkbox" checked={cols.has(c.key)} onChange={() => toggleCol(c.key)} />{c.label}</label>)}
+              {ALL_COLS.map(c => <label key={c.key}><input type="checkbox" checked={cols.has(c.key)} onChange={() => toggleCol(c.key)} />{c.label}</label>)}
             </div>
           )}
-        </button>
-        <button className="chipbtn" onClick={exportCsv}>Export CSV</button>
-        <span className={`chipbtn ${regFrom || regTo ? 'on' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'default' }}>
+        </button>}
+        {!isTeacher && <button className="chipbtn" onClick={exportCsv}>Export CSV</button>}
+        {!isTeacher && <span className={`chipbtn ${regFrom || regTo ? 'on' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'default' }}>
           <span className="muted" style={{ fontSize: 12 }}>Registered</span>
           <input type="date" value={regFrom} max={regTo || undefined} onChange={e => setRegFrom(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '3px 6px', fontFamily: 'inherit', fontSize: 12.5 }} />
           <span className="muted">–</span>
           <input type="date" value={regTo} min={regFrom || undefined} onChange={e => setRegTo(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '3px 6px', fontFamily: 'inherit', fontSize: 12.5 }} />
           {(regFrom || regTo) && <button className="btn ghost sm" onClick={() => { setRegFrom(''); setRegTo(''); }} style={{ padding: '3px 8px' }}>Clear</button>}
-        </span>
-        <button className={`chipbtn ${band ? 'on' : ''}`} onClick={() => setMenu(menu === 'state' ? null : 'state')}>
+        </span>}
+        {!isTeacher && <button className={`chipbtn ${band ? 'on' : ''}`} onClick={() => setMenu(menu === 'state' ? null : 'state')}>
           State: {stateLabel}
           {menu === 'state' && (
             <div className="popover" onClick={e => e.stopPropagation()}>
@@ -282,25 +294,29 @@ export function Students() {
               <label><input type="radio" checked={band === 'needs_work'} onChange={() => setBand('needs_work')} />Needs work</label>
             </div>
           )}
-        </button>
+        </button>}
       </div>
 
       {/* KPI cards */}
       <div className="kpirow">
-        <div className="kpi"><div className="ico">👥</div><div><div className="n tabnum">{(stats?.total ?? 0).toLocaleString()}</div><div className="l">Accounts · Grades 3–6</div></div></div>
+        {isTeacher ? (
+          <div className="kpi"><div className="ico">👥</div><div><div className="n tabnum">{(teacherTotal ?? matched ?? 0).toLocaleString()}</div><div className="l">Total students</div></div></div>
+        ) : (
+          <div className="kpi"><div className="ico">👥</div><div><div className="n tabnum">{(stats?.total ?? 0).toLocaleString()}</div><div className="l">Accounts · Grades 3–6</div></div></div>
+        )}
         <div className="kpi"><div className="ico">⚡</div><div><div className="n tabnum">{(stats?.practised_today ?? 0).toLocaleString()}</div><div className="l">Practised today</div></div></div>
-        <div className="kpi"><div className="ico">⏸️</div><div><div className="n tabnum">{(stats?.suspended ?? 0).toLocaleString()}</div><div className="l">Suspended</div></div></div>
-        <div className="kpi"><div className="ico">🗑️</div><div><div className="n tabnum">{(stats?.pending_deletion ?? 0).toLocaleString()}</div><div className="l">Deletion inside 30-day window</div></div></div>
+        {!isTeacher && <div className="kpi"><div className="ico">⏸️</div><div><div className="n tabnum">{(stats?.suspended ?? 0).toLocaleString()}</div><div className="l">Suspended</div></div></div>}
+        {!isTeacher && <div className="kpi"><div className="ico">🗑️</div><div><div className="n tabnum">{(stats?.pending_deletion ?? 0).toLocaleString()}</div><div className="l">Deletion inside 30-day window</div></div></div>}
       </div>
 
       {/* filter chips */}
       <div className="filterchips">
         <input className="searchbox" placeholder={isTeacher ? 'Search username or name…' : 'Search username, name, email or phone…'} value={q} onChange={e => setQ(e.target.value)} />
-        {chip(null, 'All', stats?.total)}
-        {chip('active', 'Active', stats?.active)}
-        {chip('suspended', 'Suspended', stats?.suspended)}
-        {chip('pending_deletion', 'Deletion', stats?.pending_deletion)}
-        {chip('banned', 'Banned', stats?.banned)}
+        {chip(null, 'All', isTeacher ? (teacherTotal ?? undefined) : stats?.total)}
+        {!isTeacher && chip('active', 'Active', stats?.active)}
+        {!isTeacher && chip('suspended', 'Suspended', stats?.suspended)}
+        {!isTeacher && chip('pending_deletion', 'Deletion', stats?.pending_deletion)}
+        {!isTeacher && chip('banned', 'Banned', stats?.banned)}
         <span className="spacerx" />
         <span className="muted" style={{ fontSize: 12.5 }}>Sorted by {sortLabel} {dir === 'asc' ? '↑' : '↓'}</span>
       </div>
@@ -331,13 +347,13 @@ export function Students() {
                   onChange={e => setSel(e.target.checked ? new Set(items.map(r => r.id)) : new Set())} />
               </th>}
               <th>Student</th>
-              {cols.has('grade') && <th>Grade &amp; status</th>}
-              {cols.has('tier') && <th>Tier</th>}
-              {cols.has('readiness') && <th>Readiness</th>}
-              {cols.has('progress') && <th>Progress</th>}
-              {cols.has('email') && !isTeacher && <th>Parent email</th>}
-              {cols.has('phone') && !isTeacher && <th>Parent phone</th>}
-              {cols.has('devices') && <th>Devices</th>}
+              {colOn('grade') && <th>Grade &amp; status</th>}
+              {colOn('tier') && <th>Tier</th>}
+              {colOn('readiness') && <th>Readiness</th>}
+              {colOn('progress') && <th>Progress</th>}
+              {colOn('email') && !isTeacher && <th>Parent email</th>}
+              {colOn('phone') && !isTeacher && <th>Parent phone</th>}
+              {colOn('devices') && <th>Devices</th>}
               <th></th>
             </tr></thead>
             <tbody>{(() => {
@@ -374,13 +390,13 @@ export function Students() {
                     </span>
                   </div>
                 </td>
-                {cols.has('grade') && <td><div className="gradestk"><div className="g">Grade {r.grade_number}</div><StatusChip s={r.display_status} /></div></td>}
-                {cols.has('tier') && <td>{r.membership_tier ? <span className="tag">{tierLabel(r.membership_tier)}</span> : <span className="muted">—</span>}</td>}
-                {cols.has('readiness') && <td><Readiness pct={r.readiness_pct} band={r.readiness_band} insufficient={r.readiness_insufficient} /></td>}
-                {cols.has('progress') && <td><div className="progx"><span className="xp tabnum">{r.xp_total.toLocaleString()} XP</span><div className="sub tabnum">🪙 {r.coins}{r.streak_current > 0 ? ` · 🔥 ${r.streak_current}d` : ''} · {r.sets_completed ?? 0} sets</div></div></td>}
-                {cols.has('email') && !isTeacher && <td>{r.guardian_email || <span className="muted">—</span>}</td>}
-                {cols.has('phone') && !isTeacher && <td className="tabnum">{r.guardian_phone || <span className="muted">—</span>}</td>}
-                {cols.has('devices') && <td>{r.device_total === 0 ? <span className="muted">None</span> : r.device_active < r.device_total ? `${r.device_active} of ${r.device_total} active` : `${r.device_total} device${r.device_total > 1 ? 's' : ''}`}</td>}
+                {colOn('grade') && <td><div className="gradestk"><div className="g">Grade {r.grade_number}</div><StatusChip s={r.display_status} /></div></td>}
+                {colOn('tier') && <td>{r.membership_tier ? <span className="tag">{tierLabel(r.membership_tier)}</span> : <span className="muted">—</span>}</td>}
+                {colOn('readiness') && <td><Readiness pct={r.readiness_pct} band={r.readiness_band} insufficient={r.readiness_insufficient} /></td>}
+                {colOn('progress') && <td><div className="progx"><span className="xp tabnum">{r.xp_total.toLocaleString()} XP</span><div className="sub tabnum">🪙 {r.coins}{r.streak_current > 0 ? ` · 🔥 ${r.streak_current}d` : ''} · {r.sets_completed ?? 0} sets</div></div></td>}
+                {colOn('email') && !isTeacher && <td>{r.guardian_email || <span className="muted">—</span>}</td>}
+                {colOn('phone') && !isTeacher && <td className="tabnum">{r.guardian_phone || <span className="muted">—</span>}</td>}
+                {colOn('devices') && <td>{r.device_total === 0 ? <span className="muted">None</span> : r.device_active < r.device_total ? `${r.device_active} of ${r.device_total} active` : `${r.device_total} device${r.device_total > 1 ? 's' : ''}`}</td>}
                 <td><div className="rowactions">
                   {r.status === 'active' && can('student.suspend') && <button className="btn warn sm" onClick={() => act(r, 'suspended', 'Suspend')}>Suspend</button>}
                   {r.status === 'suspended' && can('student.unsuspend') && <button className="btn ghost sm" onClick={() => act(r, 'active', 'Unsuspend')}>Unsuspend</button>}
