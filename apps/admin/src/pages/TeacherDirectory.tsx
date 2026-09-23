@@ -103,14 +103,18 @@ function comboColor(subject: string, grade: string) {
 
   const renderSlotCard = (id: string, s: Slot) => {
     const booked = s.status === 'booked';
+    // A booked slot with a student is a real booking; a booked slot with no student is a teacher-marked
+    // "unavailable" block (same DB status, distinguished only by the presence of a student name).
+    const hasStudent = booked && !!(s.booked_student && s.booked_student.trim());
+    const blocked = booked && !hasStudent;
     const c = comboColor(s.subject, gkey(s)); const gs = gradeShort(s);
     return (
-      <div key={s.id} className="cm-slot" style={{ position: 'relative', background: booked ? 'var(--coral-soft,#fdecea)' : 'var(--card,#fff)', border: '1px solid ' + (booked ? 'var(--coral-line,#f4c6c0)' : 'var(--line,#e6e6ef)'), borderRadius: 10, padding: '8px 10px', marginBottom: 8 }}>
+      <div key={s.id} className="cm-slot" style={{ position: 'relative', background: hasStudent ? 'var(--coral-soft,#fdecea)' : blocked ? 'var(--card2,#eef1f6)' : 'var(--card,#fff)', border: '1px solid ' + (hasStudent ? 'var(--coral-line,#f4c6c0)' : blocked ? 'var(--line,#d9dfea)' : 'var(--line,#e6e6ef)'), borderRadius: 10, padding: '8px 10px', marginBottom: 8 }}>
         <div style={{ fontWeight: 800, fontSize: 14 }}>{s.start_time}–{s.end_time}<span style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted,#64748b)', letterSpacing: '.04em', marginLeft: 5 }}>{s.timezone}</span></div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, alignItems: 'center' }}>
           <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 7px', borderRadius: 20, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>{s.subject}{gs ? (' ' + gs) : ''}</span>
           <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 7px', borderRadius: 20, background: 'var(--amber-bg,#fdf3e0)', color: 'var(--amber,#b45309)' }}>{gradeLong(s)}</span>
-          <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 7px', borderRadius: 20, background: booked ? '#fdecea' : '#e2f6f3', color: booked ? '#c0392b' : '#0f766e' }}>{booked ? 'Booked' : 'Available'}</span>
+          <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 7px', borderRadius: 20, background: hasStudent ? '#fdecea' : blocked ? '#e7ebf2' : '#e2f6f3', color: hasStudent ? '#c0392b' : blocked ? '#5c6675' : '#0f766e' }}>{hasStudent ? 'Booked' : blocked ? 'Unavailable' : 'Available'}</span>
           <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted,#64748b)' }}>{s.mode}</span>
         </div>
         {booked && s.booked_student && (
@@ -127,7 +131,7 @@ function comboColor(subject: string, grade: string) {
         {canManage && (
           <div style={{ marginTop: 8 }}>
             {booked
-              ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 700, padding: '6px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>Unbook</button>
+              ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 700, padding: '6px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{hasStudent ? 'Unbook' : 'Make available'}</button>
               : <button onClick={() => openPopover(s.id)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 800, padding: '6px', borderRadius: 7, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer' }}>Book</button>}
           </div>
         )}
