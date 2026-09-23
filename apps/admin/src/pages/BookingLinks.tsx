@@ -166,13 +166,20 @@ export function BookingLinks() {
                   <span style={{ marginLeft: 'auto', fontSize: 12 }} className="muted">{l.pending_requests} pending · {l.total_requests} total</span>
                 </div>
                 <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{l.teacher_ids.map(teacherName).join(', ')}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e9f0)', borderRadius: 8, padding: '6px 8px' }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: l.url ? 'inherit' : 'var(--muted,#8a93a3)' }}>{l.url || ('/b/' + l.token)}</span>
+                  <button onClick={() => copy(l.url || ('/b/' + l.token), l.id)} title="Copy link" aria-label="Copy link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', borderRadius: 6, padding: '4px 8px', color: copied === l.id ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12 }}>
+                    {copied === l.id
+                      ? (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Copied</>)
+                      : (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>Copy</>)}
+                  </button>
+                </div>
+                {!l.url && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Full shareable domain appears once TEACHTIME_PUBLIC_URL is set on the gateway.</div>}
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-                  {l.url && <code style={{ fontSize: 12, background: 'var(--card2,#f2f5fa)', padding: '4px 8px', borderRadius: 6, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 360, whiteSpace: 'nowrap' }}>{l.url}</code>}
-                  {l.url && <button onClick={() => copy(l.url!, l.id)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '5px 10px' }}>{copied === l.id ? 'Copied!' : 'Copy'}</button>}
-                  <span className="muted" style={{ fontSize: 12, marginLeft: 'auto' }}>
+                  <span className="muted" style={{ fontSize: 12 }}>
                     {l.expires_at ? `Expires ${new Date(l.expires_at).toLocaleDateString()}` : 'No expiry'} · by {l.created_by_name || 'Admin'}
                   </span>
-                  {canManage && <button onClick={() => setActive(l.id, l.is_active)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '5px 10px', color: l.is_active ? 'var(--coral,#c0392b)' : 'var(--good,#0f9d6b)' }}>{l.is_active ? 'Revoke' : 'Activate'}</button>}
+                  {canManage && <button onClick={() => setActive(l.id, l.is_active)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '5px 10px', marginLeft: 'auto', color: l.is_active ? 'var(--coral,#c0392b)' : 'var(--good,#0f9d6b)' }}>{l.is_active ? 'Revoke' : 'Activate'}</button>}
                 </div>
               </div>
             ))}
