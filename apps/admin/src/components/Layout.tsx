@@ -195,7 +195,7 @@ export function Layout() {
                     <div role="menu" style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', width: 210, background: 'var(--card,#fff)', color: 'var(--ink,#1a1a2e)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.18)', zIndex: 41, padding: 4 }}>
                       <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', padding: '6px 8px 2px', fontWeight: 700 }}>Switch workspace</div>
                       {sites.map(sid => (
-                        <button key={sid} role="menuitem" onClick={() => { setSiteMenu(false); if (sid !== activeSite) switchSite(sid); }}
+                        <button key={sid} role="menuitem" onClick={() => { setSiteMenu(false); if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacher' : '/', { replace: true }); } }}
                           style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: sid === activeSite ? 'var(--card2,#f2f5fa)' : 'transparent', border: 0, padding: '8px', borderRadius: 7, cursor: 'pointer', color: 'inherit', fontWeight: 600 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />
                           {SITE_NAMES[sid] || sid}
