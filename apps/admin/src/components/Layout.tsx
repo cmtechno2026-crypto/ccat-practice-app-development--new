@@ -87,10 +87,10 @@ const RAIL: RailItem[] = PAYMENTS_ENABLED
 // Teacher Hub rail (multi-site admin). Shown when the active site is 'teacher'. Items gate on
 // teacher.* permissions; super_admin sees all.
 const TEACHER_RAIL: RailItem[] = [
-  { to: '/teacher', label: 'Dashboard', ic: '📊', match: '/teacher', perm: 'teacher.directory' },
-  { to: '/teacher/teachers', label: 'Teachers', ic: '👩\u200d🏫', match: '/teacher/teachers', perm: 'teacher.directory' },
-  { to: '/teacher/booking-links', label: 'Link Generator', ic: '🔗', match: '/teacher/booking-links', perm: 'teacher.directory' },
-  { to: '/teacher/requests', label: 'Requests', ic: '📥', match: '/teacher/requests', perm: 'teacher.directory' },
+  { to: '/teacherhub', label: 'Dashboard', ic: '📊', match: '/teacherhub', perm: 'teacher.directory' },
+  { to: '/teacherhub/teachers', label: 'Teachers', ic: '👩\u200d🏫', match: '/teacherhub/teachers', perm: 'teacher.directory' },
+  { to: '/teacherhub/booking-links', label: 'Link Generator', ic: '🔗', match: '/teacherhub/booking-links', perm: 'teacher.directory' },
+  { to: '/teacherhub/requests', label: 'Requests', ic: '📥', match: '/teacherhub/requests', perm: 'teacher.directory' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
 ];
 const SITE_NAMES: Record<string, string> = { ccat: 'CCAT Practice', teacher: 'Teacher Hub' };
@@ -120,12 +120,12 @@ export function Layout() {
   // of truth for which workspace is shown; teacher-role accounts keep their own dedicated rail.
   useEffect(() => {
     if (me?.is_teacher) return;
-    const onTeacherHub = loc.pathname === '/teacher' || loc.pathname.startsWith('/teacher/'); // not /teacher-practice|/teacher-exam (CCAT)
+    const onTeacherHub = loc.pathname === '/teacherhub' || loc.pathname.startsWith('/teacherhub/'); // not /teacher-practice|/teacher-exam (CCAT)
     if (onTeacherHub && sites.includes('teacher') && activeSite !== 'teacher') switchSite('teacher');
   }, [loc.pathname, sites, activeSite, me, switchSite]);
   // Home path for the active site: the brand logo and the back-link go here, so from Teacher Hub they
   // land on the Teacher dashboard, not the CCAT one.
-  const homePath = me?.is_teacher ? '/students' : (activeSite === 'teacher' ? '/teacher' : '/');
+  const homePath = me?.is_teacher ? '/students' : (activeSite === 'teacher' ? '/teacherhub' : '/');
   const nav = useNavigate();
   // Sign out AND reset the URL to the default route, so the stale protected page can't be replayed on the
   // next sign-in (the router unmounts once logged out; without this the address bar keeps the old path).
@@ -182,7 +182,7 @@ export function Layout() {
           >
             <span className="ricon" aria-hidden>{r.ic}</span>
             <span className="rlabel">{r.label}</span>
-            {r.to === '/teacher/requests' && pendingReq > 0 && (
+            {r.to === '/teacherhub/requests' && pendingReq > 0 && (
               <span aria-label={`${pendingReq} pending`} style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: 'var(--coral,#e0533d)', color: '#fff', fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendingReq > 99 ? '99+' : pendingReq}</span>
             )}
           </NavLink>
@@ -218,7 +218,7 @@ export function Layout() {
                     <div role="menu" style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', width: 210, background: 'var(--card,#fff)', color: 'var(--ink,#1a1a2e)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.18)', zIndex: 41, padding: 4 }}>
                       <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', padding: '6px 8px 2px', fontWeight: 700 }}>Switch workspace</div>
                       {sites.map(sid => (
-                        <button key={sid} role="menuitem" onClick={() => { setSiteMenu(false); if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacher' : '/', { replace: true }); } }}
+                        <button key={sid} role="menuitem" onClick={() => { setSiteMenu(false); if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacherhub' : '/', { replace: true }); } }}
                           style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: sid === activeSite ? 'var(--card2,#f2f5fa)' : 'transparent', border: 0, padding: '8px', borderRadius: 7, cursor: 'pointer', color: 'inherit', fontWeight: 600 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />
                           {SITE_NAMES[sid] || sid}

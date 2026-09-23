@@ -254,10 +254,15 @@ export function App() {
         {/* Payments Phase 2 — manual membership grant. Route exists only when the flag is on. */}
         {PAYMENTS_ENABLED && <Route path="/config/membership" element={<Membership />} />}
         {/* Teacher Hub site (multi-site admin) */}
-        <Route path="/teacher" element={<TeacherDashboard />} />
-        <Route path="/teacher/teachers" element={<TeacherDirectory />} />
-        <Route path="/teacher/booking-links" element={<BookingLinks />} />
-        <Route path="/teacher/requests" element={<BookingRequests />} />
+        <Route path="/teacherhub" element={<TeacherDashboard />} />
+        <Route path="/teacherhub/teachers" element={<TeacherDirectory />} />
+        <Route path="/teacherhub/booking-links" element={<BookingLinks />} />
+        <Route path="/teacherhub/requests" element={<BookingRequests />} />
+        {/* Legacy /teacher* → /teacherhub* (renamed route) */}
+        <Route path="/teacher" element={<Navigate to="/teacherhub" replace />} />
+        <Route path="/teacher/teachers" element={<Navigate to="/teacherhub/teachers" replace />} />
+        <Route path="/teacher/booking-links" element={<Navigate to="/teacherhub/booking-links" replace />} />
+        <Route path="/teacher/requests" element={<Navigate to="/teacherhub/requests" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
