@@ -126,7 +126,7 @@ function comboColor(subject: string, grade: string) {
         {canManage && (
           <div style={{ marginTop: 8 }}>
             {booked
-              ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 700, padding: '6px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>Mark open</button>
+              ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 700, padding: '6px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>Unbook</button>
               : <button onClick={() => openPopover(s.id)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 800, padding: '6px', borderRadius: 7, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer' }}>Book</button>}
           </div>
         )}
