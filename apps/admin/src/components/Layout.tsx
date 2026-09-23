@@ -115,6 +115,14 @@ export function Layout() {
   const loc = useLocation();
   const [siteMenu, setSiteMenu] = useState(false);
   const RAIL_ACTIVE = me?.is_teacher ? TEACHER_ONLY_RAIL : railForSite(activeSite);
+  // Keep the active site in sync with the URL so a hard refresh / deep-link to a /teacher/* page shows
+  // the Teacher Hub chrome (rail, header, switcher) instead of falling back to CCAT. URL is the source
+  // of truth for which workspace is shown; teacher-role accounts keep their own dedicated rail.
+  useEffect(() => {
+    if (me?.is_teacher) return;
+    const onTeacherHub = loc.pathname === '/teacher' || loc.pathname.startsWith('/teacher/'); // not /teacher-practice|/teacher-exam (CCAT)
+    if (onTeacherHub && sites.includes('teacher') && activeSite !== 'teacher') switchSite('teacher');
+  }, [loc.pathname, sites, activeSite, me, switchSite]);
   // Home path for the active site: the brand logo and the back-link go here, so from Teacher Hub they
   // land on the Teacher dashboard, not the CCAT one.
   const homePath = me?.is_teacher ? '/students' : (activeSite === 'teacher' ? '/teacher' : '/');

@@ -46,7 +46,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return out;
   }, [me]);
   // If the remembered site is no longer available (e.g. signed in as a non-teacher), fall back to CCAT.
-  useEffect(() => { if (!sites.includes(activeSite)) setActiveSite('ccat'); }, [sites, activeSite]);
+  // Only fall back AFTER auth resolves. During load `me` is null so `sites` is transiently ['ccat'];
+  // resetting then would wipe a remembered 'teacher' site on every hard refresh (chrome/URL mismatch).
+  useEffect(() => { if (ready && !sites.includes(activeSite)) setActiveSite('ccat'); }, [ready, sites, activeSite]);
 
   return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite }}>{children}</Ctx.Provider>;
 }
