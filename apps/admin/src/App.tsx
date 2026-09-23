@@ -177,9 +177,25 @@ function ResetPasswordForm({ initialEmail, onBack }: { initialEmail: string; onB
   );
 }
 
+// Branded loading splash shown while the session resolves (api.me()). The gateway can cold-start on
+// Render, so this can take a couple of seconds — a spinner reads as "loading", not a blank/broken page.
+function LoadingSplash() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: 'var(--bg, #f4f6fb)', color: 'var(--ink, #1f2340)' }}>
+      <style>{'@keyframes cmspin{to{transform:rotate(360deg)}}'}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800, fontSize: 20 }}>
+        <span style={{ display: 'inline-flex', width: 36, height: 36, borderRadius: 9, background: 'var(--primary,#1A5EAB)', color: '#fff', alignItems: 'center', justifyContent: 'center' }}>CM</span>
+        Concept Mastery
+      </div>
+      <div style={{ width: 28, height: 28, border: '3px solid var(--line,#e3e7f0)', borderTopColor: 'var(--primary,#1A5EAB)', borderRadius: '50%', animation: 'cmspin .8s linear infinite' }} />
+      <div style={{ color: 'var(--muted,#8a90a6)', fontSize: 13 }}>Loading admin…</div>
+    </div>
+  );
+}
+
 export function App() {
   const { me, ready } = useAuth();
-  if (!ready) return <div className="empty" style={{ paddingTop: 80 }}>Loading…</div>;
+  if (!ready) return <LoadingSplash />;
   if (!me) return <Login />;
   // Teacher accounts are LOCKED to the student directory + read-only student detail. Every other route
   // redirects to /students, so nothing they can't use is reachable (the gateway also enforces scope).
