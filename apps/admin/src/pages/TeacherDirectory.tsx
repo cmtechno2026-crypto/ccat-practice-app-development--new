@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth';
 // lands in the Teacher Hub DB and the teacher sees who it's booked for.
 interface TeacherRow { id: string; name: string; email: string; subjects: string[]; slots: number; open_slots: number; created_at: string; }
 interface Slot {
-  id: string; subject: string; grade: number | null; day_of_week: string; start_time: string; end_time: string;
+  id: string; subject: string; grade: number | null; grade_min?: number | null; grade_max?: number | null; day_of_week: string; start_time: string; end_time: string;
   mode: string; status: string; timezone: string; notes: string;
   booked_student?: string | null; booked_note?: string | null; booked_by?: string | null;
 }
@@ -64,14 +64,22 @@ export function TeacherDirectory() {
   const unbook = async (teacherId: string, slot: Slot) => {
     setSavingSlot(slot.id);
     try {
-      await api.teacherSetSlotStatus(slot.id, 'open');
-      patchLocal(teacherId, slot.id, { status: 'open', booked_student: null, booked_note: null, booked_by: null });
+      await api.teacherSetSlotStatus(slot.id, 'available');
+      patchLocal(teacherId, slot.id, { status: 'available', booked_student: null, booked_note: null, booked_by: null });
     } catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not update slot' })); }
     finally { setSavingSlot(null); }
   };
 
+
+// Grade label: prefer the grade_min/grade_max range (new schema); fall back to the legacy single grade.
+function gradeLabel(s: { grade: number | null; grade_min?: number | null; grade_max?: number | null }): string {
+  const lo = s.grade_min, hi = s.grade_max;
+  if (lo != null && hi != null) return lo === hi ? (' · G' + lo) : (' · G' + lo + '–' + hi);
+  return s.grade != null ? (' · G' + s.grade) : '';
+}
+
   const statusPill = (status: string) => {
-    const open = status === 'open';
+    const open = status === 'available';
     return <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', padding: '2px 8px', borderRadius: 999, background: open ? 'var(--good-soft,#dcf5ea)' : 'var(--coral-soft,#fdece9)', color: open ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)' }}>{status}</span>;
   };
   const initials = (n: string) => (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
@@ -92,7 +100,7 @@ export function TeacherDirectory() {
                 <span style={{ fontWeight: 800, minWidth: 34 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</span>
                 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{s.start_time} – {s.end_time}</span>
                 <span className="muted" style={{ fontSize: 12 }}>{s.timezone}</span>
-                <span style={{ fontWeight: 700 }}>{s.subject}{s.grade != null ? (' · G' + s.grade) : ''}</span>
+                <span style={{ fontWeight: 700 }}>{s.subject}{gradeLabel(s)}</span>
                 <span className="muted" style={{ fontSize: 12 }}>{s.mode}</span>
                 <span style={{ marginLeft: 'auto' }}>{statusPill(s.status)}</span>
                 {canManage && (booked

@@ -60,7 +60,7 @@ function NotificationBell() {
 }
 
 interface Tab { to: string; label: string; perm?: string; }
-interface RailItem { to: string; label: string; ic: string; perm?: string; match: string; tabs?: Tab[]; }
+interface RailItem { to: string; label: string; ic: string; perm?: string; match: string; tabs?: Tab[]; badge?: number; }
 
 // Rail matches the CCAT Admin Web mockup EXACTLY: 7 items, identical for both roles (Admin and
 // Super-Admin see the same rail; pages enforce RBAC server-side). Service Health, Coins & XP,
@@ -89,6 +89,8 @@ const RAIL: RailItem[] = PAYMENTS_ENABLED
 const TEACHER_RAIL: RailItem[] = [
   { to: '/teacher', label: 'Dashboard', ic: '📊', match: '/teacher', perm: 'teacher.directory' },
   { to: '/teacher/teachers', label: 'Teachers', ic: '👩\u200d🏫', match: '/teacher/teachers', perm: 'teacher.directory' },
+  { to: '/teacher/booking-links', label: 'Link Generator', ic: '🔗', match: '/teacher/booking-links', perm: 'teacher.directory' },
+  { to: '/teacher/requests', label: 'Requests', ic: '📥', match: '/teacher/requests', perm: 'teacher.directory' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
 ];
 const SITE_NAMES: Record<string, string> = { ccat: 'CCAT Practice', teacher: 'Teacher Hub' };
@@ -123,6 +125,16 @@ export function Layout() {
   // Mobile hamburger drawer (desktop uses the CSS hover-expand rail; this only matters below 860px).
   const [drawer, setDrawer] = useState(false);
   useEffect(() => { setDrawer(false); }, [loc.pathname]); // route change closes the drawer
+  // Live pending-booking-requests count for the Teacher Hub rail badge. Polls every 60s while the
+  // Teacher Hub site is active and the admin can view it; failures are swallowed (a badge is cosmetic).
+  const [pendingReq, setPendingReq] = useState(0);
+  useEffect(() => {
+    if (me?.is_teacher || activeSite !== 'teacher' || !can('teacher.directory')) { setPendingReq(0); return; }
+    let alive = true;
+    const load = () => { api.teacherBookingRequestsPending().then(r => { if (alive) setPendingReq(r.pending || 0); }).catch(() => {}); };
+    load(); const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [activeSite, me?.is_teacher, loc.pathname]);
   const [theme, setTheme] = useState<string>(document.documentElement.getAttribute('data-theme') || 'light');
   const toggleTheme = () => {
     const cur = document.documentElement.getAttribute('data-theme') || 'light';
@@ -162,6 +174,9 @@ export function Layout() {
           >
             <span className="ricon" aria-hidden>{r.ic}</span>
             <span className="rlabel">{r.label}</span>
+            {r.to === '/teacher/requests' && pendingReq > 0 && (
+              <span aria-label={`${pendingReq} pending`} style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: 'var(--coral,#e0533d)', color: '#fff', fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendingReq > 99 ? '99+' : pendingReq}</span>
+            )}
           </NavLink>
         ))}
         <span className="spacer" />

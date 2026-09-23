@@ -24,6 +24,8 @@ import { Audit } from './pages/Audit';
 import { Membership } from './pages/Membership';
 import { TeacherDashboard } from './pages/TeacherDashboard';
 import { TeacherDirectory } from './pages/TeacherDirectory';
+import { BookingLinks } from './pages/BookingLinks';
+import { BookingRequests } from './pages/BookingRequests';
 import { PAYMENTS_ENABLED } from './lib/payments';
 
 function Login() {
@@ -254,6 +256,8 @@ export function App() {
         {/* Teacher Hub site (multi-site admin) */}
         <Route path="/teacher" element={<TeacherDashboard />} />
         <Route path="/teacher/teachers" element={<TeacherDirectory />} />
+        <Route path="/teacher/booking-links" element={<BookingLinks />} />
+        <Route path="/teacher/requests" element={<BookingRequests />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
