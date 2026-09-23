@@ -116,7 +116,8 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
         where id = $1
         returning id, teacher_id, teacher_name, subject, grade, day_of_week, start_time, end_time,
                   mode, status, timezone, booked_student, booked_note, booked_by, booked_at`,
-      [id, b.status, booking ? (b.student ?? null) : null, booking ? (b.note ?? null) : null, booking ? bookedBy : null]);
+      // booked_student and booked_by are NOT NULL (default ''); clear them to '' on unbook, never null.
+      [id, b.status, booking ? (b.student ?? '') : '', booking ? (b.note ?? null) : null, booking ? bookedBy : '']);
     if (rows.length === 0) throw Errors.notFound('Slot not found');
     // Governance: record in the CCAT audit log. Best-effort — a logging failure must not fail the booking.
     try {
