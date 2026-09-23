@@ -13,6 +13,9 @@ interface Slot {
 }
 
 const DAY_ABBR: Record<string, string> = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
+const WEEK_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const wdhStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '2px 2px 8px', fontSize: 11, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--brand,#2f6fd0)' };
+const countBadge: React.CSSProperties = { fontSize: 10, fontWeight: 800, color: '#fff', background: 'var(--brand,#2f6fd0)', borderRadius: 999, minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' };
 
 export function TeacherDirectory() {
   const [rows, setRows] = useState<TeacherRow[] | null>(null);
@@ -97,68 +100,81 @@ function comboColor(subject: string, grade: string) {
   const initials = (n: string) => (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   const inp = { padding: '7px 9px', border: '1px solid var(--line,#d7dce8)', borderRadius: 8, background: 'var(--card2,#f7f9fc)', color: 'inherit', width: '100%' } as React.CSSProperties;
 
+  const renderSlotCard = (id: string, s: Slot) => {
+    const booked = s.status === 'booked';
+    const c = comboColor(s.subject, gkey(s)); const gs = gradeShort(s);
+    return (
+      <div key={s.id} className="cm-slot" style={{ position: 'relative', background: booked ? 'var(--coral-soft,#fdecea)' : 'var(--card,#fff)', border: '1px solid ' + (booked ? 'var(--coral-line,#f4c6c0)' : 'var(--line,#e6e6ef)'), borderRadius: 10, padding: '8px 10px', marginBottom: 8 }}>
+        <div style={{ fontWeight: 800, fontSize: 14 }}>{s.start_time}–{s.end_time}<span style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted,#64748b)', letterSpacing: '.04em', marginLeft: 5 }}>{s.timezone}</span></div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 7px', borderRadius: 20, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>{s.subject}{gs ? (' ' + gs) : ''}</span>
+          <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 7px', borderRadius: 20, background: 'var(--amber-bg,#fdf3e0)', color: 'var(--amber,#b45309)' }}>{gradeLong(s)}</span>
+          <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 7px', borderRadius: 20, background: booked ? '#fdecea' : '#e2f6f3', color: booked ? '#c0392b' : '#0f766e' }}>{booked ? 'Booked' : 'Available'}</span>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted,#64748b)' }}>{s.mode}</span>
+        </div>
+        {booked && s.booked_student && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--teal-soft,#dbf1ee)', color: 'var(--teal-ink,#0b5a54)', borderRadius: 999, padding: '2px 8px 2px 3px', fontWeight: 700, fontSize: 11 }}>
+              <span style={{ width: 17, height: 17, borderRadius: '50%', background: 'var(--teal,#0f766e)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 800 }}>{initials(s.booked_student)}</span>
+              {s.booked_student}
+            </span>
+            {s.booked_by && <span className="muted" style={{ fontSize: 10 }}>· by {s.booked_by}</span>}
+          </div>
+        )}
+        {booked && s.booked_note && <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>📝 {s.booked_note}</div>}
+        {s.notes && <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>📘 {s.notes}</div>}
+        {canManage && (
+          <div style={{ marginTop: 8 }}>
+            {booked
+              ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 700, padding: '6px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>Mark open</button>
+              : <button onClick={() => openPopover(s.id)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 800, padding: '6px', borderRadius: 7, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer' }}>Book</button>}
+          </div>
+        )}
+        {popSlot === s.id && (
+          <>
+            <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 290, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)' }}>Book · {DAY_ABBR[s.day_of_week] || s.day_of_week} {s.start_time}</div>
+              <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}
+                onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
+              <input value={pNote} onChange={e => setPNote(e.target.value)} placeholder="Note (optional)" style={inp}
+                onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
+              {pErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12 }}>{pErr}</div>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => book(id, s)} disabled={savingSlot === s.id} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Booking…' : 'Book'}</button>
+                <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Esc</button>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--faint,#93a6b3)' }}>Press Enter to book</div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   const renderSlots = (id: string) => {
     if (loadingId === id && !slots[id]) return <div className="muted" style={{ padding: '10px 14px' }}>Loading slots…</div>;
     if (slotErr[id]) return <div className="empty" style={{ padding: '10px 14px' }}>{slotErr[id]}</div>;
     const list = slots[id] || [];
     if (list.length === 0) return <div className="muted" style={{ padding: '10px 14px' }}>No slots for this teacher.</div>;
+    const timeMin = (t: string) => { const p = String(t).split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); };
+    const byDay: Record<string, Slot[]> = {}; WEEK_FULL.forEach(d => { byDay[d] = []; });
+    list.forEach(s => { (byDay[s.day_of_week] || (byDay[s.day_of_week] = [])).push(s); });
     return (
-      <div style={{ display: 'grid', gap: 6, padding: '10px 14px' }}>
-        {list.map(s => {
-          const booked = s.status === 'booked';
+      <div className="cm-week">
+        {WEEK_FULL.map(day => {
+          const items = (byDay[day] || []).slice().sort((a, b) => timeMin(a.start_time) - timeMin(b.start_time));
+          const abbr = DAY_ABBR[day] || day.slice(0, 3);
+          if (items.length === 0) return (
+            <div key={day} className="cm-wday cm-empty">
+              <div style={wdhStyle}><span>{abbr}</span></div>
+              <div style={{ color: 'var(--muted,#64748b)', textAlign: 'center', padding: '12px 0' }}>—</div>
+            </div>
+          );
           return (
-            <div key={s.id} style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 12, background: booked ? 'var(--coral-soft,#fdecea)' : 'var(--card,#fff)', border: '1px solid ' + (booked ? 'var(--coral-line,#f4c6c0)' : 'var(--line,#e6e6ef)'), borderRadius: 11, padding: '10px 12px' }}>
-              <div style={{ minWidth: 52, textAlign: 'center', background: 'var(--sky,#eaf1fb)', borderRadius: 9, padding: '6px 4px', flex: 'none' }}>
-                <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--brand,#2f6fd0)' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</div>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 800, fontSize: 15 }}>{s.start_time}–{s.end_time}<span style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted,#64748b)', letterSpacing: '.04em', marginLeft: 6 }}>{s.timezone}</span></div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, alignItems: 'center' }}>
-                  {(() => { const c = comboColor(s.subject, gkey(s)); const gs = gradeShort(s); return (
-                    <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '3px 9px', borderRadius: 20, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>{s.subject}{gs ? (' ' + gs) : ''}</span>
-                  ); })()}
-                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '3px 9px', borderRadius: 20, background: 'var(--amber-bg,#fdf3e0)', color: 'var(--amber,#b45309)' }}>{gradeLong(s)}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '3px 9px', borderRadius: 20, background: booked ? '#fdecea' : '#e2f6f3', color: booked ? '#c0392b' : '#0f766e' }}>{booked ? 'Booked' : 'Available'}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted,#64748b)' }}>{s.mode}</span>
-                </div>
-                {booked && s.booked_student && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--teal-soft,#dbf1ee)', color: 'var(--teal-ink,#0b5a54)', borderRadius: 999, padding: '2px 9px 2px 3px', fontWeight: 700, fontSize: 12 }}>
-                      <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--teal,#0f766e)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800 }}>{initials(s.booked_student)}</span>
-                      {s.booked_student}
-                    </span>
-                    {s.booked_note && <span className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</span>}
-                    {s.booked_by && <span className="muted" style={{ fontSize: 11 }}>· by {s.booked_by}</span>}
-                  </div>
-                )}
-                {s.notes && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>📘 {s.notes}</div>}
-              </div>
-              {canManage && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 'none' }}>
-                  {booked
-                    ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>Mark open</button>
-                    : <button onClick={() => openPopover(s.id)} disabled={savingSlot === s.id} style={{ fontSize: 12, fontWeight: 800, padding: '5px 13px', borderRadius: 7, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer' }}>Book</button>}
-                </div>
-              )}
-
-              {popSlot === s.id && (
-                <>
-                  <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 20, cursor: 'default' }} />
-                  <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 30, width: 250, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 16px 40px rgba(10,28,56,.28)', padding: 10, display: 'grid', gap: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)' }}>Book · {DAY_ABBR[s.day_of_week] || s.day_of_week} {s.start_time}</div>
-                    <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}
-                      onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
-                    <input value={pNote} onChange={e => setPNote(e.target.value)} placeholder="Note (optional)" style={inp}
-                      onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
-                    {pErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12 }}>{pErr}</div>}
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => book(id, s)} disabled={savingSlot === s.id} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Booking…' : 'Book'}</button>
-                      <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Esc</button>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--faint,#93a6b3)' }}>Press Enter to book</div>
-                  </div>
-                </>
-              )}
+            <div key={day} className="cm-wday">
+              <div style={wdhStyle}><span>{abbr}</span><span style={countBadge}>{items.length}</span></div>
+              {items.map(s => renderSlotCard(id, s))}
             </div>
           );
         })}
@@ -168,6 +184,18 @@ function comboColor(subject: string, grade: string) {
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      <style>{`
+        .cm-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;padding:10px 14px}
+        .cm-wday{border:1px solid var(--line,#e6e6ef);border-radius:12px;padding:8px 8px 10px;min-height:88px}
+        .cm-wday.cm-empty{opacity:.5}
+        @media(max-width:900px){
+          .cm-week{grid-template-columns:1fr}
+          .cm-wday.cm-empty{display:none}
+          .cm-wday{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
+          .cm-wday>div:first-child{width:100%}
+          .cm-slot{flex:1 1 240px;margin-bottom:0 !important}
+        }
+      `}</style>
       <form onSubmit={(e) => { e.preventDefault(); load(search); }} style={{ display: 'flex', gap: 8 }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or email…"
           style={{ flex: 1, maxWidth: 320, padding: '8px 10px', border: '1px solid var(--line,#e6e6ef)', borderRadius: 8, background: 'var(--card,#fff)', color: 'inherit' }} />
