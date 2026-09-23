@@ -152,17 +152,17 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (!grantValidated(grant)) throw Errors.validation('Guardian contact must be validated first');
     if (!grant.policyVersion || !grant.consentHash) throw Errors.validation('Consent not recorded');
 
-    // Grade eligibility (§4.3): grade active + registration_enabled + age within bounds.
+    // Grade eligibility (§4.3): grade must exist + be active + registration_enabled. Age-vs-grade bounds
+    // are intentionally NOT enforced — the parent chooses the grade; age is recorded for audit and the
+    // weak-PIN (birthday) check only, and never blocks account creation.
     const g = await db.query(
-      `select id, active, registration_enabled, age_min_years, age_max_years from ccat.grades where id = $1`,
+      `select id, active, registration_enabled from ccat.grades where id = $1`,
       [body.grade_id],
     );
     if (g.rows.length === 0) throw Errors.validation('Unknown grade');
     const grade = g.rows[0]!;
     if (!grade.active || !grade.registration_enabled) throw Errors.forbidden('REGISTRATION_DISABLED', 'Registration is not enabled for this grade');
     const age = deriveAgeYears(body.birth_month, body.birth_year);
-    if (grade.age_min_years != null && age < grade.age_min_years) throw Errors.validation('Age below grade minimum', { age });
-    if (grade.age_max_years != null && age > grade.age_max_years) throw Errors.validation('Age above grade maximum', { age });
 
     // Reject trivially guessable PINs server-side (blocklist + all-same + sequential + DOB-derived). The
     // web client hints inline, but this is the authority. Only month + year are known here (no day is sent).
