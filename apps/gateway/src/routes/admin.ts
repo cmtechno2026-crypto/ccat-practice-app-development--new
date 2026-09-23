@@ -8,6 +8,7 @@ import { verifySecret, hashToken } from '../security/crypto.js';
 import { signAdminToken, newRefreshToken } from '../security/token.js';
 import { makeAuthenticateAdmin, loadAdminPermissions, requirePermission } from '../plugins/adminAuth.js';
 import { deriveAgeYears } from '../lib/age.js';
+import { computeEffective, loadDefaultPlan, isPromoActive } from '../lib/entitlements.js';
 
 // Audit event categories (mockup: Content / Student accounts / Economy / Governance). Each maps to
 // a set of event_type prefixes; used for the category filter chips and the colored row grouping.
@@ -158,6 +159,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const SORTS: Record<string, string> = {
     last_active: 'la.last_active', xp: 's.cached_xp_total', readiness: 'r.readiness_pct',
     grade: 'g.grade_number', username: "s.username_normalized::text", created: 's.created_at',
+    registered: 's.created_at',
   };
   const STATUSES = new Set(['active', 'suspended', 'banned', 'pending_deletion', 'purged']);
   const BANDS = new Set(['ready', 'building', 'needs_work']);
@@ -171,10 +173,14 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const status = q.status && STATUSES.has(q.status) ? q.status : null;
     const band = q.band && BANDS.has(q.band) ? q.band : null;
     const search = q.q && q.q.trim() ? `%${q.q.trim()}%` : null;
+    const dateOk = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(v.trim()) ? v.trim() : null);
+    const regFrom = dateOk(q.registered_from);
+    const regToRaw = dateOk(q.registered_to);
+    const regTo = regToRaw && /^\d{4}-\d{2}-\d{2}$/.test(regToRaw) ? regToRaw + 'T23:59:59.999' : regToRaw;
 
     const { rows } = await db.query(
       `select s.id, s.display_name, s.username_normalized::text as username, s.status, s.version,
-              s.birth_month, s.birth_year, g.grade_number,
+              s.birth_month, s.birth_year, s.created_at, g.grade_number,
               gc.email as guardian_email, gc.phone as guardian_phone, gc.name as guardian_name,
               s.cached_xp_total, s.cached_coin_balance,
               r.readiness_pct, r.band as readiness_band, r.insufficient_data,
@@ -207,11 +213,43 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           and ($2::text is null or r.band = $2)
           and ($3::text is null or s.username_normalized::text ilike $3
                or s.display_name ilike $3 or gc.email ilike $3 or coalesce(gc.phone,'') ilike $3)
-        order by ${sortCol} ${dir} nulls last, s.created_at desc
-        limit $4 offset $5`,
-      [status, band, search, limit, offset],
+          and ($4::timestamptz is null or s.created_at >= $4::timestamptz)
+          and ($5::timestamptz is null or s.created_at <= $5::timestamptz)
+        order by (s.status = 'purged') asc, ${sortCol} ${dir} nulls last, s.created_at desc
+        limit $6 offset $7`,
+      [status, band, search, regFrom, regTo, limit, offset],
     );
     const matched = rows.length ? Number(rows[0]!.matched) : 0;
+
+    // Payments: attach each student's EFFECTIVE membership tier (primary guardian email + site default plan).
+    // Flag-gated and fully defensive — any failure leaves tier null and never breaks the directory.
+    let pay: { dp: Awaited<ReturnType<typeof loadDefaultPlan>>; byEmail: Map<string, string> } | null = null;
+    if (cfg.paymentsEnabled) {
+      try {
+        const dp = await loadDefaultPlan(db);
+        const emails = [...new Set(rows.map((r) => (r.guardian_email ? String(r.guardian_email).toLowerCase() : null)).filter(Boolean) as string[])];
+        const byEmail = new Map<string, string>();
+        if (emails.length) {
+          const ent = await db.query(
+            `select lower(guardian_email) as email, tier, status, current_period_end, grant_reason
+               from ccat.entitlements where lower(guardian_email) = any($1::text[])`,
+            [emails],
+          );
+          for (const e of ent.rows) {
+            const notExpired = e.current_period_end == null || new Date(e.current_period_end) > new Date();
+            const rowActive = e.status === 'active' && notExpired;
+            byEmail.set(String(e.email), computeEffective({ rowActive, rowTier: e.tier, grantReason: e.grant_reason ?? null, promo: dp }).rawTier);
+          }
+        }
+        pay = { dp, byEmail };
+      } catch { pay = null; }
+    }
+    const tierFor = (email: string | null): string | null => {
+      if (!pay) return null;
+      const em = email ? email.toLowerCase() : null;
+      return (em && pay.byEmail.get(em)) || (isPromoActive(pay.dp) ? pay.dp.defaultTier : 'free');
+    };
+
     return {
       matched,
       items: rows.map((r) => {
@@ -227,8 +265,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           sets_completed: r.sets_completed === null ? null : Number(r.sets_completed),
           progress_pct: r.progress_pct === null ? null : Number(r.progress_pct),
           device_total: total, device_active: active, last_active: r.last_active,
+          created_at: r.created_at,
           streak_current: r.current_streak == null ? 0 : Number(r.current_streak),
           streak_longest: r.longest_streak == null ? 0 : Number(r.longest_streak),
+          membership_tier: tierFor(r.guardian_email ? String(r.guardian_email) : null),
         };
       }),
       next_cursor: rows.length === limit ? String(offset + limit) : null,
