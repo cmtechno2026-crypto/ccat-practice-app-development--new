@@ -129,11 +129,13 @@ export function RewardsScreen() {
       <>
         <AppBar title="Achievements" sub="Earn badges, coins & XP as you learn" back />
         <div className="content stack">
-          <Card className="stack" style={{ alignItems: 'center', textAlign: 'center', padding: '34px 20px' }}>
-            <div style={{ fontSize: 40, lineHeight: 1 }}>🔒</div>
-            <strong style={{ fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: 20 }}>Achievements &amp; Rewards are coming soon</strong>
-            <div className="muted" style={{ maxWidth: 420 }}>
-              Badges, coins and XP rewards are on the way for everyone. Keep practising — your progress is being tracked and will count once rewards launch.
+          <Card className="stack">
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10, padding: '24px 8px' }}>
+              <div style={{ fontSize: 40, lineHeight: 1 }}>🔒</div>
+              <strong style={{ fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: 20 }}>Achievements &amp; Rewards are coming soon</strong>
+              <div className="muted" style={{ maxWidth: 420 }}>
+                Badges, coins and XP rewards are on the way for everyone. Keep practising — your progress is being tracked and will count once rewards launch.
+              </div>
             </div>
           </Card>
         </div>
