@@ -95,6 +95,20 @@ export const api = {
     if (opts.registered_to) p.set('registered_to', opts.registered_to);
     return req<{ matched: number; items: any[]; next_cursor: string | null }>('GET', `/v1/admin/students?${p.toString()}`);
   },
+  // ---- Teacher Hub (multi-site) — client for the gateway teacher endpoints (admin-teacher.ts +
+  // admin-students.ts teacher block). Plain authenticated calls; no site header needed. ----
+  teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number }>('GET', '/v1/admin/teacher/summary'),
+  teacherTeachers: (search?: string) => { const p = new URLSearchParams(); if (search) p.set('search', search); const qs = p.toString(); return req<{ teachers: any[] }>('GET', `/v1/admin/teacher/teachers${qs ? '?' + qs : ''}`); },
+  teacherSlots: (teacher_id?: string) => { const p = new URLSearchParams(); if (teacher_id) p.set('teacher_id', teacher_id); const qs = p.toString(); return req<{ slots: any[] }>('GET', `/v1/admin/teacher/slots${qs ? '?' + qs : ''}`); },
+  teacherSetSlotStatus: (id: string, status: 'open' | 'booked') => req<any>('PATCH', `/v1/admin/teacher/slots/${id}`, { status }),
+  teachers: () => req<{ teachers: any[] }>('GET', '/v1/admin/teachers'),
+  createTeacher: (b: { display_name: string; email: string; temp_password?: string }) => req<{ id: string; temp_password: string; note: string }>('POST', '/v1/admin/teachers', b),
+  setTeacherStatus: (id: string, status: 'active' | 'disabled') => req<{ status: string }>('POST', `/v1/admin/teachers/${id}/status`, { status }),
+  teacherStudents: (id: string) => req<{ student_ids: string[] }>('GET', `/v1/admin/teachers/${id}/students`),
+  setTeacherStudents: (id: string, student_ids: string[]) => req<{ student_ids: string[] }>('PUT', `/v1/admin/teachers/${id}/students`, { student_ids }),
+  teacherCatalog: (grade_id: string) => req<any>('GET', `/v1/admin/teacher/catalog?grade_id=${encodeURIComponent(grade_id)}`),
+  teacherSetPreview: (setId: string) => req<any>('GET', `/v1/admin/teacher/set-preview?setId=${encodeURIComponent(setId)}`),
+  publicGrades: () => req<any[]>('GET', '/v1/grades'),
   studentStats: () => req<{ total: number; active: number; suspended: number; banned: number; pending_deletion: number; practised_today: number }>('GET', '/v1/admin/students/stats'),
   studentDetail: (id: string) => req<any>('GET', `/v1/admin/students/${id}/detail`),
   createStudent: (b: { display_name: string; username: string; pin: string; grade_id: string; birth_month?: number; birth_year?: number; guardian_email?: string; guardian_name?: string; guardian_phone?: string }) =>
