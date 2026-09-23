@@ -2,22 +2,21 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-// Parent Booking Links (Teacher Hub). An admin picks 1+ teachers, then one of the (subject + grade)
-// combinations those teachers actually offer, and mints a shareable public link (served by TeachTime
-// at `${base}/b/<token>`). Parents open it, see the matching available slots, and submit a booking
-// request that lands in the Requests inbox.
+// Parent Booking Links (Teacher Hub). An admin picks 1+ teachers, then one OR MORE of the (subject +
+// grade) combinations those teachers actually offer, and mints ONE shareable public link (served by
+// TeachTime at `${base}/b/<token>`) that surfaces the available slots across all chosen combos.
 interface TeacherRow { id: string; name: string; email: string; subjects: string[]; }
 interface Combo { subject: string; grade: number; label: string; key: string; }
 interface LinkRow {
   id: string; token: string; label: string | null; teacher_ids: string[]; grade: number; subject: string;
+  combos: { subject: string; grade: number }[] | null;
   expires_at: string | null; is_active: boolean; created_by: string; created_by_name: string | null;
   created_at: string; status: string; pending_requests: number; total_requests: number; url: string | null;
 }
 
 const inp: React.CSSProperties = { padding: '8px 10px', border: '1px solid var(--line,#d7dce8)', borderRadius: 8, background: 'var(--card2,#f7f9fc)', color: 'inherit' };
 
-// Parse a teacher `subjects[]` entry like "Math (Grade 10)" into { subject, grade }. Returns null when
-// the entry has no "(Grade N)" part, since a booking link needs a concrete grade.
+// Parse a teacher `subjects[]` entry like "Math (Grade 10)" into { subject, grade }.
 function parseCombo(raw: string): { subject: string; grade: number } | null {
   const m = /^(.*?)\s*\(\s*Grade\s*(\d{1,2})\s*\)\s*$/i.exec(raw || '');
   if (!m) return null;
@@ -37,7 +36,7 @@ export function BookingLinks() {
   const [err, setErr] = useState('');
 
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [comboKey, setComboKey] = useState('');
+  const [selCombos, setSelCombos] = useState<Set<string>>(new Set());
   const [label, setLabel] = useState('');
   const [neverExp, setNeverExp] = useState(false);
   const [days, setDays] = useState(14);
@@ -61,29 +60,32 @@ export function BookingLinks() {
     return [...map.values()].sort((a, b) => a.grade - b.grade || a.subject.localeCompare(b.subject));
   }, [teachers, sel]);
 
-  // Keep the chosen combo valid as the teacher selection changes.
+  // Drop any chosen combo that is no longer offered by the current teacher selection.
   useEffect(() => {
-    if (comboKey && !combos.some(c => c.key === comboKey)) setComboKey('');
-    else if (!comboKey && combos.length === 1) setComboKey(combos[0].key);
-  }, [combos]); // eslint-disable-line react-hooks/exhaustive-deps
+    setSelCombos(prev => { const keep = new Set([...prev].filter(k => combos.some(c => c.key === k))); return keep.size === prev.size ? prev : keep; });
+  }, [combos]);
 
-  const chosen = combos.find(c => c.key === comboKey) || null;
+  const chosen = combos.filter(c => selCombos.has(c.key));
+  const chosenKey = chosen.map(c => c.key).join(',');
 
   useEffect(() => {
-    if (sel.size === 0 || !chosen) { setPreview(null); return; }
+    if (sel.size === 0 || chosen.length === 0) { setPreview(null); return; }
     const ids = [...sel];
-    const t = setTimeout(() => { api.teacherBookingLinkPreview(ids, chosen.grade, chosen.subject).then(r => setPreview(r.available)).catch(() => setPreview(null)); }, 350);
+    const payload = chosen.map(c => ({ subject: c.subject, grade: c.grade }));
+    const t = setTimeout(() => { api.teacherBookingLinkPreview(ids, payload).then(r => setPreview(r.available)).catch(() => setPreview(null)); }, 350);
     return () => clearTimeout(t);
-  }, [sel, comboKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sel, chosenKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (id: string) => setSel(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleCombo = (key: string) => setSelCombos(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const allCombos = () => setSelCombos(new Set(combos.map(c => c.key)));
 
   const create = async () => {
-    if (sel.size === 0 || !chosen) return;
+    if (sel.size === 0 || chosen.length === 0) return;
     setCreating(true); setErr('');
     try {
-      await api.teacherCreateBookingLink({ teacher_ids: [...sel], grade: chosen.grade, subject: chosen.subject, label: label || undefined, never_expires: neverExp, expires_in_days: neverExp ? null : days });
-      setSel(new Set()); setComboKey(''); setLabel(''); setPreview(null);
+      await api.teacherCreateBookingLink({ teacher_ids: [...sel], combos: chosen.map(c => ({ subject: c.subject, grade: c.grade })), label: label || undefined, never_expires: neverExp, expires_in_days: neverExp ? null : days });
+      setSel(new Set()); setSelCombos(new Set()); setLabel(''); setPreview(null);
       loadLinks();
     } catch (e: any) { setErr(e.message); } finally { setCreating(false); }
   };
@@ -97,6 +99,7 @@ export function BookingLinks() {
     return <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', padding: '2px 8px', borderRadius: 999, background: bg, color: c }}>{st}</span>;
   };
   const teacherName = (id: string) => teachers.find(t => t.id === id)?.name || id.slice(0, 8);
+  const linkCombos = (l: LinkRow) => (l.combos && l.combos.length ? l.combos : [{ subject: l.subject, grade: l.grade }]).map(c => `${c.subject} · G${c.grade}`).join(', ');
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -112,15 +115,22 @@ export function BookingLinks() {
                 ))}
               </div>
             </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <span className="muted" style={{ fontSize: 12 }}>Grade &amp; Subject ({selCombos.size} selected)</span>
+                {combos.length > 1 && <button onClick={allCombos} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '2px 8px', fontSize: 12 }}>Select all</button>}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {sel.size === 0 ? <span className="muted" style={{ fontSize: 13 }}>Select teacher(s) first…</span>
+                  : combos.length === 0 ? <span className="muted" style={{ fontSize: 13 }}>No grade+subject offerings for these teachers.</span>
+                  : combos.map(c => (
+                    <button key={c.key} onClick={() => toggleCombo(c.key)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, border: selCombos.has(c.key) ? '2px solid var(--brand,#2f6fd0)' : inp.border, background: selCombos.has(c.key) ? 'var(--brand-soft,#e7f0fc)' : inp.background }}>{c.label}</button>
+                  ))}
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <label style={{ display: 'grid', gap: 4, minWidth: 240 }}><span className="muted" style={{ fontSize: 12 }}>Grade &amp; Subject</span>
-                <select value={comboKey} onChange={e => setComboKey(e.target.value)} disabled={combos.length === 0} style={{ ...inp, opacity: combos.length === 0 ? 0.6 : 1 }}>
-                  <option value="">{sel.size === 0 ? 'Select teacher(s) first…' : (combos.length === 0 ? 'No offerings for these teachers' : 'Select…')}</option>
-                  {combos.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-                </select>
-              </label>
               <label style={{ display: 'grid', gap: 4 }}><span className="muted" style={{ fontSize: 12 }}>Label (optional)</span>
-                <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Internal note" style={{ ...inp, minWidth: 160 }} />
+                <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Internal note" style={{ ...inp, minWidth: 200 }} />
               </label>
               <label style={{ display: 'grid', gap: 4 }}><span className="muted" style={{ fontSize: 12 }}>Expiry</span>
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -131,7 +141,7 @@ export function BookingLinks() {
               </label>
             </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <button onClick={create} disabled={creating || sel.size === 0 || !chosen} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--brand,#2f6fd0)', color: '#fff', border: 'none', opacity: (creating || sel.size === 0 || !chosen) ? 0.6 : 1 }}>{creating ? 'Creating…' : 'Create link'}</button>
+              <button onClick={create} disabled={creating || sel.size === 0 || chosen.length === 0} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--brand,#2f6fd0)', color: '#fff', border: 'none', opacity: (creating || sel.size === 0 || chosen.length === 0) ? 0.6 : 1 }}>{creating ? 'Creating…' : 'Create link'}</button>
               {preview != null && <span className="muted" style={{ fontSize: 13 }}>{preview} available slot{preview === 1 ? '' : 's'} match right now</span>}
             </div>
           </div>
@@ -150,7 +160,7 @@ export function BookingLinks() {
             {links.map(l => (
               <div key={l.id} style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, padding: '10px 12px' }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 800 }}>{l.subject} · G{l.grade}</span>
+                  <span style={{ fontWeight: 800 }}>{linkCombos(l)}</span>
                   {l.label && <span className="muted" style={{ fontSize: 12 }}>{l.label}</span>}
                   {statusChip(l.status)}
                   <span style={{ marginLeft: 'auto', fontSize: 12 }} className="muted">{l.pending_requests} pending · {l.total_requests} total</span>

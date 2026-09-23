@@ -139,6 +139,24 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
 
   const uuid = z.string().uuid();
 
+  // Validate + de-duplicate a list of {subject, grade} booking-link combinations.
+  function normalizeCombos(raw: unknown): Array<{ subject: string; grade: number }> {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>(); const out: Array<{ subject: string; grade: number }> = [];
+    for (const it of raw) {
+      const subject = String((it as { subject?: unknown })?.subject ?? '').trim();
+      const grade = Number((it as { grade?: unknown })?.grade);
+      if (!subject || subject.length > 120 || !Number.isInteger(grade) || grade < 1 || grade > 12) continue;
+      const key = `${grade}|${subject}`;
+      if (seen.has(key)) continue; seen.add(key); out.push({ subject, grade });
+    }
+    return out;
+  }
+  function parseCombosParam(v?: string): Array<{ subject: string; grade: number }> | null {
+    if (!v) return null;
+    try { return normalizeCombos(JSON.parse(v)); } catch { return null; }
+  }
+
   // Resolve admin display names for a set of admin ids (booking links store created_by = admin id).
   async function adminNames(ids: string[]): Promise<Map<string, string>> {
     const uniq = [...new Set(ids.filter(Boolean))];
@@ -218,28 +236,29 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.get('/v1/admin/teacher/booking-links/preview', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.directory');
     requireSite(req, 'teacher');
-    const q = req.query as { teacher_ids?: string; grade?: string; subject?: string };
+    const q = req.query as { teacher_ids?: string; combos?: string; grade?: string; subject?: string };
     const teacherIds = (q.teacher_ids ?? '').split(',').map((x) => x.trim()).filter(Boolean);
-    const grade = Number(q.grade);
-    const subject = (q.subject ?? '').trim();
-    if (teacherIds.length === 0 || !Number.isInteger(grade) || grade < 1 || grade > 12 || !subject) {
-      throw Errors.validation('teacher_ids, grade (1-12) and subject are required');
-    }
+    let combos = parseCombosParam(q.combos);
+    if (!combos && q.subject && Number.isInteger(Number(q.grade))) combos = normalizeCombos([{ subject: q.subject, grade: Number(q.grade) }]); // legacy single
+    if (teacherIds.length === 0 || !combos || combos.length === 0) throw Errors.validation('teacher_ids and combos are required');
     const { rows } = await tdb().query(
       `select count(*)::int as available
-         from public.ta_slots
-        where teacher_id = any($1::uuid[])
-          and subject = $2
-          and $3 between grade_min and grade_max
-          and status = 'available'`,
-      [teacherIds, subject, grade]);
-    return { available: rows[0]?.available ?? 0, teachers: teacherIds.length };
+         from public.ta_slots s
+        where s.teacher_id = any($1::uuid[])
+          and s.status = 'available'
+          and exists (select 1 from jsonb_to_recordset($2::jsonb) as c(subject text, grade int)
+                       where c.subject = s.subject and c.grade between s.grade_min and s.grade_max)`,
+      [teacherIds, JSON.stringify(combos)]);
+    return { available: rows[0]?.available ?? 0, teachers: teacherIds.length, combos: combos.length };
   });
 
   const createLinkSchema = z.object({
     teacher_ids: z.array(uuid).min(1).max(50),
-    grade: z.number().int().min(1).max(12),
-    subject: z.string().trim().min(1).max(120),
+    // One or more (subject, grade) combinations this link surfaces. Legacy single grade/subject also
+    // accepted for back-compat and folded into combos.
+    combos: z.array(z.object({ subject: z.string().trim().min(1).max(120), grade: z.number().int().min(1).max(12) })).min(1).max(60).optional(),
+    grade: z.number().int().min(1).max(12).optional(),
+    subject: z.string().trim().min(1).max(120).optional(),
     label: z.string().trim().max(160).optional(),
     // Omitted / a positive number → days from now (default 14). never_expires:true → no expiry.
     expires_in_days: z.number().int().min(1).max(365).nullable().optional(),
@@ -250,23 +269,26 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     requirePermission(req, 'teacher.slots.manage');
     requireSite(req, 'teacher');
     const b = createLinkSchema.parse(req.body ?? {});
+    const combos = normalizeCombos(b.combos && b.combos.length ? b.combos : (b.subject && typeof b.grade === 'number' ? [{ subject: b.subject, grade: b.grade }] : []));
+    if (combos.length === 0) throw Errors.validation('At least one grade+subject combination is required');
     const chk = await tdb().query('select id from public.ta_teachers where id = any($1::uuid[])', [b.teacher_ids]);
     const found = new Set(chk.rows.map((r) => r.id as string));
     const missing = b.teacher_ids.filter((id) => !found.has(id));
     if (missing.length) throw Errors.validation('Unknown teacher id(s)', { missing });
     const token = randomBytes(24).toString('base64url'); // 32 url-safe chars
     const expiresAt = b.never_expires ? null : new Date(Date.now() + (b.expires_in_days ?? 14) * 86400000);
+    const first = combos[0]!; // legacy grade/subject kept in sync with the first combo (columns are NOT NULL)
     const { rows } = await tdb().query(
-      `insert into public.ta_booking_links (token, label, teacher_ids, grade, subject, expires_at, is_active, created_by)
-       values ($1,$2,$3::uuid[],$4,$5,$6,true,$7)
-       returning id, token, label, teacher_ids, grade, subject, expires_at, is_active, created_by, created_at`,
-      [token, b.label ?? null, b.teacher_ids, b.grade, b.subject, expiresAt, req.admin!.adminId]);
+      `insert into public.ta_booking_links (token, label, teacher_ids, grade, subject, combos, expires_at, is_active, created_by)
+       values ($1,$2,$3::uuid[],$4,$5,$6::jsonb,$7,true,$8)
+       returning id, token, label, teacher_ids, grade, subject, combos, expires_at, is_active, created_by, created_at`,
+      [token, b.label ?? null, b.teacher_ids, first.grade, first.subject, JSON.stringify(combos), expiresAt, req.admin!.adminId]);
     const row = rows[0]!;
     try {
       await db.query(
         `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
          values ($1,'admin','teacher.booking_link.create','ta_booking_link',$2,$3)`,
-        [req.admin!.adminId, row.id, JSON.stringify({ teachers: b.teacher_ids.length, grade: b.grade, subject: b.subject })]);
+        [req.admin!.adminId, row.id, JSON.stringify({ teachers: b.teacher_ids.length, combos })]);
     } catch { /* audit best-effort */ }
     const base = cfg.teachTimePublicUrl;
     return { ...row, url: base ? `${base}/b/${row.token}` : null };
@@ -279,7 +301,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const q = req.query as { status?: string };
     const filter = (q.status ?? 'all').trim();
     const { rows } = await tdb().query(
-      `select l.id, l.token, l.label, l.teacher_ids, l.grade, l.subject, l.expires_at, l.is_active,
+      `select l.id, l.token, l.label, l.teacher_ids, l.grade, l.subject, l.combos, l.expires_at, l.is_active,
               l.created_by, l.created_at,
               (select count(*)::int from public.ta_booking_requests r where r.link_id = l.id and r.status = 'pending') as pending_requests,
               (select count(*)::int from public.ta_booking_requests r where r.link_id = l.id)                          as total_requests
