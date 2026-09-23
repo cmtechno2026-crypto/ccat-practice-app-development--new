@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-// Parent Booking Links (Teacher Hub). An admin picks 1+ teachers + grade + subject and mints a
-// shareable public link (served by TeachTime at `${base}/b/<token>`). Parents open it, see the
-// matching available slots, and submit a booking request that lands in the Requests inbox.
+// Parent Booking Links (Teacher Hub). An admin picks 1+ teachers, then one of the (subject + grade)
+// combinations those teachers actually offer, and mints a shareable public link (served by TeachTime
+// at `${base}/b/<token>`). Parents open it, see the matching available slots, and submit a booking
+// request that lands in the Requests inbox.
 interface TeacherRow { id: string; name: string; email: string; subjects: string[]; }
+interface Combo { subject: string; grade: number; label: string; key: string; }
 interface LinkRow {
   id: string; token: string; label: string | null; teacher_ids: string[]; grade: number; subject: string;
   expires_at: string | null; is_active: boolean; created_by: string; created_by_name: string | null;
@@ -13,6 +15,17 @@ interface LinkRow {
 }
 
 const inp: React.CSSProperties = { padding: '8px 10px', border: '1px solid var(--line,#d7dce8)', borderRadius: 8, background: 'var(--card2,#f7f9fc)', color: 'inherit' };
+
+// Parse a teacher `subjects[]` entry like "Math (Grade 10)" into { subject, grade }. Returns null when
+// the entry has no "(Grade N)" part, since a booking link needs a concrete grade.
+function parseCombo(raw: string): { subject: string; grade: number } | null {
+  const m = /^(.*?)\s*\(\s*Grade\s*(\d{1,2})\s*\)\s*$/i.exec(raw || '');
+  if (!m) return null;
+  const subject = (m[1] || '').trim();
+  const grade = Number(m[2]);
+  if (!subject || !(grade >= 1 && grade <= 12)) return null;
+  return { subject, grade };
+}
 
 export function BookingLinks() {
   const { can } = useAuth();
@@ -24,8 +37,7 @@ export function BookingLinks() {
   const [err, setErr] = useState('');
 
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [grade, setGrade] = useState(5);
-  const [subject, setSubject] = useState('');
+  const [comboKey, setComboKey] = useState('');
   const [label, setLabel] = useState('');
   const [neverExp, setNeverExp] = useState(false);
   const [days, setDays] = useState(14);
@@ -37,27 +49,41 @@ export function BookingLinks() {
   useEffect(() => { api.teacherTeachers().then(r => setTeachers(r.teachers)).catch(() => {}); }, []);
   useEffect(loadLinks, [filter]);
 
-  const subjects = useMemo(() => {
-    const set = new Set<string>();
-    teachers.filter(t => sel.has(t.id)).forEach(t => (t.subjects || []).forEach(s => set.add(s)));
-    return [...set].sort();
+  // Union of the (subject + grade) combinations offered by the selected teachers, de-duplicated.
+  const combos = useMemo<Combo[]>(() => {
+    const map = new Map<string, Combo>();
+    teachers.filter(t => sel.has(t.id)).forEach(t => (t.subjects || []).forEach(raw => {
+      const c = parseCombo(raw);
+      if (!c) return;
+      const key = `${c.grade}|${c.subject}`;
+      if (!map.has(key)) map.set(key, { ...c, key, label: `${c.subject} · Grade ${c.grade}` });
+    }));
+    return [...map.values()].sort((a, b) => a.grade - b.grade || a.subject.localeCompare(b.subject));
   }, [teachers, sel]);
 
+  // Keep the chosen combo valid as the teacher selection changes.
   useEffect(() => {
-    if (sel.size === 0 || !subject) { setPreview(null); return; }
+    if (comboKey && !combos.some(c => c.key === comboKey)) setComboKey('');
+    else if (!comboKey && combos.length === 1) setComboKey(combos[0].key);
+  }, [combos]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const chosen = combos.find(c => c.key === comboKey) || null;
+
+  useEffect(() => {
+    if (sel.size === 0 || !chosen) { setPreview(null); return; }
     const ids = [...sel];
-    const t = setTimeout(() => { api.teacherBookingLinkPreview(ids, grade, subject).then(r => setPreview(r.available)).catch(() => setPreview(null)); }, 350);
+    const t = setTimeout(() => { api.teacherBookingLinkPreview(ids, chosen.grade, chosen.subject).then(r => setPreview(r.available)).catch(() => setPreview(null)); }, 350);
     return () => clearTimeout(t);
-  }, [sel, grade, subject]);
+  }, [sel, comboKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (id: string) => setSel(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const create = async () => {
-    if (sel.size === 0 || !subject) return;
+    if (sel.size === 0 || !chosen) return;
     setCreating(true); setErr('');
     try {
-      await api.teacherCreateBookingLink({ teacher_ids: [...sel], grade, subject, label: label || undefined, never_expires: neverExp, expires_in_days: neverExp ? null : days });
-      setSel(new Set()); setSubject(''); setLabel(''); setPreview(null);
+      await api.teacherCreateBookingLink({ teacher_ids: [...sel], grade: chosen.grade, subject: chosen.subject, label: label || undefined, never_expires: neverExp, expires_in_days: neverExp ? null : days });
+      setSel(new Set()); setComboKey(''); setLabel(''); setPreview(null);
       loadLinks();
     } catch (e: any) { setErr(e.message); } finally { setCreating(false); }
   };
@@ -87,12 +113,11 @@ export function BookingLinks() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <label style={{ display: 'grid', gap: 4 }}><span className="muted" style={{ fontSize: 12 }}>Grade</span>
-                <select value={grade} onChange={e => setGrade(Number(e.target.value))} style={inp}>{Array.from({ length: 12 }, (_, i) => i + 1).map(g => <option key={g} value={g}>Grade {g}</option>)}</select>
-              </label>
-              <label style={{ display: 'grid', gap: 4 }}><span className="muted" style={{ fontSize: 12 }}>Subject</span>
-                <input list="subj-list" value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Math" style={{ ...inp, minWidth: 160 }} />
-                <datalist id="subj-list">{subjects.map(s => <option key={s} value={s} />)}</datalist>
+              <label style={{ display: 'grid', gap: 4, minWidth: 240 }}><span className="muted" style={{ fontSize: 12 }}>Grade &amp; Subject</span>
+                <select value={comboKey} onChange={e => setComboKey(e.target.value)} disabled={combos.length === 0} style={{ ...inp, opacity: combos.length === 0 ? 0.6 : 1 }}>
+                  <option value="">{sel.size === 0 ? 'Select teacher(s) first…' : (combos.length === 0 ? 'No offerings for these teachers' : 'Select…')}</option>
+                  {combos.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
               </label>
               <label style={{ display: 'grid', gap: 4 }}><span className="muted" style={{ fontSize: 12 }}>Label (optional)</span>
                 <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Internal note" style={{ ...inp, minWidth: 160 }} />
@@ -106,7 +131,7 @@ export function BookingLinks() {
               </label>
             </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <button onClick={create} disabled={creating || sel.size === 0 || !subject} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--brand,#2f6fd0)', color: '#fff', border: 'none', opacity: (creating || sel.size === 0 || !subject) ? 0.6 : 1 }}>{creating ? 'Creating…' : 'Create link'}</button>
+              <button onClick={create} disabled={creating || sel.size === 0 || !chosen} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--brand,#2f6fd0)', color: '#fff', border: 'none', opacity: (creating || sel.size === 0 || !chosen) ? 0.6 : 1 }}>{creating ? 'Creating…' : 'Create link'}</button>
               {preview != null && <span className="muted" style={{ fontSize: 13 }}>{preview} available slot{preview === 1 ? '' : 's'} match right now</span>}
             </div>
           </div>
