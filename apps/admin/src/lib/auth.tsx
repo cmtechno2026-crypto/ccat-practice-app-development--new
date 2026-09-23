@@ -1,18 +1,22 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { api, setToken, setRefresh, getToken, getRefresh } from './api';
 
-export interface Me { id: string; role: 'admin' | 'super_admin'; email: string; display_name: string; permissions: string[]; }
+export interface Me { id: string; role: 'admin' | 'super_admin'; email: string; display_name: string; permissions: string[]; is_teacher?: boolean; }
 interface AuthState {
   me: Me | null; ready: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   can: (perm: string) => boolean;
+  sites: string[]; activeSite: string; switchSite: (site: string) => void;
 }
 const Ctx = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [ready, setReady] = useState(false);
+  // Multi-site (CCAT / Teacher Hub) switcher state — consumed by Layout. Persisted per-admin.
+  const [activeSite, setActiveSite] = useState<string>(() => { try { return localStorage.getItem('ccat_admin_site') || 'ccat'; } catch { return 'ccat'; } });
+  const switchSite = useCallback((site: string) => { setActiveSite(site); try { localStorage.setItem('ccat_admin_site', site); } catch { /* ignore */ } }, []);
 
   useEffect(() => {
     (async () => {
@@ -35,6 +39,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => { setToken(null); setRefresh(null); setMe(null); }, []);
   const can = useCallback((perm: string) => !!me && (me.role === 'super_admin' || me.permissions.includes(perm)), [me]);
 
-  return <Ctx.Provider value={{ me, ready, login, logout, can }}>{children}</Ctx.Provider>;
+  // Sites this admin can see: CCAT always; Teacher Hub when super_admin or holding any teacher.* permission.
+  const sites = useMemo(() => {
+    const out = ['ccat'];
+    if (me && (me.role === 'super_admin' || (me.permissions || []).some((p) => p.startsWith('teacher.')))) out.push('teacher');
+    return out;
+  }, [me]);
+  // If the remembered site is no longer available (e.g. signed in as a non-teacher), fall back to CCAT.
+  useEffect(() => { if (!sites.includes(activeSite)) setActiveSite('ccat'); }, [sites, activeSite]);
+
+  return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite }}>{children}</Ctx.Provider>;
 }
 export function useAuth() { const v = useContext(Ctx); if (!v) throw new Error('useAuth outside provider'); return v; }
