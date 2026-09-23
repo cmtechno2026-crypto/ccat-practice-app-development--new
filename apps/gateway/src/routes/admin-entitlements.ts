@@ -4,8 +4,8 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
-import { ALLOWED_TIERS, resolveEntitlement, resolveGuardianEmail, tierRank, tierUnlocksText, TIER_LABELS, type Tier } from '../lib/entitlements.js';
-import { sendEmail } from '../lib/email.js';
+import { ALLOWED_TIERS, resolveEntitlement, resolveGuardianEmail, tierRank, TIER_LABELS, type Tier } from '../lib/entitlements.js';
+import { sendEmail, renderEmail, emailUI, emailOrigin } from '../lib/email.js';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -106,16 +106,16 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
       const prevRank = prevActive ? tierRank(p.tier as Tier) : 0; // inactive/none ⇒ free
       if (tierRank(tier as Tier) > prevRank) {
         const label = TIER_LABELS[tier as Tier] ?? tier;
-        const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-          <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT Practice plan has been updated</h2>
-          <p>Hello ${escapeHtml(guardianName || 'there')},</p>
-          <p>Your CCAT Practice account has been upgraded to the <strong>${label}</strong> plan.</p>
-          <p>Your plan now includes:</p>
-          <p>${tierUnlocksText(tier as Tier)}</p>
-          <p>The upgraded features are available immediately.</p>
-          <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
-        </div>`;
-        void sendEmail(cfg, { to: email, subject: 'Your CCAT Practice plan has been updated', html }, app.log);
+        const html = renderEmail(cfg,
+          emailUI.h1('Your plan is active') +
+          emailUI.sub(`Hello ${escapeHtml(guardianName || 'there')}, your CCAT Practice plan has been updated.`) +
+          emailUI.card(`<div style="color:#1c3f6e;font-weight:800;font-size:18px">${escapeHtml(label)} plan</div>` +
+            `<div style="margin-top:6px;color:#33415a;font-size:14px">Active</div>`) +
+          emailUI.p(`Your CCAT Practice account has been upgraded to the ${escapeHtml(label)} plan. The upgraded features are available immediately.`) +
+          emailUI.button('Sign in to CCAT Practice', emailOrigin(cfg)) +
+          emailUI.p('You can review your plan and account details after signing in.'),
+        );
+        void sendEmail(cfg, { to: email, subject: `Your ${label} plan is now active — CCAT Practice`, html }, app.log);
 
         // Admin upgrade notification removed by request — no notification is sent to any admin address.
         // The parent-facing "plan has been updated" confirmation above is unaffected.

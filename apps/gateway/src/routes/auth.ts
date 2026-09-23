@@ -5,7 +5,7 @@ import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { verifySecret, hashToken } from '../security/crypto.js';
 import { signToken, newRefreshToken } from '../security/token.js';
-import { sendEmail, emailConfigured } from '../lib/email.js';
+import { sendEmail, emailConfigured, renderEmail, emailUI } from '../lib/email.js';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -31,15 +31,14 @@ async function notifyGuardianOfLockout(db: DB, cfg: Config, studentId: string, l
     if (!row?.guardian_email) return;
     const child = escapeHtml(row.display_name || 'your child');
     const name = escapeHtml(row.guardian_name || 'there');
-    const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-      <h2 style="color:#1A5EAB;margin:0 0 8px">Sign-in temporarily locked</h2>
-      <p>Hello ${name},</p>
-      <p>We blocked several failed sign-in attempts on <strong>${child}</strong>'s CCAT Practice account and locked it for a few minutes as a precaution. It unlocks automatically — you don't need to do anything.</p>
-      <p>If this was your child forgetting their PIN, they can try again in a few minutes, or you can set a new PIN using the “Forgot PIN?” link on the sign-in page.</p>
-      <p>If it wasn't your child, the account stayed protected — the PIN was not guessed. You may want to set a new PIN after it unlocks.</p>
-      <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
-    </div>`;
-    await sendEmail(cfg, { to: row.guardian_email, subject: 'CCAT Practice — sign-in temporarily locked', html }, log);
+    const html = renderEmail(cfg,
+      emailUI.h1('Sign-in temporarily locked') +
+      emailUI.sub(`Hello ${name},`) +
+      emailUI.p(`Sign-in to ${child}'s CCAT Practice account is temporarily locked after several unsuccessful attempts. Please try again after the lock expires — it clears automatically.`) +
+      emailUI.p('<span style="color:#e5443f;font-weight:700">If your child has forgotten their PIN, you can reset it using the "Forgot PIN?" link on the sign-in page.</span>') +
+      emailUI.p('If you do not recognize these attempts, reset the PIN and contact our support team.'),
+    );
+    await sendEmail(cfg, { to: row.guardian_email, subject: 'Security notice: sign-in temporarily locked — CCAT Practice', html }, log);
   } catch (e) {
     log?.warn?.({ err: (e as Error).message }, 'lockout guardian alert failed');
   }

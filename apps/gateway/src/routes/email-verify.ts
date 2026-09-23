@@ -5,7 +5,7 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { generateOtp, hashSecret, verifySecret } from '../security/crypto.js';
-import { sendEmail, emailConfigured } from '../lib/email.js';
+import { sendEmail, emailConfigured, renderEmail, emailUI } from '../lib/email.js';
 
 // Pre-registration email verification (flag-gated). A guardian requests a 6-digit code to their email,
 // enters it, and gets a short-lived HMAC token proving the email is verified. contact/start checks that
@@ -62,14 +62,15 @@ export function registerEmailVerifyRoutes(app: FastifyInstance, db: DB, cfg: Con
       await db.query(`update ccat.email_verifications set consumed_at=now() where email=$1 and consumed_at is null`, [email]);
       await db.query(`insert into ccat.email_verifications(email, code_hash, expires_at) values ($1,$2,$3)`, [email, codeHash, expires]);
       const mins = Math.round(cfg.otpTtlSeconds / 60);
-      const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-        <h2 style="color:#1A5EAB;margin:0 0 8px">Verify your email address</h2>
-        <p>Enter the following code to verify your email address for CCAT Practice:</p>
-        <p style="font-size:30px;font-weight:800;letter-spacing:4px;color:#1A5EAB;margin:12px 0">${code}</p>
-        <p>This code expires in ${mins} minutes.</p>
-        <p>If you did not request this code, you can safely ignore this email.</p>
-        <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p></div>`;
-      const sent = await sendEmail(cfg, { to: email, subject: 'Verify your email address', html }, req.log);
+      const html = renderEmail(cfg,
+        emailUI.h1('Verify your email address') +
+        emailUI.sub('Enter this code to verify your email address and finish setting up CCAT Practice.') +
+        emailUI.card(`<div style="font-size:34px;font-weight:800;letter-spacing:8px;color:#1c3f6e">${code}</div>` +
+          `<div style="margin-top:8px;color:#6b7280;font-size:13px">This code expires in ${mins} minutes</div>`) +
+        emailUI.p('This code can be used only once.') +
+        emailUI.muted('If you did not request this code, you can ignore this email. Do not share the code with anyone.'),
+      );
+      const sent = await sendEmail(cfg, { to: email, subject: 'Verify your email — CCAT Practice', html }, req.log);
       if (!sent && cfg.env !== 'local') throw Errors.emailUnavailable();
     }
     reply.code(202);

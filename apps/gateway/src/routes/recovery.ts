@@ -4,7 +4,7 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
 import { generateOtp, hashSecret, verifySecret } from '../security/crypto.js';
-import { sendEmail, emailConfigured } from '../lib/email.js';
+import { sendEmail, emailConfigured, renderEmail, emailUI } from '../lib/email.js';
 import { isWeakPin } from '../lib/pin.js';
 
 function escapeHtml(s: string): string {
@@ -77,31 +77,22 @@ export function registerRecoveryRoutes(app: FastifyInstance, db: DB, cfg: Config
       );
       devCodes.push({ username: s.username, code });
       rows.push(
-        `<tr><td style="padding:6px 12px;border:1px solid #e7eaf3">${escapeHtml(s.display_name || 'Your child')}</td>` +
-        `<td style="padding:6px 12px;border:1px solid #e7eaf3"><strong>${escapeHtml(s.username)}</strong></td>` +
-        `<td style="padding:6px 12px;border:1px solid #e7eaf3;font-size:20px;font-weight:800;letter-spacing:3px;color:#1A5EAB">${code}</td></tr>`,
+        `<tr><td style="padding:6px 14px;color:#6b7280">${escapeHtml(s.display_name || 'Your child')}</td>` +
+        `<td style="padding:6px 14px;color:#1c3f6e;font-weight:700">${escapeHtml(s.username)}</td>` +
+        `<td style="padding:6px 14px;color:#1c3f6e;font-weight:800;letter-spacing:3px">${code}</td></tr>`,
       );
     }
 
     if (rows.length > 0 && guardianEmail && cfg.env !== 'local') {
-      const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-        <h2 style="color:#1A5EAB;margin:0 0 8px">Reset a CCAT Practice PIN</h2>
-        <p>Hello ${escapeHtml(guardianName || 'there')},</p>
-        <p>We received a request to reset the PIN for a CCAT Practice account connected to this email address.</p>
-        <p>Use the appropriate reset code below to create a new PIN:</p>
-        <table style="border-collapse:collapse;margin:12px 0">
-          <thead><tr>
-            <th style="padding:6px 12px;border:1px solid #e7eaf3;text-align:left">Child</th>
-            <th style="padding:6px 12px;border:1px solid #e7eaf3;text-align:left">Username</th>
-            <th style="padding:6px 12px;border:1px solid #e7eaf3;text-align:left">Reset code</th>
-          </tr></thead>
-          <tbody>${rows.join('')}</tbody>
-        </table>
-        <p>Each code expires in ${mins} minutes.</p>
-        <p>If you did not request a PIN reset, you can safely ignore this email. The current PIN will remain unchanged unless a reset code is used.</p>
-        <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
-      </div>`;
-      const sent = await sendEmail(cfg, { to: guardianEmail, subject: 'Reset a CCAT Practice PIN', html }, req.log);
+      const html = renderEmail(cfg,
+        emailUI.h1("Reset your child's PIN") +
+        emailUI.sub(`Hello ${escapeHtml(guardianName || 'there')}, we received a request to reset the PIN for a child's CCAT Practice account linked to your email address.`) +
+        emailUI.p('Use the code shown for the correct username to set a new PIN:') +
+        emailUI.card(`<table style="margin:0 auto;border-collapse:collapse;font-size:14px">${rows.join('')}</table>`) +
+        emailUI.p(`Each code expires in ${mins} minutes.`) +
+        emailUI.muted('If you did not request a PIN reset, ignore this email. The current PIN will remain unchanged unless a valid reset code is used.'),
+      );
+      const sent = await sendEmail(cfg, { to: guardianEmail, subject: 'Your CCAT Practice PIN reset code', html }, req.log);
       if (!sent) throw Errors.emailUnavailable();
     }
 

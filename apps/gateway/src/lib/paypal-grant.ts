@@ -1,9 +1,9 @@
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
-import { SELLABLE_TIERS, tierRank, tierUnlocksText, TIER_LABELS, type Tier } from './entitlements.js';
+import { SELLABLE_TIERS, tierRank, TIER_LABELS, type Tier } from './entitlements.js';
 import { amountForTier } from './paypal.js';
 import { withHst, HST_RATE } from './tax.js';
-import { sendEmail } from './email.js';
+import { sendEmail, renderEmail, emailUI, emailOrigin } from './email.js';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -105,16 +105,16 @@ export async function grantPaidEntitlementPaypal(
   const prevRank = prevActive ? tierRank(pr.tier as Tier) : 0;
   if (tierRank(tier) > prevRank) {
     const label = TIER_LABELS[tier] ?? tier;
-    const html = `<div style="font-family:system-ui,Segoe UI,sans-serif;font-size:15px;color:#1f2340">
-      <h2 style="color:#5b3ff0;margin:0 0 8px">Your CCAT Practice plan is active</h2>
-      <p>Hello ${escapeHtml(guardianName || 'there')},</p>
-      <p>Your payment has been confirmed, and the <strong>${label}</strong> plan is now active on your CCAT Practice account.</p>
-      <p>Your plan includes:</p>
-      <p>${tierUnlocksText(tier)}</p>
-      <p>You can sign in and begin using these features immediately.</p>
-      <p style="color:#8a90a6;font-size:13px">— Concept Mastery · CCAT Practice</p>
-    </div>`;
-    void sendEmail(cfg, { to: guardianEmail, subject: 'Your CCAT Practice plan is active', html }, args.log as any);
+    const html = renderEmail(cfg,
+      emailUI.h1('Your plan is active') +
+      emailUI.sub(`Hello ${escapeHtml(guardianName || 'there')}, thank you for your purchase.`) +
+      emailUI.card(`<div style="color:#1c3f6e;font-weight:800;font-size:18px">${escapeHtml(label)} plan</div>` +
+        `<div style="margin-top:6px;color:#33415a;font-size:14px">Active</div>`) +
+      emailUI.p(`Your payment has been confirmed, and the ${escapeHtml(label)} plan is active on your CCAT Practice account. You can sign in and begin using it now.`) +
+      emailUI.button('Sign in to CCAT Practice', emailOrigin(cfg)) +
+      emailUI.p('You can review your plan and account details after signing in.'),
+    );
+    void sendEmail(cfg, { to: guardianEmail, subject: `Your ${label} plan is now active — CCAT Practice`, html }, args.log as any);
   }
 
   // Admin purchase notification removed by request — no purchase notification is sent to any admin address.
