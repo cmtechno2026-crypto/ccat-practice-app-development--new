@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import cmMark from '../assets/cm-mark.png';
 import { useApp } from '../lib/store';
 import { PAYMENTS_ENABLED, capsOf } from '../lib/entitlements';
+import { REWARDS_LOCKED } from '../lib/features';
 import { Avatar } from './Avatar';
 
 // Primary navigation — persistent LEFT sidebar (desktop + tablet). PUSH model: this panel sits in the
@@ -89,9 +90,12 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
       <nav className="snav-list">
         {NAV.map((it) => {
           const active = it.match({ pathname: loc.pathname, search: loc.search, mode: activeMode });
-          const locked = progressLocked && it.to === '/progress';
+          // Progress is a membership lock (free plan); Achievements is locked "coming soon" for ALL plans.
+          const comingSoon = REWARDS_LOCKED && it.to === '/achievements';
+          const locked = (progressLocked && it.to === '/progress') || comingSoon;
+          const lockTitle = comingSoon ? `${it.label} — coming soon` : `${it.label} — membership`;
           return (
-            <Link key={it.label} to={it.to} title={locked ? `${it.label} — membership` : it.label} className={`snav ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
+            <Link key={it.label} to={it.to} title={locked ? lockTitle : it.label} className={`snav ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
               <span className="ico" aria-hidden style={locked ? { position: 'relative' } : undefined}>
                 {it.icon}
                 {locked && <span style={{ position: 'absolute', right: -4, top: -6, fontSize: 10 }}>🔒</span>}

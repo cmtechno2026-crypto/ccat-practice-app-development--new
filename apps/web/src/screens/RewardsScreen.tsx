@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Achievement, CoinsPanel as CoinsPanelData } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
+import { REWARDS_LOCKED } from '../lib/features';
 
 const relTime = (iso: string | null) => {
   if (!iso) return '';
@@ -111,6 +112,8 @@ function AchievementCard({ a, open, onToggle }: { a: Achievement; open: boolean;
 
 export function RewardsScreen() {
   const { loading, error, data, reload } = useAsync(async () => {
+    // Locked for all plans until launch — skip the reward/achievement fetches entirely.
+    if (REWARDS_LOCKED) return null;
     const [summary, achievements, coins] = await Promise.all([
       client.rewardsSummary(), client.achievements(), client.coins().catch(() => null),
     ]);
@@ -118,6 +121,25 @@ export function RewardsScreen() {
   });
   const [open, setOpen] = useState<string | null>(null);
   const toggle = (k: string) => setOpen((o) => (o === k ? null : k));
+
+  // Coming-soon page: everyone (free → Premium) sees the section, locked, until it ships. (All hooks above
+  // this point run unconditionally, so this early return is safe.)
+  if (REWARDS_LOCKED) {
+    return (
+      <>
+        <AppBar title="Achievements" sub="Earn badges, coins & XP as you learn" back />
+        <div className="content stack">
+          <Card className="stack" style={{ alignItems: 'center', textAlign: 'center', padding: '34px 20px' }}>
+            <div style={{ fontSize: 40, lineHeight: 1 }}>🔒</div>
+            <strong style={{ fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: 20 }}>Achievements &amp; Rewards are coming soon</strong>
+            <div className="muted" style={{ maxWidth: 420 }}>
+              Badges, coins and XP rewards are on the way for everyone. Keep practising — your progress is being tracked and will count once rewards launch.
+            </div>
+          </Card>
+        </div>
+      </>
+    );
+  }
 
   const unlocked = (data?.achievements ?? []).filter((a) => a.earned);
   const locked = (data?.achievements ?? []).filter((a) => !a.earned);

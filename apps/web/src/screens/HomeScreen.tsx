@@ -7,6 +7,8 @@ import { Card, Loader, ErrorNote, useAsync, GradePlanChip } from '../components/
 import { AvatarControl } from '../components/AvatarControl';
 import { Avatar } from '../components/Avatar';
 import { PromoInline } from '../components/DiscountBanner';
+import { ComingSoon } from '../components/ComingSoon';
+import { REWARDS_LOCKED } from '../lib/features';
 import { capsOf, PAYMENTS_ENABLED } from '../lib/entitlements';
 
 // HOME — "Option A": a two-column dashboard for kids (grade 3–6). Purple header band (greeting,
@@ -134,25 +136,27 @@ export function HomeScreen() {
           <div className="home-grid">
             {/* ---------------- LEFT / MAIN COLUMN ---------------- */}
             <main className="home-main">
-              {/* Stat tiles: Coins · XP · Level (with ring toward next level) */}
-              <div className="stat-tiles">
-                <div className="stile stile-coin">
-                  <span className="st-ic">🪙</span>
-                  <span className="st-n">{coins.toLocaleString()}</span>
-                  <span className="st-l">Coins</span>
-                </div>
-                <div className="stile stile-xp">
-                  <span className="st-ic">⭐</span>
-                  <span className="st-n">{xp.toLocaleString()}</span>
-                  <span className="st-l">XP</span>
-                </div>
-                <div className="stile stile-level">
-                  <div className="lvl-ring" style={{ ['--pct' as any]: `${levelPct}%` }}>
-                    <span>Lv {level}</span>
+              {/* Stat tiles: Coins · XP · Level — reward/achievement widgets, locked "coming soon" for all plans. */}
+              <ComingSoon locked={REWARDS_LOCKED}>
+                <div className="stat-tiles">
+                  <div className="stile stile-coin">
+                    <span className="st-ic">🪙</span>
+                    <span className="st-n">{coins.toLocaleString()}</span>
+                    <span className="st-l">Coins</span>
                   </div>
-                  <span className="st-l">{badgesEarned} / {badgesTotal} badges</span>
+                  <div className="stile stile-xp">
+                    <span className="st-ic">⭐</span>
+                    <span className="st-n">{xp.toLocaleString()}</span>
+                    <span className="st-l">XP</span>
+                  </div>
+                  <div className="stile stile-level">
+                    <div className="lvl-ring" style={{ ['--pct' as any]: `${levelPct}%` }}>
+                      <span>Lv {level}</span>
+                    </div>
+                    <span className="st-l">{badgesEarned} / {badgesTotal} badges</span>
+                  </div>
                 </div>
-              </div>
+              </ComingSoon>
 
               {/* Progress & analytics — "H4": Score (all batteries) + Sets done + three per-battery
                   accuracy rings. Every value is real; honest empty states ("—" / 0 / rings at 0). */}
@@ -229,56 +233,62 @@ export function HomeScreen() {
                 <div className="mascot-line">{mascotLine(streak, completion)}</div>
               </div>
 
-              {/* 7-day streak row */}
+              {/* 7-day streak row — reward/achievement widget, locked for all plans. */}
               <div className="rail-card">
-                <div className="eyebrow">🔥 This week</div>
-                <div className="week-row" role="list">
-                  {week.map((d) => (
-                    <div key={d.date} role="listitem" className={`wk-day ${d.active ? 'on' : ''}`} title={d.date}>
-                      <span className="wk-dot" aria-hidden>{d.active ? '🔥' : ''}</span>
-                      <span className="wk-lbl">{d.label}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="muted" style={{ marginTop: 8 }}>
-                  {streak > 0 ? `${streak}-day streak` : 'Practise today to start a streak'}
-                </div>
-              </div>
-
-              {/* Next reward */}
-              <div className="rail-card">
-                <div className="eyebrow">🎁 Next reward</div>
-                {nextReward ? (
-                  <>
-                    <div className="nr-line" style={{ marginTop: 6 }}>
-                      <strong>{nextReward.xp_needed.toLocaleString()} XP</strong> to {nextReward.label}
-                    </div>
-                    <div className="progress-track" style={{ marginTop: 8 }}>
-                      <div className="progress-fill" style={{ width: `${nextReward.progress_pct}%`, background: 'var(--purple)' }} />
-                    </div>
-                  </>
-                ) : (
-                  <div className="muted" style={{ marginTop: 6 }}>You've unlocked every reward! 🎉</div>
-                )}
-              </div>
-
-              {/* Recent badges (+ locked placeholders) */}
-              <div className="rail-card">
-                <div className="eyebrow">🏅 Recent badges</div>
-                {badgesTotal === 0 ? (
-                  <div className="muted" style={{ marginTop: 6 }}>Earn badges as you practise.</div>
-                ) : (
-                  <div className="badge-grid" style={{ marginTop: 8 }}>
-                    {badgeSlots.map((a) => (
-                      <div key={a.key} className={`badge ${a.earned ? 'on' : ''}`} title={a.name}>
-                        <span aria-hidden>{a.earned ? '🏅' : '🔒'}</span>
+                <ComingSoon locked={REWARDS_LOCKED}>
+                  <div className="eyebrow">🔥 This week</div>
+                  <div className="week-row" role="list">
+                    {week.map((d) => (
+                      <div key={d.date} role="listitem" className={`wk-day ${d.active ? 'on' : ''}`} title={d.date}>
+                        <span className="wk-dot" aria-hidden>{d.active ? '🔥' : ''}</span>
+                        <span className="wk-lbl">{d.label}</span>
                       </div>
                     ))}
                   </div>
-                )}
-                <button className="btn small ghost" style={{ marginTop: 10, paddingLeft: 0 }} onClick={() => nav('/rewards')}>
-                  See all rewards ›
-                </button>
+                  <div className="muted" style={{ marginTop: 8 }}>
+                    {streak > 0 ? `${streak}-day streak` : 'Practise today to start a streak'}
+                  </div>
+                </ComingSoon>
+              </div>
+
+              {/* Next reward — locked for all plans. */}
+              <div className="rail-card">
+                <ComingSoon locked={REWARDS_LOCKED}>
+                  <div className="eyebrow">🎁 Next reward</div>
+                  {nextReward ? (
+                    <>
+                      <div className="nr-line" style={{ marginTop: 6 }}>
+                        <strong>{nextReward.xp_needed.toLocaleString()} XP</strong> to {nextReward.label}
+                      </div>
+                      <div className="progress-track" style={{ marginTop: 8 }}>
+                        <div className="progress-fill" style={{ width: `${nextReward.progress_pct}%`, background: 'var(--purple)' }} />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="muted" style={{ marginTop: 6 }}>You've unlocked every reward! 🎉</div>
+                  )}
+                </ComingSoon>
+              </div>
+
+              {/* Recent badges — locked for all plans. The Resume note (session) stays outside the lock. */}
+              <div className="rail-card">
+                <ComingSoon locked={REWARDS_LOCKED}>
+                  <div className="eyebrow">🏅 Recent badges</div>
+                  {badgesTotal === 0 ? (
+                    <div className="muted" style={{ marginTop: 6 }}>Earn badges as you practise.</div>
+                  ) : (
+                    <div className="badge-grid" style={{ marginTop: 8 }}>
+                      {badgeSlots.map((a) => (
+                        <div key={a.key} className={`badge ${a.earned ? 'on' : ''}`} title={a.name}>
+                          <span aria-hidden>{a.earned ? '🏅' : '🔒'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button className="btn small ghost" style={{ marginTop: 10, paddingLeft: 0 }} onClick={() => nav('/rewards')}>
+                    See all rewards ›
+                  </button>
+                </ComingSoon>
                 {active && (
                   <div className="muted" style={{ marginTop: 10 }}>
                     Resume: {resumeLine || 'your session'}{qTotal > 0 ? ` (${answered}/${qTotal})` : ''}
