@@ -224,12 +224,15 @@ export async function resolveEntitlement(db: DB, studentId: string): Promise<Eff
   };
 }
 
-// A subcategory is a "Battery Combine" subcategory (key convention '<battery>_battery_combine', cap 45)
-// rather than a normal 15-question subcategory. Detect by key first, fall back to the size cap so a
-// mis-keyed combine subcategory is still treated as combine.
+// A subcategory is a "Battery Combine" subcategory (key convention '<battery>_battery_combine') rather than
+// a normal practice subcategory. When a key is present, TRUST it: combine iff the key says so. The size cap
+// is only a fallback for a subcategory with NO key — a normal subcategory configured with a large per-set
+// cap (e.g. Sentence Completion at 100) must never be mistaken for combine, or every set in it would lock
+// for Standard even though Standard unlocks all non-combine practice sets.
 export function isCombineSubcategory(subcategoryKey: string | null | undefined, maxQuestionsPerSet: number | null | undefined): boolean {
-  const key = (subcategoryKey ?? '').toLowerCase();
-  if (key.includes('battery_combine') || key.endsWith('_combine') || key === 'combine') return true;
+  const key = (subcategoryKey ?? '').trim().toLowerCase();
+  if (key) return key.includes('battery_combine') || key.endsWith('_combine') || key === 'combine';
+  // No key at all — fall back to the size cap so an unkeyed combine subcategory (cap 45) is still caught.
   return (maxQuestionsPerSet ?? 15) >= 45;
 }
 
