@@ -100,7 +100,7 @@ export const api = {
   teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number }>('GET', '/v1/admin/teacher/summary'),
   teacherTeachers: (search?: string) => { const p = new URLSearchParams(); if (search) p.set('search', search); const qs = p.toString(); return req<{ teachers: any[] }>('GET', `/v1/admin/teacher/teachers${qs ? '?' + qs : ''}`); },
   teacherSlots: (teacher_id?: string) => { const p = new URLSearchParams(); if (teacher_id) p.set('teacher_id', teacher_id); const qs = p.toString(); return req<{ slots: any[] }>('GET', `/v1/admin/teacher/slots${qs ? '?' + qs : ''}`); },
-  teacherSetSlotStatus: (id: string, status: 'open' | 'booked') => req<any>('PATCH', `/v1/admin/teacher/slots/${id}`, { status }),
+  teacherSetSlotStatus: (id: string, status: 'open' | 'booked', details?: { student?: string; note?: string }) => req<any>('PATCH', `/v1/admin/teacher/slots/${id}`, { status, ...(details || {}) }),
   teachers: () => req<{ teachers: any[] }>('GET', '/v1/admin/teachers'),
   createTeacher: (b: { display_name: string; email: string; temp_password?: string }) => req<{ id: string; temp_password: string; note: string }>('POST', '/v1/admin/teachers', b),
   setTeacherStatus: (id: string, status: 'active' | 'disabled') => req<{ status: string }>('POST', `/v1/admin/teachers/${id}/status`, { status }),

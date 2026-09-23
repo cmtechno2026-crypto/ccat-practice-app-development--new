@@ -65,7 +65,8 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (teacherId) { params.push(teacherId); where = 'where s.teacher_id = $1'; }
     const { rows } = await tdb().query(
       `select s.id, s.teacher_id, s.teacher_name, s.subject, s.grade, s.day_of_week,
-              s.start_time, s.end_time, s.mode, s.status, s.timezone, s.notes
+              s.start_time, s.end_time, s.mode, s.status, s.timezone, s.notes,
+              s.booked_student, s.booked_note, s.booked_by, s.booked_at
          from public.ta_slots s
          ${where}
          order by s.teacher_name,
@@ -81,25 +82,44 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   // Book / unbook a slot from the admin. Writes status to the Teacher Hub DB (public.ta_slots), so the
   // change is immediately visible in the teacher app (same table). Gated by teacher.slots.manage +
   // requireSite('teacher'). The change is recorded in the CCAT audit log (best-effort).
-  const slotStatusSchema = z.object({ status: z.enum(['open', 'booked']) });
+  // Booking a slot requires a student name; unbooking clears the detail. `booked_by` is a
+  // human-readable admin name so the teacher's own view can show who booked it.
+  const slotStatusSchema = z.object({
+    status: z.enum(['open', 'booked']),
+    student: z.string().trim().max(120).optional(),
+    note: z.string().trim().max(500).optional(),
+  }).refine((v) => v.status === 'open' || !!(v.student && v.student.length > 0), { message: 'Student name is required to book', path: ['student'] });
+
   app.patch('/v1/admin/teacher/slots/:id', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.slots.manage');
     requireSite(req, 'teacher');
     const id = (req.params as { id: string }).id;
     const b = slotStatusSchema.parse(req.body ?? {});
+    const booking = b.status === 'booked';
+    let bookedBy: string | null = null;
+    if (booking) {
+      const who = await db.query('select display_name, email from ccat.admin_profiles where id=$1', [req.admin!.adminId]);
+      bookedBy = (who.rows[0]?.display_name as string) || (who.rows[0]?.email as string) || 'Admin';
+    }
     const { rows } = await tdb().query(
-      `update public.ta_slots set status = $2, updated_at = now()
+      `update public.ta_slots
+          set status = $2,
+              booked_student = $3,
+              booked_note    = $4,
+              booked_by      = $5,
+              booked_at      = case when $2 = 'booked' then now() else null end,
+              updated_at     = now()
         where id = $1
-        returning id, teacher_id, teacher_name, subject, grade, day_of_week, start_time, end_time, mode, status, timezone`,
-      [id, b.status]);
+        returning id, teacher_id, teacher_name, subject, grade, day_of_week, start_time, end_time,
+                  mode, status, timezone, booked_student, booked_note, booked_by, booked_at`,
+      [id, b.status, booking ? (b.student ?? null) : null, booking ? (b.note ?? null) : null, booking ? bookedBy : null]);
     if (rows.length === 0) throw Errors.notFound('Slot not found');
-    // Governance: record the admin action in the CCAT audit log. Best-effort — a logging failure must
-    // not fail the booking.
+    // Governance: record in the CCAT audit log. Best-effort — a logging failure must not fail the booking.
     try {
       await db.query(
         `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
          values ($1, 'admin', 'teacher.slot.status', 'ta_slot', $2, $3)`,
-        [req.admin!.adminId, id, JSON.stringify({ status: b.status, teacher: rows[0]!.teacher_name })]);
+        [req.admin!.adminId, id, JSON.stringify({ status: b.status, student: booking ? b.student : null, teacher: rows[0]!.teacher_name })]);
     } catch { /* audit is best-effort */ }
     return rows[0];
   });
