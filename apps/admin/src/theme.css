@@ -157,8 +157,8 @@ tr.row-retired>td{background:var(--coral-bg);opacity:.72}
    in one ~220ms transition. Icons stay put (fixed left padding); labels reveal to their right. A short
    open delay (120ms) + close delay (60ms) stop a quick mouse pass from flickering the rail open. */
 .rail{background:var(--brand-ink);color:#fff;position:sticky;top:0;align-self:flex-start;height:100vh;
-  flex:0 0 auto;width:74px;box-sizing:border-box;
-  display:flex;flex-direction:column;padding:14px 13px;gap:4px;overflow:hidden;z-index:30;
+  flex:0 0 auto;width:78px;min-width:78px;box-sizing:border-box;
+  display:flex;flex-direction:column;padding:14px 11px;gap:4px;overflow-y:hidden;overflow-x:visible;z-index:30;
   transition:width .22s ease .06s;box-shadow:0 0 0 0 rgba(0,0,0,0)}
 .rail:hover,.rail:focus-within{width:232px;overflow-y:auto;overflow-x:hidden;box-shadow:8px 0 28px rgba(0,0,0,.28);
   transition:width .22s ease .12s}
@@ -172,9 +172,10 @@ tr.row-retired>td{background:var(--coral-bg);opacity:.72}
 .rail:hover .brandhdr .bt,.rail:focus-within .brandhdr .bt{opacity:1;max-width:150px}
 .rail .brandhdr .bt b{font-family:'Baloo 2';font-size:15px;font-weight:700;color:#fff;display:block;line-height:1.1}
 .rail .brandhdr .bt span{font-size:10.5px;color:#8ea2c4;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-.railitem{position:relative;display:flex;align-items:center;gap:13px;height:46px;padding:0 12px;border-radius:12px;
-  color:#aeb9cc;font-size:20px;text-decoration:none;transition:background .15s,color .15s;flex:0 0 auto}
-.railitem .ricon{width:24px;text-align:center;flex:0 0 auto}
+.railitem{position:relative;display:flex;align-items:center;justify-content:center;gap:13px;height:46px;padding:0 10px;border-radius:12px;
+  color:#aeb9cc;font-size:20px;line-height:1;text-decoration:none;transition:background .15s,color .15s;flex:0 0 auto}
+.rail:hover .railitem,.rail:focus-within .railitem{justify-content:flex-start}
+.railitem .ricon{width:26px;text-align:center;flex:0 0 auto;overflow:visible;display:inline-flex;align-items:center;justify-content:center}
 .railitem .rlabel{font-family:'Baloo 2';font-weight:600;font-size:14.5px;white-space:nowrap;
   opacity:0;max-width:0;overflow:hidden;transition:opacity .14s ease,max-width .18s ease}
 .rail:hover .railitem .rlabel,.rail:focus-within .railitem .rlabel{opacity:1;max-width:150px}
