@@ -177,6 +177,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const regFrom = dateOk(q.registered_from);
     const regToRaw = dateOk(q.registered_to);
     const regTo = regToRaw && /^\d{4}-\d{2}-\d{2}$/.test(regToRaw) ? regToRaw + 'T23:59:59.999' : regToRaw;
+    // TEACHER SCOPE: a teacher account only ever sees students assigned to it (super_admin/non-teacher = null = all).
+    const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
 
     const { rows } = await db.query(
       `select s.id, s.display_name, s.username_normalized::text as username, s.status, s.version,
@@ -215,9 +217,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
                or s.display_name ilike $3 or gc.email ilike $3 or coalesce(gc.phone,'') ilike $3)
           and ($4::timestamptz is null or s.created_at >= $4::timestamptz)
           and ($5::timestamptz is null or s.created_at <= $5::timestamptz)
+          and ($8::uuid is null or s.id in (select ts.student_id from ccat.teacher_students ts where ts.teacher_admin_id = $8::uuid))
         order by (s.status = 'purged') asc, ${sortCol} ${dir} nulls last, s.created_at desc
         limit $6 offset $7`,
-      [status, band, search, regFrom, regTo, limit, offset],
+      [status, band, search, regFrom, regTo, limit, offset, teacherId],
     );
     const matched = rows.length ? Number(rows[0]!.matched) : 0;
 
@@ -279,6 +282,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // aggregate; the directory shows these without paging the whole table.
   app.get('/v1/admin/students/stats', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'student.directory');
+    // TEACHER SCOPE: KPI cards (total, practised-today, status counts) count only the teacher's assigned students.
+    const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
     const { rows } = await db.query(
       `select
          count(*) as total,
@@ -286,9 +291,13 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
          count(*) filter (where status='suspended') as suspended,
          count(*) filter (where status='banned') as banned,
          count(*) filter (where status='pending_deletion') as pending_deletion,
-         (select count(distinct student_id) from ccat.sessions
-            where started_at >= date_trunc('day', now())) as practised_today
-       from ccat.students where status <> 'purged'`,
+         (select count(distinct se.student_id) from ccat.sessions se
+            where se.started_at >= date_trunc('day', now())
+              and ($1::uuid is null or se.student_id in (select ts.student_id from ccat.teacher_students ts where ts.teacher_admin_id = $1::uuid))) as practised_today
+       from ccat.students s
+       where s.status <> 'purged'
+         and ($1::uuid is null or s.id in (select ts.student_id from ccat.teacher_students ts where ts.teacher_admin_id = $1::uuid))`,
+      [teacherId],
     );
     const r = rows[0]!;
     return {

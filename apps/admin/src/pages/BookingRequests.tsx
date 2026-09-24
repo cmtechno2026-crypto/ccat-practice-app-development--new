@@ -31,7 +31,7 @@ export function BookingRequests() {
   // per-request chosen slots for approval (default: all requested slots)
   const [chosen, setChosen] = useState<Record<string, Set<string>>>({});
 
-  const load = () => { setLoading(true); api.teacherBookingRequests(filter).then(r => setRows(r.requests)).catch(e => setErr(e.message)).finally(() => setLoading(false)); };
+  const load = () => { setLoading(true); api.teacherBookingRequests({ status: filter }).then(r => setRows(r.requests)).catch(e => setErr(e.message)).finally(() => setLoading(false)); };
   useEffect(load, [filter]);
 
   const pick = (reqId: string, slotId: string, allSlots: string[]) => setChosen(prev => {

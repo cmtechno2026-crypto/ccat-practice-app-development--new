@@ -355,7 +355,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.get('/v1/admin/teacher/booking-requests/pending-count', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.directory');
     requireSite(req, 'teacher');
-    const { rows } = await tdb().query(`select count(*)::int as pending from public.ta_booking_requests where status = 'pending'`);
+    const { rows } = await tdb().query(`select count(*)::int as pending from public.ta_booking_requests where teacher_status = 'accepted' and status = 'pending'`);
     return { pending: rows[0]?.pending ?? 0 };
   });
 
@@ -363,16 +363,20 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.get('/v1/admin/teacher/booking-requests', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.directory');
     requireSite(req, 'teacher');
-    const q = req.query as { status?: string; link_id?: string };
+    const q = req.query as { status?: string; link_id?: string; teacher_id?: string; teacher_status?: string };
     const status = (q.status ?? 'pending').trim();
     const params: any[] = [];
     const conds: string[] = [];
     if (status !== 'all') { params.push(status); conds.push(`r.status = $${params.length}`); }
+    if (q.teacher_status && q.teacher_status !== 'all') { params.push(q.teacher_status); conds.push(`r.teacher_status = $${params.length}`); }
     if (q.link_id) { params.push(q.link_id); conds.push(`r.link_id = $${params.length}`); }
+    // Requests that include at least one slot belonging to this teacher.
+    if (q.teacher_id) { params.push(q.teacher_id); conds.push(`exists (select 1 from public.ta_booking_request_slots rs2 join public.ta_slots s2 on s2.id = rs2.slot_id where rs2.request_id = r.id and s2.teacher_id = $${params.length})`); }
     const where = conds.length ? 'where ' + conds.join(' and ') : '';
     const { rows } = await tdb().query(
       `select r.id, r.link_id, r.num_classes, r.parent_name, r.parent_email, r.parent_phone,
-              r.student_name, r.notes, r.parent_timezone, r.status, r.decided_by, r.decided_at, r.created_at,
+              r.student_name, r.notes, r.parent_timezone, r.status, r.teacher_status, r.teacher_decided_at,
+              r.decided_by, r.decided_at, r.created_at,
               l.subject as link_subject, l.grade as link_grade, l.label as link_label,
               coalesce(js.slots, '[]'::json) as slots
          from public.ta_booking_requests r
