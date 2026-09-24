@@ -95,6 +95,11 @@ export function MyPlanScreen() {
   const current: EntitlementTier = entitlements?.tier ?? 'free';
   const curIdx = tierIndex(current);
   const confirmInfo = confirmTier ? TIER_CATALOG[confirmTier] : null;
+  // Apply the SAME live promo + 13% HST the cards show, so the confirm modal matches the card, the button
+  // and the amount the gateway actually charges (discounted subtotal + HST). Previously it showed the raw
+  // undiscounted, tax-free priceLabel.
+  const confirmDisc = confirmInfo && promo.active ? discountPrice(confirmInfo.price, promo.percent) : null;
+  const confirmHst = confirmInfo ? withHstDisplay(confirmDisc ? confirmDisc.newStr : confirmInfo.price) : null;
 
   return (
     <>
@@ -209,8 +214,21 @@ export function MyPlanScreen() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               background: '#eaf0ff', borderRadius: 12, padding: '11px 14px', marginBottom: 16 }}>
               <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 14, color: '#2a2e43' }}>{confirmInfo.name}</span>
-              <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 14, color: '#3e7bee' }}>{confirmInfo.priceLabel}</span>
+              <span style={{ fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 14, color: '#3e7bee' }}>
+                {confirmDisc ? `${confirmDisc.newStr} CAD` : confirmInfo.priceLabel}
+                {confirmDisc && <span style={{ textDecoration: 'line-through', opacity: 0.5, fontWeight: 700, marginLeft: 6 }}>{confirmDisc.oldStr}</span>}
+              </span>
             </div>
+            {confirmHst && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#5b6b86', padding: '0 2px 4px' }}>
+                  <span>HST (13%)</span><span>{confirmHst.tax} CAD</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 15, color: '#1A5EAB', borderTop: '1px solid #e7eaf3', marginBottom: 16, paddingTop: 6 }}>
+                  <span>Total</span><span>{confirmHst.total} CAD</span>
+                </div>
+              </>
+            )}
             <div className="stack" style={{ gap: 9 }}>
               {PAYPAL_INCONTEXT ? (
                 // In-context popup: capture on approval, then run the existing activation poll.
