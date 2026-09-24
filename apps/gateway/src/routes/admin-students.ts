@@ -170,6 +170,149 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     return computeExamHistory(db, id, { from: r.from, to: r.to });
   });
 
+  // ---- Assignments (teacher → student SET assignments) ----------------------------------------------
+  // A teacher assigns a published set/paper to a student; status is DERIVED from the student's real
+  // session on that set. Newest-first. All gated by student.directory + assertStudentVisible.
+  const BATTERY_MODES = (allowedPractice: boolean, allowedExam: boolean) =>
+    [allowedPractice ? 'practice' : null, allowedExam ? 'exam' : null].filter(Boolean) as string[];
+
+  // LIST — the student's assignments with live status (assigned / in_progress / done) + done figures.
+  app.get('/v1/admin/students/:id/assignments', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
+    const { rows } = await db.query(
+      `select a.id, a.set_version_id, a.assigned_at,
+              qs.id as question_set_id, qs.name,
+              cat.key as category_key, cat.name as category_name,
+              sub.key as subcategory_key, sub.name as subcategory,
+              sv.question_count, sv.duration_minutes, sv.allowed_exam,
+              ap.display_name as assigned_by_name,
+              sess.has_session, sess.is_terminal, sess.score_correct, sess.score_total,
+              sess.started_at, sess.terminal_at, sess.answered_count
+         from ccat.student_assignments a
+         join ccat.question_set_versions sv on sv.id = a.set_version_id
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.categories cat on cat.id = qs.category_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
+         left join ccat.admin_profiles ap on ap.id = a.assigned_by
+         left join lateral (
+           select true as has_session,
+                  (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) as is_terminal,
+                  sr.score_correct::int as score_correct, sr.score_total::int as score_total,
+                  s.started_at, s.terminal_at,
+                  (select count(*)::int from ccat.session_answers sa
+                     where sa.session_id = s.id and coalesce(array_length(sa.selected_option_ids,1),0) > 0) as answered_count
+             from ccat.sessions s
+             left join ccat.session_results sr on sr.session_id = s.id
+            where s.student_id = a.student_id and s.set_version_id = a.set_version_id
+              and s.started_at >= a.assigned_at   -- only a REDO after the set was assigned counts
+            order by (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) desc, s.started_at desc
+            limit 1
+         ) sess on true
+        where a.student_id = $1
+        order by a.assigned_at desc, a.id desc`, [id]);
+    return {
+      assignments: rows.map((r: any) => {
+        const isExam = r.allowed_exam === true;
+        const status = r.is_terminal ? 'done' : (r.has_session ? 'in_progress' : 'assigned');
+        const wall = (r.started_at && r.terminal_at)
+          ? Math.max(0, Math.round((new Date(r.terminal_at).getTime() - new Date(r.started_at).getTime()) / 1000)) : null;
+        const total = Number(r.score_total ?? 0);
+        return {
+          id: r.id,
+          set_version_id: r.set_version_id,
+          question_set_id: r.question_set_id,   // for the existing set-review modal
+          name: r.name,
+          category_key: r.category_key, category_name: r.category_name,
+          subcategory_key: r.subcategory_key ?? null, subcategory: r.subcategory ?? null,
+          is_exam: isExam,
+          question_count: r.question_count ?? null,
+          duration_minutes: r.duration_minutes ?? null,
+          assigned_by_name: r.assigned_by_name ?? null,
+          assigned_at: r.assigned_at,
+          status,
+          progress: status === 'in_progress'
+            ? { answered: Number(r.answered_count ?? 0), total: Number(r.question_count ?? 0) } : null,
+          result: status === 'done' ? {
+            score: { correct: Number(r.score_correct ?? 0), total },
+            accuracyPct: total > 0 ? Math.round((100 * Number(r.score_correct ?? 0)) / total) : null,
+            avgSecondsPerQuestion: (wall != null && total > 0) ? Math.round(wall / total) : null,
+            finishedAt: r.terminal_at,
+          } : null,
+        };
+      }),
+    };
+  });
+
+  // CATALOG for the assign picker — published sets for the student's grade, excluding already-assigned.
+  app.get('/v1/admin/students/:id/assignments/catalog', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
+    const { rows } = await db.query(
+      `select sv.id as set_version_id, qs.name,
+              cat.key as category_key, cat.name as category_name,
+              sub.name as subcategory, sub.key as subcategory_key,
+              sv.question_count, sv.duration_minutes, sv.allowed_practice, sv.allowed_exam,
+              g.practice_enabled as grade_practice_enabled
+         from ccat.students st
+         join ccat.grades g on g.id = st.grade_id
+         join ccat.question_sets qs on qs.grade_id = st.grade_id
+         join ccat.categories cat on cat.id = qs.category_id
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
+         join ccat.question_set_versions sv on sv.question_set_id = qs.id and sv.state = 'published'
+              and exists (select 1 from ccat.set_version_questions svq where svq.set_version_id = sv.id and svq.active = true)
+        where st.id = $1
+          and not exists (select 1 from ccat.student_assignments a where a.student_id = st.id and a.set_version_id = sv.id)
+        order by cat.display_order, sub.display_order, sv.created_at asc, sv.id asc`, [id]);
+    return rows.map((r: any) => ({
+      set_version_id: r.set_version_id,
+      name: r.name,
+      category_key: r.category_key, category_name: r.category_name,
+      subcategory: r.subcategory ?? null, subcategory_key: r.subcategory_key ?? null,
+      question_count: r.question_count ?? null,
+      duration_minutes: r.duration_minutes ?? null,
+      allowed_modes: BATTERY_MODES(r.allowed_practice && r.grade_practice_enabled !== false, r.allowed_exam),
+    }));
+  });
+
+  // ASSIGN — add one or more set_version_ids (validated to the student's grade + published). Idempotent.
+  app.post('/v1/admin/students/:id/assignments', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
+    const ids: string[] = Array.isArray((req.body as any)?.set_version_ids) ? (req.body as any).set_version_ids : [];
+    if (ids.length === 0) throw Errors.validation('set_version_ids is required');
+    const r = await db.query(
+      `insert into ccat.student_assignments(student_id, set_version_id, assigned_by)
+       select $1, sv.id, $3
+         from ccat.question_set_versions sv
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.students st on st.id = $1
+        where sv.id = any($2::uuid[]) and sv.state = 'published' and qs.grade_id = st.grade_id
+       on conflict (student_id, set_version_id) do nothing
+       returning set_version_id`, [id, ids, req.admin!.adminId]);
+    if (r.rows.length > 0) {
+      await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','student.assignment.add','student',$2,$3)`,
+        [req.admin!.adminId, id, JSON.stringify({ added: r.rows.length })]);
+    }
+    return { added: r.rows.length };
+  });
+
+  // UNASSIGN — remove an assignment (does not touch the student's session history).
+  app.delete('/v1/admin/students/:id/assignments/:assignmentId', guard, async (req) => {
+    requirePermission(req, 'student.directory');
+    const id = (req.params as any).id;
+    await assertStudentVisible(db, req, id);
+    const aid = (req.params as any).assignmentId;
+    const r = await db.query('delete from ccat.student_assignments where id=$1 and student_id=$2 returning id', [aid, id]);
+    if (r.rows.length === 0) throw Errors.notFound('Assignment not found');
+    await db.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','student.assignment.remove','student',$2,$3)`,
+      [req.admin!.adminId, id, JSON.stringify({ assignment_id: aid })]);
+    return { ok: true };
+  });
+
   // ---- Teacher accounts (restricted admins) + student assignments ------------------------------------
   // A teacher = an admin account with is_teacher=true, security_role='admin', and only student.directory.
   // Managed by super-admin (or an admin holding teacher.students.manage). Teachers sign in with the normal

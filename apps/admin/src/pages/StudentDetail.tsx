@@ -243,6 +243,7 @@ export function StudentDetail() {
         <div className="muted" style={{ fontSize: 11.5, margin: '6px 2px 0' }}>Applies to the guardian ({membership.guardian_email}) — all children on that guardian. Expiry blank = 1 year from today for paid plans (12:00 am IST). “Paid” records a real payment; the rest are non-paying access.</div>
       )}
 
+      <AssignmentPanel studentId={id!} onOpenSet={(sid, label) => setReviewSet({ id: sid, label })} />
       <AdminProgressSections studentId={id!} onOpenSet={(sid, label) => setReviewSet({ id: sid, label })} />
       {reviewSet && <SetReviewModal studentId={id!} setId={reviewSet.id} label={reviewSet.label} studentName={d.display_name} onClose={() => setReviewSet(null)} />}
 
@@ -705,5 +706,181 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
         })}
       </div>
     </div>
+  );
+}
+
+
+// ---- Assignment Panel (teacher -> student SET assignments) -----------------------------------------
+// Teacher assigns published sets/papers to a student; each row shows live status (Assigned / In progress
+// / Done). Done shows the same figures as a Battery-Practice set (score / accuracy / avg time) and opens
+// the shared set-review drawer. Newest first.
+const ASG_BCHIP: Record<string, { bg: string; fg: string; label: string }> = {
+  verbal: { bg: '#eaf0ff', fg: '#3e7bee', label: 'Verbal' },
+  quantitative: { bg: '#e8f7f1', fg: '#12a67f', label: 'Quantitative' },
+  non_verbal: { bg: '#f3ecfb', fg: '#8b5cf6', label: 'Non-verbal' },
+};
+function bChip(key: string, isExam: boolean) {
+  if (isExam) return { bg: '#fdf3e2', fg: '#b7791f', label: 'Exam' };
+  return ASG_BCHIP[key] || { bg: '#eef2f9', fg: '#475569', label: key };
+}
+function timeAgo(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d.getTime())) return '';
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  return d.toLocaleDateString();
+}
+
+function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSet: (setId: string, label: string) => void }) {
+  const [tick, setTick] = useState(0);
+  const { data, loading, error } = useAsync(() => api.getStudentAssignments(studentId), [studentId, tick]);
+  const items: any[] = data?.assignments ?? [];
+  const [assignOpen, setAssignOpen] = useState(false);
+  const toast = useToast();
+
+  const remove = async (aid: string) => {
+    try { await api.removeStudentAssignment(studentId, aid); setTick(t => t + 1); toast('Assignment removed.'); }
+    catch (e) { toast((e as Error).message); }
+  };
+
+  return (
+    <>
+      <style>{`
+        .asgp-h{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:800;color:var(--blue,#2f6fd0);margin:22px 0 10px}
+        .asgp-h .count{background:var(--sky,#eef4fd);color:var(--blue,#2f6fd0);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:800}
+        .asgp-h .btn{margin-left:auto}
+        .asgp-card{background:var(--sd-card,#fff);border:1px solid var(--sd-line,#e7e8f2);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .asgp-card{background:#1c1e2b;border-color:#2b2e40}}
+        :root[data-theme="dark"] .asgp-card{background:#1c1e2b;border-color:#2b2e40}
+        .asgp-top{display:flex;align-items:flex-start;gap:12px}
+        .asgp-nm{font-weight:800;font-size:14.5px}
+        .asgp-meta{font-size:12.5px;color:var(--muted,#6b6f8a);margin-top:3px}
+        .asgp-chip{display:inline-block;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:800;margin-right:6px}
+        .asgp-sub{display:inline-block;background:var(--sky,#eef2f9);color:#475569;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;margin-right:6px}
+        .asgp-status{margin-left:auto;font-size:12px;font-weight:800;border-radius:999px;padding:5px 12px;white-space:nowrap}
+        .st-assigned{background:#efeaff;color:#7c5cff}
+        .st-progress{background:#fdf3e2;color:#b7791f}
+        .st-done{background:#e5f5ec;color:#0f9d58}
+        .asgp-bar{height:7px;border-radius:6px;background:#eef2f9;overflow:hidden;width:170px;margin-top:9px}
+        .asgp-bar i{display:block;height:100%;background:var(--blue,#2f6fd0)}
+        .asgp-res{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;margin-top:11px;padding-top:11px;border-top:1px dashed var(--sd-line,#e7e8f2)}
+        .asgp-res .rv{font-size:12.5px;color:var(--muted,#6b6f8a)}
+        .asgp-res .rv b{color:var(--ink,#0f172a);font-weight:800}
+        .asgp-link{color:var(--blue,#2f6fd0);font-weight:800;font-size:12.5px;background:none;border:none;cursor:pointer;padding:0}
+        .asgp-x{background:none;border:none;color:var(--muted,#9aa1b4);cursor:pointer;font-size:15px;line-height:1;padding:2px 4px}
+      `}</style>
+      <div className="asgp-h">Assignments {items.length > 0 && <span className="count">{items.length}</span>}
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAssignOpen(true)}>+ Assign set</button>
+      </div>
+      {loading ? <Loading /> : error ? <ErrorBox e={error} /> : items.length === 0 ? (
+        <div className="asgp-card"><span className="muted">No sets assigned yet. Use “Assign set” to give this student practice or exam papers.</span></div>
+      ) : items.map((a: any) => {
+        const ch = bChip(a.category_key, a.is_exam);
+        const acc = a.result?.accuracyPct;
+        const accCol = acc == null ? 'inherit' : acc >= 70 ? '#0f9d58' : acc >= 45 ? '#b7791f' : '#e4574f';
+        const pctW = a.progress && a.progress.total > 0 ? Math.min(100, Math.round((100 * a.progress.answered) / a.progress.total)) : 0;
+        return (
+          <div className="asgp-card" key={a.id}>
+            <div className="asgp-top">
+              <div style={{ minWidth: 0 }}>
+                <div className="asgp-nm">{a.name}</div>
+                <div className="asgp-meta">
+                  <span className="asgp-chip" style={{ background: ch.bg, color: ch.fg }}>{ch.label}</span>
+                  {a.subcategory && <span className="asgp-sub">{a.subcategory}</span>}
+                  {a.is_exam && a.duration_minutes ? <span className="asgp-sub">{a.duration_minutes} min</span> : null}
+                  {a.question_count != null ? `· ${a.question_count} question${a.question_count === 1 ? '' : 's'} ` : ''}
+                  · assigned {timeAgo(a.assigned_at)}{a.assigned_by_name ? ` by ${a.assigned_by_name}` : ''}
+                </div>
+              </div>
+              <span className={`asgp-status ${a.status === 'done' ? 'st-done' : a.status === 'in_progress' ? 'st-progress' : 'st-assigned'}`}>
+                {a.status === 'done' ? 'Done' : a.status === 'in_progress' ? 'In progress' : 'Assigned'}
+              </span>
+              {a.status === 'assigned' && <button className="asgp-x" title="Remove assignment" onClick={() => remove(a.id)}>✕</button>}
+            </div>
+            {a.status === 'in_progress' && <div className="asgp-bar"><i style={{ width: `${pctW}%` }} /></div>}
+            {a.status === 'done' && a.result && (
+              <div className="asgp-res">
+                <span className="rv">Score <b>{a.result.score.correct}/{a.result.score.total}</b></span>
+                <span className="rv">Accuracy <b style={{ color: accCol }}>{acc != null ? `${acc}%` : '—'}</b></span>
+                <span className="rv">Avg time/q <b>{a.result.avgSecondsPerQuestion != null ? `${a.result.avgSecondsPerQuestion}s` : '—'}</b></span>
+                <span className="rv">Finished <b>{timeAgo(a.result.finishedAt)}</b></span>
+                <button className="asgp-link" style={{ marginLeft: 'auto' }} onClick={() => onOpenSet(a.question_set_id, a.name)}>View set →</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {assignOpen && <AssignModal studentId={studentId} onClose={() => setAssignOpen(false)} onAssigned={() => { setAssignOpen(false); setTick(t => t + 1); }} />}
+    </>
+  );
+}
+
+function AssignModal({ studentId, onClose, onAssigned }: { studentId: string; onClose: () => void; onAssigned: () => void }) {
+  const { data, loading, error } = useAsync(() => api.getStudentAssignmentsCatalog(studentId), [studentId]);
+  const catalog: any[] = data ?? [];
+  const [battery, setBattery] = useState<string>('');
+  const [sub, setSub] = useState<string>('all');
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  const batteries = Array.from(new Set(catalog.map((c: any) => c.category_key)));
+  const activeBattery = battery || batteries[0] || '';
+  const subs = Array.from(new Set(catalog.filter((c: any) => c.category_key === activeBattery && c.subcategory).map((c: any) => c.subcategory)));
+  const shown = catalog.filter((c: any) => c.category_key === activeBattery && (sub === 'all' || c.subcategory === sub));
+  const count = Object.values(picked).filter(Boolean).length;
+
+  const toggle = (svid: string) => setPicked(p => ({ ...p, [svid]: !p[svid] }));
+  const assign = async () => {
+    const ids = Object.keys(picked).filter(k => picked[k]);
+    if (ids.length === 0) return;
+    setBusy(true);
+    try { const r = await api.addStudentAssignments(studentId, ids); toast(`Assigned ${r.added} set${r.added === 1 ? '' : 's'}.`); onAssigned(); }
+    catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal title="Assign sets" wide onClose={onClose}
+      footer={<>
+        <span className="muted" style={{ marginRight: 'auto', fontSize: 12.5 }}>{count} selected · already-assigned sets are hidden</span>
+        <button className="btn ghost" onClick={onClose}>Cancel</button>
+        <button className="btn" disabled={busy || count === 0} onClick={assign}>{busy ? 'Assigning…' : `Assign ${count || ''} set${count === 1 ? '' : 's'}`}</button>
+      </>}>
+      {loading ? <Loading /> : error ? <ErrorBox e={error} /> : catalog.length === 0 ? (
+        <div className="muted">No unassigned published sets for this student’s grade.</div>
+      ) : (
+        <div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700 }}>Battery
+              <select value={activeBattery} onChange={e => { setBattery(e.target.value); setSub('all'); }}
+                style={{ display: 'block', marginTop: 5, border: '1px solid var(--line,#e4e9f2)', borderRadius: 9, padding: '7px 10px', fontWeight: 600 }}>
+                {batteries.map((b: string) => <option key={b} value={b}>{bChip(b, false).label}</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: 12.5, fontWeight: 700 }}>Subcategory
+              <select value={sub} onChange={e => setSub(e.target.value)}
+                style={{ display: 'block', marginTop: 5, border: '1px solid var(--line,#e4e9f2)', borderRadius: 9, padding: '7px 10px', fontWeight: 600 }}>
+                <option value="all">All subcategories</option>
+                {subs.map((sName: string) => <option key={sName} value={sName}>{sName}</option>)}
+              </select>
+            </label>
+          </div>
+          <div style={{ border: '1px solid var(--line,#e4e9f2)', borderRadius: 12, maxHeight: 300, overflow: 'auto' }}>
+            {shown.length === 0 ? <div className="muted" style={{ padding: 14 }}>Nothing here.</div> : shown.map((c: any) => (
+              <label key={c.set_version_id}
+                style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderBottom: '1px solid var(--line,#eef1f7)', cursor: 'pointer', background: picked[c.set_version_id] ? 'var(--sky,#eef4fd)' : 'transparent' }}>
+                <input type="checkbox" checked={!!picked[c.set_version_id]} onChange={() => toggle(c.set_version_id)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.name}</span>
+                {c.subcategory && <span className="tag" style={{ fontSize: 11 }}>{c.subcategory}</span>}
+                {c.allowed_modes?.includes('exam') && <span className="tag" style={{ fontSize: 11, background: '#fdf3e2', color: '#b7791f' }}>Exam</span>}
+                <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted,#6b6f8a)' }}>{c.question_count} q{c.duration_minutes ? ` · ${c.duration_minutes}m` : ''}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }

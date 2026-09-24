@@ -2,7 +2,7 @@ import type {
   ApiErrorBody, Channel, ChallengeStarted, Grade, Mode, TimerType, TokenPair,
   StudentProfile, Session, SessionWithQuestions, BatteryState, AnswerWrite, AnswerAck,
   SessionResult, ExamHistoryItem, RewardsSummary, CoinsPanel, Readiness, Progress, CatalogItem, Bookmark, BookmarkReview, Achievement,
-  AvatarsResponse, Theme, Announcement, Book, AdultChallenge, RetailerHandoff, PracticeAttemptResult,
+  AvatarsResponse, Theme, Announcement, Book, AdultChallenge, RetailerHandoff, PracticeAttemptResult, Assignment,
   SupportCase, SupportCaseCreated, AccountInfo, AccountGuardian, DeletionResult, ReferralInfo,
   ContactValidated, ProgressSummary, ProgressBreakdownCategory, ProgressQuery, ProgressSetsQuery, ProgressSetRow, ProgressSetReview,
   EntitlementsMe,
@@ -211,6 +211,8 @@ export class CcatClient {
   readiness() { return this.request<Readiness>('GET', '/v1/readiness', { auth: true }); }
   progress() { return this.request<Progress>('GET', '/v1/progress', { auth: true }); }
   achievements() { return this.request<Achievement[]>('GET', '/v1/achievements', { auth: true }); }
+  // Teacher-assigned sets for the signed-in student (read-only). Ordered incomplete-first, then done.
+  assignments() { return this.request<Assignment[]>('GET', '/v1/assignments', { auth: true }); }
 
   // ---- progress & analytics (real practice data) ----------------------------
   // Both endpoints read the authenticated student's own data and accept a ?from=&to= date range.

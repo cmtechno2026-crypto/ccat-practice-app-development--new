@@ -15,6 +15,7 @@ import { SessionScreen } from './screens/SessionScreen';
 import { ResultScreen } from './screens/ResultScreen';
 import { RewardsScreen } from './screens/RewardsScreen';
 import { ProgressScreen } from './screens/ProgressScreen';
+import { AssignmentsScreen } from './screens/AssignmentsScreen';
 import { BookmarksScreen } from './screens/BookmarksScreen';
 // Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
 // CustomizeScreen.tsx is kept intact; its import + route are just removed so it's unreachable from the UI.
@@ -49,6 +50,7 @@ const RoutesTree = ({ profile }: { profile: unknown }) => (
     <Route path="/achievements" element={<Protected><RewardsScreen /></Protected>} />
     <Route path="/rewards" element={<Navigate to="/achievements" replace />} />
     <Route path="/progress" element={<Protected><ProgressScreen /></Protected>} />
+    <Route path="/assignments" element={<Protected><AssignmentsScreen /></Protected>} />
     <Route path="/bookmarks" element={<Protected><BookmarksScreen /></Protected>} />
     {/* Customize temporarily hidden from users — re-enable later (avatar/theme frozen to current selection).
         Route guarded to redirect home; restore <Protected><CustomizeScreen/></Protected> to re-enable. */}

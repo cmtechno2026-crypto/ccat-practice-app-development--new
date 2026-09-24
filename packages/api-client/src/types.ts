@@ -330,3 +330,26 @@ export interface PromoPublic {
   endsAt: string | null;    // ISO (UTC) or null — drives the countdown
   headline: string;
 }
+
+// Teacher → student SET ASSIGNMENT, from the STUDENT's own view (GET /v1/assignments). A teacher/admin
+// assigns a published set/paper to the student; status is DERIVED from the student's real session on it.
+// The list is ordered incomplete-first (assigned/in_progress), then done, newest assigned first.
+export interface Assignment {
+  id: string;
+  set_version_id: string;
+  question_set_id: string;
+  name: string;                                   // set name (e.g. "Set 3")
+  category_key: string;
+  category_name: string;                          // battery display name (e.g. "Verbal Reasoning")
+  subcategory_key: string | null;
+  subcategory: string | null;                     // sub-category name (null for exam papers)
+  is_exam: boolean;
+  question_count: number | null;
+  duration_minutes: number | null;
+  teacher_name: string | null;                    // the assigning teacher/admin's name
+  assigned_at: string;                            // ISO timestamp
+  status: 'assigned' | 'in_progress' | 'done';
+  session_id: string | null;                      // latest session for this set (for "Continue")
+  progress: { answered: number; total: number } | null;      // present only while in_progress
+  result: { score: { correct: number; total: number }; accuracyPct: number | null; finishedAt: string } | null; // present only when done
+}

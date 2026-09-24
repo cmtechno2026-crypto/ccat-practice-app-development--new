@@ -3,7 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import cors from '@fastify/cors';
 import { randomUUID } from 'node:crypto';
 import type { Config } from './config.js';
-import { createPool, createTeacherPool, type DB } from './db.js';
+import { createPool, type DB } from './db.js';
 import { AppError, toEnvelope } from './errors.js';
 import { ZodError } from 'zod';
 import { makeAuthenticateStudent, type StudentContext } from './plugins/auth.js';
@@ -12,6 +12,7 @@ import { registerEmailVerifyRoutes } from './routes/email-verify.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerCatalogRoutes, registerHealthRoutes } from './routes/catalog.js';
+import { registerAssignmentRoutes } from './routes/assignments.js';
 import { registerRewardsRoutes } from './routes/rewards.js';
 import { registerProgressRoutes } from './routes/progress.js';
 import { registerRecoveryRoutes } from './routes/recovery.js';
@@ -37,7 +38,6 @@ import { registerAdminAccountsRoutes } from './routes/admin-accounts.js';
 import { registerAdminStudentDetailRoutes } from './routes/admin-students.js';
 import { registerAdminOpsRoutes } from './routes/admin-ops.js';
 import { registerAdminEntitlementsRoutes } from './routes/admin-entitlements.js';
-import { registerAdminTeacherRoutes } from './routes/admin-teacher.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -50,10 +50,6 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   const app = Fastify({
     genReqId: () => randomUUID(),
     logger: cfg.env === 'local' ? { level: 'warn' } : { level: 'info' },
-    // Behind Render's load balancer the socket peer is the proxy, not the client. Trust the
-    // proxy so `req.ip` (and the per-IP rate-limit key) resolves to the real caller, not one
-    // shared upstream address. Render terminates TLS and sets X-Forwarded-For.
-    trustProxy: true,
   });
 
   // Tolerate an empty body on JSON requests (e.g. bodyless DELETE/POST that still send
@@ -74,9 +70,6 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
 
   const db = existingPool ?? createPool(cfg.databaseUrl);
   app.decorate('db', db);
-  // Optional second pool for the Teacher Hub site (multi-site admin). Null when TEACHER_DATABASE_URL
-  // is unset — the teacher routes then answer 503 and the rest of the admin is unaffected.
-  const teacherDb: DB | null = cfg.teacherDatabaseUrl ? createTeacherPool(cfg.teacherDatabaseUrl) : null;
   app.decorate('authenticateStudent', makeAuthenticateStudent(db, cfg.hmacSecret));
 
   // Security headers (Blueprint §33, §36.2). Minimal set; a full CSP lands with Admin Web.
@@ -84,9 +77,6 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'no-referrer');
-    // HSTS: pin the API to HTTPS for a year (incl. subdomains). Safe on the gateway — it is
-    // always served over TLS in production; ignored by browsers over plain HTTP/localhost.
-    if (cfg.env !== 'local') reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     return payload;
   });
 
@@ -151,6 +141,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   // Routes
   registerHealthRoutes(app, db);
   registerCatalogRoutes(app, db, cfg);
+  registerAssignmentRoutes(app, db);
   registerRegistrationRoutes(app, db, cfg);
   registerEmailVerifyRoutes(app, db, cfg);
   registerAuthRoutes(app, db, cfg);
@@ -180,7 +171,6 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerAdminAccountsRoutes(app, db, cfg);
   registerAdminOpsRoutes(app, db, cfg);
   registerAdminEntitlementsRoutes(app, db, cfg);
-  registerAdminTeacherRoutes(app, db, cfg, teacherDb);
 
   return app;
 }

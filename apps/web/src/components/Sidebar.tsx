@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import cmMark from '../assets/cm-mark.png';
+import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { PAYMENTS_ENABLED, capsOf } from '../lib/entitlements';
 import { REWARDS_LOCKED } from '../lib/features';
@@ -20,6 +21,7 @@ const isExam = (l: { search: string }) => /mode=exam/.test(l.search);
 const inSession = (l: MatchCtx) => l.pathname.startsWith('/session') || l.pathname.startsWith('/result');
 const NAV: NavItem[] = [
   { label: 'Home', icon: '🏠', to: '/home', match: (l) => l.pathname === '/home' },
+  { label: 'Assignments', icon: '📋', to: '/assignments', match: (l) => l.pathname === '/assignments' },
   { label: 'Practice', icon: '✏️', to: '/practice', match: (l) => (l.pathname === '/practice' && !isExam(l)) || (inSession(l) && l.mode !== 'exam') },
   { label: 'Exam', icon: '📝', to: '/practice?mode=exam', match: (l) => (l.pathname === '/practice' && isExam(l)) || (inSession(l) && l.mode === 'exam') },
   { label: 'Progress', icon: '📊', to: '/progress', match: (l) => l.pathname === '/progress' },
@@ -52,6 +54,16 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
   const { profile, signOut, entitlements, entitlementsLoaded, activeMode } = useApp();
   // Free plan → Progress is a membership feature; show a lock on its nav item.
   const progressLocked = PAYMENTS_ENABLED && capsOf(entitlements, entitlementsLoaded).practice !== 'all';
+  // Live "to do" count for the Assignments nav badge. Refetched on navigation (cheap endpoint) so the
+  // badge drops after a child finishes an assigned set. Best-effort — a failure just hides the badge.
+  const [asgnTodo, setAsgnTodo] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    client.assignments()
+      .then((list) => { if (alive) setAsgnTodo(list.filter((a) => a.status !== 'done').length); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [loc.pathname]);
   const openT = useRef<number | undefined>(undefined);
   const closeT = useRef<number | undefined>(undefined);
 
@@ -94,13 +106,16 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
           const comingSoon = REWARDS_LOCKED && it.to === '/achievements';
           const locked = (progressLocked && it.to === '/progress') || comingSoon;
           const lockTitle = comingSoon ? `${it.label} — coming soon` : `${it.label} — membership`;
+          // Unread-style count on the Assignments item when the child has sets still to do.
+          const badge = it.to === '/assignments' && !locked && asgnTodo > 0 ? asgnTodo : null;
           return (
             <Link key={it.label} to={it.to} title={locked ? lockTitle : it.label} className={`snav ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
-              <span className="ico" aria-hidden style={locked ? { position: 'relative' } : undefined}>
+              <span className="ico" aria-hidden style={locked || badge != null ? { position: 'relative' } : undefined}>
                 {it.icon}
                 {locked && <span style={{ position: 'absolute', right: -4, top: -6, fontSize: 10 }}>🔒</span>}
+                {badge != null && <span className="snav-badge" aria-hidden>{badge}</span>}
               </span>
-              <span className="label">{it.label}{locked && <span aria-hidden style={{ marginLeft: 6 }}>🔒</span>}</span>
+              <span className="label">{it.label}{locked && <span aria-hidden style={{ marginLeft: 6 }}>🔒</span>}{badge != null && <span className="snav-badge-inline" aria-hidden>{badge}</span>}</span>
             </Link>
           );
         })}

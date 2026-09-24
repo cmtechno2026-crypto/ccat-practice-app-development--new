@@ -8,6 +8,7 @@ import { AvatarControl } from '../components/AvatarControl';
 import { Avatar } from '../components/Avatar';
 import { PromoInline } from '../components/DiscountBanner';
 import { ComingSoon } from '../components/ComingSoon';
+import { AssignmentPanel } from '../components/AssignmentPanel';
 import { REWARDS_LOCKED } from '../lib/features';
 import { capsOf, PAYMENTS_ENABLED } from '../lib/entitlements';
 
@@ -105,17 +106,8 @@ export function HomeScreen() {
       {error && <ErrorNote error={error} onRetry={reload} />}
 
       {data && summary && (() => {
-        const xp = summary.xp_total ?? 0;
-        const coins = summary.coin_balance ?? 0;
-        const lvl = summary.level;
-        const level = lvl?.level ?? 1;
-        const levelPct = lvl && lvl.xp_for_level > 0
-          ? Math.max(0, Math.min(100, Math.round((100 * lvl.xp_into_level) / lvl.xp_for_level)))
-          : 0;
-
         const ach = data.achievements ?? [];
         const badgesTotal = ach.length;
-        const badgesEarned = ach.filter((a) => a.earned).length;
         const earned = ach.filter((a) => a.earned).sort((a, b) => (b.earned_at ?? '').localeCompare(a.earned_at ?? ''));
         const locked = ach.filter((a) => !a.earned);
         const badgeSlots = [...earned, ...locked].slice(0, 6);
@@ -136,27 +128,9 @@ export function HomeScreen() {
           <div className="home-grid">
             {/* ---------------- LEFT / MAIN COLUMN ---------------- */}
             <main className="home-main">
-              {/* Stat tiles: Coins · XP · Level — reward/achievement widgets, locked "coming soon" for all plans. */}
-              <ComingSoon locked={REWARDS_LOCKED}>
-                <div className="stat-tiles">
-                  <div className="stile stile-coin">
-                    <span className="st-ic">🪙</span>
-                    <span className="st-n">{coins.toLocaleString()}</span>
-                    <span className="st-l">Coins</span>
-                  </div>
-                  <div className="stile stile-xp">
-                    <span className="st-ic">⭐</span>
-                    <span className="st-n">{xp.toLocaleString()}</span>
-                    <span className="st-l">XP</span>
-                  </div>
-                  <div className="stile stile-level">
-                    <div className="lvl-ring" style={{ ['--pct' as any]: `${levelPct}%` }}>
-                      <span>Lv {level}</span>
-                    </div>
-                    <span className="st-l">{badgesEarned} / {badgesTotal} badges</span>
-                  </div>
-                </div>
-              </ComingSoon>
+              {/* Assignment panel — replaces the old Coins/XP/Badges stat tiles. Teacher-assigned sets,
+                  incomplete first, scrollable, with "View all →" to the full Assignments page. */}
+              <AssignmentPanel />
 
               {/* Progress & analytics — "H4": Score (all batteries) + Sets done + three per-battery
                   accuracy rings. Every value is real; honest empty states ("—" / 0 / rings at 0). */}
