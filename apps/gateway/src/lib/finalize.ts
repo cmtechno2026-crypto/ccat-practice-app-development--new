@@ -117,7 +117,7 @@ export async function finalizeSession(
     await client.query(`update ccat.session_answers set is_locked = true where session_id = $1 and is_locked = false`, [sessionId]);
 
     // Achievement evaluation + atomic reward grants (§13.2 step 8, §19.4).
-    const achievements = await evaluateAchievements(client, sess.student_id, sessionId, { correct: score.correct, total: score.total });
+    const achievements = await evaluateAchievements(client, sess.student_id, sessionId, { correct: score.correct, total: score.total }, streak.current);
 
     // Readiness inputs recompute + snapshot (§16). Uses now-locked answers.
     const readiness = await computeReadiness(client, sess.student_id);

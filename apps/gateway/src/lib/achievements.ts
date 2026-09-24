@@ -5,9 +5,15 @@ import type { Client } from '../db.js';
 // Idempotent: student_achievements unique(student, version); ledger unique(student, kind, source).
 //
 // Supported criteria (JSONB `criteria.type`):
-//   first_completion        — the student's first valid terminal completion
-//   perfect_set             — this session scored full marks (total > 0)
-//   xp_total {threshold}    — cumulative XP has reached the threshold
+//   first_completion              — the student's first valid terminal completion
+//   perfect_set                   — this session scored full marks (total > 0)
+//   xp_total {threshold}          — cumulative XP has reached the threshold
+//   questions_answered {threshold}— cumulative questions answered (sum of set sizes) >= threshold
+//   streak_days {threshold}       — current daily streak (post-bump this session) >= threshold
+//   batteries_covered {threshold} — distinct batteries the student has completed a set in >= threshold
+//
+// New reward amounts (XP/coins) are admin-editable per achievement version; grants write to the SAME
+// xp_transactions / coin_transactions ledgers + cached totals as everything else, so totals stay in sync.
 
 export interface CurrentScore { correct: number; total: number; }
 export interface EarnedAchievement { key: string; name: string; }
@@ -17,6 +23,7 @@ export async function evaluateAchievements(
   studentId: string,
   sessionId: string,
   score: CurrentScore,
+  streakCurrent = 0, // the student's current daily streak AFTER this session's bump (from finalize)
 ): Promise<EarnedAchievement[]> {
   const av = await client.query(
     `select av.id as version_id, a.key, a.name, av.criteria
@@ -43,14 +50,37 @@ export async function evaluateAchievements(
     [studentId],
   );
   const xpTotal = Number(xpQ.rows[0]!.v);
+  // Cumulative questions answered = sum of the size of every terminal set the student has completed.
+  const qaQ = await client.query(
+    `select coalesce(sum(r.score_total),0)::int as v from ccat.session_results r
+       join ccat.sessions s on s.id = r.session_id
+      where s.student_id = $1 and r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')`,
+    [studentId],
+  );
+  const questionsAnswered = Number(qaQ.rows[0]!.v);
+  // Distinct batteries (categories) the student has completed at least one set in.
+  const batQ = await client.query(
+    `select count(distinct cat.key)::int as v from ccat.session_results r
+       join ccat.sessions s on s.id = r.session_id
+       join ccat.question_set_versions sv on sv.id = s.set_version_id
+       join ccat.question_sets qs on qs.id = sv.question_set_id
+       join ccat.categories cat on cat.id = qs.category_id
+      where s.student_id = $1 and r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')`,
+    [studentId],
+  );
+  const batteriesCovered = Number(batQ.rows[0]!.v);
 
   const earned: EarnedAchievement[] = [];
   for (const row of av.rows) {
     const c = (row.criteria ?? {}) as { type?: string; threshold?: number };
+    const thr = typeof c.threshold === 'number' ? c.threshold : NaN;
     let hit = false;
     if (c.type === 'first_completion') hit = completions >= 1;
     else if (c.type === 'perfect_set') hit = score.total > 0 && score.correct === score.total;
-    else if (c.type === 'xp_total') hit = typeof c.threshold === 'number' && xpTotal >= c.threshold;
+    else if (c.type === 'xp_total') hit = Number.isFinite(thr) && xpTotal >= thr;
+    else if (c.type === 'questions_answered') hit = Number.isFinite(thr) && questionsAnswered >= thr;
+    else if (c.type === 'streak_days') hit = Number.isFinite(thr) && streakCurrent >= thr;
+    else if (c.type === 'batteries_covered') hit = Number.isFinite(thr) && batteriesCovered >= thr;
 
     if (!hit) continue;
 
