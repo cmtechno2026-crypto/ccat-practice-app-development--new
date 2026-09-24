@@ -183,8 +183,8 @@ function QuizRunner({ setId, label, isExam, durationMin, onClose }: { setId: str
   }, [questions, answers]);
 
   const overlay = (children: React.ReactNode) => (
-    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg, #eef1f7)', zIndex: 60, overflowY: 'auto' }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 1, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--line, #e4e9f2)', background: 'var(--card, #fff)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg, #eef1f7)', zIndex: 60, overflowY: 'auto', direction: 'rtl' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 1, direction: 'ltr', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--line, #e4e9f2)', background: 'var(--card, #fff)' }}>
         <b style={{ fontSize: 15 }}>{label}</b>
         <span className="tag">{isExam ? 'Exam' : 'Practice'} · staff preview</span>
         {isExam && remaining != null && !submitted && (
@@ -194,7 +194,7 @@ function QuizRunner({ setId, label, isExam, durationMin, onClose }: { setId: str
         )}
         <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onClose}>✕ Close</button>
       </div>
-      <div style={{ padding: '18px', maxWidth: 820, width: '100%', margin: '0 auto' }}>{children}</div>
+      <div style={{ direction: 'ltr', padding: '18px', maxWidth: 820, width: '100%', margin: '0 auto' }}>{children}</div>
     </div>
   );
 
@@ -287,13 +287,13 @@ function PreviewModal({ setId, label, onClose }: { setId: string; label: string;
   useEffect(() => { const h = document.documentElement.style.overflow, b = document.body.style.overflow; document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden'; return () => { document.documentElement.style.overflow = h; document.body.style.overflow = b; }; }, []);
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg, #eef1f7)', zIndex: 60, overflowY: 'auto' }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 1, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--line, #e4e9f2)', background: 'var(--card, #fff)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg, #eef1f7)', zIndex: 60, overflowY: 'auto', direction: 'rtl' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 1, direction: 'ltr', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--line, #e4e9f2)', background: 'var(--card, #fff)' }}>
         <b style={{ fontSize: 15 }}>Preview — {label}</b>
         {data && <span className="tag">answers shown</span>}
         <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onClose}>✕ Close</button>
       </div>
-      <div style={{ padding: '18px', maxWidth: 820, width: '100%', margin: '0 auto' }}>
+      <div style={{ direction: 'ltr', padding: '18px', maxWidth: 820, width: '100%', margin: '0 auto' }}>
       {loading ? <Loading /> : error ? <ErrorBox e={error} /> : !data ? null : (
         <div>
           <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>

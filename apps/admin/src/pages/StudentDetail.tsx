@@ -351,6 +351,8 @@ const fmtMMSS = (secs: number | null | undefined) => {
 };
 
 function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; onOpenSet: (setId: string, label: string) => void }) {
+  const { me } = useAuth();
+  const reviewLabel = me?.is_teacher ? 'Review' : '⬇ Review / Download';   // teachers can't download
   const { data, loading, error } = useAsync(() => api.getStudentProgress(studentId), [studentId]);
   const batteries: any[] = data?.batteries ?? [];
   const [battery, setBattery] = useState<string>('');
@@ -434,7 +436,7 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
                   <td className="tabnum">{row.score?.total > 0 ? `${row.score.correct}/${row.score.total}` : '—'}</td>
                   <td className="tabnum">{row.accuracyPct != null ? `${row.accuracyPct}%` : '—'}</td>
                   <td className="tabnum">{row.avgSecondsPerQuestion != null ? `${row.avgSecondsPerQuestion}s` : '—'}</td>
-                  <td><button className="btn ghost sm" onClick={() => onOpenSet(row.setId, row.name)}>⬇ Review / Download</button></td>
+                  <td><button className="btn ghost sm" onClick={() => onOpenSet(row.setId, row.name)}>{reviewLabel}</button></td>
                 </tr>
               ))}</tbody>
             </table></div>
@@ -478,7 +480,7 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
                   <td className="tabnum">{p.score_total > 0 ? `${p.accuracy_pct}%` : '—'}</td>
                   <td className="tabnum">{fmtMMSS(p.time_spent_seconds)}</td>
                   <td className="muted">{status}</td>
-                  <td>{clickable ? <button className="btn ghost sm" onClick={() => onOpenSet(p.set_id, p.set_name || 'Exam paper')}>⬇ Review / Download</button> : null}</td>
+                  <td>{clickable ? <button className="btn ghost sm" onClick={() => onOpenSet(p.set_id, p.set_name || 'Exam paper')}>{reviewLabel}</button> : null}</td>
                 </tr>
               );
             })}</tbody>
@@ -569,7 +571,8 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
         </div>
       )}
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', maxWidth: 900, width: '100%', margin: '0 auto' }}>
+      <div style={{ flex: 1, overflow: 'auto', direction: 'rtl' }}>
+        <div style={{ direction: 'ltr', padding: '16px 20px', maxWidth: 900, width: '100%', margin: '0 auto' }}>
         {loading ? <Loading /> : error ? <ErrorBox e={error} /> : !rv?.found ? (
           <div className="muted">No submitted attempt found for this set.</div>
         ) : shown.length === 0 ? (
@@ -609,6 +612,7 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );
