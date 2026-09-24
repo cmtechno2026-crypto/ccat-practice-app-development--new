@@ -36,6 +36,11 @@ export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
              from ccat.sessions s
              left join ccat.session_results sr on sr.session_id = s.id
             where s.student_id = a.student_id and s.set_version_id = a.set_version_id
+              -- Only sessions started AT/AFTER the assignment count toward its status. A set the child
+              -- practised (or finished) BEFORE it was assigned still shows "Start" — the status reflects
+              -- work done ON THE ASSIGNMENT, not the student's older history with the same set. Matches the
+              -- admin/teacher list's derivation exactly.
+              and s.started_at >= a.assigned_at
             order by (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) desc, s.started_at desc
             limit 1
          ) sess on true
