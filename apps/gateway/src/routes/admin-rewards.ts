@@ -12,6 +12,10 @@ const achSchema = z.object({
   key: z.string().min(1), name: z.string().min(1),
   criteria: z.object({ type: z.string(), threshold: z.number().optional() }),
   xp: z.number().int().optional(), coins: z.number().int().optional(),
+  // Repeatable = earn again each qualifying session (per-session event triggers like perfect_set), instead
+  // of once per student. Only meaningful for event triggers; harmless on threshold triggers (they can't
+  // re-fire once crossed).
+  repeatable: z.boolean().optional(),
 });
 const adjustSchema = z.object({
   student_id: z.string().uuid(), kind: z.enum(['xp', 'coins']), delta: z.number().int(),
@@ -23,14 +27,14 @@ export function registerAdminRewardsRoutes(app: FastifyInstance, db: DB, cfg: Co
   const guard = { preHandler: [authenticateAdmin] };
 
   app.get('/v1/admin/rewards/achievements', guard, async () => {
-    const rows = await db.query(`select a.key, a.name, av.id version_id, av.version_number, av.active, av.criteria,
+    const rows = await db.query(`select a.key, a.name, av.id version_id, av.version_number, av.active, av.repeatable, av.criteria,
         coalesce(json_agg(json_build_object('kind',ar.reward_kind,'xp',ar.xp_amount,'coins',ar.coin_amount))
           filter (where ar.id is not null),'[]') rewards,
         (select count(*) from ccat.student_achievements sa where sa.achievement_version_id=av.id)::int earned_count
         from ccat.achievement_versions av
         join ccat.achievements a on a.id=av.achievement_id
         left join ccat.achievement_rewards ar on ar.achievement_version_id=av.id
-        group by a.key,a.name,av.id,av.version_number,av.active,av.criteria order by a.name`);
+        group by a.key,a.name,av.id,av.version_number,av.active,av.repeatable,av.criteria order by a.name`);
     return { items: rows.rows };
   });
 
@@ -39,8 +43,8 @@ export function registerAdminRewardsRoutes(app: FastifyInstance, db: DB, cfg: Co
     const b = achSchema.parse(req.body);
     const result = await withTransaction(db, async (c) => {
       const a = await c.query('insert into ccat.achievements(key,name) values ($1,$2) returning id', [b.key, b.name]);
-      const av = await c.query('insert into ccat.achievement_versions(achievement_id,version_number,criteria,active) values ($1,1,$2,true) returning id',
-        [a.rows[0]!.id, JSON.stringify(b.criteria)]);
+      const av = await c.query('insert into ccat.achievement_versions(achievement_id,version_number,criteria,active,repeatable) values ($1,1,$2,true,$3) returning id',
+        [a.rows[0]!.id, JSON.stringify(b.criteria), b.repeatable ?? false]);
       if (b.xp) await c.query('insert into ccat.achievement_rewards(achievement_version_id,reward_kind,xp_amount) values ($1,$2,$3)', [av.rows[0]!.id, 'xp', b.xp]);
       if (b.coins) await c.query('insert into ccat.achievement_rewards(achievement_version_id,reward_kind,coin_amount) values ($1,$2,$3)', [av.rows[0]!.id, 'coins', b.coins]);
       return av.rows[0]!.id;
@@ -178,11 +182,12 @@ export function registerAdminRewardsRoutes(app: FastifyInstance, db: DB, cfg: Co
       name: z.string().min(1).optional(),
       xp: z.number().int().nonnegative().nullable().optional(),
       coins: z.number().int().nonnegative().nullable().optional(),
+      repeatable: z.boolean().optional(),
     }).parse(req.body ?? {});
     const oldVal: any = {}; const newVal: any = {};
     await withTransaction(db, async (c) => {
       const ver = await c.query(
-        `select av.achievement_id, av.active, a.name,
+        `select av.achievement_id, av.active, av.repeatable, a.name,
                 (select xp_amount from ccat.achievement_rewards where achievement_version_id=av.id and reward_kind='xp') xp,
                 (select coin_amount from ccat.achievement_rewards where achievement_version_id=av.id and reward_kind='coins') coins
            from ccat.achievement_versions av join ccat.achievements a on a.id=av.achievement_id where av.id=$1`, [id]);
@@ -193,6 +198,7 @@ export function registerAdminRewardsRoutes(app: FastifyInstance, db: DB, cfg: Co
       if (b.xp !== undefined) { oldVal.xp = prev.xp == null ? null : Number(prev.xp); newVal.xp = b.xp; }
       if (b.coins !== undefined) { oldVal.coins = prev.coins == null ? null : Number(prev.coins); newVal.coins = b.coins; }
       if (b.active !== undefined) await c.query('update ccat.achievement_versions set active=$2 where id=$1', [id, b.active]);
+      if (b.repeatable !== undefined) { oldVal.repeatable = prev.repeatable; newVal.repeatable = b.repeatable; await c.query('update ccat.achievement_versions set repeatable=$2 where id=$1', [id, b.repeatable]); }
       if (b.name !== undefined) await c.query('update ccat.achievements set name=$2 where id=$1', [ver.rows[0]!.achievement_id, b.name]);
       // Rewards are edited by replace: clear the kind, then re-insert when a positive amount is given.
       if (b.xp !== undefined) {

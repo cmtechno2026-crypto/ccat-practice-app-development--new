@@ -25,14 +25,20 @@ export async function evaluateAchievements(
   score: CurrentScore,
   streakCurrent = 0, // the student's current daily streak AFTER this session's bump (from finalize)
 ): Promise<EarnedAchievement[]> {
+  // Include an achievement version when it is active AND either (a) the student has never earned it, or
+  // (b) it is REPEATABLE — a per-session event achievement (e.g. perfect_set) that can be earned again
+  // each qualifying session. Repeatable only applies to per-session event triggers; cumulative-threshold
+  // triggers (xp_total, questions_answered, streak_days, batteries_covered) are always effectively
+  // one-time because once the threshold is crossed it stays crossed, so we never mark those repeatable.
   const av = await client.query(
-    `select av.id as version_id, a.key, a.name, av.criteria
+    `select av.id as version_id, a.key, a.name, av.criteria, av.repeatable
        from ccat.achievement_versions av
        join ccat.achievements a on a.id = av.achievement_id
       where av.active = true
-        and not exists (
-          select 1 from ccat.student_achievements sa
-           where sa.student_id = $1 and sa.achievement_version_id = av.id)`,
+        and ( av.repeatable = true
+              or not exists (
+                select 1 from ccat.student_achievements sa
+                 where sa.student_id = $1 and sa.achievement_version_id = av.id) )`,
     [studentId],
   );
   if (av.rows.length === 0) return [];
@@ -84,12 +90,21 @@ export async function evaluateAchievements(
 
     if (!hit) continue;
 
-    // Grant (atomic within this transaction).
-    await client.query(
+    // Grant (atomic within this transaction). Keyed per SESSION so a repeatable event achievement grants
+    // once per qualifying session. The returned grant id (saId) is unique per grant and keys the reward
+    // ledger below — so re-finalizing the same session never double-pays, and a fresh grant always writes
+    // exactly one ledger row + one cached-total bump. If no row comes back, this (achievement, session)
+    // was already granted (a re-finalize) — skip without paying again.
+    const ins = await client.query(
       `insert into ccat.student_achievements(student_id, achievement_version_id, granted_from_session_id)
-       values ($1,$2,$3) on conflict (student_id, achievement_version_id) do nothing`,
+       values ($1,$2,$3)
+       on conflict (student_id, achievement_version_id, granted_from_session_id) do nothing
+       returning id`,
       [studentId, row.version_id, sessionId],
     );
+    const saId = ins.rows[0]?.id as string | undefined;
+    if (!saId) continue;
+
     const rewards = await client.query(
       `select reward_kind, xp_amount, coin_amount, avatar_stage_id, theme_id
          from ccat.achievement_rewards where achievement_version_id = $1`,
@@ -101,7 +116,7 @@ export async function evaluateAchievements(
           `insert into ccat.xp_transactions(student_id, delta, source_kind, source_id)
            values ($1,$2,'achievement',$3)
            on conflict (student_id, source_kind, source_id) do nothing`,
-          [studentId, r.xp_amount, row.version_id],
+          [studentId, r.xp_amount, saId],
         );
         await client.query(`update ccat.students set cached_xp_total = cached_xp_total + $2 where id = $1`, [studentId, r.xp_amount]);
       } else if (r.reward_kind === 'coins' && r.coin_amount) {
@@ -109,7 +124,7 @@ export async function evaluateAchievements(
           `insert into ccat.coin_transactions(student_id, delta, source_kind, source_id)
            values ($1,$2,'achievement',$3)
            on conflict (student_id, source_kind, source_id) do nothing`,
-          [studentId, r.coin_amount, row.version_id],
+          [studentId, r.coin_amount, saId],
         );
         await client.query(`update ccat.students set cached_coin_balance = cached_coin_balance + $2 where id = $1`, [studentId, r.coin_amount]);
       } else if (r.reward_kind === 'avatar' && r.avatar_stage_id) {
