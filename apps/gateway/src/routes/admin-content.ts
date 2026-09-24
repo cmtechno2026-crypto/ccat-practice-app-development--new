@@ -371,8 +371,10 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         -- oldest→newest by created_at (a newly published set lands at the BOTTOM of the active list),
         -- then retired sets last. Never sort by qs.name (numeric/editable → lexical 1,10,11,2). Grouped
         -- by category/subcategory so each subcategory's block is correctly ordered.
+        -- limit was 400: the admin list is NOT grade-scoped, so once total set versions exceeded 400 the
+        -- last groups (newest sets, incl. Combine) were truncated → missing in admin though present in web CCAT.
         order by cat.display_order, sub.display_order, (sv.state = 'retired'), sv.created_at asc, sv.id asc
-        limit 400`);
+        limit 5000`);
     return { items: rows.rows };
   });
   app.post('/v1/admin/content/sets/:id/unpublish', guard, async (req) => {
