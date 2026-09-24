@@ -163,6 +163,8 @@ function QuizRunner({ setId, label, isExam, durationMin, onClose }: { setId: str
   const [remaining, setRemaining] = useState<number | null>(null); // seconds (exam only)
 
   useEffect(() => { setLoading(true); api.teacherSetPreview(setId).then(setData).catch(setError).finally(() => setLoading(false)); }, [setId]);
+  // Lock the page while the full-screen panel is open so only ONE scrollbar (this panel) remains — browser/touch scroll.
+  useEffect(() => { const h = document.documentElement.style.overflow, b = document.body.style.overflow; document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden'; return () => { document.documentElement.style.overflow = h; document.body.style.overflow = b; }; }, []);
 
   // Exam timer: start once data is loaded; auto-submit at 0.
   useEffect(() => {
@@ -281,6 +283,8 @@ function PreviewModal({ setId, label, onClose }: { setId: string; label: string;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<any>(null);
   useEffect(() => { setLoading(true); api.teacherSetPreview(setId).then(setData).catch(setError).finally(() => setLoading(false)); }, [setId]);
+  // Lock the page while the full-screen panel is open so only ONE scrollbar (this panel) remains — browser/touch scroll.
+  useEffect(() => { const h = document.documentElement.style.overflow, b = document.body.style.overflow; document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden'; return () => { document.documentElement.style.overflow = h; document.body.style.overflow = b; }; }, []);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--bg, #eef1f7)', zIndex: 60, overflowY: 'auto' }}>

@@ -493,6 +493,7 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
 // questions + options with correct/selected marks and images, filter checkboxes (Correct / Wrong &
 // unattempted / Explanations), and a Download (opens a print-friendly page → Save as PDF).
 function SetReviewModal({ studentId, setId, label, studentName, onClose }: { studentId: string; setId: string; label: string; studentName: string; onClose: () => void }) {
+  const { me } = useAuth();
   const { data, loading, error } = useAsync(() => api.getStudentSetReview(studentId, setId), [studentId, setId]);
   const rv: any = data;
   const [showCorrect, setShowCorrect] = useState(true);
@@ -508,7 +509,8 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
     measure();
     window.addEventListener('resize', measure);
     document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('resize', measure); document.body.style.overflow = ''; };
+    document.documentElement.style.overflow = 'hidden';   // lock the page so only ONE scrollbar (this panel) remains
+    return () => { window.removeEventListener('resize', measure); document.body.style.overflow = ''; document.documentElement.style.overflow = ''; };
   }, []);
 
   const all: any[] = rv?.questions ?? [];
@@ -563,7 +565,7 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
             {chk(showWrong, () => setShowWrong(v => !v), 'Wrong / unattempted')}
             {chk(showExpl, () => setShowExpl(v => !v), 'Explanations')}
           </span>
-          <button className="btn" onClick={download}>⬇ Download (PDF)</button>
+          {!me?.is_teacher && <button className="btn" onClick={download}>⬇ Download (PDF)</button>}
         </div>
       )}
 
