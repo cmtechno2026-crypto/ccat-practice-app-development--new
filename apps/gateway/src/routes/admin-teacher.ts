@@ -197,46 +197,81 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   }): Promise<void> {
     if (!o.to) return;
     const who = escapeHtml(o.studentName || 'your child');
-    const fmt = (x: DecisionSlot) => `${x.day_of_week} ${x.start_time}–${x.end_time} · ${escapeHtml(x.teacher_name)} · ${x.mode} (${x.timezone})`;
+    const parent = escapeHtml(o.parentName || 'there');
     const booked = o.slots.filter((x) => x.outcome === 'approved');
     const notBooked = o.slots.filter((x) => x.outcome === 'taken' || x.outcome === 'rejected');
-    let subject: string, heading: string, intro: string, extra = '', showTable = false;
+
+    // ---- Branded template (matches TeachTime_Booking_Email_Templates). Styles are inlined because
+    // email clients strip <style> blocks. The Concept Mastery logo is rendered as a text "brand pill"
+    // rather than the large base64 image, to keep the message small. ----
+    const CM_BLUE = '#1c3f6e';
+    const P = 'margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;';
+    const brand = `<div style="margin:0 0 22px;text-align:center;"><span style="display:inline-block;padding:11px 18px;border-radius:999px;background:${CM_BLUE};color:#fff;font-size:15px;font-weight:800;letter-spacing:.2px;">Concept Mastery</span></div>`;
+    const h2 = (t: string) => `<h2 style="margin:0 0 6px;color:${CM_BLUE};font-size:22px;font-weight:800;line-height:1.25;text-align:center;">${t}</h2>`;
+    const preview = (t: string) => `<p style="margin:0 0 22px;color:#6b7280;font-size:15px;line-height:1.6;text-align:center;">${t}</p>`;
+    // Day / Time / Teacher sessions table for a set of slots.
+    const sessions = (rows: DecisionSlot[]) => `
+      <table role="presentation" width="100%" style="width:100%;border-collapse:collapse;margin:0 0 18px;color:#33415a;font-size:13px;">
+        <tr>
+          <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Day</th>
+          <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Time</th>
+          <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Teacher</th>
+        </tr>
+        ${rows.map((x) => `<tr>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(x.day_of_week)}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(x.start_time)}–${escapeHtml(x.end_time)}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(x.teacher_name)}</td>
+        </tr>`).join('')}
+      </table>`;
+    const panel = (title: string, inner: string) => `
+      <div style="margin:0 0 22px;padding:20px;border-radius:10px;background:#eef3fb;">
+        <div style="margin:0 0 10px;color:${CM_BLUE};font-size:15px;font-weight:800;">${title}</div>
+        ${inner}
+      </div>`;
+    const footer = `
+      <div style="margin:34px 0 0;padding-top:22px;border-top:1px solid #edeff3;text-align:center;">
+        <p style="margin:0 0 10px;color:#6b7280;font-size:13px;line-height:1.7;text-align:center;"><strong style="color:${CM_BLUE};">Need help? We're here.</strong></p>
+        <p style="margin:0 0 10px;color:#6b7280;font-size:13px;line-height:1.7;text-align:center;">Phone support: <a href="tel:+19054696087" style="color:${CM_BLUE};text-decoration:none;">+1 905-469-6087</a><br/>Call / WhatsApp: <a href="tel:+16477656606" style="color:${CM_BLUE};text-decoration:none;">+1 (647) 765-6606</a></p>
+        <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.7;text-align:center;">Concept Mastery, 2161 Overfield Rd, Oakville, ON L6M 3T1, Canada</p>
+      </div>`;
+
+    let subject: string, body: string;
     if (o.decision === 'approved') {
       subject = 'Your Concept Mastery booking is confirmed';
-      heading = 'Booking confirmed';
-      intro = `Good news — ${booked.length === 1 ? 'the session below has' : 'the sessions below have'} been confirmed for ${who}.`;
-      showTable = true;
+      body = h2('Your booking is confirmed')
+        + preview(`We have booked the requested sessions for ${who}.`)
+        + `<p style="${P}">Hello ${parent},</p>`
+        + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked with the child's name in TeachTime.</p>`
+        + sessions(booked)
+        + `<p style="${P}">Please keep these times available for ${who}. If you need to make a change, contact us as soon as possible so we can check availability.</p>`;
     } else if (o.decision === 'partially_approved') {
-      subject = 'Your Concept Mastery booking — partially confirmed';
-      heading = 'Booking partially confirmed';
-      intro = `We’ve confirmed ${booked.length} of your requested ${booked.length === 1 ? 'session' : 'sessions'} for ${who}.`;
-      extra = `<p style="margin:18px 0 0;color:#5b6472;font-size:14px;line-height:1.6;">Unfortunately ${notBooked.length} of your requested ${notBooked.length === 1 ? 'time is' : 'times are'} no longer available. Simply reply to this email and we’ll help you find an alternative.</p>`;
-      showTable = true;
+      subject = 'Your Concept Mastery booking is partially confirmed';
+      body = h2('Your booking is partially confirmed')
+        + preview('Some requested sessions were booked, but one or more times were no longer available.')
+        + `<p style="${P}">Hello ${parent},</p>`
+        + `<p style="${P}">We have booked the available sessions for ${who}. Some of the requested times were no longer available by the time the booking was finalized.</p>`
+        + panel('Confirmed sessions', sessions(booked))
+        + panel('No longer available', sessions(notBooked))
+        + `<p style="${P}">Our office will help with the next available options if another session is still needed.</p>`;
     } else {
       subject = 'Update on your Concept Mastery booking request';
-      heading = 'Booking request update';
-      intro = `Thank you for your interest in Concept Mastery. Unfortunately we’re unable to confirm your requested ${o.slots.length === 1 ? 'session' : 'sessions'} for ${who} at this time.`;
-      if (o.reason) extra += `<p style="margin:18px 0 0;color:#5b6472;font-size:14px;line-height:1.6;"><strong>Note:</strong> ${escapeHtml(o.reason)}</p>`;
-      extra += `<p style="margin:12px 0 0;color:#5b6472;font-size:14px;line-height:1.6;">The times you selected remain open — you’re welcome to submit a new request, or reply to this email and we’ll help you find a suitable slot.</p>`;
+      const reason = o.reason ? escapeHtml(o.reason) : 'We are not able to confirm the requested times this time.';
+      body = h2('Update on your booking request')
+        + preview('We were not able to confirm the requested booking this time.')
+        + `<p style="${P}">Hello ${parent},</p>`
+        + `<p style="${P}">Thank you for submitting a booking request for ${who}. We are sorry, but we are not able to confirm the requested booking this time.</p>`
+        + panel('Reason', `<p style="margin:0;color:#455065;font-size:15px;line-height:1.7;">${reason}</p>`)
+        + `<p style="${P}">If you would like to try different times, please contact our office and we will help you check the next available options.</p>`;
     }
-    const tableHtml = showTable && booked.length ? `
-      <table role="presentation" width="100%" style="border-collapse:collapse;margin:18px 0 0;background:#f7f9fc;border:1px solid #e6e9f0;border-radius:8px;overflow:hidden;">
-        ${booked.map((x) => `<tr><td style="padding:10px 14px;border-bottom:1px solid #eef1f6;font-size:14px;color:#26303f;">${fmt(x)}</td></tr>`).join('')}
-      </table>` : '';
-    const html = `<!doctype html><html><body style="margin:0;background:#eef1f6;padding:24px 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-      <table role="presentation" width="100%" style="border-collapse:collapse;"><tr><td align="center">
-        <table role="presentation" width="560" style="max-width:560px;width:100%;border-collapse:collapse;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 2px 8px rgba(20,30,50,.06);">
-          <tr><td style="background:#2f6fd0;padding:20px 28px;"><span style="color:#ffffff;font-weight:800;font-size:18px;letter-spacing:.02em;">Concept Mastery</span></td></tr>
-          <tr><td style="padding:28px;">
-            <h1 style="margin:0 0 12px;font-size:20px;color:#1c2635;">${heading}</h1>
-            <p style="margin:0;color:#26303f;font-size:15px;line-height:1.6;">Hi ${escapeHtml(o.parentName)},</p>
-            <p style="margin:12px 0 0;color:#26303f;font-size:15px;line-height:1.6;">${intro}</p>
-            ${tableHtml}
-            ${extra}
-            <p style="margin:22px 0 0;color:#26303f;font-size:15px;line-height:1.6;">Warm regards,<br/>The Concept Mastery Team</p>
-          </td></tr>
-          <tr><td style="padding:16px 28px;background:#f7f9fc;border-top:1px solid #eef1f6;">
-            <p style="margin:0;color:#8a93a3;font-size:12px;line-height:1.5;">Concept Mastery · <a href="mailto:info@conceptmastery.com" style="color:#2f6fd0;text-decoration:none;">info@conceptmastery.com</a><br/>This is an automated message about your booking request — you can reply to reach our team.</p>
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+      <body style="margin:0;background:#f4f5f7;color:#1f2937;font-family:'Segoe UI',system-ui,-apple-system,BlinkMacSystemFont,Arial,sans-serif;">
+      <table role="presentation" width="100%" style="border-collapse:collapse;background:#f4f5f7;"><tr><td align="center" style="padding:28px 14px;">
+        <table role="presentation" width="600" style="max-width:600px;width:100%;border-collapse:collapse;background:#fff;border:1px solid #eceff2;border-radius:14px;">
+          <tr><td style="padding:36px 40px;">
+            ${brand}
+            ${body}
+            ${footer}
           </td></tr>
         </table>
       </td></tr></table>
