@@ -482,6 +482,7 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
         .apx-box .lb{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#6b6f8a);margin-top:6px;font-weight:700}
         .apx-box .bar{height:5px;background:#d7e4f5;border-radius:3px;margin-top:9px;overflow:hidden}
         .apx-box .bar i{display:block;height:100%;background:var(--blue,#2f6fd0)}
+        .apx-box .apx-acc{font-size:11.5px;font-weight:700;color:var(--muted,#6b6f8a);margin-top:7px}
         .apx-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 10px}
         .apx-tab{border:1px solid var(--sd-line,#e7e8f2);background:transparent;border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:700;color:var(--muted,#6b6f8a);cursor:pointer}
         .apx-tab.on{border-color:var(--blue,#2f6fd0);color:var(--blue,#2f6fd0)}
@@ -503,6 +504,7 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
                   <div className="fr">{done} <small>/ {total}</small></div>
                   <div className="lb">{b.name}</div>
                   <div className="bar"><i style={{ width: `${w}%` }} /></div>
+                  <div className="apx-acc">{b.accuracyPct != null ? `${b.accuracyPct}% accuracy` : 'No attempts yet'}</div>
                 </button>
               );
             })}
