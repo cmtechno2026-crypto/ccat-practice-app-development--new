@@ -161,15 +161,19 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
          left join ccat.subcategories sub on sub.id=qs.subcategory_id where sv.id=$1`, [id]);
     if (sv.rows.length === 0) throw Errors.notFound('Set not found');
     const qs = await db.query(
-      `select q.question_version_id as id, q.position, q.active, qv.state, qv.prompt_blocks, d.key difficulty,
-              c.name category, c.key category_key
+      `select q.question_version_id as id, q.position, q.active, qv.state, qv.prompt_blocks,
+              qv.option_blocks, qv.correct_option_ids, qv.explanation_blocks, qv.question_type,
+              d.key difficulty, c.name category, c.key category_key
          from ccat.set_version_questions q
          join ccat.question_versions qv on qv.id=q.question_version_id
          join ccat.difficulties d on d.id=qv.difficulty_id
          join ccat.logical_questions lq on lq.id=qv.logical_question_id
          join ccat.categories c on c.id=lq.category_id
         where q.set_version_id=$1 order by q.position`, [id]);
-    return { ...sv.rows[0], questions: qs.rows.map((r) => ({ id: r.id, position: r.position, active: r.active, state: r.state, difficulty: r.difficulty, category: r.category, category_key: r.category_key, preview: previewText(r.prompt_blocks) })) };
+    // Return the FULL authoring payload per question (prompt/options/answer key/explanation/type) so the
+    // editor builds every card from THIS one response — no per-question round-trip (a 60-Q set used to fire
+    // 60 serial GETs and hang on "Loading…").
+    return { ...sv.rows[0], questions: qs.rows.map((r) => ({ id: r.id, position: r.position, active: r.active, state: r.state, difficulty: r.difficulty, category: r.category, category_key: r.category_key, preview: previewText(r.prompt_blocks), prompt_blocks: r.prompt_blocks, option_blocks: r.option_blocks, correct_option_ids: r.correct_option_ids, explanation_blocks: r.explanation_blocks, question_type: r.question_type })) };
   });
 
   // Patch a set/exam paper's editable header fields (name, exam duration, order policy).

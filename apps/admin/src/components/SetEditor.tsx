@@ -96,15 +96,17 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
       setSet(d);
       // For an exam battery, show only that category's questions; for a practice set, all.
       const mine = (d.questions || []).filter((q: any) => !scopeCat || q.category_key === catKey(taxonomy, scopeCat));
-      const loaded: Card[] = [];
-      for (const q of mine) {
-        const full = await api.question(q.id).catch(() => null);
-        if (!full) continue;
+      // Build every card from the set-detail response itself. If a row is missing option data (older
+      // gateway), fall back to fetching that one question — but in PARALLEL, never a serial loop (60 serial
+      // GETs made a large set hang on "Loading…").
+      const loaded: Card[] = (await Promise.all(mine.map(async (q: any) => {
+        const full = Array.isArray(q.option_blocks) ? q : ((await api.question(q.id).catch(() => null)) || q);
+        if (!Array.isArray(full.option_blocks)) return null;
         const correct = new Set<string>(full.correct_option_ids ?? []);
-        loaded.push({ key: newKey(), id: q.id, stem: textFromBlocks(full.prompt_blocks), type: full.question_type || 'verbal_analogy',
+        return { key: newKey(), id: q.id, stem: textFromBlocks(full.prompt_blocks), type: full.question_type || 'verbal_analogy',
           explanation: textFromBlocks(full.explanation_blocks), active: q.active !== false, img: imageBlock(full.prompt_blocks),
-          opts: (full.option_blocks || []).map((o: any) => ({ option_id: o.option_id, text: textFromBlocks(o.content), correct: correct.has(o.option_id), img: imageBlock(o.content) })) });
-      }
+          opts: (full.option_blocks || []).map((o: any) => ({ option_id: o.option_id, text: textFromBlocks(o.content), correct: correct.has(o.option_id), img: imageBlock(o.content) })) } as Card;
+      }))).filter(Boolean) as Card[];
       // Empty set: seed the opening cards per the create-flow hints. Opening the bulk importer, or an
       // explicit "start empty" (startBlank===false), begins with NO cards so imported questions aren't
       // preceded by a stray blank. Every other entry point keeps the one-blank-card convenience.
