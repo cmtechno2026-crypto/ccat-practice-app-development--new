@@ -206,7 +206,13 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     // rather than the large base64 image, to keep the message small. ----
     const CM_BLUE = '#1c3f6e';
     const P = 'margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;';
-    const brand = `<div style="margin:0 0 22px;text-align:center;"><span style="display:inline-block;padding:11px 18px;border-radius:999px;background:${CM_BLUE};color:#fff;font-size:15px;font-weight:800;letter-spacing:.2px;">Concept Mastery</span></div>`;
+    // Logo is a hosted PNG served by the TeachTime public app (public/cm-logo.png). We reference a
+    // URL rather than a base64 data: URI because Gmail/Outlook strip inline data images. When the
+    // public URL is not configured, fall back to a text brand pill so the header never breaks.
+    const logoBase = (cfg.teachTimePublicUrl || '').replace(/\/+$/, '');
+    const brand = logoBase
+      ? `<div style="margin:0 0 22px;text-align:center;"><img src="${logoBase}/cm-logo.png" width="200" alt="Concept Mastery" style="width:200px;max-width:70%;height:auto;display:block;margin:0 auto;border:0;"></div>`
+      : `<div style="margin:0 0 22px;text-align:center;"><span style="display:inline-block;padding:11px 18px;border-radius:999px;background:${CM_BLUE};color:#fff;font-size:15px;font-weight:800;letter-spacing:.2px;">Concept Mastery</span></div>`;
     const h2 = (t: string) => `<h2 style="margin:0 0 6px;color:${CM_BLUE};font-size:22px;font-weight:800;line-height:1.25;text-align:center;">${t}</h2>`;
     const preview = (t: string) => `<p style="margin:0 0 22px;color:#6b7280;font-size:15px;line-height:1.6;text-align:center;">${t}</p>`;
     // Day / Time / Teacher sessions table for a set of slots.
