@@ -157,6 +157,18 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (!v) return null;
     try { return normalizeCombos(JSON.parse(v)); } catch { return null; }
   }
+  // All (subject, grade) combinations the given teachers offer — parsed from ta_teachers.subjects
+  // ("Subject (Grade N)"). Used to auto-scope a link to everything the selected teacher(s) teach.
+  async function combosForTeachers(teacherIds: string[]): Promise<Array<{ subject: string; grade: number }>> {
+    if (!teacherIds.length) return [];
+    const { rows } = await tdb().query('select subjects from public.ta_teachers where id = any($1::uuid[])', [teacherIds]);
+    const raws: Array<{ subject: string; grade: number }> = [];
+    for (const r of rows) for (const raw of ((r.subjects as string[]) || [])) {
+      const m = /^(.*?)\s*\(\s*Grade\s*(\d{1,2})\s*\)\s*$/i.exec(String(raw || ''));
+      if (m) raws.push({ subject: (m[1] || '').trim(), grade: Number(m[2]) });
+    }
+    return normalizeCombos(raws);
+  }
 
   // Resolve admin display names for a set of admin ids (booking links store created_by = admin id).
   async function adminNames(ids: string[]): Promise<Map<string, string>> {
@@ -241,7 +253,8 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const teacherIds = (q.teacher_ids ?? '').split(',').map((x) => x.trim()).filter(Boolean);
     let combos = parseCombosParam(q.combos);
     if (!combos && q.subject && Number.isInteger(Number(q.grade))) combos = normalizeCombos([{ subject: q.subject, grade: Number(q.grade) }]); // legacy single
-    if (teacherIds.length === 0 || !combos || combos.length === 0) throw Errors.validation('teacher_ids and combos are required');
+    if ((!combos || combos.length === 0) && teacherIds.length) combos = await combosForTeachers(teacherIds); // auto: all of the teacher(s) combos
+    if (teacherIds.length === 0 || !combos || combos.length === 0) throw Errors.validation('teacher_ids required (and the teacher must have grade+subject offerings)');
     const { rows } = await tdb().query(
       `select count(*)::int as available
          from public.ta_slots s
@@ -270,8 +283,9 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     requirePermission(req, 'teacher.slots.manage');
     requireSite(req, 'teacher');
     const b = createLinkSchema.parse(req.body ?? {});
-    const combos = normalizeCombos(b.combos && b.combos.length ? b.combos : (b.subject && typeof b.grade === 'number' ? [{ subject: b.subject, grade: b.grade }] : []));
-    if (combos.length === 0) throw Errors.validation('At least one grade+subject combination is required');
+    let combos = normalizeCombos(b.combos && b.combos.length ? b.combos : (b.subject && typeof b.grade === 'number' ? [{ subject: b.subject, grade: b.grade }] : []));
+    if (combos.length === 0) combos = await combosForTeachers(b.teacher_ids); // auto: cover everything the selected teacher(s) teach
+    if (combos.length === 0) throw Errors.validation('The selected teacher(s) have no grade+subject offerings yet');
     const chk = await tdb().query('select id from public.ta_teachers where id = any($1::uuid[])', [b.teacher_ids]);
     const found = new Set(chk.rows.map((r) => r.id as string));
     const missing = b.teacher_ids.filter((id) => !found.has(id));

@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-// Parent Booking Links (Teacher Hub). An admin picks 1+ teachers, then one OR MORE of the (subject +
-// grade) combinations those teachers actually offer, and mints ONE shareable public link (served by
-// TeachTime at `${base}/b/<token>`) that surfaces the available slots across all chosen combos.
+// Parent Booking Links (Teacher Hub). An admin picks 1+ teachers and mints ONE shareable public link
+// (served by TeachTime at `${base}/b/<token>`). The link automatically covers EVERY grade+subject the
+// selected teacher(s) offer — the gateway fills the combos from ta_teachers.subjects, so there is no
+// per-combo picker here.
 interface TeacherRow { id: string; name: string; email: string; subjects: string[]; }
-interface Combo { subject: string; grade: number; label: string; key: string; }
 interface LinkRow {
   id: string; token: string; label: string | null; teacher_ids: string[]; grade: number; subject: string;
   combos: { subject: string; grade: number }[] | null;
@@ -16,15 +16,15 @@ interface LinkRow {
 
 const inp: React.CSSProperties = { padding: '8px 10px', border: '1px solid var(--line,#d7dce8)', borderRadius: 8, background: 'var(--card2,#f7f9fc)', color: 'inherit' };
 
-// Parse a teacher `subjects[]` entry like "Math (Grade 10)" into { subject, grade }.
-function parseCombo(raw: string): { subject: string; grade: number } | null {
-  const m = /^(.*?)\s*\(\s*Grade\s*(\d{1,2})\s*\)\s*$/i.exec(raw || '');
-  if (!m) return null;
-  const subject = (m[1] || '').trim();
-  const grade = Number(m[2]);
-  if (!subject || !(grade >= 1 && grade <= 12)) return null;
-  return { subject, grade };
-}
+const SUBJ_PALETTE = [
+  { bg: '#f5edff', tx: '#7c3aed', bd: '#ddc9fb' }, { bg: '#fdf3e0', tx: '#b45309', bd: '#f7d9a8' },
+  { bg: '#eef2ff', tx: '#4338ca', bd: '#c7d2fe' }, { bg: '#e8f4fd', tx: '#0369a1', bd: '#bae0fb' },
+  { bg: '#fdeef2', tx: '#be123c', bd: '#fbcfe0' }, { bg: '#e2f6f3', tx: '#0f766e', bd: '#b7e6df' },
+];
+function subjColor(subject: string) { const k = String(subject || '').toLowerCase().trim(); let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0; return SUBJ_PALETTE[h % SUBJ_PALETTE.length]; }
+const AV_GRADS = ['linear-gradient(135deg,#2f6fd0,#1e4e9e)', 'linear-gradient(135deg,#7c3aed,#5b21b6)', 'linear-gradient(135deg,#0f766e,#0b5a54)', 'linear-gradient(135deg,#d4620e,#b45309)', 'linear-gradient(135deg,#be123c,#9d174d)'];
+function avGrad(name: string) { const k = String(name || ''); let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0; return AV_GRADS[h % AV_GRADS.length]; }
+function initials(n: string) { return (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'; }
 
 export function BookingLinks() {
   const { can } = useAuth();
@@ -36,7 +36,6 @@ export function BookingLinks() {
   const [err, setErr] = useState('');
 
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [selCombos, setSelCombos] = useState<Set<string>>(new Set());
   const [label, setLabel] = useState('');
   const [neverExp, setNeverExp] = useState(false);
   const [days, setDays] = useState(14);
@@ -48,44 +47,23 @@ export function BookingLinks() {
   useEffect(() => { api.teacherTeachers().then(r => setTeachers(r.teachers)).catch(() => {}); }, []);
   useEffect(loadLinks, [filter]);
 
-  // Union of the (subject + grade) combinations offered by the selected teachers, de-duplicated.
-  const combos = useMemo<Combo[]>(() => {
-    const map = new Map<string, Combo>();
-    teachers.filter(t => sel.has(t.id)).forEach(t => (t.subjects || []).forEach(raw => {
-      const c = parseCombo(raw);
-      if (!c) return;
-      const key = `${c.grade}|${c.subject}`;
-      if (!map.has(key)) map.set(key, { ...c, key, label: `${c.subject} · Grade ${c.grade}` });
-    }));
-    return [...map.values()].sort((a, b) => a.grade - b.grade || a.subject.localeCompare(b.subject));
-  }, [teachers, sel]);
-
-  // Drop any chosen combo that is no longer offered by the current teacher selection.
+  const selKey = [...sel].sort().join(',');
+  // Live count of available slots the link will surface (all of the selected teacher(s) combos).
   useEffect(() => {
-    setSelCombos(prev => { const keep = new Set([...prev].filter(k => combos.some(c => c.key === k))); return keep.size === prev.size ? prev : keep; });
-  }, [combos]);
-
-  const chosen = combos.filter(c => selCombos.has(c.key));
-  const chosenKey = chosen.map(c => c.key).join(',');
-
-  useEffect(() => {
-    if (sel.size === 0 || chosen.length === 0) { setPreview(null); return; }
+    if (sel.size === 0) { setPreview(null); return; }
     const ids = [...sel];
-    const payload = chosen.map(c => ({ subject: c.subject, grade: c.grade }));
-    const t = setTimeout(() => { api.teacherBookingLinkPreview(ids, payload).then(r => setPreview(r.available)).catch(() => setPreview(null)); }, 350);
+    const t = setTimeout(() => { api.teacherBookingLinkPreview(ids).then(r => setPreview(r.available)).catch(() => setPreview(null)); }, 350);
     return () => clearTimeout(t);
-  }, [sel, chosenKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (id: string) => setSel(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const toggleCombo = (key: string) => setSelCombos(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const allCombos = () => setSelCombos(new Set(combos.map(c => c.key)));
 
   const create = async () => {
-    if (sel.size === 0 || chosen.length === 0) return;
+    if (sel.size === 0) return;
     setCreating(true); setErr('');
     try {
-      await api.teacherCreateBookingLink({ teacher_ids: [...sel], combos: chosen.map(c => ({ subject: c.subject, grade: c.grade })), label: label || undefined, never_expires: neverExp, expires_in_days: neverExp ? null : days });
-      setSel(new Set()); setSelCombos(new Set()); setLabel(''); setPreview(null);
+      await api.teacherCreateBookingLink({ teacher_ids: [...sel], label: label || undefined, never_expires: neverExp, expires_in_days: neverExp ? null : days });
+      setSel(new Set()); setLabel(''); setPreview(null);
       loadLinks();
     } catch (e: any) { setErr(e.message); } finally { setCreating(false); }
   };
@@ -99,7 +77,15 @@ export function BookingLinks() {
     return <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', padding: '2px 8px', borderRadius: 999, background: bg, color: c }}>{st}</span>;
   };
   const teacherName = (id: string) => teachers.find(t => t.id === id)?.name || id.slice(0, 8);
-  const linkCombos = (l: LinkRow) => (l.combos && l.combos.length ? l.combos : [{ subject: l.subject, grade: l.grade }]).map(c => `${c.subject} · G${c.grade}`).join(', ');
+  // Per-subject grade lists for a link, from its combos.
+  const subjectGrades = (l: LinkRow) => {
+    const map = new Map<string, number[]>();
+    (l.combos && l.combos.length ? l.combos : [{ subject: l.subject, grade: l.grade }]).forEach(c => {
+      if (!map.has(c.subject)) map.set(c.subject, []);
+      if (!map.get(c.subject)!.includes(c.grade)) map.get(c.subject)!.push(c.grade);
+    });
+    return [...map.entries()].map(([subject, grades]) => ({ subject, grades: grades.sort((a, b) => a - b) }));
+  };
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -108,24 +94,11 @@ export function BookingLinks() {
           <h3 style={{ margin: '0 0 12px' }}>New booking link</h3>
           <div style={{ display: 'grid', gap: 12 }}>
             <div>
-              <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Teachers ({sel.size} selected)</div>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Teachers ({sel.size} selected) — the link covers every grade &amp; subject they teach</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 150, overflow: 'auto' }}>
                 {teachers.length === 0 ? <span className="muted">No teachers yet.</span> : teachers.map(t => (
                   <button key={t.id} onClick={() => toggle(t.id)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, border: sel.has(t.id) ? '2px solid var(--brand,#2f6fd0)' : inp.border, background: sel.has(t.id) ? 'var(--brand-soft,#e7f0fc)' : inp.background }}>{t.name}</button>
                 ))}
-              </div>
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                <span className="muted" style={{ fontSize: 12 }}>Grade &amp; Subject ({selCombos.size} selected)</span>
-                {combos.length > 1 && <button onClick={allCombos} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '2px 8px', fontSize: 12 }}>Select all</button>}
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {sel.size === 0 ? <span className="muted" style={{ fontSize: 13 }}>Select teacher(s) first…</span>
-                  : combos.length === 0 ? <span className="muted" style={{ fontSize: 13 }}>No grade+subject offerings for these teachers.</span>
-                  : combos.map(c => (
-                    <button key={c.key} onClick={() => toggleCombo(c.key)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, border: selCombos.has(c.key) ? '2px solid var(--brand,#2f6fd0)' : inp.border, background: selCombos.has(c.key) ? 'var(--brand-soft,#e7f0fc)' : inp.background }}>{c.label}</button>
-                  ))}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -141,8 +114,8 @@ export function BookingLinks() {
               </label>
             </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <button onClick={create} disabled={creating || sel.size === 0 || chosen.length === 0} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--brand,#2f6fd0)', color: '#fff', border: 'none', opacity: (creating || sel.size === 0 || chosen.length === 0) ? 0.6 : 1 }}>{creating ? 'Creating…' : 'Create link'}</button>
-              {preview != null && <span className="muted" style={{ fontSize: 13 }}>{preview} available slot{preview === 1 ? '' : 's'} match right now</span>}
+              <button onClick={create} disabled={creating || sel.size === 0} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--brand,#2f6fd0)', color: '#fff', border: 'none', opacity: (creating || sel.size === 0) ? 0.6 : 1 }}>{creating ? 'Creating…' : 'Create link'}</button>
+              {preview != null && <span className="muted" style={{ fontSize: 13 }}>{preview} available slot{preview === 1 ? '' : 's'} right now</span>}
             </div>
           </div>
         </section>
@@ -157,15 +130,29 @@ export function BookingLinks() {
         {err && <div className="empty" style={{ padding: 10, color: 'var(--coral,#c0392b)' }}>{err}</div>}
         {loading ? <div className="muted" style={{ padding: 12 }}>Loading…</div> : links.length === 0 ? <div className="muted" style={{ padding: 12 }}>No booking links.</div> : (
           <div style={{ display: 'grid', gap: 8 }}>
-            {links.map(l => (
+            {links.map(l => {
+              const names = l.teacher_ids.map(teacherName);
+              const first = names[0] || 'Teacher';
+              const sg = subjectGrades(l);
+              return (
               <div key={l.id} style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, padding: '10px 12px' }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 800 }}>{linkCombos(l)}</span>
+                  <span style={{ width: 32, height: 32, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 12, flex: 'none', background: avGrad(first) }}>{initials(first)}</span>
+                  <span style={{ fontWeight: 800, fontSize: 15 }}>{first}{names.length > 1 && <span className="muted" style={{ fontWeight: 600, fontSize: 12 }}> +{names.length - 1}</span>}</span>
+                  {sg.map(x => { const c = subjColor(x.subject); return (
+                    <span key={x.subject} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 10px', borderRadius: 8, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: c.tx }} />{x.subject}
+                    </span>
+                  ); })}
                   {l.label && <span className="muted" style={{ fontSize: 12 }}>{l.label}</span>}
                   {statusChip(l.status)}
                   <span style={{ marginLeft: 'auto', fontSize: 12 }} className="muted">{l.pending_requests} pending · {l.total_requests} total</span>
                 </div>
-                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{l.teacher_ids.map(teacherName).join(', ')}</div>
+                <div style={{ margin: '10px 0 2px', marginLeft: 42, display: 'grid', gap: 4 }}>
+                  {sg.map(x => { const c = subjColor(x.subject); return (
+                    <div key={x.subject} style={{ fontSize: 13.5 }}><b style={{ color: c.tx }}>{x.subject}</b> &nbsp;<span className="muted" style={{ fontWeight: 600 }}>Grade :</span> <b>{x.grades.join(', ')}</b></div>
+                  ); })}
+                </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e9f0)', borderRadius: 8, padding: '6px 8px' }}>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: l.url ? 'inherit' : 'var(--muted,#8a93a3)' }}>{l.url || ('/b/' + l.token)}</span>
                   <button onClick={() => copy(l.url || ('/b/' + l.token), l.id)} title="Copy link" aria-label="Copy link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', borderRadius: 6, padding: '4px 8px', color: copied === l.id ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12 }}>
@@ -182,7 +169,8 @@ export function BookingLinks() {
                   {canManage && <button onClick={() => setActive(l.id, l.is_active)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '5px 10px', marginLeft: 'auto', color: l.is_active ? 'var(--coral,#c0392b)' : 'var(--good,#0f9d6b)' }}>{l.is_active ? 'Revoke' : 'Activate'}</button>}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
