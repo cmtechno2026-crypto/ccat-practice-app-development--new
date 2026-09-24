@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { resolveEntitlement } from '../lib/entitlements.js';
 import { z } from 'zod';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
@@ -94,6 +95,8 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const sessions = await db.query(`select se.id, se.mode, se.state, se.started_at, se.terminal_at, r.score_correct, r.score_total, r.xp_awarded
         from ccat.sessions se left join ccat.session_results r on r.session_id=se.id where se.student_id=$1 order by se.started_at desc limit 8`, [id]);
     const consents = await db.query(`select policy_version, created_at from ccat.consents where student_id=$1 order by created_at desc`, [id]);
+    let membership_tier: string | null = null;
+    try { membership_tier = (await resolveEntitlement(db, id)).tier; } catch { membership_tier = null; }
     const breakGlass = await db.query(`select r.id, r.platform, r.device_hash, r.verification_note, r.reference, r.created_at,
         (select display_name from ccat.admin_profiles ap where ap.id=r.requested_by) requested_by
         from ccat.student_break_glass_requests r where r.student_id=$1 and r.status='pending' order by r.created_at desc`, [id]);
@@ -120,6 +123,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
       grade_number: st.grade_number, grade_name: st.grade_name, status: st.status, version: st.version,
       age_years: deriveAgeYears(st.birth_month, st.birth_year), birth_month: st.birth_month, birth_year: st.birth_year,
       timezone: st.timezone, xp_total: Number(st.cached_xp_total), coins: Number(st.cached_coin_balance),
+      membership_tier,
       guardians: guardians.rows, devices: devices.rows, status_history: history.rows,
       readiness: readiness.rows[0] ?? null, progress: progress.rows[0] ?? null,
       recent_sessions: sessions.rows, consents: consents.rows, streak,

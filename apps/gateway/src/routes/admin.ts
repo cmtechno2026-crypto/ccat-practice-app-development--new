@@ -224,7 +224,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     // Payments: attach each student's EFFECTIVE membership tier (primary guardian email + site default plan).
     // Flag-gated and fully defensive — any failure leaves tier null and never breaks the directory.
     let pay: { dp: Awaited<ReturnType<typeof loadDefaultPlan>>; byEmail: Map<string, string> } | null = null;
-    if (cfg.paymentsEnabled) {
+    if (true) { // compute the tier regardless of PAYMENTS_ENABLED so the teacher view always shows the plan
       try {
         const dp = await loadDefaultPlan(db);
         const emails = [...new Set(rows.map((r) => (r.guardian_email ? String(r.guardian_email).toLowerCase() : null)).filter(Boolean) as string[])];

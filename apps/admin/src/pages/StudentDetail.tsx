@@ -51,7 +51,7 @@ export function StudentDetail() {
       until: toDateInputIST(r?.effective?.current_period_end),
     });
   }).catch(() => { /* non-super or unavailable → free fallback */ });
-  useEffect(() => { loadMembership(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+  useEffect(() => { if (!hideContact) loadMembership(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox e={error} />;
@@ -59,6 +59,8 @@ export function StudentDetail() {
   // Membership panel — reads whatever the detail payload carries (membership/entitlement); falls back
   // to the free plan when the payments feature isn't wired on this environment yet.
   const TIER_LABEL: Record<string, string> = { free: 'Free plan', t50: '$49 · Practice', t250: '$99 · +Exam', t500: '$199 · All access' };
+  // Teachers see the plan by NAME only (no price, no billing source/expiry).
+  const TIER_WORD: Record<string, string> = { free: 'Free', t50: 'Standard', t250: 'Plus', t500: 'Premium' };
   const TIER_FULL: Record<string, string> = {
     free: 'free — demo sets only',
     t50: '$49 (Standard) — all practice (Exam/Combine locked)',
@@ -68,7 +70,7 @@ export function StudentDetail() {
   const REASON_LABEL: Record<string, string> = { comp: 'Comp (free access)', paid: 'Paid', sale: 'Sale', discount: 'Discount', trial: 'Trial', other: 'Other' };
   const eff = membership?.effective;
   const memItem = membership?.item;
-  const effTier = eff?.tier || 'free';
+  const effTier = (hideContact ? (data?.membership_tier as string | undefined) : eff?.tier) || 'free';
   const planLabel = TIER_LABEL[effTier] || effTier;
   const memStatus = memItem?.status || (effTier === 'free' ? 'Free' : 'Active');
   const memRenews = eff?.current_period_end || null;
@@ -210,10 +212,10 @@ export function StudentDetail() {
         <span className="sdm-badge">⭐</span>
         <div className="sdm-info">
           <div className="sdm-l">Membership</div>
-          <div className="sdm-v">{planLabel}</div>
+          <div className="sdm-v">{hideContact ? (TIER_WORD[effTier] || 'Free') : planLabel}</div>
           <div className="sdm-sub">
             <span style={{ color: String(memStatus).toLowerCase() === 'active' ? 'var(--green)' : undefined, fontWeight: 700 }}>{memStatus}</span>
-            {memSource ? ` · source ${memSource}` : ''} · {memRenews ? `expires ${new Date(memRenews).toLocaleDateString()}` : 'no expiry'}
+            {!hideContact && (<>{memSource ? ` · source ${memSource}` : ''} · {memRenews ? `expires ${new Date(memRenews).toLocaleDateString()}` : 'no expiry'}</>)}
           </div>
         </div>
         {can('config.global') ? (

@@ -9,6 +9,9 @@ import { NOTIF_META } from '../components/Layout';
 // Membership tier label for the directory column (Payments). Shown only when VITE_PAYMENTS_ENABLED.
 const tierLabel = (t?: string | null) =>
   t === 't50' ? '$49' : t === 't250' ? '$99' : t === 't500' ? '$199' : t === 'free' ? 'Free' : '—';
+// Teacher view shows the plan by NAME (no price): Standard / Plus / Premium.
+const TIER_WORD: Record<string, string> = { free: 'Free', t50: 'Standard', t250: 'Plus', t500: 'Premium' };
+const tierWord = (t?: string | null) => (t && TIER_WORD[t]) || '—';
 
 // Row-tint per pending-request kind (paired with the left colour bar + dots). Colours match the
 // notification bell (NOTIF_META) so the directory and the bell read as one system.
@@ -103,7 +106,7 @@ const SORTS = [
 // Teacher login: a slimmed-down directory — fewer sort options, a fixed column set (no tier / contact),
 // and no bulk tools. Order here is the order shown in the Sort menu.
 const TEACHER_SORTS = ['grade', 'username', 'created', 'readiness'];
-const TEACHER_COLS = new Set(['grade', 'readiness', 'progress', 'devices']);
+const TEACHER_COLS = new Set(['grade', 'tier', 'readiness', 'progress', 'devices']); // teachers always see the plan (as a word)
 
 function loadCols(): Set<string> {
   try {
@@ -348,7 +351,7 @@ export function Students() {
               </th>}
               <th>Student</th>
               {colOn('grade') && <th>Grade &amp; status</th>}
-              {colOn('tier') && <th>Tier</th>}
+              {colOn('tier') && <th>{isTeacher ? 'Plan' : 'Tier'}</th>}
               {colOn('readiness') && <th>Readiness</th>}
               {colOn('progress') && <th>Progress</th>}
               {colOn('email') && !isTeacher && <th>Parent email</th>}
@@ -391,7 +394,7 @@ export function Students() {
                   </div>
                 </td>
                 {colOn('grade') && <td><div className="gradestk"><div className="g">Grade {r.grade_number}</div><StatusChip s={r.display_status} /></div></td>}
-                {colOn('tier') && <td>{r.membership_tier ? <span className="tag">{tierLabel(r.membership_tier)}</span> : <span className="muted">—</span>}</td>}
+                {colOn('tier') && <td>{r.membership_tier ? <span className="tag">{isTeacher ? tierWord(r.membership_tier) : tierLabel(r.membership_tier)}</span> : <span className="muted">—</span>}</td>}
                 {colOn('readiness') && <td><Readiness pct={r.readiness_pct} band={r.readiness_band} insufficient={r.readiness_insufficient} /></td>}
                 {colOn('progress') && <td><div className="progx"><span className="xp tabnum">{r.xp_total.toLocaleString()} XP</span><div className="sub tabnum">🪙 {r.coins}{r.streak_current > 0 ? ` · 🔥 ${r.streak_current}d` : ''} · {r.sets_completed ?? 0} sets</div></div></td>}
                 {colOn('email') && !isTeacher && <td>{r.guardian_email || <span className="muted">—</span>}</td>}
