@@ -126,12 +126,14 @@ export function BookingRequests() {
               {sortedRows.map(r => {
                 const pend = r.status === 'pending';
                 const chosenSet = chosenFor(r);
+                const teacherNames = [...new Set(r.slots.map(s => s.teacher_name).filter(Boolean))];
                 const allIds = r.slots.map(s => s.slot_id);
                 return (
                   <div key={r.id} style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 14 }}>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 800, fontSize: 16 }}>{r.parent_name}</span>
                       {r.student_name && <span style={{ fontSize: 13 }} className="muted">for <b style={{ color: 'var(--ink,inherit)' }}>{r.student_name}</b></span>}
+                      {teacherNames.length > 0 && <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'var(--brand-soft,#e7f0fc)', color: 'var(--brand,#2f6fd0)' }}>👩‍🏫 {teacherNames.join(', ')}</span>}
                       {statusChip(r.status)}
                       <span className="muted" style={{ fontSize: 12, marginLeft: 'auto' }}>{new Date(r.created_at).toLocaleString()}</span>
                     </div>
@@ -145,7 +147,7 @@ export function BookingRequests() {
                           {pend && canManage && <input type="checkbox" checked={chosenSet.has(s.slot_id)} onChange={() => pick(r.id, s.slot_id, allIds)} />}
                           <span style={{ fontWeight: 800, minWidth: 34 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</span>
                           <span style={{ fontWeight: 700 }}>{s.start_time}–{s.end_time}</span>
-                          <span className="muted" style={{ fontSize: 12.5 }}>{s.teacher_name} · {s.mode}</span>
+                          <span className="muted" style={{ fontSize: 12.5 }}>{teacherNames.length > 1 ? `${s.teacher_name} · ${s.mode}` : s.mode}</span>
                           {s.status === 'booked' && s.outcome !== 'approved' && <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--amber,#b8860b)' }}>SLOT TAKEN</span>}
                           {s.outcome && s.outcome !== 'pending' && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: '#666' }}>{s.outcome}</span>}
                         </label>
