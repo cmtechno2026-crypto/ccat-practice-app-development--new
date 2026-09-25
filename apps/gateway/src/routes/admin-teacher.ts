@@ -565,6 +565,30 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { status: 'rejected' };
   });
 
+  // Accept / decline a request ON BEHALF of the teacher (admin override, when the teacher hasn't
+  // acted in the teacher app). Sets teacher_status only — booking still happens via approve.
+  app.post('/v1/admin/teacher/booking-requests/:id/teacher-decision/:decision', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const { id: reqId, decision } = req.params as { id: string; decision: string };
+    const map: Record<string, string> = { accept: 'accepted', decline: 'declined' };
+    const teacherStatus = map[decision];
+    if (!teacherStatus) throw Errors.validation('Decision must be accept or decline');
+    const upd = await tdb().query(
+      `update public.ta_booking_requests
+          set teacher_status = $2, teacher_decided_at = now()
+        where id = $1 and status = 'pending'
+        returning id`, [reqId, teacherStatus]);
+    if (upd.rows.length === 0) throw Errors.notFound('Pending booking request not found');
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin','teacher.booking_request.teacher_decision','ta_booking_request',$2,$3)`,
+        [req.admin!.adminId, reqId, JSON.stringify({ teacher_status: teacherStatus, on_behalf: true })]);
+    } catch { /* best-effort */ }
+    return { status: teacherStatus };
+  });
+
   // ---- Teacher LEAVE requests. Teachers submit leave (date range + reason) in the TeachTime app; an
   // admin approves/rejects here. An APPROVED leave hides that teacher's availability for the range. ----
   app.get('/v1/admin/teacher/leave-requests', { preHandler: [authenticateAdmin] }, async (req) => {

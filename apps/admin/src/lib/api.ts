@@ -113,6 +113,7 @@ export const api = {
   teacherApproveRequest: (id: string, slot_ids?: string[]) => req<{ status: string; approved: number; taken: number; rejected: number }>('POST', `/v1/admin/teacher/booking-requests/${id}/approve`, slot_ids ? { slot_ids } : {}),
   teacherRejectRequest: (id: string, reason?: string) => req<{ status: string }>('POST', `/v1/admin/teacher/booking-requests/${id}/reject`, reason ? { reason } : {}),
   teacherLeaveRequests: (status?: string) => req<{ requests: any[] }>('GET', `/v1/admin/teacher/leave-requests${status && status !== 'all' ? '?status=' + encodeURIComponent(status) : ''}`),
+  teacherSetTeacherDecision: (id: string, decision: 'accept' | 'decline') => req<{ status: string }>('POST', `/v1/admin/teacher/booking-requests/${id}/teacher-decision/${decision}`, {}),
   teacherDecideLeave: (id: string, decision: 'approve' | 'reject') => req<{ id: string; status: string }>('POST', `/v1/admin/teacher/leave-requests/${id}/${decision}`, {}),
   teachers: () => req<{ teachers: any[] }>('GET', '/v1/admin/teachers'),
   createTeacher: (b: { display_name: string; email: string; temp_password?: string }) => req<{ id: string; temp_password: string; note: string }>('POST', '/v1/admin/teachers', b),
