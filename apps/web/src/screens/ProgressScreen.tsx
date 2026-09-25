@@ -68,21 +68,26 @@ function TimeChart({ points }: { points: { date: string; minutes: number }[] }) 
   const plotW = W - L - R, plotH = H - T - B;
   const maxMin = Math.max(...points.map((p) => p.minutes), 1);
   const maxHours = Math.max(1, Math.ceil(maxMin / 60));
-  const maxScale = maxHours * 60;
+  // ~4–5 ROUNDED y-ticks instead of one gridline per hour (which looked cramped once the max hit 10h+).
+  // Pick a nice step (1/2/5/10/…) so the axis reads 0, 5h, 10h, 15h, 20h rather than 0hr…19hr.
+  const rawStep = maxHours / 4;
+  const step = [1, 2, 5, 10, 20, 25, 50, 100].find((s) => s >= rawStep) ?? Math.ceil(rawStep);
+  const topH = Math.ceil(maxHours / step) * step;   // round the axis top up to a whole step
+  const maxScale = topH * 60;
   const xAt = (i: number) => L + (points.length > 1 ? (plotW * i) / (points.length - 1) : plotW / 2);
   const yAt = (min: number) => T + plotH * (1 - min / maxScale);
   const coords = points.map((p, i) => [xAt(i), yAt(p.minutes)] as const);
   const line = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   const area = `${line} L${coords[coords.length - 1]![0].toFixed(1)},${(T + plotH).toFixed(1)} L${coords[0]![0].toFixed(1)},${(T + plotH).toFixed(1)} Z`;
-  const hourLines = Array.from({ length: maxHours + 1 }, (_, h) => h);
+  const ticks = Array.from({ length: Math.floor(topH / step) + 1 }, (_, i) => i * step);
   const stepLbl = Math.max(1, Math.ceil(points.length / 6));
   return (
     <svg className="time-chart" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Practice time per day">
-      {hourLines.map((h) => { const y = yAt(h * 60); return (
-        <g key={h}><line x1={L} y1={y} x2={W - R} y2={y} stroke="var(--line)" strokeWidth={1} /><text x={L - 6} y={y + 3} textAnchor="end" className="tc-axis">{h}hr</text></g>); })}
+      {ticks.map((h) => { const y = yAt(h * 60); return (
+        <g key={h}><line x1={L} y1={y} x2={W - R} y2={y} stroke="var(--line)" strokeWidth={1} /><text x={L - 6} y={y + 3} textAnchor="end" className="tc-axis">{h === 0 ? '0' : `${h}h`}</text></g>); })}
+      {/* Smooth filled area (no per-point dots) — cleaner trend line. */}
       <path d={area} fill="var(--amber-tint, #fff3db)" opacity={0.6} stroke="none" />
       <path d={line} fill="none" stroke="var(--amber, #f6a821)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-      {coords.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={3.2} fill="#fff" stroke="var(--amber, #f6a821)" strokeWidth={2} />)}
       {points.map((p, i) => (i % stepLbl === 0 || i === points.length - 1) && (
         <text key={p.date} x={xAt(i)} y={H - 8} textAnchor="middle" className="tc-axis">{shortDate(p.date)}</text>))}
     </svg>

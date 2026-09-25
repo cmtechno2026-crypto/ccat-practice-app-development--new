@@ -44,6 +44,10 @@ const BATTERIES: { key: string; alt: string; name: string; glyph: string; emoji:
   { key: 'quantitative', alt: 'quantitative', name: 'Quantitative', glyph: '123', emoji: '🔢' },
   { key: 'non_verbal', alt: 'nonverbal', name: 'Non-Verbal', glyph: '◧▲', emoji: '🧩' },
 ];
+// Progress-panel ring accent per battery (Verbal blue, Quant green, Non-verbal purple).
+const BATTERY_ACCENT: Record<string, string> = {
+  verbal: '#2f74e6', quantitative: '#12a566', non_verbal: '#7c4dff', nonverbal: '#7c4dff', default: '#2f74e6',
+};
 
 export function HomeScreen() {
   const nav = useNavigate();
@@ -165,19 +169,19 @@ export function HomeScreen() {
                   <div className="eyebrow">📊 Progress &amp; Analytics</div>
                   <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>
                 </div>
-                <div className="hp-bat-row">
-                  {(batteries.length ? batteries : []).map((b) => {
+                <div className="hpg-row">
+                  {batteries.map((b) => {
                     const pct = b.accuracyPct ?? 0;
+                    const acc = BATTERY_ACCENT[b.key] ?? BATTERY_ACCENT.default;
                     return (
-                      <button key={b.key} className="hp-bat" onClick={() => nav('/progress')}>
-                        <div className="hp-bat-ring" style={{ ['--pct' as any]: `${pct}%` }}>
-                          <span>{b.accuracyPct == null ? '0%' : `${b.accuracyPct}%`}</span>
-                        </div>
-                        <div className="hp-bat-txt">
-                          <span className="hp-bat-n">{b.setsDone}</span>
-                          <span className="hp-bat-l">{b.name}</span>
-                          <span className="hp-bat-s">sets done</span>
-                        </div>
+                      <button key={b.key} className="hpg-card" style={{ ['--acc' as any]: acc }} onClick={() => nav('/progress')}>
+                        <span className="hpg-ring" style={{ ['--v' as any]: `${pct}%` }}>
+                          {b.accuracyPct == null ? '0%' : `${b.accuracyPct}%`}
+                        </span>
+                        <span className="hpg-txt">
+                          <span className="hpg-frac">{b.setsDone}<span className="den"> / {b.setsTotal}</span></span>
+                          <span className="hpg-nm">{b.name} sets</span>
+                        </span>
                       </button>
                     );
                   })}
