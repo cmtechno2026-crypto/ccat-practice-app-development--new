@@ -38,6 +38,7 @@ function slotGrades(s: Slot) {
 }
 function gkey(s: Slot) { const g = slotGrades(s); return (g.lo === 1 && g.hi === 12) ? 'all' : (g.lo === g.hi ? String(g.lo) : (g.lo + '-' + g.hi)); }
 function gradeShort(s: Slot) { const g = slotGrades(s); if (g.lo === 1 && g.hi === 12) return ''; return g.lo === g.hi ? ('G' + g.lo) : ('G' + g.lo + '-' + g.hi); }
+function tzLabel(z: string) { return (({ EST: 'ET', PST: 'PT', CST: 'CT', MST: 'MT', IST: 'IST' } as Record<string, string>)[z]) || z || ''; }
 function comboColor(subject: string, grade: string) {
   const k = String(subject || '').toLowerCase().trim() + '|' + (grade || 'all');
   let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
@@ -221,7 +222,7 @@ export function TeacherDirectory() {
             <tbody>
               {rowKeys.map(rk => (
                 <tr key={rk}>
-                  <td className="cm-wg-tl">{rowMap.get(rk)!.label}{tz ? <span className="cm-wg-tz"> {tz}</span> : null}</td>
+                  <td className="cm-wg-tl">{rowMap.get(rk)!.label}{tz ? <span className="cm-wg-tz"> {tzLabel(tz)}</span> : null}</td>
                   {WEEK_FULL.map(d => {
                     const s = cell[d + '|' + rk];
                     if (!s) return <td key={d}><div className="cm-wg-empty">·</div></td>;
@@ -243,7 +244,7 @@ export function TeacherDirectory() {
             </tbody>
           </table>
         </div>
-        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk" /> Booked<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tz : ''}</div>
+        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk" /> Booked<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tzLabel(tz) : ''}</div>
         {renderPopover(id)}
       </>
     );
