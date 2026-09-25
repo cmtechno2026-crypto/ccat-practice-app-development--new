@@ -158,7 +158,7 @@ export function BookingRequests() {
         </div>
         {r.status === 'pending' && canManage && (
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            {r.teacher_status === 'pending' && <button onClick={() => acceptOnBehalf(r)} disabled={busy === r.id} title="Accept on behalf of the teacher" style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--good,#0f9d6b)', color: '#fff', border: 'none', opacity: busy === r.id ? 0.6 : 1 }}>{busy === r.id ? 'Working…' : 'Accept for teacher'}</button>}
+            {r.teacher_status === 'pending' && <button onClick={() => acceptOnBehalf(r)} disabled={busy === r.id} title="Accept on behalf of the teacher" style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--good,#0f9d6b)', color: '#fff', border: 'none', opacity: busy === r.id ? 0.6 : 1 }}>{busy === r.id ? 'Working…' : 'Accept'}</button>}
             <button onClick={() => reject(r)} disabled={busy === r.id} style={{ ...inp, cursor: 'pointer', fontWeight: 800, color: 'var(--coral,#c0392b)' }}>{declined ? 'Close request' : 'Reject'}</button>
           </div>
         )}
