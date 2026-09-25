@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
@@ -25,6 +25,15 @@ function subjColor(subject: string) { const k = String(subject || '').toLowerCas
 const AV_GRADS = ['linear-gradient(135deg,#2f6fd0,#1e4e9e)', 'linear-gradient(135deg,#7c3aed,#5b21b6)', 'linear-gradient(135deg,#0f766e,#0b5a54)', 'linear-gradient(135deg,#d4620e,#b45309)', 'linear-gradient(135deg,#be123c,#9d174d)'];
 function avGrad(name: string) { const k = String(name || ''); let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0; return AV_GRADS[h % AV_GRADS.length]; }
 function initials(n: string) { return (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'; }
+// Parse a teacher subjects[] entry like "Math (Grade 10)" into { subject, grade }.
+function parseTeacherCombos(subjects: string[] | undefined): { subject: string; grade: number }[] {
+  const out: { subject: string; grade: number }[] = [];
+  (subjects || []).forEach(raw => {
+    const m = /^(.*?)\s*\(\s*Grade\s*(\d{1,2})\s*\)\s*$/i.exec(String(raw || ''));
+    if (m) { const sub = (m[1] || '').trim(); const g = Number(m[2]); if (sub && g >= 1 && g <= 12) out.push({ subject: sub, grade: g }); }
+  });
+  return out;
+}
 
 export function BookingLinks() {
   const { can } = useAuth();
@@ -42,6 +51,18 @@ export function BookingLinks() {
   const [preview, setPreview] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState('');
+  const [fSearch, setFSearch] = useState('');
+  const [fSubject, setFSubject] = useState('');
+  const [fGrade, setFGrade] = useState('');
+  const teacherMeta = useMemo(() => teachers.map(t => ({ ...t, combos: parseTeacherCombos(t.subjects) })), [teachers]);
+  const allSubjects = useMemo(() => [...new Set(teacherMeta.flatMap(t => t.combos.map(c => c.subject)))].sort(), [teacherMeta]);
+  const allGrades = useMemo(() => [...new Set(teacherMeta.flatMap(t => t.combos.map(c => c.grade)))].sort((a, b) => a - b), [teacherMeta]);
+  const shownTeachers = useMemo(() => teacherMeta.filter(t => {
+    if (fSearch && !((t.name || '').toLowerCase().includes(fSearch.toLowerCase()) || (t.email || '').toLowerCase().includes(fSearch.toLowerCase()))) return false;
+    if (fSubject && !t.combos.some(c => c.subject === fSubject)) return false;
+    if (fGrade && !t.combos.some(c => String(c.grade) === fGrade)) return false;
+    return true;
+  }), [teacherMeta, fSearch, fSubject, fGrade]);
 
   const loadLinks = () => { setLoading(true); api.teacherBookingLinks(filter).then(r => setLinks(r.links)).catch(e => setErr(e.message)).finally(() => setLoading(false)); };
   useEffect(() => { api.teacherTeachers().then(r => setTeachers(r.teachers)).catch(() => {}); }, []);
@@ -95,10 +116,30 @@ export function BookingLinks() {
           <div style={{ display: 'grid', gap: 12 }}>
             <div>
               <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Teachers ({sel.size} selected) — the link covers every grade &amp; subject they teach</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 150, overflow: 'auto' }}>
-                {teachers.length === 0 ? <span className="muted">No teachers yet.</span> : teachers.map(t => (
-                  <button key={t.id} onClick={() => toggle(t.id)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, border: sel.has(t.id) ? '2px solid var(--brand,#2f6fd0)' : inp.border, background: sel.has(t.id) ? 'var(--brand-soft,#e7f0fc)' : inp.background }}>{t.name}</button>
-                ))}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                <input value={fSearch} onChange={e => setFSearch(e.target.value)} placeholder="Search name or email…" style={{ ...inp, minWidth: 180, flex: '1 1 180px' }} />
+                <select value={fSubject} onChange={e => setFSubject(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+                  <option value="">All subjects</option>
+                  {allSubjects.map(sName => <option key={sName} value={sName}>{sName}</option>)}
+                </select>
+                <select value={fGrade} onChange={e => setFGrade(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+                  <option value="">All grades</option>
+                  {allGrades.map(g => <option key={g} value={String(g)}>Grade {g}</option>)}
+                </select>
+                {(fSearch || fSubject || fGrade) && <button onClick={() => { setFSearch(''); setFSubject(''); setFGrade(''); }} style={{ ...inp, cursor: 'pointer', fontWeight: 700 }}>Clear</button>}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 220, overflow: 'auto' }}>
+                {teachers.length === 0 ? <span className="muted">No teachers yet.</span>
+                  : shownTeachers.length === 0 ? <span className="muted" style={{ fontSize: 13 }}>No teachers match the filter.</span>
+                  : shownTeachers.map(t => {
+                    const subs = [...new Set(t.combos.map(c => c.subject))];
+                    return (
+                    <button key={t.id} onClick={() => toggle(t.id)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, border: sel.has(t.id) ? '2px solid var(--brand,#2f6fd0)' : inp.border, background: sel.has(t.id) ? 'var(--brand-soft,#e7f0fc)' : inp.background }}>
+                      <span>{t.name}</span>
+                      {subs.length > 0 && <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{subs.map(sName => { const c = subjColor(sName); return <span key={sName} style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '1px 6px', borderRadius: 6, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>{sName}</span>; })}</span>}
+                    </button>
+                    );
+                  })}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>

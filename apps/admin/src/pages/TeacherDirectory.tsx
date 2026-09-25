@@ -78,6 +78,10 @@ export function TeacherDirectory() {
   const [pErr, setPErr] = useState('');
   const [allReqs, setAllReqs] = useState<Req[] | null>(null);
   const [actingReq, setActingReq] = useState<string | null>(null);
+  const [fSubject, setFSubject] = useState('');
+  const [fGrade, setFGrade] = useState('');
+  const [links, setLinks] = useState<any[]>([]);
+  const [copied, setCopied] = useState(false);
   const studentRef = useRef<HTMLInputElement>(null);
   const { can } = useAuth();
   const canManage = can('teacher.slots.manage');
@@ -85,6 +89,7 @@ export function TeacherDirectory() {
   const load = (q: string) => { setErr(''); api.teacherTeachers(q).then(r => setRows(r.teachers || [])).catch(e => setErr((e as Error).message || 'Failed to load')); };
   const loadReqs = () => { api.teacherBookingRequests({ status: 'all' }).then(r => setAllReqs((r.requests || []) as Req[])).catch(() => setAllReqs([])); };
   useEffect(() => { load(''); loadReqs(); }, []);
+  useEffect(() => { api.teacherBookingLinks().then(r => setLinks(r.links || [])).catch(() => {}); }, []);
 
   const ensureSlots = async (id: string) => {
     if (slots[id]) return;
@@ -137,43 +142,33 @@ export function TeacherDirectory() {
     finally { setActingReq(null); }
   };
 
+  const copyLink = async (url: string) => { try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ } };
   const initials = (n: string) => (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   const inp = { padding: '7px 9px', border: '1px solid var(--line,#d7dce8)', borderRadius: 8, background: 'var(--card2,#f7f9fc)', color: 'inherit', width: '100%' } as React.CSSProperties;
 
-  const renderSlotCard = (id: string, s: Slot) => {
+  const slotById = (id: string, sid: string) => (slots[id] || []).find(x => x.id === sid) || null;
+  const renderPopover = (id: string) => {
+    if (!popSlot) return null;
+    const s = slotById(id, popSlot);
+    if (!s) return null;
     const booked = s.status === 'booked';
     const hasStudent = booked && !!(s.booked_student && s.booked_student.trim());
-    const blocked = booked && !hasStudent;
     return (
-      <div key={s.id} className="cm-slot" style={{ position: 'relative', background: hasStudent ? 'var(--coral-soft,#fdecea)' : blocked ? 'var(--card2,#eef1f6)' : 'var(--card,#fff)', border: '1px solid ' + (hasStudent ? 'var(--coral-line,#f4c6c0)' : blocked ? 'var(--line,#d9dfea)' : 'var(--line,#e6e6ef)'), borderRadius: 10, padding: '8px 10px', marginBottom: 8 }}>
-        <div style={{ fontWeight: 800, fontSize: 14 }}>{s.start_time}–{s.end_time}<span style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted,#64748b)', letterSpacing: '.04em', marginLeft: 5 }}>{s.timezone}</span></div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 7px', borderRadius: 20, background: hasStudent ? '#fdecea' : blocked ? '#e7ebf2' : '#e2f6f3', color: hasStudent ? '#c0392b' : blocked ? '#5c6675' : '#0f766e' }}>{hasStudent ? 'Booked' : blocked ? 'Unavailable' : 'Available'}</span>
-          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted,#64748b)' }}>{s.mode}</span>
-        </div>
-        {booked && s.booked_student && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--teal-soft,#dbf1ee)', color: 'var(--teal-ink,#0b5a54)', borderRadius: 999, padding: '2px 8px 2px 3px', fontWeight: 700, fontSize: 11 }}>
-              <span style={{ width: 17, height: 17, borderRadius: '50%', background: 'var(--teal,#0f766e)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 800 }}>{initials(s.booked_student)}</span>
-              {s.booked_student}
-            </span>
-            {s.booked_by && <span className="muted" style={{ fontSize: 10 }}>· by {s.booked_by}</span>}
-          </div>
-        )}
-        {booked && s.booked_note && <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>📝 {s.booked_note}</div>}
-        {s.notes && <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>📘 {s.notes}</div>}
-        {canManage && (
-          <div style={{ marginTop: 8 }}>
-            {booked
-              ? <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 700, padding: '6px', borderRadius: 7, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{hasStudent ? 'Unbook' : 'Make available'}</button>
-              : <button onClick={() => openPopover(s.id)} disabled={savingSlot === s.id} style={{ width: '100%', fontSize: 12, fontWeight: 800, padding: '6px', borderRadius: 7, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer' }}>Book</button>}
-          </div>
-        )}
-        {popSlot === s.id && (
-          <>
-            <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
-            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 290, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)' }}>Book · {DAY_ABBR[s.day_of_week] || s.day_of_week} {s.start_time}</div>
+      <>
+        <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
+        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 300, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject}</div>
+          {booked ? (
+            <>
+              {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
+              {s.booked_note && <div className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</div>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Working…' : (hasStudent ? 'Unbook' : 'Make available')}</button>
+                <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Close</button>
+              </div>
+            </>
+          ) : (
+            <>
               <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}
                 onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
               <input value={pNote} onChange={e => setPNote(e.target.value)} placeholder="Note (optional)" style={inp}
@@ -183,13 +178,12 @@ export function TeacherDirectory() {
                 <button onClick={() => book(id, s)} disabled={savingSlot === s.id} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Booking…' : 'Book'}</button>
                 <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Esc</button>
               </div>
-            </div>
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
+      </>
     );
   };
-
   const renderSlots = (id: string) => {
     if (loadingId === id && !slots[id]) return <div className="muted" style={{ padding: '10px 0' }}>Loading slots…</div>;
     if (slotErr[id]) return <div className="empty" style={{ padding: '10px 0' }}>{slotErr[id]}</div>;
@@ -199,16 +193,19 @@ export function TeacherDirectory() {
     const comboMap = new Map<string, { key: string; label: string; count: number }>();
     list.forEach(s => { const key = s.subject + '|' + gkey(s); const gs = gradeShort(s); const label = s.subject + (gs ? ' · ' + gs : ''); const e = comboMap.get(key); if (e) e.count++; else comboMap.set(key, { key, label, count: 1 }); });
     const combos = [...comboMap.values()].sort((a, b) => a.label.localeCompare(b.label));
-    const sel = comboSel[id] || 'all';
-    const filtered = sel === 'all' ? list : list.filter(s => (s.subject + '|' + gkey(s)) === sel);
-    const byDay: Record<string, Slot[]> = {}; WEEK_FULL.forEach(d => { byDay[d] = []; });
-    filtered.forEach(s => { (byDay[s.day_of_week] || (byDay[s.day_of_week] = [])).push(s); });
+    const selCombo = comboSel[id] || 'all';
+    const filtered = selCombo === 'all' ? list : list.filter(s => (s.subject + '|' + gkey(s)) === selCombo);
+    const tz = (filtered.find(s => s.timezone) || {} as any).timezone || '';
+    const rowMap = new Map<string, { label: string; key: number }>();
+    const cell: Record<string, Slot> = {};
+    filtered.forEach(s => { const range = s.start_time + '–' + s.end_time; if (!rowMap.has(range)) rowMap.set(range, { label: range, key: timeMin(s.start_time) }); cell[s.day_of_week + '|' + range] = s; });
+    const rowKeys = [...rowMap.keys()].sort((a, b) => rowMap.get(a)!.key - rowMap.get(b)!.key);
     return (
       <>
         {combos.length > 1 && (
           <div style={{ display: 'flex', gap: 2, borderBottom: '2px solid var(--line,#e6e6ef)', flexWrap: 'wrap', marginBottom: 4 }}>
             {[{ key: 'all', label: 'All', count: list.length }, ...combos].map(c => {
-              const on = sel === c.key;
+              const on = selCombo === c.key;
               return (
                 <button key={c.key} onClick={() => setComboSel(m => ({ ...m, [id]: c.key }))}
                   style={{ cursor: 'pointer', fontSize: 13, fontWeight: 800, padding: '8px 12px', background: 'transparent', border: 0, borderBottom: '3px solid ' + (on ? 'var(--brand,#2f6fd0)' : 'transparent'), color: on ? 'var(--brand,#2f6fd0)' : 'var(--muted,#64748b)', marginBottom: -2 }}>
@@ -218,28 +215,39 @@ export function TeacherDirectory() {
             })}
           </div>
         )}
-        <div className="cm-week">
-        {WEEK_FULL.map(day => {
-          const items = (byDay[day] || []).slice().sort((a, b) => timeMin(a.start_time) - timeMin(b.start_time));
-          const abbr = DAY_ABBR[day] || day.slice(0, 3);
-          if (items.length === 0) return (
-            <div key={day} className="cm-wday cm-empty">
-              <div style={wdhStyle}><span>{abbr}</span></div>
-              <div style={{ color: 'var(--muted,#64748b)', textAlign: 'center', padding: '12px 0' }}>—</div>
-            </div>
-          );
-          return (
-            <div key={day} className="cm-wday">
-              <div style={wdhStyle}><span>{abbr}</span><span style={countBadge}>{items.length}</span></div>
-              {items.map(s => renderSlotCard(id, s))}
-            </div>
-          );
-        })}
+        <div className="cm-wg-wrap">
+          <table className="cm-wg">
+            <thead><tr><th></th>{WEEK_FULL.map(d => <th key={d}>{DAY_ABBR[d]}</th>)}</tr></thead>
+            <tbody>
+              {rowKeys.map(rk => (
+                <tr key={rk}>
+                  <td className="cm-wg-tl">{rowMap.get(rk)!.label}{tz ? <span className="cm-wg-tz"> {tz}</span> : null}</td>
+                  {WEEK_FULL.map(d => {
+                    const s = cell[d + '|' + rk];
+                    if (!s) return <td key={d}><div className="cm-wg-empty">·</div></td>;
+                    const booked = s.status === 'booked';
+                    const hasStudent = booked && !!(s.booked_student && s.booked_student.trim());
+                    const cls = hasStudent ? 'bk' : booked ? 'un' : 'av';
+                    const lab = hasStudent ? 'Booked' : booked ? 'Unavailable' : 'Available';
+                    return (
+                      <td key={d}>
+                        <div className={'cm-wg-cell ' + cls} onClick={canManage ? () => openPopover(s.id) : undefined} title={s.subject + (gradeShort(s) ? ' · ' + gradeShort(s) : '')} style={{ cursor: canManage ? 'pointer' : 'default' }}>
+                          <span>{lab}</span>
+                          {hasStudent && <span className="cm-wg-who">{s.booked_student}</span>}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk" /> Booked<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tz : ''}</div>
+        {renderPopover(id)}
       </>
     );
   };
-
   const tstatusChip = (ts: string) => {
     const map: Record<string, [string, string, string]> = {
       pending: ['#fbf0d5', '#8a6d1b', 'Awaiting teacher'], accepted: ['var(--brand-soft,#e7f0fc)', 'var(--brand,#2f6fd0)', 'Teacher accepted'], declined: ['#e7ebf2', '#5c6675', 'Teacher declined'],
@@ -302,7 +310,17 @@ export function TeacherDirectory() {
     );
   };
 
-  const filteredRows = (rows || []).filter(t => { const q = search.trim().toLowerCase(); return !q || t.name.toLowerCase().includes(q) || t.email.toLowerCase().includes(q); });
+  const subjOpts = [...new Set((rows || []).flatMap(t => groupSubjects(t.subjects).map(g => g.subject)))].sort();
+  const gradeOpts = [...new Set((rows || []).flatMap(t => groupSubjects(t.subjects).flatMap(g => g.grades)))].sort((a, b) => a - b);
+  const filteredRows = (rows || []).filter(t => {
+    const q = search.trim().toLowerCase();
+    if (q && !(t.name.toLowerCase().includes(q) || t.email.toLowerCase().includes(q))) return false;
+    const gs = groupSubjects(t.subjects);
+    if (fSubject && !gs.some(g => g.subject === fSubject)) return false;
+    if (fGrade && !gs.some(g => g.grades.includes(Number(fGrade)))) return false;
+    return true;
+  });
+  const teacherLink = (rows && selected) ? (links.find((l: any) => Array.isArray(l.teacher_ids) && l.teacher_ids.includes(selected) && l.status === 'active') || links.find((l: any) => Array.isArray(l.teacher_ids) && l.teacher_ids.includes(selected)) || null) : null;
   const sel = rows && selected ? rows.find(t => t.id === selected) : null;
 
   return (
@@ -317,6 +335,23 @@ export function TeacherDirectory() {
         .cm-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;padding:10px 0 0}
         .cm-wday{border:1px solid var(--line,#e6e6ef);border-radius:12px;padding:8px 8px 10px;min-height:88px}
         .cm-wday.cm-empty{opacity:.5}
+        .cm-wg-wrap{overflow-x:auto}
+        .cm-wg{border-collapse:separate;border-spacing:6px;width:100%;min-width:640px}
+        .cm-wg th{font-size:11px;color:var(--brand,#2f6fd0);text-transform:uppercase;letter-spacing:.04em;font-weight:800;text-align:center;padding:2px}
+        .cm-wg td{padding:0;vertical-align:top}
+        .cm-wg-tl{font-size:11px;color:var(--muted,#64748b);font-weight:700;white-space:nowrap;text-align:right;padding-right:6px}
+        .cm-wg-tz{font-size:9px;letter-spacing:.03em}
+        .cm-wg-cell{border-radius:10px;padding:8px 6px;font-size:11px;font-weight:800;text-align:center;border:1.5px solid;display:flex;flex-direction:column;gap:2px;align-items:center;justify-content:center;min-height:44px}
+        .cm-wg-cell.av{border-color:#0f766e;background:#e6f7f2;color:#0f766e}
+        .cm-wg-cell.bk{border-color:#b45309;color:#b45309;background:repeating-linear-gradient(45deg,#fbeeda,#fbeeda 6px,#fff6e9 6px,#fff6e9 12px)}
+        .cm-wg-cell.un{border-color:#c7ccd6;color:#6b7280;background:repeating-linear-gradient(45deg,#eef1f6,#eef1f6 6px,#f7f9fc 6px,#f7f9fc 12px)}
+        .cm-wg-who{font-size:10px;font-weight:700}
+        .cm-wg-empty{border:1.5px dashed var(--line,#e6e6ef);border-radius:10px;color:#c3ccda;text-align:center;padding:8px 6px;min-height:44px;display:flex;align-items:center;justify-content:center}
+        .cm-wg-legend{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted,#64748b);margin-top:8px;flex-wrap:wrap}
+        .cm-wg-sw{width:12px;height:12px;border-radius:3px;border:1.5px solid;display:inline-block}
+        .cm-wg-sw.av{border-color:#0f766e;background:#e6f7f2}
+        .cm-wg-sw.bk{border-color:#b45309;background:#fbeeda}
+        .cm-wg-sw.un{border-color:#c7ccd6;background:#eef1f6}
         @media(max-width:920px){
           .cm-md{grid-template-columns:1fr}
           .cm-week{grid-template-columns:1fr}
@@ -334,6 +369,16 @@ export function TeacherDirectory() {
           <div style={{ display: 'grid', gap: 10 }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or email…"
               style={{ padding: '8px 10px', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, background: 'var(--card,#fff)', color: 'inherit' }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <select value={fSubject} onChange={e => setFSubject(e.target.value)} style={{ flex: 1, padding: '7px 9px', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer' }}>
+                <option value="">All subjects</option>
+                {subjOpts.map(x => <option key={x} value={x}>{x}</option>)}
+              </select>
+              <select value={fGrade} onChange={e => setFGrade(e.target.value)} style={{ flex: 1, padding: '7px 9px', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer' }}>
+                <option value="">All grades</option>
+                {gradeOpts.map(g => <option key={g} value={String(g)}>Grade {g}</option>)}
+              </select>
+            </div>
             <div style={{ display: 'grid', gap: 8 }}>
               {filteredRows.length === 0 && <div className="muted" style={{ padding: 8 }}>No teachers found.</div>}
               {filteredRows.map((t, i) => {
@@ -374,6 +419,16 @@ export function TeacherDirectory() {
                     ); })}
                     {groupSubjects(sel.subjects).length === 0 && <span className="muted" style={{ fontSize: 12 }}>No subjects listed.</span>}
                   </div>
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 6px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Booking link</h4>
+                  {teacherLink ? (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e9f0)', borderRadius: 8, padding: '6px 8px' }}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: teacherLink.url ? 'inherit' : 'var(--muted,#8a93a3)' }}>{teacherLink.url || ('/b/' + teacherLink.token)}</span>
+                      <button onClick={() => copyLink(teacherLink.url || ('/b/' + teacherLink.token))} title="Copy link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', borderRadius: 6, padding: '4px 8px', color: copied ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12 }}>{copied ? 'Copied' : 'Copy'}</button>
+                    </div>
+                  ) : <div className="muted" style={{ fontSize: 12 }}>No active booking link — create one in Link Generator.</div>}
                 </div>
 
                 <div>

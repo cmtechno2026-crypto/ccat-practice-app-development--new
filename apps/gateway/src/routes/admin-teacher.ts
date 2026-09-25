@@ -565,4 +565,46 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { status: 'rejected' };
   });
 
+  // ---- Teacher LEAVE requests. Teachers submit leave (date range + reason) in the TeachTime app; an
+  // admin approves/rejects here. An APPROVED leave hides that teacher's availability for the range. ----
+  app.get('/v1/admin/teacher/leave-requests', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.directory');
+    requireSite(req, 'teacher');
+    const q = req.query as { status?: string };
+    const status = (q.status ?? 'all').trim();
+    const params: unknown[] = [];
+    let where = '';
+    if (status && status !== 'all') { params.push(status); where = 'where lr.status = $1'; }
+    const { rows } = await tdb().query(
+      `select lr.id, lr.teacher_id, t.name as teacher_name, t.email as teacher_email,
+              lr.start_date, lr.end_date, lr.reason, lr.status, lr.decided_by, lr.decided_at, lr.created_at
+         from public.ta_leave_requests lr
+         join public.ta_teachers t on t.id = lr.teacher_id
+         ${where}
+         order by lr.created_at desc
+         limit 500`, params);
+    return { requests: rows };
+  });
+
+  app.post('/v1/admin/teacher/leave-requests/:id/:decision', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const { id, decision } = req.params as { id: string; decision: string };
+    if (decision !== 'approve' && decision !== 'reject') throw Errors.validation('decision must be approve or reject');
+    const next = decision === 'approve' ? 'approved' : 'rejected';
+    const who = await adminDisplayName(req.admin!.adminId);
+    const { rows } = await tdb().query(
+      `update public.ta_leave_requests set status = $1, decided_by = $2, decided_at = now()
+        where id = $3 and status = 'pending'
+        returning id, status`, [next, who, id]);
+    if (!rows.length) throw Errors.validation('Leave request not found or already decided');
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin',$2,'ta_leave_request',$3,$4)`,
+        [req.admin!.adminId, 'teacher.leave.' + decision, id, JSON.stringify({ status: next })]);
+    } catch { /* audit best-effort */ }
+    return { id, status: next };
+  });
+
 }

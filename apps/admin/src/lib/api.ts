@@ -112,6 +112,8 @@ export const api = {
   teacherBookingRequests: (opts: { status?: string; link_id?: string; teacher_id?: string; teacher_status?: string } = {}) => { const p = new URLSearchParams(); if (opts.status) p.set('status', opts.status); if (opts.link_id) p.set('link_id', opts.link_id); if (opts.teacher_id) p.set('teacher_id', opts.teacher_id); if (opts.teacher_status) p.set('teacher_status', opts.teacher_status); const qs = p.toString(); return req<{ requests: any[] }>('GET', `/v1/admin/teacher/booking-requests${qs ? '?' + qs : ''}`); },
   teacherApproveRequest: (id: string, slot_ids?: string[]) => req<{ status: string; approved: number; taken: number; rejected: number }>('POST', `/v1/admin/teacher/booking-requests/${id}/approve`, slot_ids ? { slot_ids } : {}),
   teacherRejectRequest: (id: string, reason?: string) => req<{ status: string }>('POST', `/v1/admin/teacher/booking-requests/${id}/reject`, reason ? { reason } : {}),
+  teacherLeaveRequests: (status?: string) => req<{ requests: any[] }>('GET', `/v1/admin/teacher/leave-requests${status && status !== 'all' ? '?status=' + encodeURIComponent(status) : ''}`),
+  teacherDecideLeave: (id: string, decision: 'approve' | 'reject') => req<{ id: string; status: string }>('POST', `/v1/admin/teacher/leave-requests/${id}/${decision}`, {}),
   teachers: () => req<{ teachers: any[] }>('GET', '/v1/admin/teachers'),
   createTeacher: (b: { display_name: string; email: string; temp_password?: string }) => req<{ id: string; temp_password: string; note: string }>('POST', '/v1/admin/teachers', b),
   setTeacherStatus: (id: string, status: 'active' | 'disabled') => req<{ status: string }>('POST', `/v1/admin/teachers/${id}/status`, { status }),
