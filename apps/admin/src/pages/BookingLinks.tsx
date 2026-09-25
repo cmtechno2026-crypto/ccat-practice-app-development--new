@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 // (served by TeachTime at `${base}/b/<token>`). The link automatically covers EVERY grade+subject the
 // selected teacher(s) offer — the gateway fills the combos from ta_teachers.subjects, so there is no
 // per-combo picker here.
-interface TeacherRow { id: string; name: string; email: string; subjects: string[]; }
+interface TeacherRow { id: string; name: string; email: string; subjects: string[]; created_at?: string; }
 interface LinkRow {
   id: string; token: string; label: string | null; teacher_ids: string[]; grade: number; subject: string;
   combos: { subject: string; grade: number }[] | null;
@@ -54,15 +54,24 @@ export function BookingLinks() {
   const [fSearch, setFSearch] = useState('');
   const [fSubject, setFSubject] = useState('');
   const [fGrade, setFGrade] = useState('');
+  const [fSort, setFSort] = useState('newest');
   const teacherMeta = useMemo(() => teachers.map(t => ({ ...t, combos: parseTeacherCombos(t.subjects) })), [teachers]);
   const allSubjects = useMemo(() => [...new Set(teacherMeta.flatMap(t => t.combos.map(c => c.subject)))].sort(), [teacherMeta]);
   const allGrades = useMemo(() => [...new Set(teacherMeta.flatMap(t => t.combos.map(c => c.grade)))].sort((a, b) => a - b), [teacherMeta]);
-  const shownTeachers = useMemo(() => teacherMeta.filter(t => {
-    if (fSearch && !((t.name || '').toLowerCase().includes(fSearch.toLowerCase()) || (t.email || '').toLowerCase().includes(fSearch.toLowerCase()))) return false;
-    if (fSubject && !t.combos.some(c => c.subject === fSubject)) return false;
-    if (fGrade && !t.combos.some(c => String(c.grade) === fGrade)) return false;
-    return true;
-  }), [teacherMeta, fSearch, fSubject, fGrade]);
+  const shownTeachers = useMemo(() => {
+    const arr = teacherMeta.filter(t => {
+      if (fSearch && !((t.name || '').toLowerCase().includes(fSearch.toLowerCase()) || (t.email || '').toLowerCase().includes(fSearch.toLowerCase()))) return false;
+      if (fSubject && !t.combos.some(c => c.subject === fSubject)) return false;
+      if (fGrade && !t.combos.some(c => String(c.grade) === fGrade)) return false;
+      return true;
+    });
+    const minGrade = (t: typeof arr[number]) => t.combos.length ? Math.min(...t.combos.map(c => c.grade)) : 99;
+    const firstSubj = (t: typeof arr[number]) => [...new Set(t.combos.map(c => c.subject))].sort()[0] || '';
+    if (fSort === 'grade') arr.sort((a, b) => minGrade(a) - minGrade(b) || (a.name || '').localeCompare(b.name || ''));
+    else if (fSort === 'subject') arr.sort((a, b) => firstSubj(a).localeCompare(firstSubj(b)) || (a.name || '').localeCompare(b.name || ''));
+    else arr.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    return arr;
+  }, [teacherMeta, fSearch, fSubject, fGrade, fSort]);
 
   const loadLinks = () => { setLoading(true); api.teacherBookingLinks(filter).then(r => setLinks(r.links)).catch(e => setErr(e.message)).finally(() => setLoading(false)); };
   useEffect(() => { api.teacherTeachers().then(r => setTeachers(r.teachers)).catch(() => {}); }, []);
@@ -115,7 +124,10 @@ export function BookingLinks() {
           <h3 style={{ margin: '0 0 12px' }}>New booking link</h3>
           <div style={{ display: 'grid', gap: 12 }}>
             <div>
-              <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Teachers ({sel.size} selected) — the link covers every grade &amp; subject they teach</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 800, fontSize: 14 }}>Teachers</div>
+                <div className="muted" style={{ fontSize: 12 }}>{sel.size} selected — the link covers every grade &amp; subject they teach</div>
+              </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                 <input value={fSearch} onChange={e => setFSearch(e.target.value)} placeholder="Search name or email…" style={{ ...inp, minWidth: 180, flex: '1 1 180px' }} />
                 <select value={fSubject} onChange={e => setFSubject(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
@@ -125,6 +137,11 @@ export function BookingLinks() {
                 <select value={fGrade} onChange={e => setFGrade(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
                   <option value="">All grades</option>
                   {allGrades.map(g => <option key={g} value={String(g)}>Grade {g}</option>)}
+                </select>
+                <select value={fSort} onChange={e => setFSort(e.target.value)} title="Sort teachers" style={{ ...inp, cursor: 'pointer' }}>
+                  <option value="newest">Sort: Newest</option>
+                  <option value="grade">Sort: Grade</option>
+                  <option value="subject">Sort: Subject</option>
                 </select>
                 {(fSearch || fSubject || fGrade) && <button onClick={() => { setFSearch(''); setFSubject(''); setFGrade(''); }} style={{ ...inp, cursor: 'pointer', fontWeight: 700 }}>Clear</button>}
               </div>
