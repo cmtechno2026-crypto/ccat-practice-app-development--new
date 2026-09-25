@@ -973,3 +973,47 @@ p { line-height: 1.5; }
 /* Sidebar "to do" count badge on the Assignments item (dot in the collapsed rail; inline when expanded). */
 .snav-badge { position: absolute; right: -6px; top: -6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #E8A020; color: #fff; font-size: 10px; font-weight: 800; display: grid; place-items: center; line-height: 1; }
 .snav-badge-inline { margin-left: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #E8A020; color: #fff; font-size: 11px; font-weight: 800; display: inline-grid; place-items: center; vertical-align: middle; }
+
+/* ===== Home: Practice / Exam character-card panels (kid-friendly) ===== */
+.hpanel { border-radius: 18px; padding: 16px; margin-bottom: 14px; box-shadow: 0 12px 26px -22px rgba(20,36,77,.5); }
+.hpanel-prac { background: #eef5ff; border: 1px solid #d6e6fb; }
+.hpanel-exam { background: #fff6e6; border: 1px solid #f3e2b8; }
+.hpanel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; gap: 12px; }
+.hpanel-head h3 { margin: 0; font-size: 19px; font-weight: 800; }
+.hpanel-prac .hpanel-head h3 { color: #173a72; }
+.hpanel-exam .hpanel-head h3 { color: #8a5a06; }
+.hpanel-hint { color: #8a90a6; font-weight: 800; font-size: 12.5px; }
+.hchar-row { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+@media (max-width: 640px) { .hchar-row { grid-template-columns: 1fr; } }
+
+/* one battery card */
+.hchar { border: 0; cursor: pointer; text-align: center; color: #fff; border-radius: 18px; padding: 15px 12px 13px;
+  display: flex; flex-direction: column; align-items: center; gap: 0; transition: transform .12s ease, box-shadow .12s ease;
+  box-shadow: 0 10px 22px -14px rgba(20,36,77,.45); }
+.hchar:hover { transform: translateY(-2px); box-shadow: 0 16px 30px -16px rgba(20,36,77,.5); }
+.hchar:active { transform: translateY(0); }
+.hchar-badge { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; background: rgba(255,255,255,.22); margin-bottom: 8px; }
+.hchar-glyph { font-weight: 900; font-size: 22px; letter-spacing: -.5px; }
+.hchar-emoji { font-size: 28px; line-height: 1; }
+.hchar-name { font-weight: 800; font-size: 14.5px; }
+.hchar-ribbon { display: inline-block; font-size: 10.5px; font-weight: 900; background: rgba(255,255,255,.24);
+  border-radius: 999px; padding: 3px 10px; margin: 7px 0 11px; }
+.hchar-cta { border-radius: 999px; background: #fff; font-weight: 800; font-size: 12.5px; padding: 8px 0; width: 100%; }
+
+/* Practice = three shades of brand blue */
+.hchar-b1 { background: linear-gradient(160deg, #4f97f2, #2f74e6); }
+.hchar-b2 { background: linear-gradient(160deg, #2f74e6, #1a5eab); }
+.hchar-b3 { background: linear-gradient(160deg, #1a5eab, #0b3f80); }
+.hchar-b1 .hchar-cta { color: #2f74e6; }
+.hchar-b2 .hchar-cta { color: #1a5eab; }
+.hchar-b3 .hchar-cta { color: #0b3f80; }
+
+/* Exam = three shades of gold (lightest tile uses dark text for contrast) */
+.hchar-g1 { background: linear-gradient(160deg, #ffcf5c, #f2b431); color: #4a3400; }
+.hchar-g2 { background: linear-gradient(160deg, #f2b431, #e0980c); }
+.hchar-g3 { background: linear-gradient(160deg, #e0980c, #c07c00); }
+.hchar-g1 .hchar-badge { background: rgba(74,52,0,.16); }
+.hchar-g1 .hchar-ribbon { background: rgba(74,52,0,.16); }
+.hchar-g1 .hchar-cta { color: #b07c00; }
+.hchar-g2 .hchar-cta { color: #e0980c; }
+.hchar-g3 .hchar-cta { color: #c07c00; }

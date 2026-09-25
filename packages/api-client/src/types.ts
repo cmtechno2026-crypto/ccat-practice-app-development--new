@@ -36,6 +36,7 @@ export interface StudentProfile {
   active_avatar_stage_id: string | null; active_theme_id: string | null;
   current_avatar?: CurrentAvatar | null;  // resolved equipped avatar for consistent rendering everywhere
   is_preview?: boolean;   // synthetic preview/"cheat" account — clients show a Preview-mode banner
+  has_teacher?: boolean;  // a teacher is assigned to this student — gates the Assignment panel + nav in web
 }
 
 export interface Session {

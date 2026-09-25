@@ -56,14 +56,18 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
   const progressLocked = PAYMENTS_ENABLED && capsOf(entitlements, entitlementsLoaded).practice !== 'all';
   // Live "to do" count for the Assignments nav badge. Refetched on navigation (cheap endpoint) so the
   // badge drops after a child finishes an assigned set. Best-effort — a failure just hides the badge.
+  // Assignments are gated on the student having a teacher. No teacher → the nav item is locked and we
+  // don't fetch a count.
+  const hasTeacher = profile?.has_teacher === true;
   const [asgnTodo, setAsgnTodo] = useState(0);
   useEffect(() => {
+    if (!hasTeacher) { setAsgnTodo(0); return; }
     let alive = true;
     client.assignments()
       .then((list) => { if (alive) setAsgnTodo(list.filter((a) => a.status !== 'done').length); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [loc.pathname]);
+  }, [loc.pathname, hasTeacher]);
   const openT = useRef<number | undefined>(undefined);
   const closeT = useRef<number | undefined>(undefined);
 
@@ -104,8 +108,12 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
           const active = it.match({ pathname: loc.pathname, search: loc.search, mode: activeMode });
           // Progress is a membership lock (free plan); Achievements is locked "coming soon" for ALL plans.
           const comingSoon = REWARDS_LOCKED && it.to === '/achievements';
-          const locked = (progressLocked && it.to === '/progress') || comingSoon;
-          const lockTitle = comingSoon ? `${it.label} — coming soon` : `${it.label} — membership`;
+          // Assignments locked until a teacher adds this student.
+          const noTeacher = it.to === '/assignments' && !hasTeacher;
+          const locked = (progressLocked && it.to === '/progress') || comingSoon || noTeacher;
+          const lockTitle = comingSoon ? `${it.label} — coming soon`
+            : noTeacher ? `${it.label} — your teacher hasn't added you yet`
+            : `${it.label} — membership`;
           // Unread-style count on the Assignments item when the child has sets still to do.
           const badge = it.to === '/assignments' && !locked && asgnTodo > 0 ? asgnTodo : null;
           return (

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { firstName , titleCase} from '@ccat/client-core';
+import { firstName } from '@ccat/client-core';
 import type { Achievement, ProgressSummary } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
@@ -7,49 +7,27 @@ import { Card, Loader, ErrorNote, useAsync, GradePlanChip } from '../components/
 import { AvatarControl } from '../components/AvatarControl';
 import { Avatar } from '../components/Avatar';
 import { PromoInline } from '../components/DiscountBanner';
-import { ComingSoon } from '../components/ComingSoon';
 import { AssignmentPanel } from '../components/AssignmentPanel';
-import { REWARDS_LOCKED } from '../lib/features';
 import { capsOf, PAYMENTS_ENABLED } from '../lib/entitlements';
 
-// HOME — "Option A": a two-column dashboard for kids (grade 3–6). Purple header band (greeting,
-// streak, Continue, avatar) → LEFT column (stat tiles, progress card, hero Practice/Exam, announcements)
-// → RIGHT motivation rail (mascot, 7-day streak, next reward, recent badges). EVERY value comes from
-// real gateway data; every field is read with a safe default so a brand-new account (0 XP/coins, no
-// badges, no streak, no active session, no announcements) renders cleanly with no errors.
+// HOME — kid-friendly dashboard. Order (top → bottom of the main column): hero → PRACTICE → EXAM →
+// PROGRESS → ASSIGNMENT (last, only when the student has a teacher). Practice/Exam are colorful
+// "character" cards per battery (Practice = symbol glyphs on brand-blue shades; Exam = topic emoji on
+// gold shades). Every value is real gateway data with safe defaults so a brand-new account renders cleanly.
 
-// ---- small pure helpers (presentation only; no business logic / thresholds live here) ----
-// This Week is rendered in FIXED Monday→Sunday columns. The columns never move; only the per-day fill
-// changes. We build the seven weekdays of the LOCAL week containing today (week starts Monday) and map
-// the server's activity dates onto those fixed slots.
 const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function isoDate(dt: Date): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 function mondayWeek(activeByDate: Map<string, boolean>): { date: string; active: boolean; label: string }[] {
   const t = new Date();
-  const mondayOffset = (t.getDay() + 6) % 7; // getDay: 0=Sun..6=Sat → days since Monday (Mon=0 … Sun=6)
+  const mondayOffset = (t.getDay() + 6) % 7;
   const monday = new Date(t.getFullYear(), t.getMonth(), t.getDate() - mondayOffset);
   return WEEK_LABELS.map((label, i) => {
     const dt = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
     const iso = isoDate(dt);
     return { date: iso, active: activeByDate.get(iso) === true, label };
   });
-}
-// Per-battery visuals for the H4 accuracy rings. Colours are fixed per spec (Verbal blue, Quant teal,
-// Non-verbal purple); names are friendly labels for the known keys with a prettified fallback so any
-// category the gateway returns still renders. We render whatever readiness[] returns, in its order.
-const CAT_VIS: Record<string, { name: string; color: string; tint: string }> = {
-  verbal: { name: 'Verbal', color: '#3e7bee', tint: '#eaf0ff' },
-  quantitative: { name: 'Quantitative', color: '#22c3a6', tint: '#e6f7f1' },
-  non_verbal: { name: 'Non-verbal', color: '#8b5cf6', tint: '#f3ecfb' },
-  nonverbal: { name: 'Non-verbal', color: '#8b5cf6', tint: '#f3ecfb' },
-};
-function catVis(key: string) {
-  const hit = CAT_VIS[key];
-  if (hit) return hit;
-  const name = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  return { name, color: 'var(--purple)', tint: '#eef1f6' };
 }
 function mascotLine(streak: number, completion: number | null): string {
   if (streak >= 7) return "You're unstoppable — what a streak! 🔥";
@@ -59,12 +37,20 @@ function mascotLine(streak: number, completion: number | null): string {
   return "Ready for today's practice? Let's go!";
 }
 
+// The three CCAT batteries, in a fixed friendly order. `alt` matches the alternate key spelling some
+// grades use ('nonverbal' vs 'non_verbal'). glyph = Practice symbol; emoji = Exam topic mark.
+const BATTERIES: { key: string; alt: string; name: string; glyph: string; emoji: string }[] = [
+  { key: 'verbal', alt: 'verbal', name: 'Verbal', glyph: 'Aa', emoji: '🔤' },
+  { key: 'quantitative', alt: 'quantitative', name: 'Quantitative', glyph: '123', emoji: '🔢' },
+  { key: 'non_verbal', alt: 'nonverbal', name: 'Non-Verbal', glyph: '◧▲', emoji: '🧩' },
+];
+
 export function HomeScreen() {
   const nav = useNavigate();
   const { profile, entitlements, entitlementsLoaded } = useApp();
-  // Payments Phase 2: when the flag is off, capsOf() unlocks everything, so examLocked is always false
-  // and the exam entry tile renders exactly as today.
   const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements, entitlementsLoaded).exam;
+  const hasTeacher = profile?.has_teacher === true;
+
   const { loading, error, data, reload } = useAsync(async () => {
     const [summary, readiness, progress, announcements, active, achievements, analytics] = await Promise.all([
       client.rewardsSummary(), client.readiness(), client.progress(), client.announcements(),
@@ -81,14 +67,12 @@ export function HomeScreen() {
 
   return (
     <div className="home-a">
-      {/* HEADER BAND (purple gradient) — greeting, streak, Continue, avatar */}
       <header className="home-hero">
         <div className="hh-text">
           <h1>Hi {name} 👋</h1>
           <div className="hh-streak">
             {streak > 0 ? `🔥 ${streak}-day streak — let's keep it alive!` : "Ready to practise? Let's go!"}
           </div>
-          {/* Discount countdown inside the blue header (shows only while a promo is live). Links to Plan. */}
           <PromoInline onClick={() => nav('/plan')} />
         </div>
         <div className="hh-actions">
@@ -106,87 +90,103 @@ export function HomeScreen() {
       {error && <ErrorNote error={error} onRetry={reload} />}
 
       {data && summary && (() => {
+        const batteries = data.analytics?.batteries ?? [];
+        const battOf = (key: string, alt: string) => batteries.find((b) => b.key === key || b.key === alt);
+
         const ach = data.achievements ?? [];
         const badgesTotal = ach.length;
         const earned = ach.filter((a) => a.earned).sort((a, b) => (b.earned_at ?? '').localeCompare(a.earned_at ?? ''));
         const locked = ach.filter((a) => !a.earned);
         const badgeSlots = [...earned, ...locked].slice(0, 6);
 
-        // Map the server's activity dates → active flags, then render fixed Mon–Sun columns for this week.
         const activeByDate = new Map((summary.streak?.last7 ?? []).map((d) => [d.date, d.active]));
         const week = mondayWeek(activeByDate);
-
         const nextReward = summary.next_reward ?? null;
         const completion = data.progress.progress_pct ?? null;
-        const resumeLine = active
-          ? [active.set_name, active.difficulty].filter(Boolean).join(' · ') || titleCase(active.subcategory) || `${active.mode} session`
-          : '';
-        const answered = active ? Number((active as any).answered_count ?? 0) : 0;
-        const qTotal = active ? Number((active as any).question_count ?? 0) : 0;
 
         return (
           <div className="home-grid">
-            {/* ---------------- LEFT / MAIN COLUMN ---------------- */}
+            {/* ---------------- MAIN COLUMN ---------------- */}
             <main className="home-main">
-              {/* Assignment panel — replaces the old Coins/XP/Badges stat tiles. Teacher-assigned sets,
-                  incomplete first, scrollable, with "View all →" to the full Assignments page. */}
-              <AssignmentPanel />
 
-              {/* Progress & analytics — "H4": Score (all batteries) + Sets done + three per-battery
-                  accuracy rings. Every value is real; honest empty states ("—" / 0 / rings at 0). */}
+              {/* 1) PRACTICE — brand-blue character cards, one per battery */}
+              <section className="hpanel hpanel-prac">
+                <div className="hpanel-head">
+                  <h3>✏️ Practice</h3>
+                  <span className="hpanel-hint">Pick a battery to practise</span>
+                </div>
+                <div className="hchar-row">
+                  {BATTERIES.map((bt, i) => {
+                    const b = battOf(bt.key, bt.alt);
+                    const done = b?.setsDone ?? 0;
+                    const total = b?.setsTotal ?? 0;
+                    return (
+                      <button key={bt.key} className={`hchar hchar-b${i + 1}`} onClick={() => nav(`/practice?battery=${bt.key}`)}>
+                        <span className="hchar-badge"><span className="hchar-glyph">{bt.glyph}</span></span>
+                        <span className="hchar-name">{b?.name ?? bt.name}</span>
+                        <span className="hchar-ribbon">{total > 0 ? `${done} / ${total} sets` : 'Start practising'}</span>
+                        <span className="hchar-cta">Practise ▶</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* 2) EXAM — gold character cards, one per battery */}
+              <section className="hpanel hpanel-exam">
+                <div className="hpanel-head">
+                  <h3>📝 Exam</h3>
+                  <span className="hpanel-hint">Timed full-battery mocks</span>
+                </div>
+                <div className="hchar-row">
+                  {BATTERIES.map((bt, i) => {
+                    const b = battOf(bt.key, bt.alt);
+                    return (
+                      <button
+                        key={bt.key}
+                        className={`hchar hchar-g${i + 1}`}
+                        onClick={() => (examLocked ? nav('/plan') : nav(`/practice?mode=exam&battery=${bt.key}`))}
+                      >
+                        <span className="hchar-badge"><span className="hchar-emoji">{bt.emoji}</span></span>
+                        <span className="hchar-name">{b?.name ?? bt.name} Exam</span>
+                        <span className="hchar-ribbon">Full timed mock</span>
+                        <span className="hchar-cta">{examLocked ? '🔒 Membership' : 'Start ▶'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* 3) PROGRESS — per-battery accuracy rings (real analytics) */}
               <Card className="home-progress">
                 <div className="hp-head">
                   <div className="eyebrow">📊 Progress &amp; Analytics</div>
                   <button className="pill hp-details" onClick={() => nav('/progress')}>Details ›</button>
                 </div>
-                {(() => {
-                  // Sample 4 — one tile per battery: progress-% ring on the left, "N sets done" on the right.
-                  const batteries = data.analytics?.batteries ?? [];
-                  return (
-                    <div className="hp-bat-row">
-                      {batteries.map((b) => {
-                        const cv = catVis(b.key);
-                        const pct = b.accuracyPct ?? 0;
-                        return (
-                          <button
-                            key={b.key}
-                            className="hp-bat"
-                            style={{ ['--ring' as any]: cv.color, ['--tint' as any]: cv.tint }}
-                            onClick={() => nav('/progress')}
-                          >
-                            <div className="hp-bat-ring" style={{ ['--pct' as any]: `${pct}%` }}>
-                              <span>{b.accuracyPct == null ? '0%' : `${b.accuracyPct}%`}</span>
-                            </div>
-                            <div className="hp-bat-txt">
-                              <span className="hp-bat-n">{b.setsDone}</span>
-                              <span className="hp-bat-l">{cv.name}</span>
-                              <span className="hp-bat-s">sets done</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
+                <div className="hp-bat-row">
+                  {(batteries.length ? batteries : []).map((b) => {
+                    const pct = b.accuracyPct ?? 0;
+                    return (
+                      <button key={b.key} className="hp-bat" onClick={() => nav('/progress')}>
+                        <div className="hp-bat-ring" style={{ ['--pct' as any]: `${pct}%` }}>
+                          <span>{b.accuracyPct == null ? '0%' : `${b.accuracyPct}%`}</span>
+                        </div>
+                        <div className="hp-bat-txt">
+                          <span className="hp-bat-n">{b.setsDone}</span>
+                          <span className="hp-bat-l">{b.name}</span>
+                          <span className="hp-bat-s">sets done</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {batteries.length === 0 && <div className="muted" style={{ padding: 6 }}>Practise a set to see your progress here.</div>}
+                </div>
               </Card>
 
-              {/* Hero entry cards — CCAT Practice + CCAT Exam */}
-              <div className="entry-grid">
-                <button className="entry-tile entry-practice" onClick={() => nav('/practice')}>
-                  <span className="et-ic">✏️</span>
-                  <span className="et-title">CCAT practice</span>
-                  <span className="et-sub">Choose a category &amp; topic and start learning</span>
-                  <span className="et-go">Start ›</span>
-                </button>
-                <button className="entry-tile entry-exam" onClick={() => nav('/practice?mode=exam')}>
-                  <span className="et-ic">📝</span>
-                  <span className="et-title">CCAT exam</span>
-                  <span className="et-sub">Timed mock — Verbal, Non-verbal &amp; Quantitative</span>
-                  <span className="et-go">{examLocked ? '🔒 Membership' : 'Start ›'}</span>
-                </button>
-              </div>
+              {/* 4) ASSIGNMENT — last, and only when the student has a teacher */}
+              {hasTeacher && <AssignmentPanel />}
 
-              {/* Announcements — hidden entirely when there are none */}
+              {/* Announcements */}
               {data.announcements.length > 0 && (
                 <Card>
                   <div className="eyebrow">📣 Announcements</div>
@@ -201,73 +201,58 @@ export function HomeScreen() {
 
             {/* ---------------- RIGHT MOTIVATION RAIL ---------------- */}
             <aside className="home-rail" aria-label="Your progress">
-              {/* Mascot */}
               <div className="rail-card mascot-card">
                 <div className="mascot-emoji"><Avatar size={46} /></div>
                 <div className="mascot-line">{mascotLine(streak, completion)}</div>
               </div>
 
-              {/* 7-day streak row — reward/achievement widget, locked for all plans. */}
               <div className="rail-card">
-                <ComingSoon locked={REWARDS_LOCKED}>
-                  <div className="eyebrow">🔥 This week</div>
-                  <div className="week-row" role="list">
-                    {week.map((d) => (
-                      <div key={d.date} role="listitem" className={`wk-day ${d.active ? 'on' : ''}`} title={d.date}>
-                        <span className="wk-dot" aria-hidden>{d.active ? '🔥' : ''}</span>
-                        <span className="wk-lbl">{d.label}</span>
+                <div className="eyebrow">🔥 This week</div>
+                <div className="week-row" role="list">
+                  {week.map((d) => (
+                    <div key={d.date} role="listitem" className={`wk-day ${d.active ? 'on' : ''}`} title={d.date}>
+                      <span className="wk-dot" aria-hidden>{d.active ? '🔥' : ''}</span>
+                      <span className="wk-lbl">{d.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="muted" style={{ marginTop: 8 }}>
+                  {streak > 0 ? `${streak}-day streak` : 'Practise today to start a streak'}
+                </div>
+              </div>
+
+              <div className="rail-card">
+                <div className="eyebrow">🎁 Next reward</div>
+                {nextReward ? (
+                  <>
+                    <div className="nr-line" style={{ marginTop: 6 }}>
+                      <strong>{nextReward.xp_needed.toLocaleString()} XP</strong> to {nextReward.label}
+                    </div>
+                    <div className="progress-track" style={{ marginTop: 8 }}>
+                      <div className="progress-fill" style={{ width: `${nextReward.progress_pct}%`, background: 'var(--purple)' }} />
+                    </div>
+                  </>
+                ) : (
+                  <div className="muted" style={{ marginTop: 6 }}>You've unlocked every reward! 🎉</div>
+                )}
+              </div>
+
+              <div className="rail-card">
+                <div className="eyebrow">🏅 Recent badges</div>
+                {badgesTotal === 0 ? (
+                  <div className="muted" style={{ marginTop: 6 }}>Earn badges as you practise.</div>
+                ) : (
+                  <div className="badge-grid" style={{ marginTop: 8 }}>
+                    {badgeSlots.map((a) => (
+                      <div key={a.key} className={`badge ${a.earned ? 'on' : ''}`} title={a.name}>
+                        <span aria-hidden>{a.earned ? '🏅' : '🔒'}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="muted" style={{ marginTop: 8 }}>
-                    {streak > 0 ? `${streak}-day streak` : 'Practise today to start a streak'}
-                  </div>
-                </ComingSoon>
-              </div>
-
-              {/* Next reward — locked for all plans. */}
-              <div className="rail-card">
-                <ComingSoon locked={REWARDS_LOCKED}>
-                  <div className="eyebrow">🎁 Next reward</div>
-                  {nextReward ? (
-                    <>
-                      <div className="nr-line" style={{ marginTop: 6 }}>
-                        <strong>{nextReward.xp_needed.toLocaleString()} XP</strong> to {nextReward.label}
-                      </div>
-                      <div className="progress-track" style={{ marginTop: 8 }}>
-                        <div className="progress-fill" style={{ width: `${nextReward.progress_pct}%`, background: 'var(--purple)' }} />
-                      </div>
-                    </>
-                  ) : (
-                    <div className="muted" style={{ marginTop: 6 }}>You've unlocked every reward! 🎉</div>
-                  )}
-                </ComingSoon>
-              </div>
-
-              {/* Recent badges — locked for all plans. The Resume note (session) stays outside the lock. */}
-              <div className="rail-card">
-                <ComingSoon locked={REWARDS_LOCKED}>
-                  <div className="eyebrow">🏅 Recent badges</div>
-                  {badgesTotal === 0 ? (
-                    <div className="muted" style={{ marginTop: 6 }}>Earn badges as you practise.</div>
-                  ) : (
-                    <div className="badge-grid" style={{ marginTop: 8 }}>
-                      {badgeSlots.map((a) => (
-                        <div key={a.key} className={`badge ${a.earned ? 'on' : ''}`} title={a.name}>
-                          <span aria-hidden>{a.earned ? '🏅' : '🔒'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <button className="btn small ghost" style={{ marginTop: 10, paddingLeft: 0 }} onClick={() => nav('/rewards')}>
-                    See all rewards ›
-                  </button>
-                </ComingSoon>
-                {active && (
-                  <div className="muted" style={{ marginTop: 10 }}>
-                    Resume: {resumeLine || 'your session'}{qTotal > 0 ? ` (${answered}/${qTotal})` : ''}
-                  </div>
                 )}
+                <button className="btn small ghost" style={{ marginTop: 10, paddingLeft: 0 }} onClick={() => nav('/achievements')}>
+                  See all rewards ›
+                </button>
               </div>
             </aside>
           </div>

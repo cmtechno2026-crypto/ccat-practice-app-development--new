@@ -160,9 +160,10 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
   // GET /v1/profile — computed age (§4.2)
   app.get('/v1/profile', { preHandler: [app.authenticateStudent] }, async (req) => {
     const { rows } = await db.query(
-      `select id, display_name, username_normalized as username, grade_id, birth_month, birth_year,
-              status, active_avatar_stage_id, active_theme_id, is_preview
-         from ccat.students where id = $1`,
+      `select s.id, s.display_name, s.username_normalized as username, s.grade_id, s.birth_month, s.birth_year,
+              s.status, s.active_avatar_stage_id, s.active_theme_id, s.is_preview,
+              exists(select 1 from ccat.teacher_students ts where ts.student_id = s.id) as has_teacher
+         from ccat.students s where s.id = $1`,
       [req.student!.studentId],
     );
     if (rows.length === 0) throw Errors.notFound('Profile not found');
@@ -177,6 +178,8 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
       active_avatar_stage_id: s.active_avatar_stage_id,
       active_theme_id: s.active_theme_id,
       is_preview: s.is_preview === true,
+      // Whether a teacher is assigned to this student (drives the Assignment panel/nav gating in web).
+      has_teacher: s.has_teacher === true,
     };
   });
 

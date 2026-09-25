@@ -17,27 +17,59 @@ export const NOTIF_META: Record<string, { label: string; color: string; icon: st
 // of the relevant permissions (the endpoint self-filters), so the badge simply never appears for them.
 function NotificationBell() {
   const nav = useNavigate();
+  const { activeSite } = useAuth();
+  const teacherMode = activeSite === 'teacher';
   const [items, setItems] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
-  const load = () => { api.notifications().then(r => setItems(r.items || [])).catch(() => { /* ignore */ }); };
-  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
+  const load = () => {
+    if (teacherMode) {
+      // Teacher Hub scope: pending parent booking requests (via booking links) + pending teacher leave.
+      Promise.all([
+        api.teacherBookingRequests({ status: 'pending' }).then(r => r.requests || []).catch(() => []),
+        api.teacherLeaveRequests('pending').then(r => (r.requests as any[]) || []).catch(() => []),
+      ]).then(([reqs, leaves]) => {
+        const bi = (reqs as any[]).map(r => ({ scope: 'teacher', kind: 'booking', id: r.id, title: r.parent_name, sub: `${(r.slots || []).length} slot(s) requested`, created_at: r.created_at }));
+        const li = (leaves as any[]).map(l => ({ scope: 'teacher', kind: 'leave', id: l.id, title: l.teacher_name, sub: `Leave ${l.start_date}${l.end_date && l.end_date !== l.start_date ? ' – ' + l.end_date : ''}`, created_at: l.created_at }));
+        setItems([...bi, ...li].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))));
+      });
+    } else {
+      api.notifications().then(r => setItems((r.items || []).map((n: any) => ({ scope: 'ccat', ...n })))).catch(() => { /* ignore */ });
+    }
+  };
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [teacherMode]); // eslint-disable-line react-hooks/exhaustive-deps
   const count = items.length;
+  const TMETA: Record<string, { label: string; color: string; icon: string }> = { booking: { label: 'Booking request', color: 'var(--brand,#2f6fd0)', icon: '📥' }, leave: { label: 'Leave request', color: '#7c3aed', icon: '🌴' } };
   return (
     <div style={{ position: 'relative' }}>
-      <button className="iconbtn" onClick={() => { const willOpen = !open; setOpen(willOpen); if (willOpen) load(); }} title="Requests" aria-label={`Requests${count ? ` (${count})` : ''}`} style={{ position: 'relative' }}>
+      <button className="iconbtn" onClick={() => { const willOpen = !open; setOpen(willOpen); if (willOpen) load(); }} title={teacherMode ? 'Teacher Hub notifications' : 'Requests'} aria-label={`Notifications${count ? ` (${count})` : ''}`} style={{ position: 'relative' }}>
         🔔
         {count > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 9, background: 'var(--coral, #e0533d)', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center', fontWeight: 700, boxSizing: 'border-box' }}>{count > 99 ? '99+' : count}</span>}
       </button>
       {open && (
         <>
-          <button onClick={() => setOpen(false)} aria-label="Close requests" style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 40, cursor: 'default' }} />
+          <button onClick={() => setOpen(false)} aria-label="Close notifications" style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 40, cursor: 'default' }} />
           <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 340, maxHeight: 440, overflowY: 'auto', background: 'var(--card, #fff)', color: 'var(--ink, #1a1a2e)', border: '1px solid var(--line, #e6e6ef)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.18)', zIndex: 41 }}>
             <div style={{ padding: '12px 14px', fontWeight: 700, borderBottom: '1px solid var(--line, #e6e6ef)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Requests</span><span className="muted" style={{ fontWeight: 600 }}>{count}</span>
+              <span>{teacherMode ? 'Teacher Hub' : 'Requests'}</span><span className="muted" style={{ fontWeight: 600 }}>{count}</span>
             </div>
             {count === 0
               ? <div className="muted" style={{ padding: '18px 14px' }}>Nothing pending.</div>
               : items.map((n) => {
+                if (n.scope === 'teacher') {
+                  const m = TMETA[n.kind] || { label: n.kind, color: 'var(--amber,#e0a030)', icon: '•' };
+                  return (
+                    <button key={`${n.kind}:${n.id}`} role="menuitem" onClick={() => { setOpen(false); nav('/teacherhub/requests'); }}
+                      style={{ display: 'flex', gap: 10, width: '100%', textAlign: 'left', padding: '10px 14px', background: 'transparent', border: 0, borderLeft: `4px solid ${m.color}`, borderBottom: '1px solid var(--line, #eee)', cursor: 'pointer' }}>
+                      <span aria-hidden style={{ fontSize: 16 }}>{m.icon}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>{n.title}</span>
+                        <span style={{ display: 'block', fontSize: 12, color: m.color, fontWeight: 600 }}>{m.label}</span>
+                        <span className="muted" style={{ display: 'block', fontSize: 12 }}>{n.sub}</span>
+                        <span className="muted" style={{ display: 'block', fontSize: 11 }}>{new Date(n.created_at).toLocaleString()}</span>
+                      </span>
+                    </button>
+                  );
+                }
                 const m = NOTIF_META[n.kind] || { label: n.kind, color: 'var(--amber, #e0a030)', icon: '•' };
                 return (
                   <button key={`${n.kind}:${n.id}`} role="menuitem" onClick={() => { setOpen(false); nav(`/students/${n.student_id}`); }}
@@ -205,34 +237,24 @@ export function Layout() {
           <span style={{ display: 'flex', alignItems: 'center' }}>
             <button className="iconbtn hamburger" onClick={() => setDrawer(true)} aria-label="Open menu" aria-expanded={drawer}>☰</button>
             {offRail && <Link to={homePath} className="backlink">← Dashboard</Link>}
-            {sites.length > 1 && (
-              <span style={{ position: 'relative', marginRight: 10 }}>
-                <button className="btn ghost sm" onClick={() => setSiteMenu(v => !v)} aria-haspopup="menu" aria-expanded={siteMenu}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: activeSite === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />
-                  {SITE_NAMES[activeSite] || activeSite} <span style={{ fontSize: 10, opacity: .6 }}>▾</span>
-                </button>
-                {siteMenu && (
-                  <>
-                    <button onClick={() => setSiteMenu(false)} aria-label="Close" style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 40, cursor: 'default' }} />
-                    <div role="menu" style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', width: 210, background: 'var(--card,#fff)', color: 'var(--ink,#1a1a2e)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.18)', zIndex: 41, padding: 4 }}>
-                      <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', padding: '6px 8px 2px', fontWeight: 700 }}>Switch workspace</div>
-                      {sites.map(sid => (
-                        <button key={sid} role="menuitem" onClick={() => { setSiteMenu(false); if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacherhub' : '/', { replace: true }); } }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: sid === activeSite ? 'var(--card2,#f2f5fa)' : 'transparent', border: 0, padding: '8px', borderRadius: 7, cursor: 'pointer', color: 'inherit', fontWeight: 600 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />
-                          {SITE_NAMES[sid] || sid}
-                          {sid === activeSite && <span className="muted" style={{ marginLeft: 'auto', fontSize: 11 }}>current</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </span>
-            )}
             <span className="title">{title}</span>
           </span>
           <div className="who">
+            {sites.length > 1 && (
+              <div role="tablist" aria-label="Workspace" style={{ display: 'inline-flex', background: 'var(--card2,#eef2f7)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: 3, gap: 3, marginRight: 4 }}>
+                {sites.map(sid => {
+                  const on = sid === activeSite;
+                  return (
+                    <button key={sid} role="tab" aria-selected={on}
+                      onClick={() => { if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacherhub' : '/', { replace: true }); } }}
+                      style={{ border: 0, background: on ? 'var(--card,#fff)' : 'transparent', color: on ? (sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--brand,#2f6fd0)') : 'var(--muted,#647089)', fontWeight: 800, fontSize: 12.5, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, boxShadow: on ? '0 1px 3px rgba(0,0,0,.10)' : 'none' }}>
+                      {on && <span style={{ width: 7, height: 7, borderRadius: '50%', background: sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />}
+                      {SITE_NAMES[sid] || sid}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <NotificationBell />
             <button className="iconbtn" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">◐</button>
             <button className="btn ghost sm" onClick={signOut}>Sign out</button>

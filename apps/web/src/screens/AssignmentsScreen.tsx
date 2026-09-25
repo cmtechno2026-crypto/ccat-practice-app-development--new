@@ -9,8 +9,24 @@ import { TodoRow, DoneRow } from '../components/AssignmentPanel';
 // Rows are the shared TodoRow / DoneRow in non-compact form (question counts, Review button).
 export function AssignmentsScreen() {
   const nav = useNavigate();
-  const { flash } = useApp();
+  const { flash, profile } = useApp();
   const { data, loading, error, reload } = useAsync(() => client.assignments());
+
+  // No teacher → this page is locked (mirrors the sidebar lock + hidden Home panel).
+  if (profile && profile.has_teacher === false) {
+    return (
+      <div className="asgn-page">
+        <header className="asgn-page-hero">
+          <h1>📋 Assignments</h1>
+          <p className="asgn-page-sub">Assignments appear here once a teacher adds you.</p>
+        </header>
+        <div className="asgn-empty asgn-empty-page">
+          <span className="asgn-empty-ic" aria-hidden>🔒</span>
+          You don’t have a teacher yet. When Concept Mastery assigns you a teacher, your sets will show up here.
+        </div>
+      </div>
+    );
+  }
 
   const items = data ?? [];
   const todo = items.filter((a) => a.status !== 'done');
