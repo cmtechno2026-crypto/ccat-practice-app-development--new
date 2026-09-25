@@ -49,7 +49,9 @@ export function HomeScreen() {
   const nav = useNavigate();
   const { profile, entitlements, entitlementsLoaded } = useApp();
   const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements, entitlementsLoaded).exam;
-  const hasTeacher = profile?.has_teacher === true;
+  // Fail OPEN: hide the Assignment panel ONLY when we know there is no teacher (false). undefined
+  // (older gateway / still loading) shows it, so a student with a teacher is never wrongly hidden.
+  const hasTeacher = profile?.has_teacher !== false;
 
   const { loading, error, data, reload } = useAsync(async () => {
     const [summary, readiness, progress, announcements, active, achievements, analytics] = await Promise.all([

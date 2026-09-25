@@ -56,9 +56,10 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
   const progressLocked = PAYMENTS_ENABLED && capsOf(entitlements, entitlementsLoaded).practice !== 'all';
   // Live "to do" count for the Assignments nav badge. Refetched on navigation (cheap endpoint) so the
   // badge drops after a child finishes an assigned set. Best-effort — a failure just hides the badge.
-  // Assignments are gated on the student having a teacher. No teacher → the nav item is locked and we
-  // don't fetch a count.
-  const hasTeacher = profile?.has_teacher === true;
+  // Assignments are gated on the student having a teacher. Fail OPEN: lock ONLY when we know there is no
+  // teacher (has_teacher === false). undefined (e.g. an older gateway that doesn't return the field yet,
+  // or profile still loading) is treated as "has a teacher" so a real student is never wrongly locked.
+  const hasTeacher = profile?.has_teacher !== false;
   const [asgnTodo, setAsgnTodo] = useState(0);
   useEffect(() => {
     if (!hasTeacher) { setAsgnTodo(0); return; }
