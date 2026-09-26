@@ -39,6 +39,7 @@ import { registerAdminStudentDetailRoutes } from './routes/admin-students.js';
 import { registerAdminOpsRoutes } from './routes/admin-ops.js';
 import { registerAdminEntitlementsRoutes } from './routes/admin-entitlements.js';
 import { registerAdminTeacherRoutes } from './routes/admin-teacher.js';
+import { registerAdminTrainingRoutes } from './routes/admin-training.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -177,6 +178,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   // Null when unset -> teacher routes mount but return 503 SITE_NOT_CONFIGURED (never crashes boot).
   const teacherDb = cfg.teacherDatabaseUrl ? createPool(cfg.teacherDatabaseUrl) : null;
   registerAdminTeacherRoutes(app, db, cfg, teacherDb);
+  registerAdminTrainingRoutes(app, db, cfg, teacherDb);
 
   return app;
 }

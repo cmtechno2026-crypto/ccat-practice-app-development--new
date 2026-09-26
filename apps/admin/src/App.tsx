@@ -26,6 +26,7 @@ import { TeacherDashboard } from './pages/TeacherDashboard';
 import { TeacherDirectory } from './pages/TeacherDirectory';
 import { BookingLinks } from './pages/BookingLinks';
 import { BookingRequests } from './pages/BookingRequests';
+import { TrainingAdmin } from './pages/TrainingAdmin';
 import { PAYMENTS_ENABLED } from './lib/payments';
 
 function Login() {
@@ -258,6 +259,7 @@ export function App() {
         <Route path="/teacherhub/teachers" element={<TeacherDirectory />} />
         <Route path="/teacherhub/booking-links" element={<BookingLinks />} />
         <Route path="/teacherhub/requests" element={<BookingRequests />} />
+        <Route path="/teacherhub/training" element={<TrainingAdmin />} />
         {/* Legacy /teacher* → /teacherhub* (renamed route) */}
         <Route path="/teacher" element={<Navigate to="/teacherhub" replace />} />
         <Route path="/teacher/teachers" element={<Navigate to="/teacherhub/teachers" replace />} />

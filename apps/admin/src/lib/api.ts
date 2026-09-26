@@ -115,6 +115,13 @@ export const api = {
   teacherLeaveRequests: (status?: string) => req<{ requests: any[] }>('GET', `/v1/admin/teacher/leave-requests${status && status !== 'all' ? '?status=' + encodeURIComponent(status) : ''}`),
   teacherSetTeacherDecision: (id: string, decision: 'accept' | 'decline') => req<{ status: string }>('POST', `/v1/admin/teacher/booking-requests/${id}/teacher-decision/${decision}`, {}),
   teacherDecideLeave: (id: string, decision: 'approve' | 'reject') => req<{ id: string; status: string }>('POST', `/v1/admin/teacher/leave-requests/${id}/${decision}`, {}),
+  // TeacherHub Training management
+  trainingModules: () => req<{ modules: any[] }>('GET', '/v1/admin/training/modules'),
+  trainingCreateModule: (body: any) => req<{ module: any }>('POST', '/v1/admin/training/modules', body),
+  trainingUpdateModule: (id: number, patch: any) => req<{ module: any }>('PATCH', `/v1/admin/training/modules/${id}`, patch),
+  trainingDeleteModule: (id: number) => req<{ deleted: number }>('DELETE', `/v1/admin/training/modules/${id}`),
+  trainingReorder: (ids: number[]) => req<{ modules: any[] }>('POST', '/v1/admin/training/modules/reorder', { ids }),
+  trainingBulkCreate: (modules: any[]) => req<{ created: number; modules: any[] }>('POST', '/v1/admin/training/modules/bulk', { modules }),
   teachers: () => req<{ teachers: any[] }>('GET', '/v1/admin/teachers'),
   createTeacher: (b: { display_name: string; email: string; temp_password?: string }) => req<{ id: string; temp_password: string; note: string }>('POST', '/v1/admin/teachers', b),
   setTeacherStatus: (id: string, status: 'active' | 'disabled') => req<{ status: string }>('POST', `/v1/admin/teachers/${id}/status`, { status }),
