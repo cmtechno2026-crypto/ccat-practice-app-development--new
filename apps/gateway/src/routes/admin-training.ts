@@ -32,6 +32,7 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
     description: z.string().trim().max(1000).optional().nullable(),
     body_html: z.string().max(200000).optional().nullable(),
     quiz: quizSchema.optional(),
+    questions_per_module: z.number().int().min(0).max(50).optional(),
     sort_order: z.number().int().min(0).max(100000).optional(),
     active: z.boolean().optional(),
   };
@@ -43,11 +44,12 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
     description: moduleBase.description,
     body_html: moduleBase.body_html,
     quiz: quizSchema.optional(),
+    questions_per_module: z.number().int().min(0).max(50).optional(),
     sort_order: z.number().int().min(0).max(100000).optional(),
     active: z.boolean().optional(),
   });
 
-  const SELECT = `select id, title, icon, duration_mins, description, body_html, quiz, sort_order, active,
+  const SELECT = `select id, title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active,
                          created_at, updated_at, coalesce(jsonb_array_length(quiz), 0) as question_count
                     from public.ta_training_modules`;
 
@@ -70,11 +72,11 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
       sort = rows[0]?.next ?? 0;
     }
     const { rows } = await tdb().query(
-      `insert into public.ta_training_modules (title, icon, duration_mins, description, body_html, quiz, sort_order, active)
-       values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
-       returning id, title, icon, duration_mins, description, body_html, quiz, sort_order, active, created_at, updated_at`,
+      `insert into public.ta_training_modules (title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active)
+       values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
+       returning id, title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active, created_at, updated_at`,
       [b.title, b.icon ?? '📘', b.duration_mins ?? 10, b.description ?? '', b.body_html ?? '',
-       JSON.stringify(b.quiz ?? []), sort, b.active ?? true]);
+       JSON.stringify(b.quiz ?? []), b.questions_per_module ?? 10, sort, b.active ?? true]);
     return { module: rows[0] };
   });
 
@@ -93,13 +95,14 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
     if (b.description !== undefined) put('description', b.description ?? '');
     if (b.body_html !== undefined) put('body_html', b.body_html ?? '');
     if (b.quiz !== undefined) put('quiz', JSON.stringify(b.quiz), '::jsonb');
+    if (b.questions_per_module !== undefined) put('questions_per_module', b.questions_per_module ?? 10);
     if (b.sort_order !== undefined) put('sort_order', b.sort_order);
     if (b.active !== undefined) put('active', b.active);
     if (sets.length === 0) throw Errors.validation('No fields to update');
     vals.push(id);
     const { rows } = await tdb().query(
       `update public.ta_training_modules set ${sets.join(', ')} where id = $${i}
-       returning id, title, icon, duration_mins, description, body_html, quiz, sort_order, active, created_at, updated_at`, vals);
+       returning id, title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active, created_at, updated_at`, vals);
     if (rows.length === 0) throw Errors.notFound('Module not found');
     return { module: rows[0] };
   });
@@ -141,10 +144,10 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
       const out: unknown[] = [];
       for (const m of modules) {
         const r = await client.query(
-          `insert into public.ta_training_modules (title, icon, duration_mins, description, body_html, quiz, sort_order, active)
-           values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8) returning id, title, sort_order, active`,
+          `insert into public.ta_training_modules (title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active)
+           values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9) returning id, title, sort_order, active`,
           [m.title, m.icon ?? '📘', m.duration_mins ?? 10, m.description ?? '', m.body_html ?? '',
-           JSON.stringify(m.quiz ?? []), m.sort_order ?? sort, m.active ?? true]);
+           JSON.stringify(m.quiz ?? []), m.questions_per_module ?? 10, m.sort_order ?? sort, m.active ?? true]);
         if (m.sort_order == null) sort++;
         out.push(r.rows[0]);
       }

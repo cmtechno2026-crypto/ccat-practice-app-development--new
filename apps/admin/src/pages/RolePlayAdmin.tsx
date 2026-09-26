@@ -62,7 +62,7 @@ export function RolePlayAdmin() {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      <Link to="/teacherhub/training" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--brand,#2f6fd0)', textDecoration: 'none', width: 'fit-content' }}>← Training overview</Link>
+      <div style={{ fontSize: 12.5, color: 'var(--muted,#647089)' }}><Link to="/teacherhub/training" style={{ color: 'var(--brand,#2f6fd0)', textDecoration: 'none', fontWeight: 700 }}>Training</Link> / <b style={{ color: 'var(--ink,inherit)' }}>Role-play scenarios</b></div>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ marginRight: 'auto' }}>
           <h2 style={{ margin: '0 0 2px', fontSize: 21, fontWeight: 900, letterSpacing: '-.02em', color: navy }}>Role-play scenarios</h2>
