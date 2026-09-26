@@ -19,6 +19,7 @@ interface Req {
 }
 
 const DAY_ABBR: Record<string, string> = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
+const miniLink: React.CSSProperties = { background: 'none', border: 'none', color: 'var(--brand,#2f6fd0)', fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: 0 };
 const WEEK_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const GRADS = ['g1', 'g2', 'g3', 'g4', 'g5'];
 const wdhStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '2px 2px 8px', fontSize: 11, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--brand,#2f6fd0)' };
@@ -79,6 +80,7 @@ export function TeacherDirectory() {
   const [pErr, setPErr] = useState('');
   const [allReqs, setAllReqs] = useState<Req[] | null>(null);
   const [actingReq, setActingReq] = useState<string | null>(null);
+  const [reqPick, setReqPick] = useState<Record<string, Set<string>>>({});
   const [fSubject, setFSubject] = useState('');
   const [fGrade, setFGrade] = useState('');
   const [links, setLinks] = useState<any[]>([]);
@@ -129,10 +131,20 @@ export function TeacherDirectory() {
     finally { setSavingSlot(null); }
   };
 
-  // Admin books the slots the teacher accepted (child name comes from the request).
-  const bookReq = async (teacherId: string, reqId: string) => {
+  // Per-request slot selection (toggle which accepted slots to book; the rest are declined).
+  const pickFor = (reqId: string, mineIds: string[]) => reqPick[reqId] ?? new Set(mineIds);
+  const toggleReqSlot = (reqId: string, sid: string, mineIds: string[]) => setReqPick(prev => {
+    const cur = prev[reqId] ? new Set(prev[reqId]) : new Set(mineIds);
+    if (cur.has(sid)) cur.delete(sid); else cur.add(sid);
+    return { ...prev, [reqId]: cur };
+  });
+  const setAllReqSlots = (reqId: string, mineIds: string[], on: boolean) => setReqPick(prev => ({ ...prev, [reqId]: on ? new Set(mineIds) : new Set<string>() }));
+
+  // Admin books the selected slots the teacher accepted (child name comes from the request).
+  const bookReq = async (teacherId: string, reqId: string, selectedIds?: string[], total?: number) => {
     setActingReq(reqId);
-    try { await api.teacherApproveRequest(reqId); const r = await api.teacherSlots(teacherId); setSlots(s => ({ ...s, [teacherId]: r.slots || [] })); loadReqs(); }
+    const partial = !!(selectedIds && total && selectedIds.length < total);
+    try { await api.teacherApproveRequest(reqId, partial ? selectedIds : undefined); const r = await api.teacherSlots(teacherId); setSlots(s => ({ ...s, [teacherId]: r.slots || [] })); loadReqs(); }
     catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not book' })); }
     finally { setActingReq(null); }
   };
@@ -276,6 +288,8 @@ export function TeacherDirectory() {
           const canBook = r.teacher_status === 'accepted' && r.status === 'pending';
           const terminal = r.status !== 'pending';
           const mine = (r.slots || []).filter(s => s.teacher_id === id);
+          const mineIds = mine.map(s => s.slot_id);
+          const picked = pickFor(r.id, mineIds);
           return (
             <div key={r.id} style={{ border: '1px solid var(--line,#e6e6ef)', borderLeft: '4px solid ' + (canBook ? 'var(--brand,#2f6fd0)' : r.teacher_status === 'declined' ? 'var(--coral,#c0392b)' : '#e2c05a'), borderRadius: 12, padding: 12, background: 'var(--card,#fff)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -289,17 +303,17 @@ export function TeacherDirectory() {
                 {r.parent_email ? <> · <a href={'mailto:' + r.parent_email}>{r.parent_email}</a></> : null}{r.parent_phone ? ' · ' + r.parent_phone : ''}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                {mine.map(s => (
-                  <span key={s.slot_id} style={{ fontSize: 11, fontWeight: 700, background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 8, padding: '3px 8px' }}>
-                    {DAY_ABBR[s.day_of_week] || s.day_of_week} {s.start_time}–{s.end_time}{s.outcome && s.outcome !== 'pending' ? ' · ' + s.outcome : ''}
-                  </span>
-                ))}
+                {mine.map(s => { const on = picked.has(s.slot_id); return (canBook && canManage)
+                  ? <button key={s.slot_id} onClick={() => toggleReqSlot(r.id, s.slot_id, mineIds)} style={{ fontSize: 11, fontWeight: 800, borderRadius: 8, padding: '4px 9px', cursor: 'pointer', border: '1px solid ' + (on ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)'), background: on ? 'var(--good-soft,#dcf5ea)' : 'var(--coral-soft,#fdecea)', color: on ? 'var(--good,#0f766e)' : 'var(--coral,#c0392b)', textDecoration: on ? 'none' : 'line-through' }}>{on ? '✓ ' : '✕ '}{DAY_ABBR[s.day_of_week] || s.day_of_week} {s.start_time}–{s.end_time}</button>
+                  : <span key={s.slot_id} style={{ fontSize: 11, fontWeight: 700, background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 8, padding: '3px 8px' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} {s.start_time}–{s.end_time}{s.outcome && s.outcome !== 'pending' ? ' · ' + s.outcome : ''}</span>;
+                })}
               </div>
+              {canBook && canManage && <div style={{ display: 'flex', gap: 12, marginTop: 6 }}><button onClick={() => setAllReqSlots(r.id, mineIds, true)} style={miniLink}>Select all</button><button onClick={() => setAllReqSlots(r.id, mineIds, false)} style={miniLink}>Unselect all</button></div>}
               {r.notes && <div className="muted" style={{ fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>{r.notes}</div>}
               {canManage && !terminal && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
                   {canBook
-                    ? <button onClick={() => bookReq(id, r.id)} disabled={actingReq === r.id} style={{ fontWeight: 800, fontSize: 12.5, borderRadius: 8, padding: '7px 14px', border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: actingReq === r.id ? .6 : 1 }}>{actingReq === r.id ? 'Booking…' : 'Book slots'}</button>
+                    ? <button onClick={() => bookReq(id, r.id, [...picked], mineIds.length)} disabled={actingReq === r.id || picked.size === 0} style={{ fontWeight: 800, fontSize: 12.5, borderRadius: 8, padding: '7px 14px', border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: picked.size === 0 ? 'not-allowed' : 'pointer', opacity: (actingReq === r.id || picked.size === 0) ? .5 : 1 }}>{actingReq === r.id ? 'Booking…' : `Book ${picked.size === mineIds.length ? 'slots' : picked.size + ' slot(s)'}`}</button>
                     : <span className="muted" style={{ fontSize: 12 }}>{r.teacher_status === 'pending' ? 'Waiting for the teacher to accept…' : 'Teacher declined this request.'}</span>}
                   <button onClick={() => rejectReq(r.id)} disabled={actingReq === r.id} style={{ fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: '7px 12px', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--coral,#c0392b)', cursor: 'pointer' }}>Reject</button>
                 </div>

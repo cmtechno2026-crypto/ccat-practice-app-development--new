@@ -81,6 +81,8 @@ export function BookingRequests() {
     if (cur.has(slotId)) cur.delete(slotId); else cur.add(slotId);
     return { ...prev, [reqId]: cur };
   });
+  const setAllChosen = (r: RequestRow, on: boolean) => setChosen(prev => ({ ...prev, [r.id]: on ? new Set(r.slots.map(s => s.slot_id)) : new Set<string>() }));
+  const linkBtn: React.CSSProperties = { background: 'none', border: 'none', color: 'var(--brand,#2f6fd0)', fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: 0 };
 
   const approve = async (r: RequestRow) => {
     const ids = [...chosenFor(r)];
@@ -184,19 +186,24 @@ export function BookingRequests() {
         <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}><a href={`mailto:${r.parent_email}`}>{r.parent_email}</a>{r.parent_phone ? ` · ${r.parent_phone}` : ''}</div>
         <div className="muted" style={{ marginTop: 8, fontSize: 12.5, borderRadius: 8, padding: '7px 10px', background: 'var(--card2,#f7f9fc)' }}>{names.length ? names.join(', ') : 'The teacher'} accepted — book the slots to confirm (the child's name is attached).</div>
         {r.notes && <div style={{ fontSize: 13, marginTop: 6, whiteSpace: 'pre-wrap', background: 'var(--card2,#f7f9fc)', borderRadius: 8, padding: '6px 10px' }}>{r.notes}</div>}
-        <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
-          {r.slots.map(s => (
-            <label key={s.slot_id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card2,#f7f9fc)', borderRadius: 8, padding: '8px 10px', cursor: canManage ? 'pointer' : 'default' }}>
-              {canManage && <input type="checkbox" checked={chosenSet.has(s.slot_id)} onChange={() => pick(r.id, s.slot_id, allIds)} />}
-              <span style={{ fontWeight: 800, minWidth: 34 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</span>
-              <span style={{ fontWeight: 700 }}>{s.start_time}–{s.end_time}</span>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0 4px' }}>
+          <span className="muted" style={{ fontSize: 12 }}>Slots to book — toggle any off to decline it:</span>
+          {canManage && <><button onClick={() => setAllChosen(r, true)} style={linkBtn}>Select all</button><button onClick={() => setAllChosen(r, false)} style={linkBtn}>Unselect all</button></>}
+        </div>
+        <div style={{ display: 'grid', gap: 6 }}>
+          {r.slots.map(s => { const on = chosenSet.has(s.slot_id); return (
+            <label key={s.slot_id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', borderRadius: 8, padding: '8px 10px', cursor: canManage ? 'pointer' : 'default', background: on ? 'var(--good-soft,#dcf5ea)' : 'var(--coral-soft,#fdece9)', borderLeft: `3px solid ${on ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)'}` }}>
+              {canManage && <input type="checkbox" checked={on} onChange={() => pick(r.id, s.slot_id, allIds)} />}
+              <span style={{ fontWeight: 800, minWidth: 34, textDecoration: on ? 'none' : 'line-through' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</span>
+              <span style={{ fontWeight: 700, textDecoration: on ? 'none' : 'line-through' }}>{s.start_time}–{s.end_time}</span>
               <span className="muted" style={{ fontSize: 12.5 }}>{names.length > 1 ? `${s.teacher_name} · ${s.mode}` : s.mode}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: on ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)' }}>{on ? 'Book' : 'Decline'}</span>
             </label>
-          ))}
+          ); })}
         </div>
         {canManage && (
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button onClick={() => approve(r)} disabled={busy === r.id} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--teal,#0f766e)', color: '#fff', border: 'none', opacity: busy === r.id ? 0.6 : 1 }}>{busy === r.id ? 'Booking…' : `Book ${chosenSet.size === allIds.length ? 'slots' : chosenSet.size + ' slot(s)'}`}</button>
+            <button onClick={() => approve(r)} disabled={busy === r.id || chosenSet.size === 0} style={{ ...inp, cursor: chosenSet.size === 0 ? 'not-allowed' : 'pointer', fontWeight: 800, background: 'var(--teal,#0f766e)', color: '#fff', border: 'none', opacity: (busy === r.id || chosenSet.size === 0) ? 0.5 : 1 }}>{busy === r.id ? 'Booking…' : `Book ${chosenSet.size === allIds.length ? 'all slots' : chosenSet.size + ' slot(s)'}`}</button>
             <button onClick={() => reject(r)} disabled={busy === r.id} style={{ ...inp, cursor: 'pointer', fontWeight: 800, color: 'var(--coral,#c0392b)' }}>Reject</button>
           </div>
         )}
