@@ -152,4 +152,82 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
     });
     return { created: created.length, modules: created };
   });
+
+  // ---------- Role-play scenarios (ta_training_roleplays) ----------
+  const RP_COLS = `id, title, brief, observer_plays, rubric, est_mins, status, sort_order, created_at, updated_at`;
+  const rpBase = {
+    title: z.string().trim().min(1).max(200),
+    brief: z.string().max(20000).optional().nullable(),
+    observer_plays: z.string().max(20000).optional().nullable(),
+    rubric: z.array(z.string().trim().min(1).max(500)).max(40).optional(),
+    est_mins: z.number().int().min(0).max(600).optional().nullable(),
+    status: z.enum(['draft', 'published']).optional(),
+    sort_order: z.number().int().min(0).max(100000).optional(),
+  };
+  const rpCreate = z.object(rpBase);
+  const rpUpdate = z.object({ ...rpBase, title: rpBase.title.optional() });
+
+  app.get('/v1/admin/training/roleplays', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.directory');
+    requireSite(req, 'teacher');
+    const { rows } = await tdb().query(`select ${RP_COLS} from public.ta_training_roleplays order by sort_order asc, id asc`);
+    return { roleplays: rows };
+  });
+
+  app.post('/v1/admin/training/roleplays', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const b = rpCreate.parse(req.body ?? {});
+    let sort = b.sort_order;
+    if (sort == null) { const { rows } = await tdb().query(`select coalesce(max(sort_order), -1) + 1 as next from public.ta_training_roleplays`); sort = rows[0]?.next ?? 0; }
+    const { rows } = await tdb().query(
+      `insert into public.ta_training_roleplays (title, brief, observer_plays, rubric, est_mins, status, sort_order)
+       values ($1,$2,$3,$4::jsonb,$5,$6,$7) returning ${RP_COLS}`,
+      [b.title, b.brief ?? '', b.observer_plays ?? '', JSON.stringify(b.rubric ?? []), b.est_mins ?? 10, b.status ?? 'draft', sort]);
+    return { roleplay: rows[0] };
+  });
+
+  app.patch('/v1/admin/training/roleplays/:id', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(id)) throw Errors.validation('Invalid role-play id');
+    const b = rpUpdate.parse(req.body ?? {});
+    const sets: string[] = []; const vals: unknown[] = []; let i = 1;
+    const put = (col: string, val: unknown, cast = '') => { sets.push(`${col} = $${i}${cast}`); vals.push(val); i++; };
+    if (b.title !== undefined) put('title', b.title);
+    if (b.brief !== undefined) put('brief', b.brief ?? '');
+    if (b.observer_plays !== undefined) put('observer_plays', b.observer_plays ?? '');
+    if (b.rubric !== undefined) put('rubric', JSON.stringify(b.rubric), '::jsonb');
+    if (b.est_mins !== undefined) put('est_mins', b.est_mins ?? 10);
+    if (b.status !== undefined) put('status', b.status);
+    if (b.sort_order !== undefined) put('sort_order', b.sort_order);
+    if (sets.length === 0) throw Errors.validation('No fields to update');
+    vals.push(id);
+    const { rows } = await tdb().query(`update public.ta_training_roleplays set ${sets.join(', ')} where id = $${i} returning ${RP_COLS}`, vals);
+    if (rows.length === 0) throw Errors.notFound('Role-play not found');
+    return { roleplay: rows[0] };
+  });
+
+  app.delete('/v1/admin/training/roleplays/:id', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(id)) throw Errors.validation('Invalid role-play id');
+    const { rowCount } = await tdb().query(`delete from public.ta_training_roleplays where id = $1`, [id]);
+    if (!rowCount) throw Errors.notFound('Role-play not found');
+    return { deleted: id };
+  });
+
+  app.post('/v1/admin/training/roleplays/reorder', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const { ids } = reorderSchema.parse(req.body ?? {});
+    await tdb().query(
+      `update public.ta_training_roleplays m set sort_order = x.ord
+         from (select unnest($1::int[]) as id, generate_subscripts($1::int[], 1) - 1 as ord) x
+        where m.id = x.id`, [ids]);
+    const { rows } = await tdb().query(`select ${RP_COLS} from public.ta_training_roleplays order by sort_order asc, id asc`);
+    return { roleplays: rows };
+  });
 }

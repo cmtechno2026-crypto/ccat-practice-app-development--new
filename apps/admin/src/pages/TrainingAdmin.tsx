@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { parseTrainingText, type ParsedModule } from '../lib/trainingImport';
@@ -111,6 +112,7 @@ export function TrainingAdmin() {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
+      <Link to="/teacherhub/training" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--brand,#2f6fd0)', textDecoration: 'none', width: 'fit-content' }}>← Training overview</Link>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ marginRight: 'auto' }}>
           <h2 style={{ margin: '0 0 2px', fontSize: 21, fontWeight: 900, letterSpacing: '-.02em', color: navy }}>Learning modules</h2>
