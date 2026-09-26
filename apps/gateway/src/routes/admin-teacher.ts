@@ -8,7 +8,7 @@ import { withTransaction } from '../db.js';
 import { sendEmail } from '../lib/email.js';
 import { randomBytes } from 'node:crypto';
 
-// Teacher Hub (TeachTime) admin surface. This site's data lives in a SEPARATE Supabase project
+// Teacher Hub (TeacherHub) admin surface. This site's data lives in a SEPARATE Supabase project
 // ("cm-whiteboard", public.ta_* tables), reached through a dedicated read pool (`teacherDb`, from
 // TEACHER_DATABASE_URL). Every route is gated by requirePermission('teacher.*') AND
 // requireSite('teacher'); super_admin bypasses both. When the pool is not configured the routes
@@ -131,7 +131,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
 
 
   // ==== Parent Booking Links (A) + Booking Requests inbox (B) =====================================
-  // TeachTime OWNS the ta_booking_* schema (shipped in cm-whiteboard migration `parent_booking_links`).
+  // TeacherHub OWNS the ta_booking_* schema (shipped in cm-whiteboard migration `parent_booking_links`).
   // This admin only reads/writes those tables through teacherDb; it never creates or alters them.
   // Slot vocabulary is 'available' | 'booked'. Approval books slots race-safely via a conditional
   // UPDATE (... where status='available'): a slot taken between the parent's request and the admin's
@@ -201,12 +201,12 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const booked = o.slots.filter((x) => x.outcome === 'approved');
     const notBooked = o.slots.filter((x) => x.outcome === 'taken' || x.outcome === 'rejected');
 
-    // ---- Branded template (matches TeachTime_Booking_Email_Templates). Styles are inlined because
+    // ---- Branded template (matches TeacherHub_Booking_Email_Templates). Styles are inlined because
     // email clients strip <style> blocks. The Concept Mastery logo is rendered as a text "brand pill"
     // rather than the large base64 image, to keep the message small. ----
     const CM_BLUE = '#1c3f6e';
     const P = 'margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;';
-    // Logo is a hosted PNG served by the TeachTime public app (public/cm-logo.png). We reference a
+    // Logo is a hosted PNG served by the TeacherHub public app (public/cm-logo.png). We reference a
     // URL rather than a base64 data: URI because Gmail/Outlook strip inline data images. When the
     // public URL is not configured, fall back to a text brand pill so the header never breaks.
     const logoBase = (cfg.teachTimePublicUrl || '').replace(/\/+$/, '');
@@ -247,7 +247,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       body = h2('Your booking is confirmed')
         + preview(`We have booked the requested sessions for ${who}.`)
         + `<p style="${P}">Hello ${parent},</p>`
-        + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked with the child's name in TeachTime.</p>`
+        + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked with the child's name in TeacherHub.</p>`
         + sessions(booked)
         + `<p style="${P}">Please keep these times available for ${who}. If you need to make a change, contact us as soon as possible so we can check availability.</p>`;
     } else if (o.decision === 'partially_approved') {
@@ -589,7 +589,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { status: teacherStatus };
   });
 
-  // ---- Teacher LEAVE requests. Teachers submit leave (date range + reason) in the TeachTime app; an
+  // ---- Teacher LEAVE requests. Teachers submit leave (date range + reason) in the TeacherHub app; an
   // admin approves/rejects here. An APPROVED leave hides that teacher's availability for the range. ----
   app.get('/v1/admin/teacher/leave-requests', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.directory');

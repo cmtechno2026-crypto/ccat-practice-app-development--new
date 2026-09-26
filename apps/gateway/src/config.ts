@@ -5,8 +5,8 @@ export interface Config {
   port: number;
   host: string;
   databaseUrl: string;
-  teacherDatabaseUrl: string;   // Teacher Hub (TeachTime) DB — separate Supabase project; '' when unset
-  teachTimePublicUrl: string;   // TeachTime public site base (for parent booking links, /b/<token>); '' when unset
+  teacherDatabaseUrl: string;   // Teacher Hub (TeacherHub) DB — separate Supabase project; '' when unset
+  teachTimePublicUrl: string;   // TeacherHub public site base (for parent booking links, /b/<token>); '' when unset
   hmacSecret: string;
   env: 'local' | 'development' | 'staging' | 'production';
   // Launch defaults; all are config-versioned in production (§30).
@@ -91,7 +91,7 @@ export function loadConfig(): Config {
     host: process.env.HOST ?? '0.0.0.0',
     databaseUrl: required('DATABASE_URL'),
     teacherDatabaseUrl: process.env.TEACHER_DATABASE_URL ?? '',
-    // TeachTime public origin, trailing slash trimmed, so booking links render as `${base}/b/<token>`.
+    // TeacherHub public origin, trailing slash trimmed, so booking links render as `${base}/b/<token>`.
     teachTimePublicUrl: (process.env.TEACHTIME_PUBLIC_URL ?? '').trim().replace(/\/$/, ''),
     hmacSecret,
     env,

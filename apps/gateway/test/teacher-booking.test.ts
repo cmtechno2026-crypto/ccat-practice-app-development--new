@@ -4,7 +4,7 @@ import { loadConfig } from '../src/config.js';
 import { buildApp } from '../src/app.js';
 
 // Guard test for the Parent Booking Links (A) + Booking Requests inbox (B) endpoints. The booking
-// logic itself runs against the SEPARATE TeachTime DB (public.ta_booking_*), which is not the CCAT
+// logic itself runs against the SEPARATE TeacherHub DB (public.ta_booking_*), which is not the CCAT
 // test DB — it was verified end-to-end against the live cm-whiteboard schema. Here we only assert the
 // new routes are REGISTERED and AUTH-GATED: an unauthenticated call must be rejected before it ever
 // touches the teacher pool (so it never leaks 404 "route not found" or reaches the DB).

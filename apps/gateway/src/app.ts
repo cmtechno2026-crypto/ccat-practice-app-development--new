@@ -173,7 +173,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerAdminOpsRoutes(app, db, cfg);
   registerAdminEntitlementsRoutes(app, db, cfg);
 
-  // Teacher Hub (multi-site): second pool to the TeachTime "cm-whiteboard" DB via TEACHER_DATABASE_URL.
+  // Teacher Hub (multi-site): second pool to the TeacherHub "cm-whiteboard" DB via TEACHER_DATABASE_URL.
   // Null when unset -> teacher routes mount but return 503 SITE_NOT_CONFIGURED (never crashes boot).
   const teacherDb = cfg.teacherDatabaseUrl ? createPool(cfg.teacherDatabaseUrl) : null;
   registerAdminTeacherRoutes(app, db, cfg, teacherDb);

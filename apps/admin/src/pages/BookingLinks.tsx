@@ -3,7 +3,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 // Parent Booking Links (Teacher Hub). An admin picks 1+ teachers and mints ONE shareable public link
-// (served by TeachTime at `${base}/b/<token>`). The link automatically covers EVERY grade+subject the
+// (served by TeacherHub at `${base}/b/<token>`). The link automatically covers EVERY grade+subject the
 // selected teacher(s) offer — the gateway fills the combos from ta_teachers.subjects, so there is no
 // per-combo picker here.
 interface TeacherRow { id: string; name: string; email: string; subjects: string[]; created_at?: string; }
@@ -51,6 +51,7 @@ export function BookingLinks() {
   const [preview, setPreview] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState('');
+  const [listSearch, setListSearch] = useState('');
   const [fSearch, setFSearch] = useState('');
   const [fSubject, setFSubject] = useState('');
   const [fGrade, setFGrade] = useState('');
@@ -116,6 +117,13 @@ export function BookingLinks() {
     });
     return [...map.entries()].map(([subject, grades]) => ({ subject, grades: grades.sort((a, b) => a - b) }));
   };
+  const teacherEmail = (id: string) => teachers.find(t => t.id === id)?.email || '';
+  const shownLinks = useMemo(() => {
+    const q = listSearch.trim().toLowerCase();
+    if (!q) return links;
+    return links.filter(l => l.teacher_ids.some(id => teacherName(id).toLowerCase().includes(q) || teacherEmail(id).toLowerCase().includes(q)));
+  }, [links, listSearch, teachers]); // eslint-disable-line react-hooks/exhaustive-deps
+  const td: React.CSSProperties = { padding: '10px 12px', fontSize: 13, verticalAlign: 'middle' };
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -180,55 +188,58 @@ export function BookingLinks() {
       )}
 
       <section>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ ...inp, display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 240px', minWidth: 200, padding: '6px 10px' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+            <input value={listSearch} onChange={e => setListSearch(e.target.value)} placeholder="Search links by teacher name or email…" style={{ border: 'none', outline: 'none', background: 'transparent', color: 'inherit', flex: 1, font: 'inherit' }} />
+          </div>
           {['all', 'active', 'expired', 'revoked'].map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, textTransform: 'capitalize', border: filter === f ? '2px solid var(--brand,#2f6fd0)' : inp.border }}>{f}</button>
           ))}
         </div>
         {err && <div className="empty" style={{ padding: 10, color: 'var(--coral,#c0392b)' }}>{err}</div>}
-        {loading ? <div className="muted" style={{ padding: 12 }}>Loading…</div> : links.length === 0 ? <div className="muted" style={{ padding: 12 }}>No booking links.</div> : (
-          <div style={{ display: 'grid', gap: 8 }}>
-            {links.map(l => {
-              const names = l.teacher_ids.map(teacherName);
-              const first = names[0] || 'Teacher';
-              const sg = subjectGrades(l);
-              return (
-              <div key={l.id} style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, padding: '10px 12px' }}>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ width: 32, height: 32, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 12, flex: 'none', background: avGrad(first) }}>{initials(first)}</span>
-                  <span style={{ fontWeight: 800, fontSize: 15 }}>{first}{names.length > 1 && <span className="muted" style={{ fontWeight: 600, fontSize: 12 }}> +{names.length - 1}</span>}</span>
-                  {sg.map(x => { const c = subjColor(x.subject); return (
-                    <span key={x.subject} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.02em', padding: '2px 10px', borderRadius: 8, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: c.tx }} />{x.subject}
-                    </span>
-                  ); })}
-                  {l.label && <span className="muted" style={{ fontSize: 12 }}>{l.label}</span>}
-                  {statusChip(l.status)}
-                  <span style={{ marginLeft: 'auto', fontSize: 12 }} className="muted">{l.pending_requests} pending · {l.total_requests} total</span>
-                </div>
-                <div style={{ margin: '10px 0 2px', marginLeft: 42, display: 'grid', gap: 4 }}>
-                  {sg.map(x => { const c = subjColor(x.subject); return (
-                    <div key={x.subject} style={{ fontSize: 13.5 }}><b style={{ color: c.tx }}>{x.subject}</b> &nbsp;<span className="muted" style={{ fontWeight: 600 }}>Grade :</span> <b>{x.grades.join(', ')}</b></div>
-                  ); })}
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e9f0)', borderRadius: 8, padding: '6px 8px' }}>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: l.url ? 'inherit' : 'var(--muted,#8a93a3)' }}>{l.url || ('/b/' + l.token)}</span>
-                  <button onClick={() => copy(l.url || ('/b/' + l.token), l.id)} title="Copy link" aria-label="Copy link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', borderRadius: 6, padding: '4px 8px', color: copied === l.id ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12 }}>
-                    {copied === l.id
-                      ? (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Copied</>)
-                      : (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>Copy</>)}
-                  </button>
-                </div>
-                {!l.url && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Full shareable domain appears once TEACHTIME_PUBLIC_URL is set on the gateway.</div>}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    {l.expires_at ? `Expires ${new Date(l.expires_at).toLocaleDateString()}` : 'No expiry'} · by {l.created_by_name || 'Admin'}
-                  </span>
-                  {canManage && <button onClick={() => setActive(l.id, l.is_active)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '5px 10px', marginLeft: 'auto', color: l.is_active ? 'var(--coral,#c0392b)' : 'var(--good,#0f9d6b)' }}>{l.is_active ? 'Revoke' : 'Activate'}</button>}
-                </div>
-              </div>
-              );
-            })}
+        {loading ? <div className="muted" style={{ padding: 12 }}>Loading…</div> : shownLinks.length === 0 ? <div className="muted" style={{ padding: 12 }}>{links.length === 0 ? 'No booking links.' : 'No links match your search.'}</div> : (
+          <div style={{ overflowX: 'auto', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, background: 'var(--card,#fff)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <thead>
+                <tr>
+                  {['Teacher', 'Subjects & grades', 'Status', 'Requests', 'Expiry', 'Link', ''].map((h, i) => (
+                    <th key={i} style={{ textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted,#647089)', padding: '10px 12px', borderBottom: '1px solid var(--line,#e6e6ef)', background: 'var(--card2,#f7f9fc)', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shownLinks.map(l => {
+                  const names = l.teacher_ids.map(teacherName);
+                  const first = names[0] || 'Teacher';
+                  const sg = subjectGrades(l);
+                  const hasCombos = !!(l.combos && l.combos.length);
+                  const shareUrl = l.url || ('/b/' + l.token);
+                  return (
+                    <tr key={l.id} style={{ borderBottom: '1px solid var(--line,#eef1f6)' }}>
+                      <td style={td}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ width: 30, height: 30, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 11, flex: 'none', background: avGrad(first) }}>{initials(first)}</span>
+                          <div><div style={{ fontWeight: 700 }}>{first}{names.length > 1 && <span className="muted" style={{ fontWeight: 600, fontSize: 12 }}> +{names.length - 1}</span>}</div>{l.label && <div className="muted" style={{ fontSize: 11 }}>{l.label}</div>}</div>
+                        </div>
+                      </td>
+                      <td style={td}>
+                        {hasCombos ? sg.map(x => { const c = subjColor(x.subject); return (
+                          <div key={x.subject} style={{ marginBottom: 2, fontSize: 12.5 }}><span style={{ display: 'inline-block', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>{x.subject}</span> <span className="muted">{x.grades.join(', ')}</span></div>
+                        ); }) : <span className="muted" style={{ fontSize: 12.5 }}>All subjects &amp; grades</span>}
+                      </td>
+                      <td style={td}>{statusChip(l.status)}</td>
+                      <td style={td}><span className="muted" style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{l.pending_requests} / {l.total_requests}</span></td>
+                      <td style={td}>{l.expires_at ? <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(l.expires_at).toLocaleDateString()}</span> : <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 999, background: '#eef2ff', color: '#4338ca' }}>Never</span>}</td>
+                      <td style={td}>
+                        <button onClick={() => copy(shareUrl, l.id)} title={shareUrl} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card2,#f7f9fc)', borderRadius: 6, padding: '4px 10px', color: copied === l.id ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>{copied === l.id ? '✓ Copied' : '⧉ Copy'}</button>
+                      </td>
+                      <td style={td}>{canManage && <button onClick={() => setActive(l.id, l.is_active)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '5px 10px', color: l.is_active ? 'var(--coral,#c0392b)' : 'var(--good,#0f9d6b)', whiteSpace: 'nowrap' }}>{l.is_active ? 'Revoke' : 'Activate'}</button>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

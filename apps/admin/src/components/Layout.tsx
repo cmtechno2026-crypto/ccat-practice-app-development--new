@@ -23,7 +23,7 @@ function NotificationBell() {
   const [open, setOpen] = useState(false);
   const load = () => {
     if (teacherMode) {
-      // Teacher Hub scope: pending parent booking requests (via booking links) + pending teacher leave.
+      // TeacherHub scope: pending parent booking requests (via booking links) + pending teacher leave.
       Promise.all([
         api.teacherBookingRequests({ status: 'pending' }).then(r => r.requests || []).catch(() => []),
         api.teacherLeaveRequests('pending').then(r => (r.requests as any[]) || []).catch(() => []),
@@ -41,7 +41,7 @@ function NotificationBell() {
   const TMETA: Record<string, { label: string; color: string; icon: string }> = { booking: { label: 'Booking request', color: 'var(--brand,#2f6fd0)', icon: '📥' }, leave: { label: 'Leave request', color: '#7c3aed', icon: '🌴' } };
   return (
     <div style={{ position: 'relative' }}>
-      <button className="iconbtn" onClick={() => { const willOpen = !open; setOpen(willOpen); if (willOpen) load(); }} title={teacherMode ? 'Teacher Hub notifications' : 'Requests'} aria-label={`Notifications${count ? ` (${count})` : ''}`} style={{ position: 'relative' }}>
+      <button className="iconbtn" onClick={() => { const willOpen = !open; setOpen(willOpen); if (willOpen) load(); }} title={teacherMode ? 'TeacherHub notifications' : 'Requests'} aria-label={`Notifications${count ? ` (${count})` : ''}`} style={{ position: 'relative' }}>
         🔔
         {count > 0 && <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 9, background: 'var(--coral, #e0533d)', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center', fontWeight: 700, boxSizing: 'border-box' }}>{count > 99 ? '99+' : count}</span>}
       </button>
@@ -50,7 +50,7 @@ function NotificationBell() {
           <button onClick={() => setOpen(false)} aria-label="Close notifications" style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 40, cursor: 'default' }} />
           <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 340, maxHeight: 440, overflowY: 'auto', background: 'var(--card, #fff)', color: 'var(--ink, #1a1a2e)', border: '1px solid var(--line, #e6e6ef)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.18)', zIndex: 41 }}>
             <div style={{ padding: '12px 14px', fontWeight: 700, borderBottom: '1px solid var(--line, #e6e6ef)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{teacherMode ? 'Teacher Hub' : 'Requests'}</span><span className="muted" style={{ fontWeight: 600 }}>{count}</span>
+              <span>{teacherMode ? 'TeacherHub' : 'Requests'}</span><span className="muted" style={{ fontWeight: 600 }}>{count}</span>
             </div>
             {count === 0
               ? <div className="muted" style={{ padding: '18px 14px' }}>Nothing pending.</div>
@@ -116,7 +116,7 @@ const RAIL: RailItem[] = PAYMENTS_ENABLED
   ? [...BASE_RAIL, { to: '/config/membership', label: 'Membership', ic: '💳', match: '/config/membership', perm: 'config.global' }]
   : BASE_RAIL;
 
-// Teacher Hub rail (multi-site admin). Shown when the active site is 'teacher'. Items gate on
+// TeacherHub rail (multi-site admin). Shown when the active site is 'teacher'. Items gate on
 // teacher.* permissions; super_admin sees all.
 const TEACHER_RAIL: RailItem[] = [
   { to: '/teacherhub', label: 'Dashboard', ic: '📊', match: '/teacherhub', perm: 'teacher.directory' },
@@ -125,7 +125,7 @@ const TEACHER_RAIL: RailItem[] = [
   { to: '/teacherhub/requests', label: 'Requests', ic: (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>), match: '/teacherhub/requests', perm: 'teacher.directory' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
 ];
-const SITE_NAMES: Record<string, string> = { ccat: 'CCAT Practice', teacher: 'Teacher Hub' };
+const SITE_NAMES: Record<string, string> = { ccat: 'CCAT Practice', teacher: 'TeacherHub' };
 function railForSite(site: string): RailItem[] { return site === 'teacher' ? TEACHER_RAIL : RAIL; }
 
 // Teacher accounts see ONLY the student directory — every other admin feature is locked away (both the
@@ -148,14 +148,14 @@ export function Layout() {
   const [siteMenu, setSiteMenu] = useState(false);
   const RAIL_ACTIVE = me?.is_teacher ? TEACHER_ONLY_RAIL : railForSite(activeSite);
   // Keep the active site in sync with the URL so a hard refresh / deep-link to a /teacher/* page shows
-  // the Teacher Hub chrome (rail, header, switcher) instead of falling back to CCAT. URL is the source
+  // the TeacherHub chrome (rail, header, switcher) instead of falling back to CCAT. URL is the source
   // of truth for which workspace is shown; teacher-role accounts keep their own dedicated rail.
   useEffect(() => {
     if (me?.is_teacher) return;
     const onTeacherHub = loc.pathname === '/teacherhub' || loc.pathname.startsWith('/teacherhub/'); // not /teacher-practice|/teacher-exam (CCAT)
     if (onTeacherHub && sites.includes('teacher') && activeSite !== 'teacher') switchSite('teacher');
   }, [loc.pathname, sites, activeSite, me, switchSite]);
-  // Home path for the active site: the brand logo and the back-link go here, so from Teacher Hub they
+  // Home path for the active site: the brand logo and the back-link go here, so from TeacherHub they
   // land on the Teacher dashboard, not the CCAT one.
   const homePath = me?.is_teacher ? '/students' : (activeSite === 'teacher' ? '/teacherhub' : '/');
   const nav = useNavigate();
@@ -165,8 +165,8 @@ export function Layout() {
   // Mobile hamburger drawer (desktop uses the CSS hover-expand rail; this only matters below 860px).
   const [drawer, setDrawer] = useState(false);
   useEffect(() => { setDrawer(false); }, [loc.pathname]); // route change closes the drawer
-  // Live pending-booking-requests count for the Teacher Hub rail badge. Polls every 60s while the
-  // Teacher Hub site is active and the admin can view it; failures are swallowed (a badge is cosmetic).
+  // Live pending-booking-requests count for the TeacherHub rail badge. Polls every 60s while the
+  // TeacherHub site is active and the admin can view it; failures are swallowed (a badge is cosmetic).
   const [pendingReq, setPendingReq] = useState(0);
   useEffect(() => {
     if (me?.is_teacher || activeSite !== 'teacher' || !can('teacher.directory')) { setPendingReq(0); return; }
@@ -203,7 +203,7 @@ export function Layout() {
         <button className="railclose" onClick={() => setDrawer(false)} aria-label="Close menu">✕</button>
         <Link to={homePath} className="brandhdr" aria-label="Dashboard">
           <span className="logo"><span className="cm">CM</span></span>
-          <span className="bt"><b>{activeSite === 'teacher' ? 'Teacher Hub' : 'CCAT Admin'}</b><span>v8.0 · ca-central-1</span></span>
+          <span className="bt"><b>{activeSite === 'teacher' ? 'TeacherHub' : 'CCAT Admin'}</b><span>v8.0 · ca-central-1</span></span>
         </Link>
         {visible.map(r => (
           <NavLink

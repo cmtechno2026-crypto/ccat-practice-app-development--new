@@ -73,7 +73,7 @@ export function BookingRequests() {
 
   const statusOpts = tab === 'parent'
     ? ['pending', 'approved', 'partially_approved', 'rejected', 'all']
-    : ['pending', 'approved', 'rejected', 'cancelled', 'all'];
+    : ['pending', 'approved', 'rejected', 'all'];
 
   const chosenFor = (r: RequestRow) => chosen[r.id] ?? new Set(r.slots.map(s => s.slot_id));
   const pick = (reqId: string, slotId: string, allSlots: string[]) => setChosen(prev => {
@@ -116,7 +116,7 @@ export function BookingRequests() {
   const parentRows = useMemo(() => sortRows(rows.filter(r => !(r.teacher_status === 'accepted' && r.status === 'pending'))), [rows, sort]); // eslint-disable-line react-hooks/exhaustive-deps
   const readyRows = useMemo(() => sortRows(ready), [ready, sort]); // eslint-disable-line react-hooks/exhaustive-deps
   const sortedLeave = useMemo(() => {
-    const a = [...leave];
+    const a = leave.filter(l => l.status !== 'cancelled');
     if (sort === 'name') a.sort((x, y) => (x.teacher_name || '').localeCompare(y.teacher_name || ''));
     else a.sort((x, y) => (sort === 'oldest' ? -1 : 1) * String(y.created_at).localeCompare(String(x.created_at)));
     return a;

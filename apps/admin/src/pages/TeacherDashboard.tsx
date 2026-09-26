@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 
-// Teacher Hub site dashboard. Reads live counts from the TeachTime backend via the gateway
+// TeacherHub site dashboard. Reads live counts from the TeacherHub backend via the gateway
 // (X-Admin-Site: teacher). Renders a clear message when the Teacher DB isn't configured yet (503).
 interface Summary { teachers: number; published_slots: number; open_slots: number; booked_slots: number; }
 
@@ -24,12 +24,12 @@ export function TeacherDashboard() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14 }}>
-        {card('Active teachers', s.teachers, 'accounts on Teacher Hub')}
+        {card('Active teachers', s.teachers, 'accounts on TeacherHub')}
         {card('Published slots', s.published_slots, 'this week')}
         {card('Open to parents', s.open_slots, 'visible availability')}
         {card('Booked', s.booked_slots, 'claimed slots', 'var(--coral,#e0533d)')}
       </div>
-      <div className="muted" style={{ fontSize: 12 }}>Live from the Teacher Hub backend (ta_slots · ta_teachers).</div>
+      <div className="muted" style={{ fontSize: 12 }}>Live from the TeacherHub backend (ta_slots · ta_teachers).</div>
     </div>
   );
 }

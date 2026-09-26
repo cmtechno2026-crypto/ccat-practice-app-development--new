@@ -44,7 +44,7 @@ export function createPool(databaseUrl: string): pg.Pool {
   return pool;
 }
 
-// Second pool for the Teacher Hub (TeachTime) database — a DIFFERENT Supabase project. Its tables
+// Second pool for the Teacher Hub (TeacherHub) database — a DIFFERENT Supabase project. Its tables
 // live in `public` (public.ta_*), and queries fully-qualify them. Same TLS handling as the primary
 // pool; smaller max since admin traffic to this site is light.
 export function createTeacherPool(databaseUrl: string): pg.Pool {
