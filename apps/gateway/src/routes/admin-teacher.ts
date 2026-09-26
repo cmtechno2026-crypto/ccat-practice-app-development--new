@@ -30,7 +30,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
          (select count(*)::int from public.ta_slots)                             as published_slots,
          (select count(*)::int from public.ta_slots where status = 'available')  as open_slots,
          (select count(*)::int from public.ta_slots where status = 'booked')     as booked_slots,
-         (select count(*)::int from public.ta_booking_requests where status = 'pending')                                as pending_requests,
+         (select count(*)::int from public.ta_booking_requests where status = 'pending' and teacher_status <> 'accepted')  as pending_requests,
          (select count(*)::int from public.ta_booking_requests where teacher_status = 'accepted' and status = 'pending') as ready_to_book,
          (select count(*)::int from public.ta_leave_requests where status = 'pending')                                  as pending_leave,
          (select count(*)::int from public.ta_booking_links where is_active = true and (expires_at is null or expires_at > now()))      as active_links,

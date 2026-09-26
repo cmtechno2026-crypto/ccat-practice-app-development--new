@@ -35,7 +35,12 @@ function reqChip(r: RecentReq) {
   if (r.teacher_status === 'accepted') return ['Ready', 'var(--brand-soft,#e7f0fc)', 'var(--brand,#2f6fd0)'];
   return ['Pending', '#fbf0d5', 'var(--amber,#b8860b)'];
 }
-function initials(n: string) { return (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'; }
+function initials(n: string) {
+  const letters = String(n || '').split(/\s+/).map(w => (w.match(/[A-Za-z]/) || [''])[0]).filter(Boolean);
+  if (letters.length >= 2) return (letters[0] + letters[1]).toUpperCase();
+  if (letters.length === 1) return letters[0].toUpperCase();
+  return '?';
+}
 
 export function TeacherDashboard() {
   const [s, setS] = useState<Summary | null>(null);
@@ -96,9 +101,13 @@ export function TeacherDashboard() {
             <div className="muted" style={{ fontWeight: 700, marginBottom: 6, fontSize: 12.5 }}>Booking capacity</div>
             <div style={{ height: 8, borderRadius: 6, background: 'var(--card2,#f7f9fc)', overflow: 'hidden', display: 'flex' }}>
               <i style={{ display: 'block', height: '100%', width: `${openPct}%`, background: 'var(--good,#0f9d6b)' }} />
-              <i style={{ display: 'block', height: '100%', width: `${100 - openPct}%`, background: 'var(--coral,#c0392b)' }} />
+              <i style={{ display: 'block', height: '100%', width: `${100 - openPct}%`, background: 'var(--brand,#2f6fd0)' }} />
             </div>
-            <div className="muted" style={{ marginTop: 5, fontSize: 12 }}>{s.open_slots} open · {s.booked_slots} booked · {openPct}% still available</div>
+            <div className="muted" style={{ marginTop: 6, fontSize: 12, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--good,#0f9d6b)' }} />{s.open_slots} open</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--brand,#2f6fd0)' }} />{s.booked_slots} booked</span>
+              <span style={{ marginLeft: 'auto', fontWeight: 700 }}>{openPct}% available</span>
+            </div>
           </div>
           <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Link to="/teacherhub/booking-links" style={{ ...moreLink, marginLeft: 0, border: '1px solid var(--line,#e6e6ef)', borderRadius: 8, padding: '7px 12px' }}>🔗 Booking links · {s.active_links} active{s.expired_links ? ` · ${s.expired_links} expired` : ''}</Link>
