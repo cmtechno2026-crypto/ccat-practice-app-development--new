@@ -287,6 +287,7 @@ export function TeacherDirectory() {
         {list.map(r => {
           const canBook = r.teacher_status === 'accepted' && r.status === 'pending';
           const terminal = r.status !== 'pending';
+          const canAct = !terminal && canManage && r.teacher_status !== 'declined';
           const mine = (r.slots || []).filter(s => s.teacher_id === id);
           const mineIds = mine.map(s => s.slot_id);
           const picked = pickFor(r.id, mineIds);
@@ -303,19 +304,24 @@ export function TeacherDirectory() {
                 {r.parent_email ? <> · <a href={'mailto:' + r.parent_email}>{r.parent_email}</a></> : null}{r.parent_phone ? ' · ' + r.parent_phone : ''}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                {mine.map(s => { const on = picked.has(s.slot_id); return (canBook && canManage)
+                {mine.map(s => { const on = picked.has(s.slot_id); return canAct
                   ? <button key={s.slot_id} onClick={() => toggleReqSlot(r.id, s.slot_id, mineIds)} style={{ fontSize: 11, fontWeight: 800, borderRadius: 8, padding: '4px 9px', cursor: 'pointer', border: '1px solid ' + (on ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)'), background: on ? 'var(--good-soft,#dcf5ea)' : 'var(--coral-soft,#fdecea)', color: on ? 'var(--good,#0f766e)' : 'var(--coral,#c0392b)', textDecoration: on ? 'none' : 'line-through' }}>{on ? '✓ ' : '✕ '}{DAY_ABBR[s.day_of_week] || s.day_of_week} {s.start_time}–{s.end_time}</button>
                   : <span key={s.slot_id} style={{ fontSize: 11, fontWeight: 700, background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 8, padding: '3px 8px' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} {s.start_time}–{s.end_time}{s.outcome && s.outcome !== 'pending' ? ' · ' + s.outcome : ''}</span>;
                 })}
               </div>
-              {canBook && canManage && <div style={{ display: 'flex', gap: 12, marginTop: 6 }}><button onClick={() => setAllReqSlots(r.id, mineIds, true)} style={miniLink}>Select all</button><button onClick={() => setAllReqSlots(r.id, mineIds, false)} style={miniLink}>Unselect all</button></div>}
+              {canAct && <div style={{ display: 'flex', gap: 12, marginTop: 6 }}><button onClick={() => setAllReqSlots(r.id, mineIds, true)} style={miniLink}>Select all</button><button onClick={() => rejectReq(r.id)} style={{ ...miniLink, color: 'var(--coral,#c0392b)' }}>Reject all</button></div>}
               {r.notes && <div className="muted" style={{ fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>{r.notes}</div>}
               {canManage && !terminal && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-                  {canBook
-                    ? <button onClick={() => bookReq(id, r.id, [...picked], mineIds.length)} disabled={actingReq === r.id || picked.size === 0} style={{ fontWeight: 800, fontSize: 12.5, borderRadius: 8, padding: '7px 14px', border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: picked.size === 0 ? 'not-allowed' : 'pointer', opacity: (actingReq === r.id || picked.size === 0) ? .5 : 1 }}>{actingReq === r.id ? 'Booking…' : `Book ${picked.size === mineIds.length ? 'slots' : picked.size + ' slot(s)'}`}</button>
-                    : <span className="muted" style={{ fontSize: 12 }}>{r.teacher_status === 'pending' ? 'Waiting for the teacher to accept…' : 'Teacher declined this request.'}</span>}
-                  <button onClick={() => rejectReq(r.id)} disabled={actingReq === r.id} style={{ fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: '7px 12px', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--coral,#c0392b)', cursor: 'pointer' }}>Reject</button>
+                  {canAct ? <>
+                    <span className="muted" style={{ fontSize: 12, marginRight: 'auto' }}><b style={{ color: 'var(--good,#0f9d6b)' }}>{picked.size}</b> accepted · <b style={{ color: 'var(--coral,#c0392b)' }}>{mineIds.length - picked.size}</b> rejected</span>
+                    {picked.size > 0
+                      ? <button onClick={() => bookReq(id, r.id, [...picked], mineIds.length)} disabled={actingReq === r.id} style={{ fontWeight: 800, fontSize: 12.5, borderRadius: 8, padding: '7px 14px', border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: actingReq === r.id ? .6 : 1 }}>{actingReq === r.id ? 'Booking…' : `Book ${picked.size === mineIds.length ? 'slots' : picked.size + ' slot(s)'}`}</button>
+                      : <button onClick={() => rejectReq(r.id)} disabled={actingReq === r.id} style={{ fontWeight: 800, fontSize: 12.5, borderRadius: 8, padding: '7px 14px', border: 0, background: 'var(--coral,#c0392b)', color: '#fff', cursor: 'pointer', opacity: actingReq === r.id ? .6 : 1 }}>Reject request</button>}
+                  </> : <>
+                    <span className="muted" style={{ fontSize: 12, marginRight: 'auto' }}>Teacher declined this request.</span>
+                    <button onClick={() => rejectReq(r.id)} disabled={actingReq === r.id} style={{ fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: '7px 12px', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--coral,#c0392b)', cursor: 'pointer' }}>Close request</button>
+                  </>}
                 </div>
               )}
             </div>

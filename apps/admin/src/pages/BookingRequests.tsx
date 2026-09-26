@@ -82,6 +82,7 @@ export function BookingRequests() {
     return { ...prev, [reqId]: cur };
   });
   const setAllChosen = (r: RequestRow, on: boolean) => setChosen(prev => ({ ...prev, [r.id]: on ? new Set(r.slots.map(s => s.slot_id)) : new Set<string>() }));
+  const setSlot = (r: RequestRow, sid: string, on: boolean) => setChosen(prev => { const cur = prev[r.id] ? new Set(prev[r.id]) : new Set(r.slots.map(x => x.slot_id)); if (on) cur.add(sid); else cur.delete(sid); return { ...prev, [r.id]: cur }; });
   const linkBtn: React.CSSProperties = { background: 'none', border: 'none', color: 'var(--brand,#2f6fd0)', fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: 0 };
 
   const approve = async (r: RequestRow) => {
@@ -108,7 +109,7 @@ export function BookingRequests() {
   const sortRows = (arr: RequestRow[]) => {
     const a = [...arr];
     if (sort === 'name') a.sort((x, y) => (x.parent_name || '').localeCompare(y.parent_name || ''));
-    else a.sort((x, y) => (sort === 'oldest' ? 1 : -1) * String(y.created_at).localeCompare(String(x.created_at)));
+    else a.sort((x, y) => (sort === 'oldest' ? -1 : 1) * String(y.created_at).localeCompare(String(x.created_at)));
     return a;
   };
   // Parent tab excludes requests the teacher already accepted while still pending (those live under Teacher requests).
@@ -117,7 +118,7 @@ export function BookingRequests() {
   const sortedLeave = useMemo(() => {
     const a = [...leave];
     if (sort === 'name') a.sort((x, y) => (x.teacher_name || '').localeCompare(y.teacher_name || ''));
-    else a.sort((x, y) => (sort === 'oldest' ? 1 : -1) * String(y.created_at).localeCompare(String(x.created_at)));
+    else a.sort((x, y) => (sort === 'oldest' ? -1 : 1) * String(y.created_at).localeCompare(String(x.created_at)));
     return a;
   }, [leave, sort]);
   const showReady = status === 'pending' || status === 'all';
@@ -134,6 +135,9 @@ export function BookingRequests() {
     const names = namesOf(r);
     const declined = r.teacher_status === 'declined';
     const waiting = r.status === 'pending' && r.teacher_status === 'pending';
+    const actionable = r.status === 'pending' && !declined && canManage;
+    const chosenSet = chosenFor(r);
+    const allIds = r.slots.map(s => s.slot_id);
     return (
       <div key={r.id} style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderLeft: declined ? '4px solid var(--coral,#c0392b)' : '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 14 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -149,19 +153,39 @@ export function BookingRequests() {
         {declined && <div style={{ marginTop: 8, fontSize: 12.5, borderRadius: 8, padding: '7px 10px', background: 'var(--coral-soft,#fdece9)', color: '#8a2318', border: '1px solid #f4cfc8' }}>✕ Declined by <b>{declinedBy(r)}</b>{r.teacher_decided_at ? ` · ${new Date(r.teacher_decided_at).toLocaleString()}` : ''}</div>}
         {waiting && <div className="muted" style={{ marginTop: 8, fontSize: 12.5, borderRadius: 8, padding: '7px 10px', background: 'var(--card2,#f7f9fc)' }}>Waiting for {names.length ? names.join(', ') : 'the teacher'} to accept in the teacher app.</div>}
         {r.notes && <div style={{ fontSize: 13, marginTop: 6, whiteSpace: 'pre-wrap', background: 'var(--card2,#f7f9fc)', borderRadius: 8, padding: '6px 10px' }}>{r.notes}</div>}
-        <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
-          {r.slots.map(s => (
-            <div key={s.slot_id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card2,#f7f9fc)', borderRadius: 8, padding: '8px 10px' }}>
-              <span style={{ fontWeight: 800, minWidth: 34 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</span>
-              <span style={{ fontWeight: 700 }}>{s.start_time}–{s.end_time}</span>
+        {actionable && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0 4px' }}>
+            <span className="muted" style={{ fontSize: 12 }}>Accept or reject each slot:</span>
+            <button onClick={() => setAllChosen(r, true)} style={linkBtn}>Select all</button>
+            <button onClick={() => setAllChosen(r, false)} style={{ ...linkBtn, color: 'var(--coral,#c0392b)' }}>Reject all</button>
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: 6, marginTop: actionable ? 0 : 10 }}>
+          {r.slots.map(s => { const on = chosenSet.has(s.slot_id); return (
+            <div key={s.slot_id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', borderRadius: 8, padding: '8px 10px', background: !actionable ? 'var(--card2,#f7f9fc)' : on ? 'var(--good-soft,#dcf5ea)' : 'var(--coral-soft,#fdece9)', borderLeft: actionable ? `3px solid ${on ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)'}` : '3px solid transparent' }}>
+              <span style={{ fontWeight: 800, minWidth: 34, textDecoration: actionable && !on ? 'line-through' : 'none' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week}</span>
+              <span style={{ fontWeight: 700, textDecoration: actionable && !on ? 'line-through' : 'none' }}>{s.start_time}–{s.end_time}</span>
               <span className="muted" style={{ fontSize: 12.5 }}>{names.length > 1 ? `${s.teacher_name} · ${s.mode}` : s.mode}</span>
+              {actionable && (
+                <span style={{ marginLeft: 'auto', display: 'inline-flex', border: '1px solid var(--line,#d7dce8)', borderRadius: 8, overflow: 'hidden' }}>
+                  <button onClick={() => setSlot(r, s.slot_id, true)} style={{ cursor: 'pointer', border: 'none', padding: '5px 11px', fontWeight: 800, fontSize: 12, background: on ? 'var(--good,#0f9d6b)' : '#fff', color: on ? '#fff' : 'var(--muted,#647089)' }}>Accept</button>
+                  <button onClick={() => setSlot(r, s.slot_id, false)} style={{ cursor: 'pointer', border: 'none', padding: '5px 11px', fontWeight: 800, fontSize: 12, background: !on ? 'var(--coral,#c0392b)' : '#fff', color: !on ? '#fff' : 'var(--muted,#647089)' }}>Reject</button>
+                </span>
+              )}
             </div>
-          ))}
+          ); })}
         </div>
-        {r.status === 'pending' && canManage && (
+        {actionable && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
+            <span className="muted" style={{ fontSize: 12.5, marginRight: 'auto' }}><b style={{ color: 'var(--good,#0f9d6b)' }}>{chosenSet.size}</b> accepted · <b style={{ color: 'var(--coral,#c0392b)' }}>{allIds.length - chosenSet.size}</b> rejected</span>
+            {chosenSet.size > 0
+              ? <button onClick={() => approve(r)} disabled={busy === r.id} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--good,#0f9d6b)', color: '#fff', border: 'none', opacity: busy === r.id ? 0.6 : 1 }}>{busy === r.id ? 'Working…' : `Accept ${chosenSet.size} slot${chosenSet.size > 1 ? 's' : ''}${allIds.length - chosenSet.size ? ' · decline ' + (allIds.length - chosenSet.size) : ''}`}</button>
+              : <button onClick={() => reject(r)} disabled={busy === r.id} style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--coral,#c0392b)', color: '#fff', border: 'none', opacity: busy === r.id ? 0.6 : 1 }}>{busy === r.id ? 'Working…' : 'Reject request'}</button>}
+          </div>
+        )}
+        {declined && canManage && (
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            {r.teacher_status === 'pending' && <button onClick={() => acceptOnBehalf(r)} disabled={busy === r.id} title="Accept on behalf of the teacher" style={{ ...inp, cursor: 'pointer', fontWeight: 800, background: 'var(--good,#0f9d6b)', color: '#fff', border: 'none', opacity: busy === r.id ? 0.6 : 1 }}>{busy === r.id ? 'Working…' : 'Accept'}</button>}
-            <button onClick={() => reject(r)} disabled={busy === r.id} style={{ ...inp, cursor: 'pointer', fontWeight: 800, color: 'var(--coral,#c0392b)' }}>{declined ? 'Close request' : 'Reject'}</button>
+            <button onClick={() => reject(r)} disabled={busy === r.id} style={{ ...inp, cursor: 'pointer', fontWeight: 800, color: 'var(--coral,#c0392b)' }}>Close request</button>
           </div>
         )}
         {r.status !== 'pending' && r.decided_at && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Decided {new Date(r.decided_at).toLocaleString()}{r.decided_by_name ? ` by ${r.decided_by_name}` : ''}</div>}
