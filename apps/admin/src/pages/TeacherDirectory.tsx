@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 // subject+grade offerings, a status-only week of slots (Available / Unavailable / Booked), and the
 // parent booking requests for that teacher. A request the TEACHER has accepted (teacher_status) shows
 // a Book action here; booking writes the slot in the Teacher Hub DB with the child's name.
-interface TeacherRow { id: string; name: string; email: string; subjects: string[]; slots: number; open_slots: number; created_at: string; }
+interface TeacherRow { id: string; name: string; email: string; subjects: string[]; slots: number; open_slots: number; created_at: string; banned_at?: string | null; }
 interface Slot {
   id: string; subject: string; grade: number | null; grade_min?: number | null; grade_max?: number | null; day_of_week: string; start_time: string; end_time: string;
   mode: string; status: string; timezone: string; notes: string;
@@ -90,6 +90,18 @@ export function TeacherDirectory() {
   const canManage = can('teacher.slots.manage');
 
   const load = (q: string) => { setErr(''); api.teacherTeachers(q).then(r => setRows(r.teachers || [])).catch(e => setErr((e as Error).message || 'Failed to load')); };
+  const [acting, setActing] = useState(false);
+  const banTeacher = async (t: TeacherRow, banned: boolean) => {
+    setActing(true); setErr('');
+    try { await api.teacherSetBan(t.id, banned); load(search); } catch (e) { setErr((e as Error).message); } finally { setActing(false); }
+  };
+  const deleteTeacher = async (t: TeacherRow) => {
+    const typed = window.prompt(`Permanently delete ${t.name}? This removes their account, availability, sessions and training progress. This cannot be undone.\n\nType the teacher's name to confirm:`);
+    if (typed == null) return;
+    if (typed.trim() !== t.name.trim()) { window.alert('Name did not match — nothing was deleted.'); return; }
+    setActing(true); setErr('');
+    try { await api.teacherDeleteTeacher(t.id); setSelected(null); load(search); } catch (e) { setErr((e as Error).message); } finally { setActing(false); }
+  };
   const loadReqs = () => { api.teacherBookingRequests({ status: 'all' }).then(r => setAllReqs((r.requests || []) as Req[])).catch(() => setAllReqs([])); };
   useEffect(() => { load(''); loadReqs(); }, []);
   useEffect(() => { api.teacherBookingLinks().then(r => setLinks(r.links || [])).catch(() => {}); }, []);
@@ -411,7 +423,7 @@ export function TeacherDirectory() {
                     <span className={'cm-av ' + GRADS[i % GRADS.length]} style={{ width: 38, height: 38, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 13, flex: 'none' }}>{initials(t.name)}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ fontWeight: 800, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-                      <span className="muted" style={{ fontSize: 11.5 }}>{t.slots} slots · {t.open_slots} open</span>
+                      <span className="muted" style={{ fontSize: 11.5 }}>{t.slots} slots · {t.open_slots} open{t.banned_at ? <span style={{ color: 'var(--coral,#c0392b)', fontWeight: 700 }}> · Banned</span> : ''}</span>
                     </span>
                     {badge > 0 && <span style={{ ...countBadge, background: 'var(--amber,#b45309)' }}>{badge}</span>}
                   </button>
@@ -427,7 +439,12 @@ export function TeacherDirectory() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <span className={'cm-av ' + GRADS[(filteredRows.findIndex(t => t.id === sel.id)) % GRADS.length]} style={{ width: 44, height: 44, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flex: 'none' }}>{initials(sel.name)}</span>
                   <div><div style={{ fontWeight: 800, fontSize: 17 }}>{sel.name}</div><div className="muted" style={{ fontSize: 12 }}>{sel.email}</div></div>
-                  {reqBadge(sel.id) > 0 && <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(sel.id)} ready to book</span>}
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {reqBadge(sel.id) > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(sel.id)} ready to book</span>}
+                    {sel.banned_at && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--coral,#c0392b)', background: 'var(--coral-soft,#fdece9)', borderRadius: 999, padding: '2px 10px' }}>Banned</span>}
+                    {canManage && <button onClick={() => banTeacher(sel, !sel.banned_at)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{sel.banned_at ? 'Unban' : 'Ban'}</button>}
+                    {canManage && <button onClick={() => deleteTeacher(sel)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--coral,#c0392b)', opacity: acting ? 0.6 : 1 }}>Delete</button>}
+                  </div>
                 </div>
 
                 <div>

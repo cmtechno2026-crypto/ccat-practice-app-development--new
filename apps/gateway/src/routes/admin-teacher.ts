@@ -53,7 +53,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (search) { params.push('%' + search.toLowerCase() + '%'); where = 'where lower(t.name) like $1 or lower(t.email) like $1'; }
     params.push(limit);
     const { rows } = await tdb().query(
-      `select t.id, t.name, t.email, t.subjects, t.created_at,
+      `select t.id, t.name, t.email, t.subjects, t.created_at, t.banned_at,
               (select count(*)::int from public.ta_slots s where s.teacher_id = t.id)                          as slots,
               (select count(*)::int from public.ta_slots s where s.teacher_id = t.id and s.status = 'available') as open_slots
          from public.ta_teachers t
@@ -639,4 +639,40 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { id, status: next };
   });
 
+
+  // Ban (temporary) / unban a teacher account. banned_at != null = banned. Enforcement of the block
+  // (login + hiding availability from parents) lives in the TeacherHub app.
+  app.post('/v1/admin/teacher/teachers/:id/:action', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const { id, action } = req.params as { id: string; action: string };
+    if (action !== 'ban' && action !== 'unban') throw Errors.validation('Action must be ban or unban');
+    const { rows } = await tdb().query(
+      `update public.ta_teachers set banned_at = ${action === 'ban' ? 'now()' : 'null'} where id = $1 returning id, banned_at`, [id]);
+    if (rows.length === 0) throw Errors.notFound('Teacher not found');
+    return { id, banned_at: rows[0].banned_at };
+  });
+
+  // Permanently delete a teacher account and all their data. Transactional: clears the leave rows that
+  // would block the FK, drops the teacher from any booking-link teacher lists, then deletes the teacher
+  // (slots, sessions, training progress and booking-request slots cascade).
+  app.delete('/v1/admin/teacher/teachers/:id', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = (req.params as { id: string }).id;
+    await withTransaction(tdb(), async (client) => {
+      const chk = await client.query('select id from public.ta_teachers where id = $1', [id]);
+      if (chk.rows.length === 0) throw Errors.notFound('Teacher not found');
+      await client.query('delete from public.ta_leave_requests where teacher_id = $1', [id]);
+      await client.query('update public.ta_booking_links set teacher_ids = array_remove(teacher_ids, $1::uuid) where $1::uuid = any(teacher_ids)', [id]);
+      await client.query('delete from public.ta_teachers where id = $1', [id]);
+    });
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin','teacher.account.delete','ta_teacher',$2,$3)`,
+        [req.admin!.adminId, id, JSON.stringify({ deleted: true })]);
+    } catch { /* best-effort */ }
+    return { deleted: id };
+  });
 }
