@@ -29,7 +29,15 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
          (select count(*)::int from public.ta_teachers)                          as teachers,
          (select count(*)::int from public.ta_slots)                             as published_slots,
          (select count(*)::int from public.ta_slots where status = 'available')  as open_slots,
-         (select count(*)::int from public.ta_slots where status = 'booked')     as booked_slots`);
+         (select count(*)::int from public.ta_slots where status = 'booked')     as booked_slots,
+         (select count(*)::int from public.ta_booking_requests where status = 'pending')                                as pending_requests,
+         (select count(*)::int from public.ta_booking_requests where teacher_status = 'accepted' and status = 'pending') as ready_to_book,
+         (select count(*)::int from public.ta_leave_requests where status = 'pending')                                  as pending_leave,
+         (select count(*)::int from public.ta_booking_links where is_active = true and (expires_at is null or expires_at > now()))      as active_links,
+         (select count(*)::int from public.ta_booking_links where is_active = true and expires_at is not null and expires_at <= now()) as expired_links,
+         (select count(*)::int from public.ta_booking_requests where created_at >= date_trunc('week', now()))           as requests_this_week,
+         (select count(*)::int from public.ta_booking_requests where status in ('approved','partially_approved') and decided_at >= date_trunc('week', now())) as booked_this_week,
+         (select count(*)::int from public.ta_teachers where created_at >= date_trunc('week', now()))                   as new_teachers_week`);
     return rows[0]!;
   });
 

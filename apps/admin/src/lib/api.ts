@@ -99,7 +99,7 @@ export const api = {
   },
   // ---- Teacher Hub (multi-site) — client for the gateway teacher endpoints (admin-teacher.ts +
   // admin-students.ts teacher block). Plain authenticated calls; no site header needed. ----
-  teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number }>('GET', '/v1/admin/teacher/summary'),
+  teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number; pending_requests: number; ready_to_book: number; pending_leave: number; active_links: number; expired_links: number; requests_this_week: number; booked_this_week: number; new_teachers_week: number }>('GET', '/v1/admin/teacher/summary'),
   teacherTeachers: (search?: string) => { const p = new URLSearchParams(); if (search) p.set('search', search); const qs = p.toString(); return req<{ teachers: any[] }>('GET', `/v1/admin/teacher/teachers${qs ? '?' + qs : ''}`); },
   teacherSlots: (teacher_id?: string) => { const p = new URLSearchParams(); if (teacher_id) p.set('teacher_id', teacher_id); const qs = p.toString(); return req<{ slots: any[] }>('GET', `/v1/admin/teacher/slots${qs ? '?' + qs : ''}`); },
   teacherSetSlotStatus: (id: string, status: 'available' | 'booked', details?: { student?: string; note?: string }) => req<any>('PATCH', `/v1/admin/teacher/slots/${id}`, { status, ...(details || {}) }),
