@@ -56,6 +56,8 @@ export function BookingRequests() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
+  const [autoBook, setAutoBook] = useState<boolean | null>(null);
+  const [savingAuto, setSavingAuto] = useState(false);
   const [chosen, setChosen] = useState<Record<string, Set<string>>>({});
 
   const load = () => {
@@ -70,6 +72,8 @@ export function BookingRequests() {
     }
   };
   useEffect(load, [tab, status]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { api.teacherGetSettings().then(r => setAutoBook(!!r.auto_book)).catch(() => setAutoBook(false)); }, []);
+  const toggleAuto = async () => { if (autoBook === null || savingAuto) return; const next = !autoBook; setSavingAuto(true); setErr(''); try { await api.teacherSetSettings(next); setAutoBook(next); } catch (e) { setErr((e as Error).message || 'Could not update Auto Booking'); } finally { setSavingAuto(false); } };
 
   const statusOpts = tab === 'parent'
     ? ['pending', 'approved', 'partially_approved', 'rejected', 'all']
@@ -240,6 +244,17 @@ export function BookingRequests() {
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={() => { setTab('parent'); setStatus('pending'); }} style={tabBtn('parent')}>Parent requests</button>
         <button onClick={() => { setTab('teacher'); setStatus('pending'); }} style={tabBtn('teacher')}>Teacher requests</button>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: autoBook ? 'var(--teal-soft,#e6f7f2)' : 'var(--card2,#f7f9fc)', border: '1px solid ' + (autoBook ? '#bfe6d9' : 'var(--line,#e6e6ef)'), borderRadius: 12, padding: '11px 14px' }}>
+        <button onClick={toggleAuto} disabled={autoBook === null || savingAuto} aria-pressed={!!autoBook} title="Toggle Auto Booking"
+          style={{ position: 'relative', width: 42, height: 24, borderRadius: 999, border: 0, cursor: (autoBook === null || savingAuto) ? 'default' : 'pointer', background: autoBook ? 'var(--teal,#0f766e)' : '#cdd6e6', flex: '0 0 auto', opacity: (autoBook === null || savingAuto) ? 0.6 : 1 }}>
+          <span style={{ position: 'absolute', top: 2, left: autoBook ? 20 : 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,.25)' }} />
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 13.5 }}>⚡ Auto-book on teacher acceptance{autoBook === null ? '' : autoBook ? ' · ON' : ' · OFF'}</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{autoBook ? 'When a teacher accepts a parent request for their slot, the slot is booked to the student immediately — no manual step.' : 'Teacher acceptances are recorded; you book the slots below. Turn on to book automatically on acceptance.'}</div>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

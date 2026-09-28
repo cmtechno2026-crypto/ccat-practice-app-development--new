@@ -155,6 +155,32 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { deleted: id };
   });
 
+  // ==== TeacherHub settings (global) — Auto Booking toggle ========================================
+  // auto_book: when true, a teacher accepting a parent request books the slot immediately (TeacherHub app);
+  // when false, acceptance is recorded and the admin books the slots. Stored in public.ta_settings so both
+  // this admin and the TeacherHub app read the same value.
+  app.get('/v1/admin/teacher/settings', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.directory');
+    requireSite(req, 'teacher');
+    const { rows } = await tdb().query(`select value from public.ta_settings where key = 'auto_book'`);
+    const row = rows[0];
+    return { auto_book: row ? row.value === true : false };
+  });
+  app.patch('/v1/admin/teacher/settings', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const b = z.object({ auto_book: z.boolean() }).parse(req.body ?? {});
+    await tdb().query(
+      `insert into public.ta_settings (key, value, updated_at) values ('auto_book', $1::jsonb, now())
+       on conflict (key) do update set value = excluded.value, updated_at = now()`, [JSON.stringify(b.auto_book)]);
+    try {
+      await db.query(`insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+        values ($1,'admin','teacher.settings.update','ta_settings','auto_book',$2)`,
+        [req.admin!.adminId, JSON.stringify({ auto_book: b.auto_book })]);
+    } catch { /* audit best-effort */ }
+    return { auto_book: b.auto_book };
+  });
+
   // ==== Parent Booking Links (A) + Booking Requests inbox (B) =====================================
   // TeacherHub OWNS the ta_booking_* schema (shipped in cm-whiteboard migration `parent_booking_links`).
   // This admin only reads/writes those tables through teacherDb; it never creates or alters them.
