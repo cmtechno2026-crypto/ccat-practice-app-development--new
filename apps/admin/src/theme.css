@@ -527,3 +527,16 @@ tr.row-retired>td{background:var(--coral-bg);opacity:.72}
   table.rcard td.rcard-title::before{display:none}
   table.rcard td.rcard-hide{display:none}
 }
+
+/* ============ FIX: drawer geometry must override the desktop .rail rules that appear LATER in this
+   file (source order beats an equal-specificity @media block). Without these, on phones the rail stays
+   a narrow in-flow desktop rail with labels clipped and the content squeezed beside it. ============ */
+@media (max-width:860px){
+  .rail{position:fixed!important;top:0;left:0;height:100vh;width:236px!important;min-width:236px!important;
+        transform:translateX(-100%);box-shadow:none!important;overflow-y:auto;z-index:30;transition:transform .22s ease}
+  .rail:hover,.rail:focus-within{width:236px!important;min-width:236px!important;box-shadow:none!important}
+  .rail.open{transform:none!important;box-shadow:10px 0 34px rgba(0,0,0,.4)!important}
+  /* In the drawer every label is always shown (no hover dependency on touch). */
+  .rail .railitem{justify-content:flex-start!important}
+  .rail .railitem .rlabel,.rail .brandhdr .bt,.rail .railfoot .who2{opacity:1!important;max-width:170px!important}
+}
