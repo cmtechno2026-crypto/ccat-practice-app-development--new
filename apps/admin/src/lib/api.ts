@@ -126,6 +126,7 @@ export const api = {
   trainingReorder: (ids: number[]) => req<{ modules: any[] }>('POST', '/v1/admin/training/modules/reorder', { ids }),
   trainingBulkCreate: (modules: any[]) => req<{ created: number; modules: any[] }>('POST', '/v1/admin/training/modules/bulk', { modules }),
   trainingCreateFromPptx: (filename: string, data: string) => req<any>('POST', '/v1/admin/training/modules/from-pptx', { filename, data }),
+  trainingReplaceFromPptx: (id: number, filename: string, data: string) => req<any>('POST', `/v1/admin/training/modules/${id}/from-pptx`, { filename, data }),
   trainingRoleplays: () => req<{ roleplays: any[] }>('GET', '/v1/admin/training/roleplays'),
   trainingCreateRoleplay: (body: any) => req<{ roleplay: any }>('POST', '/v1/admin/training/roleplays', body),
   trainingUpdateRoleplay: (id: number, patch: any) => req<{ roleplay: any }>('PATCH', `/v1/admin/training/roleplays/${id}`, patch),

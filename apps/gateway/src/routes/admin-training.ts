@@ -112,6 +112,37 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
     return { module: rows[0], slideCount: built.slideCount, sectionCount: built.course.sections.length, questionCount: built.course.questions.length, warnings: built.warnings };
   });
 
+  // Replace an EXISTING module's content from a PowerPoint (Edit-module page). Parses the deck and
+  // overwrites title/description/body/quiz/course_json in place; icon, sort_order, active are kept.
+  app.post('/v1/admin/training/modules/:id/from-pptx', { preHandler: [authenticateAdmin], bodyLimit: 26214400 }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(id)) throw Errors.validation('Invalid module id');
+    const body = z.object({ filename: z.string().max(300).optional(), data: z.string().min(1) }).parse(req.body ?? {});
+    let buf: Buffer;
+    try { buf = Buffer.from(body.data, 'base64'); } catch { throw Errors.validation('Invalid file data'); }
+    if (buf.length < 100) throw Errors.validation('The uploaded file is empty or too small.');
+    let built;
+    try { built = buildCourseFromPptx(buf, body.filename ?? ''); }
+    catch (e) { throw Errors.validation((e as Error).message || 'Could not process the PowerPoint.'); }
+    const { rows } = await tdb().query(
+      `update public.ta_training_modules
+         set title = $2, duration_mins = $3, description = $4, body_html = '', quiz = $5::jsonb,
+             course_json = $6::jsonb, source_type = 'pptx', source_file = $7, updated_at = now()
+       where id = $1
+       returning id, title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active, course_json, source_type, source_file, created_at, updated_at`,
+      [id, built.title || 'Training module', Math.max(5, built.slideCount), built.description ?? '',
+       JSON.stringify(built.quiz ?? []), JSON.stringify(built.course), body.filename ?? null]);
+    if (!rows.length) throw Errors.notFound('Module not found');
+    try {
+      await db.query(`insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+        values ($1,'admin','teacher.training.pptx_replace','ta_training_module',$2,$3)`,
+        [req.admin!.adminId, String(id), JSON.stringify({ slides: built.slideCount, sections: built.course.sections.length, questions: built.course.questions.length })]);
+    } catch { /* audit best-effort */ }
+    return { module: rows[0], slideCount: built.slideCount, sectionCount: built.course.sections.length, questionCount: built.course.questions.length, warnings: built.warnings };
+  });
+
   // Update a module (any subset of fields).
   app.patch('/v1/admin/training/modules/:id', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.slots.manage');

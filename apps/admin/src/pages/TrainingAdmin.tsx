@@ -46,6 +46,12 @@ export function TrainingAdmin() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
   const [importMode, setImportMode] = useState<'txt' | 'pptx'>('txt');
+  const [pasteText, setPasteText] = useState('');
+  const [showFormat, setShowFormat] = useState(false);
+  const [copied2, setCopied2] = useState(false);
+  const [parseChk, setParseChk] = useState<any>(null);
+  const [pptxBusy2, setPptxBusy2] = useState(false);
+  const [contentMsg, setContentMsg] = useState('');
   const [pptxBusy, setPptxBusy] = useState(false);
   const [pptxMsg, setPptxMsg] = useState('');
   const [dragIx, setDragIx] = useState<number | null>(null);
@@ -126,6 +132,24 @@ export function TrainingAdmin() {
     setEditing({ ...editing, title: m.title, duration_mins: m.duration_mins ?? 0, description: m.description || '', body_html: m.body_html || '',
       quiz: m.quiz.length ? padQuiz(m.quiz as Quiz[], m.questions_per_module) : padQuiz(editing.quiz.filter(q => q.q.trim()), m.questions_per_module) });
   };
+  const copyFormat = () => { try { navigator.clipboard.writeText(TXT_TEMPLATE); setCopied2(true); setTimeout(() => setCopied2(false), 1500); } catch { /* ignore */ } };
+  const parseCheck = () => { setContentMsg(''); setParseChk(pasteText.trim() ? parseTrainingText(pasteText) : null); };
+  const applyPaste = () => { applyTxt(pasteText); setParseChk(null); setPasteText(''); setContentMsg('✓ Applied to this module. Review and Save.'); };
+  const replaceFromPptx = async (f: File) => {
+    if (!editing?.id) { setErr('Save the module first, then upload a PowerPoint to replace its content.'); return; }
+    setPptxBusy2(true); setContentMsg(''); setErr('');
+    try {
+      const b64 = await new Promise<string>((res, rej) => { const rd = new FileReader(); rd.onload = () => res(String(rd.result || '').split(',')[1] || ''); rd.onerror = () => rej(new Error('Could not read the file.')); rd.readAsDataURL(f); });
+      const r = await api.trainingReplaceFromPptx(editing.id, f.name, b64) as { module: Module; slideCount: number; sectionCount: number; questionCount: number; warnings?: string[] };
+      setPptxBusy2(false); openEditor(r.module); load();
+      setContentMsg(`✓ Replaced from “${f.name}” — ${r.slideCount} slides → ${r.sectionCount} sections, ${r.questionCount} questions.${(r.warnings && r.warnings.length) ? ' Note: ' + r.warnings.join(' ') : ''}`);
+    } catch (e) { setPptxBusy2(false); setErr((e as Error).message || 'Could not process the PowerPoint.'); }
+  };
+  const chooseContentFile = (f?: File) => {
+    if (!f) return;
+    if (/\.pptx?$/i.test(f.name)) { replaceFromPptx(f); return; }
+    readFile(f, t => { setPasteText(t); setParseChk(parseTrainingText(t)); setContentMsg(''); });
+  };
 
   // ---- quiz builder ----
   const setQ = (i: number, patch: Partial<Quiz>) => setEditing(e => e ? { ...e, quiz: e.quiz.map((q, x) => x === i ? { ...q, ...patch } : q) } : e);
@@ -171,20 +195,40 @@ export function TrainingAdmin() {
           </label>
         </section>
 
-        {/* content via .txt */}
+        {/* content: bulk-add style (.txt / .md / .pptx) */}
         <section style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 16 }}>
-          <div style={{ fontWeight: 800, color: navy, fontSize: 14, marginBottom: 8 }}>Lesson content (from .txt)</div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button style={btnG} onClick={() => download((editing.title || 'module').replace(/\W+/g, '_') + '.txt', editing.title ? moduleToTxt({ ...editing, questions_per_module: editing.quiz.length, quiz: editing.quiz.filter(q => q.q.trim()) }) : TXT_TEMPLATE)}>⬇ Download .txt {editing.title ? '(this module)' : 'template'}</button>
-            <label style={{ ...btnP, display: 'inline-flex', alignItems: 'center' }}>⬆ Upload .txt<input type="file" accept=".txt,.md,text/plain" style={{ display: 'none' }} onChange={e => readFile(e.target.files?.[0], applyTxt)} /></label>
+          <div style={{ fontWeight: 800, color: navy, fontSize: 14, marginBottom: 4 }}>Lesson content</div>
+          <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>Paste the module content or choose a file. Title, minutes, description, lesson body and questions are read from it. A <b>.pptx</b> replaces this module with an auto-built interactive lesson + questions.</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button style={btnG} onClick={() => download('module_template.txt', editing.title ? moduleToTxt({ ...editing, questions_per_module: editing.quiz.length, quiz: editing.quiz.filter(q => q.q.trim()) }) : TXT_TEMPLATE)}>⬇ Download sample</button>
+            <button style={btnG} onClick={copyFormat}>⧉ {copied2 ? 'Copied' : 'Copy format'}</button>
+            <button style={btnG} onClick={() => setShowFormat(v => !v)}>👁 {showFormat ? 'Hide format' : 'View format'}</button>
+            <label style={{ ...btnG, display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>📄 Choose file… (.txt / .md / .pptx)<input type="file" accept=".txt,.md,.pptx,text/plain,application/vnd.openxmlformats-officedocument.presentationml.presentation" style={{ display: 'none' }} onChange={e => chooseContentFile(e.target.files?.[0])} /></label>
+            <button style={{ ...btnP, marginLeft: 'auto' }} onClick={parseCheck}>Parse &amp; check</button>
           </div>
+          {showFormat && <pre style={{ ...inp, marginTop: 10, background: '#fff', maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}>{TXT_TEMPLATE}</pre>}
+          {pptxBusy2 && <div style={{ marginTop: 12, color: navy, fontWeight: 700, fontSize: 13 }}>⏳ Processing PowerPoint — replacing this module’s content…</div>}
+          <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="Paste the module content here (or choose a file above)…" spellCheck={false} style={{ ...inp, width: '100%', minHeight: 150, marginTop: 12, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12.5 }} />
+          {parseChk && (parseChk.ok
+            ? <div style={{ marginTop: 10 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={chip}>Title: {parseChk.modules[0]?.title || '—'}</span>
+                  {parseChk.modules[0]?.duration_mins ? <span style={chip}>{parseChk.modules[0].duration_mins} min</span> : null}
+                  {parseChk.modules[0]?.description ? <span style={chip}>Description ✓</span> : null}
+                  {parseChk.modules[0]?.body_html ? <span style={chip}>Body ✓</span> : <span style={{ ...chip, background: '#fbf0d5', color: 'var(--amber,#b8860b)' }}>No body</span>}
+                  <span style={chip}>{(parseChk.modules[0]?.quiz || []).length} questions</span>
+                </div>
+                <button style={{ ...btnP, marginTop: 10, background: 'var(--teal,#0f766e)' }} onClick={applyPaste}>Apply to this module</button>
+              </div>
+            : <div style={{ marginTop: 10, border: '1px solid #f4cfc8', background: 'var(--coral-soft,#fdece9)', borderRadius: 8, padding: '8px 10px', fontSize: 12.5 }}><b style={{ color: 'var(--coral,#c0392b)' }}>{parseChk.errors.length} problem(s):</b> {parseChk.errors.slice(0, 5).join(' · ')}</div>)}
+          {contentMsg && <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 700, color: contentMsg.startsWith('✓') ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)' }}>{contentMsg}</div>}
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {editing.title ? <>
-              <span style={chip}>Title: {editing.title}</span>
+              <span style={chip}>Current: {editing.title}</span>
               {editing.duration_mins ? <span style={chip}>{editing.duration_mins} min</span> : null}
-              {editing.description ? <span style={chip}>Description ✓</span> : null}
-              {editing.body_html ? <span style={chip}>Body ✓</span> : <span style={{ ...chip, background: '#fbf0d5', color: 'var(--amber,#b8860b)' }}>No body yet</span>}
-            </> : <span className="muted" style={{ fontSize: 12.5 }}>No content yet — download the template, fill it, and upload.</span>}
+              {editing.body_html ? <span style={chip}>Body ✓</span> : null}
+              {(editing as any).course_json ? <span style={{ ...chip, background: 'var(--teal-soft,#e6f7f2)', color: 'var(--teal,#0f766e)' }}>Interactive (PPTX)</span> : null}
+            </> : <span className="muted" style={{ fontSize: 12.5 }}>No content yet.</span>}
           </div>
           {editing.body_html && <details style={{ marginTop: 10 }}><summary style={{ cursor: 'pointer', fontSize: 12.5, color: 'var(--brand,#2f6fd0)', fontWeight: 700 }}>Preview lesson body</summary>
             <div style={{ ...inp, marginTop: 6, background: '#fff', maxHeight: 240, overflow: 'auto' }} dangerouslySetInnerHTML={{ __html: editing.body_html }} /></details>}
