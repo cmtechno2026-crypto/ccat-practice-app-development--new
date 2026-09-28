@@ -69,6 +69,7 @@ export function TeacherDirectory() {
   const [err, setErr] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  const [mobileDetail, setMobileDetail] = useState(false);
   const [slots, setSlots] = useState<Record<string, Slot[]>>({});
   const [slotErr, setSlotErr] = useState<Record<string, string>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -225,7 +226,7 @@ export function TeacherDirectory() {
           </>}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {isAvail && <button onClick={() => book(id, s)} disabled={savingSlot === s.id} style={{ flex: '1 1 100%', fontWeight: 800, padding: '7px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Booking…' : 'Book'}</button>}
-            {!isAvail && <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, opacity: savingSlot === s.id ? .6 : 1 }}>Make available</button>}
+            {!isAvail && <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, opacity: savingSlot === s.id ? .6 : 1 }}>{hasStudent ? 'Unbook' : 'Make available'}</button>}
             {s.status !== 'unavailable' && <button onClick={() => setUnavailable(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, color: 'var(--amber,#b45309)', opacity: savingSlot === s.id ? .6 : 1 }}>Make unavailable</button>}
             <button onClick={() => deleteSlot(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, color: 'var(--coral,#c0392b)', opacity: savingSlot === s.id ? .6 : 1 }}>Delete</button>
             <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Esc</button>
@@ -455,9 +456,9 @@ export function TeacherDirectory() {
       {err && <div className="empty" style={{ marginBottom: 12 }}>{err}</div>}
       {!rows && !err && <div className="empty">Loading…</div>}
       {rows && (
-        <div className="cm-md">
+        <div className={'cm-md' + (mobileDetail ? ' show-detail' : '')}>
           {/* LEFT: roster */}
-          <div style={{ display: 'grid', gap: 10 }}>
+          <div className="cm-roster" style={{ display: 'grid', gap: 10 }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or email…"
               style={{ padding: '8px 10px', border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, background: 'var(--card,#fff)', color: 'inherit' }} />
             <div style={{ display: 'flex', gap: 8 }}>
@@ -475,7 +476,7 @@ export function TeacherDirectory() {
               {filteredRows.map((t, i) => {
                 const on = selected === t.id; const badge = reqBadge(t.id);
                 return (
-                  <button key={t.id} onClick={() => selectTeacher(t.id)}
+                  <button key={t.id} onClick={() => { selectTeacher(t.id); setMobileDetail(true); }}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', padding: 10, borderRadius: 12, cursor: 'pointer',
                       border: '1px solid ' + (on ? 'var(--brand,#2f6fd0)' : 'var(--line,#e6e6ef)'), background: on ? 'var(--brand-soft,#e7f0fc)' : 'var(--card,#fff)', color: 'inherit' }}>
                     <span className={'cm-av ' + GRADS[i % GRADS.length]} style={{ width: 38, height: 38, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 13, flex: 'none' }}>{initials(t.name)}</span>
@@ -491,9 +492,10 @@ export function TeacherDirectory() {
           </div>
 
           {/* RIGHT: detail */}
-          <div style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 14, background: 'var(--card,#fff)', padding: 16, minHeight: 200 }}>
+          <div className="cm-detail" style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 14, background: 'var(--card,#fff)', padding: 16, minHeight: 200 }}>
             {!sel ? <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Select a teacher.</div> : (
               <div style={{ display: 'grid', gap: 16 }}>
+                <button className="cm-back" onClick={() => setMobileDetail(false)}>← All teachers</button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <span className={'cm-av ' + GRADS[(filteredRows.findIndex(t => t.id === sel.id)) % GRADS.length]} style={{ width: 44, height: 44, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flex: 'none' }}>{initials(sel.name)}</span>
                   <div><div style={{ fontWeight: 800, fontSize: 17 }}>{sel.name}</div><div className="muted" style={{ fontSize: 12 }}>{sel.email}</div></div>

@@ -540,3 +540,17 @@ tr.row-retired>td{background:var(--coral-bg);opacity:.72}
   .rail .railitem{justify-content:flex-start!important}
   .rail .railitem .rlabel,.rail .brandhdr .bt,.rail .railfoot .who2{opacity:1!important;max-width:170px!important}
 }
+
+/* ============ Teacher directory: master-detail on phones + stop horizontal swipe panning the drawer ============ */
+.cm-back{display:none}
+@media (max-width:640px){
+  .cm-md .cm-detail{display:none}                       /* phones: roster first */
+  .cm-md.show-detail .cm-roster{display:none}           /* tap a teacher → detail replaces the list */
+  .cm-md.show-detail .cm-detail{display:block}
+  .cm-back{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;border:1px solid var(--line,#e6e6ef);
+           background:var(--card,#fff);color:var(--primary,#1a5eab);font-weight:800;font-size:13px;padding:8px 12px;border-radius:10px;cursor:pointer}
+}
+@media (max-width:860px){
+  /* A horizontal swipe must not pan the page or drag the off-canvas drawer into view. */
+  html,body{overflow-x:clip;overscroll-behavior-x:none}
+}
