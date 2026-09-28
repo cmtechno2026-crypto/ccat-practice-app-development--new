@@ -5,7 +5,9 @@
 //   >> TITLE: Welcome to Concept Mastery      # required
 //   >> QUESTIONS: 10                          # optional, per-module question count (default 10)
 //   >> DESCRIPTION: One line shown on the card # optional
-//   >> BODY:                                  # optional; every line after, until a Q: line, is HTML
+//   >> BODY:                                  # optional lesson text — plain text, no HTML tags:
+//   # Heading                                  #   '# ' heading, '## ' subheading, '- ' bullet,
+//   - a bullet point                           #   blank line = new paragraph. A line starting with < is raw HTML.
 //   >> SWAP: Section heading (optional)        # a "say this, not that" list
 //   Stiff phrasing => Natural phrasing         # one pair per line: left | right  OR  left => right
 //   <h2>Welcome, Teacher!</h2>
@@ -36,8 +38,12 @@ export const TXT_TEMPLATE = `# TeacherHub module template — fill the lines bel
 >> DESCRIPTION: An introduction to our values, mission and role.
 
 >> BODY:
-<h2>Welcome, Teacher!</h2>
-<p>Your lesson HTML goes here…</p>
+# Welcome, Teacher!
+Write your lesson as plain text — no HTML tags. A blank line starts a new paragraph.
+- Start a line with a dash for a bullet
+- Add as many bullets as you need
+## A smaller heading
+Use ## for a subheading. (A line that starts with < is still treated as raw HTML.)
 
 # Or, instead of BODY HTML, use a SWAP list — a "say this, not that" table.
 # Heading after ">> SWAP:" is optional. One pair per line: left | right (or left => right).
@@ -79,6 +85,27 @@ function swapSectionHtml(heading: string | null, rows: [string, string][]): stri
     + `</div>`
   )).join('');
   return `<div class="th-swap" style="margin:.4rem 0">${head}${body}</div>`;
+}
+
+function renderBody(lines: string[]): string {
+  const out: string[] = [];
+  let ul: string[] | null = null;
+  const flushUl = () => { if (ul) { out.push(`<ul>${ul.join('')}</ul>`); ul = null; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { flushUl(); continue; }
+    if (line.charAt(0) === '<') { flushUl(); out.push(raw); continue; }      // raw HTML passthrough
+    const b = /^[-*\u2022]\s+(.*)$/.exec(line);
+    if (b) { (ul || (ul = [])).push(`<li>${escHtml((b[1] || '').trim())}</li>`); continue; }
+    flushUl();
+    const h3 = /^##\s+(.*)$/.exec(line);
+    if (h3) { out.push(`<h3>${escHtml((h3[1] || '').trim())}</h3>`); continue; }
+    const h2 = /^#\s+(.*)$/.exec(line);
+    if (h2) { out.push(`<h2>${escHtml((h2[1] || '').trim())}</h2>`); continue; }
+    out.push(`<p>${escHtml(line)}</p>`);
+  }
+  flushUl();
+  return out.join('');
 }
 
 export function parseTrainingText(input: string): ParseResult {
@@ -180,7 +207,7 @@ export function parseTrainingText(input: string): ParseResult {
     flushQuestion();
 
     if (!title) err(block.lines[0]?.n ?? 0, 'missing >> TITLE');
-    if (title) modules.push({ title, duration_mins: duration, description, body_html: bodyLines.join('\n').trim() || null, quiz, questions_per_module: qpm, active: true });
+    if (title) modules.push({ title, duration_mins: duration, description, body_html: renderBody(bodyLines) || null, quiz, questions_per_module: qpm, active: true });
   }
 
   if (blockNo === 0) errors.push('No modules found. Each module needs ">> TITLE:"; separate modules with a line of ---.');
