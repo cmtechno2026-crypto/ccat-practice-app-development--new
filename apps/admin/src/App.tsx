@@ -27,6 +27,7 @@ import { TeacherDirectory } from './pages/TeacherDirectory';
 import { BookingLinks } from './pages/BookingLinks';
 import { BookingRequests } from './pages/BookingRequests';
 import { TrainingAdmin } from './pages/TrainingAdmin';
+import { TeacherProgress } from './pages/TeacherProgress';
 import { TrainingHome } from './pages/TrainingHome';
 import { RolePlayAdmin } from './pages/RolePlayAdmin';
 import { PAYMENTS_ENABLED } from './lib/payments';
@@ -264,6 +265,7 @@ export function App() {
         <Route path="/teacherhub/training" element={<TrainingHome />} />
         <Route path="/teacherhub/training/modules" element={<TrainingAdmin />} />
         <Route path="/teacherhub/training/roleplays" element={<RolePlayAdmin />} />
+        <Route path="/teacherhub/training/progress" element={<TeacherProgress />} />
         {/* Legacy /teacher* → /teacherhub* (renamed route) */}
         <Route path="/teacher" element={<Navigate to="/teacherhub" replace />} />
         <Route path="/teacher/teachers" element={<Navigate to="/teacherhub/teachers" replace />} />

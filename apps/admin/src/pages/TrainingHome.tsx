@@ -21,7 +21,7 @@ export function TrainingHome() {
     { icon: '📝', title: 'Test rules', desc: 'Exam settings — attempts allowed, questions per attempt, pass mark.', ready: false },
     { icon: '🗂️', title: 'Question bank', desc: 'Pooled questions the test draws from; CSV import/export.', ready: false },
     { icon: '📜', title: 'Certificates', desc: 'Completion certificate template and issued records.', ready: false },
-    { icon: '📊', title: 'Teacher progress', desc: 'Who has completed which modules, role-plays and tests.', ready: false },
+    { to: '/teacherhub/training/progress', icon: '📈', title: 'Teacher progress', desc: 'Who has completed which modules, live from the TeacherHub app.', ready: true, count: null },
   ];
 
   const Body = (s: Section) => (

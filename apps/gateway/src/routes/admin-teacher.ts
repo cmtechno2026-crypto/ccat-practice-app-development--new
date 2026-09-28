@@ -718,4 +718,29 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     } catch { /* best-effort */ }
     return { deleted: id };
   });
+  // Training progress for every teacher — the matrix behind the "Teacher Progress" page.
+  app.get('/v1/admin/teacher/training-progress', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.directory');
+    requireSite(req, 'teacher');
+    const mres = await tdb().query(
+      `select id, title, icon from public.ta_training_modules where active order by sort_order, id`);
+    const tres = await tdb().query(
+      `select t.id, t.name, t.email,
+              count(p.module_id) filter (where p.passed)::int as passed,
+              max(p.completed_at) as last_at,
+              coalesce(array_agg(p.module_id) filter (where p.passed), '{}') as passed_ids
+         from public.ta_teachers t
+         left join public.ta_training_progress p on p.teacher_id = t.id
+         group by t.id, t.name, t.email
+         order by t.name`);
+    const modules = mres.rows as { id: number; title: string; icon: string | null }[];
+    const teachers = (tres.rows as Array<{ id: string; name: string; email: string; passed: number | null; last_at: string | null; passed_ids: unknown[] | null }>).map(r => ({
+      id: r.id, name: r.name, email: r.email,
+      passed: r.passed ?? 0,
+      last_at: r.last_at,
+      passed_ids: (r.passed_ids || []).map(x => Number(x)),
+    }));
+    return { total: modules.length, modules, teachers };
+  });
+
 }
