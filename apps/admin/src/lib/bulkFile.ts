@@ -26,7 +26,7 @@ export type ZipEntry = { name: string; bytes: Uint8Array };
 async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
   const DS = (globalThis as any).DecompressionStream;
   if (!DS) throw new Error('This browser cannot read compressed ZIPs — use a newer browser, or store images uncompressed.');
-  const stream = new Blob([bytes]).stream().pipeThrough(new DS('deflate-raw'));
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DS('deflate-raw'));
   const ab = await new Response(stream).arrayBuffer();
   return new Uint8Array(ab);
 }
