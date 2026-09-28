@@ -23,7 +23,7 @@ const btnG: React.CSSProperties = { ...inp, cursor: 'pointer', fontWeight: 700 }
 const ICONS = ['🎓', '📘', '📗', '📋', '🖥️', '💬', '📝', '🗂️', '🧭', '⭐', '✅', '📅', '🧑‍🏫', '🔔', '🎯', '🛡️'];
 const blankQ = (): Quiz => ({ q: '', opts: ['', ''], answer: 0 });
 const padQuiz = (q: Quiz[], n: number): Quiz[] => { const out = q.slice(); while (out.length < n) out.push(blankQ()); return out; };
-const newDraft = (): Draft => ({ title: '', icon: '🎓', duration_mins: 5, description: '', body_html: '', quiz: padQuiz([], DEFAULT_QPM), active: true });
+const newDraft = (qpm: number = DEFAULT_QPM): Draft => ({ title: '', icon: '🎓', duration_mins: 5, description: '', body_html: '', quiz: padQuiz([], qpm), active: true });
 
 function Crumb({ leaf }: { leaf?: string }) {
   // Render the breadcrumb tail into the top bar, right after the "Training" title.
@@ -57,6 +57,11 @@ export function TrainingAdmin() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
   const [importMode, setImportMode] = useState<'txt' | 'pptx'>('txt');
+  const [pageQpm, setPageQpm] = useState<number>(() => { try { const v = Number(localStorage.getItem('th_qpm_default')); return Number.isFinite(v) && v > 0 ? Math.min(50, v) : DEFAULT_QPM; } catch { return DEFAULT_QPM; } });
+  const setPageQpmClamped = (n: number) => { const v = Math.max(1, Math.min(50, n)); setPageQpm(v); try { localStorage.setItem('th_qpm_default', String(v)); } catch { /* ignore */ } };
+  const [bulkStep, setBulkStep] = useState<'paste' | 'preview'>('paste');
+  const [bulkPreview, setBulkPreview] = useState<Array<ParsedModule & { icon: string }>>([]);
+  const [iconOpen, setIconOpen] = useState<number | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [showFormat, setShowFormat] = useState(false);
   const [copied2, setCopied2] = useState(false);
@@ -79,7 +84,7 @@ export function TrainingAdmin() {
   const openEditor = (m: Module | null) => {
     if (!canManage) return;
     setEditing(m ? { id: m.id, title: m.title, icon: m.icon || '🎓', duration_mins: m.duration_mins ?? 0, description: m.description || '', body_html: m.body_html || '', quiz: padQuiz((m.quiz || []) as Quiz[], Math.max(m.questions_per_module ?? (m.quiz?.length || 0), m.quiz?.length || 0) || DEFAULT_QPM), active: m.active }
-      : newDraft());
+      : newDraft(pageQpm));
     setView('edit'); setBulkOpen(false);
     try { window.history.pushState({ te: 1 }, ''); } catch { /* ignore */ }
     window.scrollTo(0, 0);
@@ -111,10 +116,14 @@ export function TrainingAdmin() {
     try { await api.trainingReorder(next.map(m => m.id)); } catch (e: any) { setErr(e.message); load(); }
   };
 
-  const runBulk = async () => {
+  const startPreview = () => {
     if (!parsed || !parsed.ok) return;
+    setBulkPreview(parsed.modules.map(m => ({ ...m, icon: '🎓', questions_per_module: m.questions_per_module || pageQpm })));
+    setIconOpen(null); setBulkStep('preview');
+  };
+  const createBulk = async () => {
     setBusy(true); setErr('');
-    try { const r = await api.trainingBulkCreate(parsed.modules as ParsedModule[]); setBulkText(''); setBulkOpen(false); load(); setErr(`Imported ${r.created} module(s).`); }
+    try { const r = await api.trainingBulkCreate(bulkPreview as unknown as ParsedModule[]); setBulkText(''); setBulkPreview([]); setBulkStep('paste'); setBulkOpen(false); load(); setErr(`Imported ${r.created} module(s).`); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
   const readFile = (f: File | undefined, into: (t: string) => void) => { if (!f) return; const rd = new FileReader(); rd.onload = () => into(String(rd.result || '')); rd.readAsText(f); };
@@ -197,14 +206,6 @@ export function TrainingAdmin() {
             <div className="muted" style={{ fontSize: 12, marginBottom: 5 }}>Symbol</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', maxWidth: 380 }}>
               {ICONS.map(ic => <button key={ic} onClick={() => setEditing({ ...editing, icon: ic })} style={{ width: 42, height: 42, borderRadius: 10, cursor: 'pointer', fontSize: 20, background: editing.icon === ic ? 'var(--brand-soft,#e7f0fc)' : '#fff', border: '1px solid ' + (editing.icon === ic ? 'var(--brand,#2f6fd0)' : 'var(--line,#e6e6ef)') }}>{ic}</button>)}
-            </div>
-          </div>
-          <div>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 5 }}>Questions per module</div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--line,#d7dce8)', borderRadius: 10, overflow: 'hidden' }}>
-              <button onClick={() => setQpm(-1)} style={{ border: 'none', background: 'var(--card2,#f7f9fc)', width: 38, height: 40, fontSize: 18, fontWeight: 800, cursor: 'pointer', color: 'var(--muted,#647089)' }}>−</button>
-              <span style={{ width: 52, textAlign: 'center', fontWeight: 800, fontSize: 15 }}>{editing.quiz.length}</span>
-              <button onClick={() => setQpm(1)} style={{ border: 'none', background: 'var(--card2,#f7f9fc)', width: 38, height: 40, fontSize: 18, fontWeight: 800, cursor: 'pointer', color: 'var(--muted,#647089)' }}>＋</button>
             </div>
           </div>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginTop: 22 }}>
@@ -307,7 +308,17 @@ export function TrainingAdmin() {
           <h2 style={{ margin: '0 0 2px', fontSize: 21, fontWeight: 900, letterSpacing: '-.02em', color: navy }}>Learning modules</h2>
           <div className="muted" style={{ fontSize: 13 }}>Click a module to open it. Drag a row to reorder.</div>
         </div>
-        {canManage && <button style={btnG} onClick={() => { setBulkOpen(o => !o); }}>⬆ Import</button>}
+        {canManage && (
+          <div>
+            <div className="muted" style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 4 }}>Questions / module</div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--line,#d7dce8)', borderRadius: 10, overflow: 'hidden' }}>
+              <button onClick={() => setPageQpmClamped(pageQpm - 1)} style={{ border: 'none', background: 'var(--card2,#f7f9fc)', width: 34, height: 38, fontSize: 17, fontWeight: 800, cursor: 'pointer', color: 'var(--muted,#647089)' }}>−</button>
+              <span style={{ width: 44, textAlign: 'center', fontWeight: 800, fontSize: 15 }}>{pageQpm}</span>
+              <button onClick={() => setPageQpmClamped(pageQpm + 1)} style={{ border: 'none', background: 'var(--card2,#f7f9fc)', width: 34, height: 38, fontSize: 17, fontWeight: 800, cursor: 'pointer', color: 'var(--muted,#647089)' }}>＋</button>
+            </div>
+          </div>
+        )}
+        {canManage && <button style={btnG} onClick={() => { setBulkStep('paste'); setBulkOpen(o => !o); }}>⬆ Add Bulk Module</button>}
         {canManage && <button style={btnP} onClick={() => openEditor(null)}>＋ New module</button>}
       </div>
 
@@ -315,12 +326,12 @@ export function TrainingAdmin() {
 
       {bulkOpen && canManage && (
         <section style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 16 }}>
-          <div style={{ fontWeight: 800, color: navy, fontSize: 14, marginBottom: 8 }}>Import a module</div>
+          <div style={{ fontWeight: 800, color: navy, fontSize: 14, marginBottom: 8 }}>Add Bulk Module</div>
           <div style={{ display: 'inline-flex', background: 'var(--card2,#eef2f7)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: 3, gap: 3, marginBottom: 12 }}>
             <button onClick={() => setImportMode('txt')} style={{ border: 0, background: importMode === 'txt' ? 'var(--card,#fff)' : 'transparent', color: importMode === 'txt' ? navy : 'var(--muted,#647089)', fontWeight: 800, fontSize: 12.5, padding: '7px 13px', borderRadius: 7, cursor: 'pointer', boxShadow: importMode === 'txt' ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>📄 .txt file</button>
             <button onClick={() => setImportMode('pptx')} style={{ border: 0, background: importMode === 'pptx' ? 'var(--card,#fff)' : 'transparent', color: importMode === 'pptx' ? 'var(--amber,#b45309)' : 'var(--muted,#647089)', fontWeight: 800, fontSize: 12.5, padding: '7px 13px', borderRadius: 7, cursor: 'pointer', boxShadow: importMode === 'pptx' ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>📊 PowerPoint</button>
           </div>
-          {importMode === 'txt' ? (<>
+          {importMode === 'txt' ? (bulkStep === 'paste' ? (<>
           <div className="muted" style={{ fontSize: 12.5, marginBottom: 6, fontWeight: 700, color: navy }}>Bulk import (.txt)</div>
           <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>One block per module, separated by a line of <code>---</code>. All-or-nothing.</div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -329,8 +340,31 @@ export function TrainingAdmin() {
           </div>
           <textarea value={bulkText} onChange={e => setBulkText(e.target.value)} placeholder="…or paste blocks here" spellCheck={false} style={{ ...inp, width: '100%', minHeight: 130, marginTop: 10, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12.5 }} />
           {parsed && !parsed.ok && <div style={{ marginTop: 10, border: '1px solid #f4cfc8', background: 'var(--coral-soft,#fdece9)', borderRadius: 8, padding: '8px 10px' }}><div style={{ fontWeight: 800, color: 'var(--coral,#c0392b)', fontSize: 12.5, marginBottom: 4 }}>{parsed.errors.length} problem(s):</div><ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5 }}>{parsed.errors.slice(0, 20).map((e, i) => <li key={i}>{e}</li>)}</ul></div>}
-          {parsed && parsed.ok && <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 13, fontWeight: 700, color: 'var(--good,#0f9d6b)' }}>✓ {parsed.modules.length} module(s) ready</span><button style={{ ...btnP, marginLeft: 'auto' }} disabled={busy} onClick={runBulk}>{busy ? 'Importing…' : `Create ${parsed.modules.length} module(s)`}</button></div>}
+          {parsed && parsed.ok && <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 13, fontWeight: 700, color: 'var(--good,#0f9d6b)' }}>✓ {parsed.modules.length} module(s) parsed</span><button style={{ ...btnP, marginLeft: 'auto' }} onClick={startPreview}>Preview {parsed.modules.length} module(s) →</button></div>}
           </>) : (
+            <div>
+              <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{bulkPreview.length} module(s) ready — edit each name and pick an icon. Nothing is saved until you press Create.</div>
+              <div style={{ maxHeight: 360, overflow: 'auto', display: 'grid', gap: 8 }}>
+                {bulkPreview.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, padding: '9px 11px', background: 'var(--card2,#f7f9fc)' }}>
+                    <div style={{ position: 'relative', flex: '0 0 auto' }}>
+                      <button onClick={() => setIconOpen(iconOpen === i ? null : i)} style={{ width: 42, height: 42, borderRadius: 10, border: '1px solid var(--line,#e6e6ef)', background: '#fff', fontSize: 20, cursor: 'pointer' }}>{m.icon}</button>
+                      {iconOpen === i && <div style={{ position: 'absolute', top: 46, left: 0, zIndex: 6, background: '#fff', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 8, display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 4, boxShadow: '0 12px 32px rgba(0,0,0,.18)', width: 244 }}>
+                        {ICONS.map(ic => <button key={ic} onClick={() => { setBulkPreview(bp => bp.map((x, xi) => xi === i ? { ...x, icon: ic } : x)); setIconOpen(null); }} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid transparent', background: m.icon === ic ? 'var(--brand-soft,#e7f0fc)' : 'transparent', fontSize: 18, cursor: 'pointer' }}>{ic}</button>)}
+                      </div>}
+                    </div>
+                    <input value={m.title} onChange={e => setBulkPreview(bp => bp.map((x, xi) => xi === i ? { ...x, title: e.target.value } : x))} placeholder={`Module ${i + 1}`} style={{ ...inp, flex: 1, fontWeight: 700 }} />
+                    <span className="muted" style={{ fontSize: 12.5, whiteSpace: 'nowrap', flex: '0 0 auto' }}>{m.duration_mins ?? 0} min</span>
+                    <span style={{ fontWeight: 800, color: 'var(--good,#0f9d6b)', fontSize: 13, whiteSpace: 'nowrap', flex: '0 0 auto' }}>{(m.quiz || []).length} Q</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button style={btnG} onClick={() => setBulkStep('paste')}>← Back</button>
+                <button style={{ ...btnP, marginLeft: 'auto', background: 'var(--good,#0f9d6b)' }} disabled={busy} onClick={createBulk}>{busy ? 'Creating…' : `Create ${bulkPreview.length} module(s)`}</button>
+              </div>
+            </div>
+          )) : (
             <>
               <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>Drop a <b>.pptx</b> — its slides become interactive cards, steps, tabs and accordions, plus source-based questions. You review the result before it goes live; questions can still come from a .txt afterward.</div>
               <label style={{ ...btnP, display: 'inline-flex', alignItems: 'center', background: 'var(--teal,#0f766e)', opacity: pptxBusy ? 0.6 : 1, pointerEvents: pptxBusy ? 'none' : 'auto' }}>📊 Choose PowerPoint (.pptx)<input type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" style={{ display: 'none' }} onChange={e => readPptx(e.target.files?.[0])} /></label>
