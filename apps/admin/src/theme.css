@@ -486,3 +486,44 @@ tr.row-retired>td{background:var(--coral-bg);opacity:.72}
 .toggle::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;transition:.15s}
 .toggle.on::after{left:19px}
 .toggle:disabled{opacity:.5;cursor:not-allowed}
+
+/* ============ Mobile shell: minimal top bar + drawer-hosted controls (TASK: phone optimize) ============ */
+.drawermenu{display:none}                 /* desktop: controls live in the top bar */
+.drawermenu .dm-lab{font-size:10px;color:#8ea2c4;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin:0 4px 7px}
+.drawermenu .dm-opt{display:flex;align-items:center;gap:9px;width:100%;padding:9px 11px;border:0;background:transparent;border-radius:9px;color:#c7d3ea;font-weight:800;font-size:13.5px;cursor:pointer;text-align:left}
+.drawermenu .dm-opt.on{background:rgba(255,255,255,.12);color:#fff}
+.drawermenu .dm-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.drawermenu .dm-foot{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.09)}
+.drawermenu .dm-btn{flex:1;border:1px solid rgba(255,255,255,.16);background:transparent;color:#c7d3ea;border-radius:9px;padding:10px;font-weight:800;font-size:12.5px;cursor:pointer}
+@media (max-width:860px){
+  .hide-mobile{display:none!important}    /* workspace switch, theme, sign out move into the drawer */
+  .drawermenu{display:block;margin-top:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.09)}
+  .topbar{padding:0 12px}
+  .page{padding:14px 14px 40px}
+  .sectiontabs{padding:0 14px}
+}
+
+/* ============ Responsive tables → stacked cards on phones (add class "rcard" to <table>, data-label to each <td>) ============ */
+@media (max-width:640px){
+  table.rcard{min-width:0!important;display:block;width:100%;font-size:14px}
+  table.rcard thead{display:none}
+  table.rcard tbody,table.rcard tr,table.rcard td{display:block;width:100%}
+  table.rcard tr{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px 13px;margin-bottom:10px;box-shadow:var(--shadow)}
+  table.rcard tr:hover td{background:transparent}      /* kill desktop row-hover on cards */
+  table.rcard td{display:flex;justify-content:space-between;gap:14px;align-items:baseline;padding:6px 0;border:0;white-space:normal;text-align:right}
+  table.rcard td::before{content:attr(data-label);color:var(--muted);font-weight:700;font-size:12px;text-align:left;flex:0 0 auto;white-space:nowrap}
+  table.rcard td[data-label=""]::before,table.rcard td:not([data-label])::before{display:none}
+  table.rcard td:first-child{font-size:15px;font-weight:800;text-align:left;padding-bottom:9px;margin-bottom:5px;border-bottom:1px solid var(--line)}
+  table.rcard td:first-child::before{display:none}
+  table.rcard td:empty{display:none}
+  /* the actions cell (last, unlabeled) becomes a wrapping button row */
+  table.rcard td[data-label=""]{justify-content:flex-start;flex-wrap:wrap;gap:7px;padding-top:9px}
+  /* unwrap the scroll box so it doesn't frame the cards */
+  .rcard-wrap{overflow:visible!important;border:0!important;background:transparent!important;border-radius:0!important}
+}
+@media (max-width:640px){ table.rcard td.rcard-block{flex-direction:column;align-items:stretch;text-align:left;gap:4px} }
+@media (max-width:640px){
+  table.rcard td.rcard-title{font-size:15px;font-weight:800;text-align:left;padding-bottom:9px;margin-bottom:5px;border-bottom:1px solid var(--line)}
+  table.rcard td.rcard-title::before{display:none}
+  table.rcard td.rcard-hide{display:none}
+}

@@ -104,17 +104,17 @@ export function Audit() {
       <Panel>
         {error ? <ErrorBox e={error} /> : items === null ? <Loading /> : (
           <>
-            <div className="tablewrap"><table>
+            <div className="tablewrap rcard-wrap"><table className="rcard">
               <thead><tr><th>When</th><th>Who</th><th>What changed</th><th>Request</th></tr></thead>
               <tbody>{items.map((a: any) => (
                 <tr key={a.id} style={{ borderLeft: `3px solid ${catColor(a.category)}` }}>
                   <td className="muted tabnum" style={{ fontSize: 12.5 }}>{fmt(a.created_at)}</td>
-                  <td>
+                  <td data-label="Who">
                     <div style={{ fontWeight: 700 }}>{a.actor_kind === 'system' ? 'system' : (a.actor_name || (a.actor_admin_id || '').slice(0, 8))}</div>
                     <div className="muted" style={{ fontSize: 11.5 }}>{a.actor_kind === 'system' ? 'automated' : (a.actor_role === 'super_admin' ? 'Super-Admin' : 'Admin')} · <span style={{ color: catColor(a.category) }}>{a.event_type}</span></div>
                   </td>
-                  <td style={{ maxWidth: 420 }}><Diff oldv={a.old_value} newv={a.new_value} reason={a.reason} reference={a.reference} /></td>
-                  <td className="muted tabnum" style={{ fontSize: 12 }}>{a.request_id ? `req_${String(a.request_id).slice(0, 8)}` : '—'}</td>
+                  <td data-label="Changed" className="rcard-block" style={{ maxWidth: 420 }}><Diff oldv={a.old_value} newv={a.new_value} reason={a.reason} reference={a.reference} /></td>
+                  <td data-label="Request" className="muted tabnum" style={{ fontSize: 12 }}>{a.request_id ? `req_${String(a.request_id).slice(0, 8)}` : '—'}</td>
                 </tr>
               ))}</tbody>
             </table></div>

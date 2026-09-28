@@ -32,15 +32,15 @@ export function Admins() {
       <p className="lead">Provision admins with a permanent password you set (§22.2). Grant access with permission bundles, then fine-tune. The last active Super-Admin is protected (§28.2).</p>
       <Panel right={<button className="btn sm" onClick={() => setEditing('new')}>+ New admin</button>}>
         {loading ? <Loading /> : error ? <ErrorBox e={error} /> : (
-          <div className="tablewrap"><table>
+          <div className="tablewrap rcard-wrap"><table className="rcard">
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
             <tbody>{data!.items.map((a: any) => (
               <tr key={a.id}>
-                <td style={{ fontWeight: 700 }}>{a.display_name}</td><td className="muted">{a.email}</td>
-                <td>{a.security_role === 'super_admin' ? <span className="pill s-active">Super-Admin</span> : 'Admin'}</td>
-                <td className="tabnum">{a.security_role === 'super_admin' ? 'all' : (a.permissions?.length || 0)}</td>
-                <td><StatusPill status={a.status} />{a.locked && <span className="tag" style={{ marginLeft: 6, background: '#FDECE6', color: '#C2321C' }}>🔒 Locked</span>}</td>
-                <td><div className="rowactions">
+                <td style={{ fontWeight: 700 }}>{a.display_name}</td><td data-label="Email" className="muted">{a.email}</td>
+                <td data-label="Role">{a.security_role === 'super_admin' ? <span className="pill s-active">Super-Admin</span> : 'Admin'}</td>
+                <td data-label="Permissions" className="tabnum">{a.security_role === 'super_admin' ? 'all' : (a.permissions?.length || 0)}</td>
+                <td data-label="Status"><StatusPill status={a.status} />{a.locked && <span className="tag" style={{ marginLeft: 6, background: '#FDECE6', color: '#C2321C' }}>🔒 Locked</span>}</td>
+                <td data-label=""><div className="rowactions">
                   {a.locked && <button className="btn sm" onClick={() => unlock(a)}>Unlock</button>}
                   {a.security_role !== 'super_admin' && <button className="btn ghost sm" onClick={() => setEditing(a)}>Edit access</button>}
                   {isSuper && <button className="btn ghost sm" onClick={() => setReset(a)}>Reset password</button>}

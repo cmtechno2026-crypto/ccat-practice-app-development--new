@@ -228,6 +228,28 @@ export function Layout() {
             <div className="r">{me?.role === 'super_admin' ? 'Super-Admin' : 'Admin'}</div>
           </div>
         </div>
+        {/* Mobile-only controls: workspace switch, theme, sign out live in the drawer so the top bar stays minimal. Hidden on desktop via CSS. */}
+        <div className="drawermenu">
+          {sites.length > 1 && (
+            <div className="dm-ws">
+              <div className="dm-lab">Workspace</div>
+              {sites.map(sid => {
+                const on = sid === activeSite;
+                return (
+                  <button key={sid} className={`dm-opt ${on ? 'on' : ''}`}
+                    onClick={() => { if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacherhub' : '/', { replace: true }); } setDrawer(false); }}>
+                    <span className="dm-dot" style={{ background: sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />
+                    {SITE_NAMES[sid] || sid}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="dm-foot">
+            <button className="dm-btn" onClick={toggleTheme}>◐ {theme === 'dark' ? 'Light' : 'Dark'} mode</button>
+            <button className="dm-btn" onClick={signOut}>Sign out</button>
+          </div>
+        </div>
       </nav>
 
       {/* Dim scrim behind the mobile drawer; tapping it closes the drawer (CSS hides it on desktop). */}
@@ -242,7 +264,7 @@ export function Layout() {
           </span>
           <div className="who">
             {sites.length > 1 && (
-              <div role="tablist" aria-label="Workspace" style={{ display: 'inline-flex', background: 'var(--card2,#eef2f7)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: 3, gap: 3, marginRight: 4 }}>
+              <div role="tablist" aria-label="Workspace" className="hide-mobile" style={{ display: 'inline-flex', background: 'var(--card2,#eef2f7)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: 3, gap: 3, marginRight: 4 }}>
                 {sites.map(sid => {
                   const on = sid === activeSite;
                   return (
@@ -257,8 +279,8 @@ export function Layout() {
               </div>
             )}
             <NotificationBell />
-            <button className="iconbtn" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">◐</button>
-            <button className="btn ghost sm" onClick={signOut}>Sign out</button>
+            <button className="iconbtn hide-mobile" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">◐</button>
+            <button className="btn ghost sm hide-mobile" onClick={signOut}>Sign out</button>
           </div>
         </div>
         {tabs.length > 1 && (

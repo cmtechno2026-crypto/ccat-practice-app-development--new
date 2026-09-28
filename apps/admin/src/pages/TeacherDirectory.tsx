@@ -265,7 +265,7 @@ export function TeacherDirectory() {
             })}
           </div>
         )}
-        <div className="cm-wg-wrap">
+        <div className="cm-wg-wrap cm-wg-desk">
           <table className="cm-wg">
             <thead><tr><th></th>{WEEK_FULL.map(d => <th key={d}>{DAY_ABBR[d]}</th>)}</tr></thead>
             <tbody>
@@ -291,6 +291,28 @@ export function TeacherDirectory() {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="cm-wg-stack">
+          {WEEK_FULL.map(d => {
+            const daySlots = rowKeys.map(rk => cell[d + '|' + rk]).filter(Boolean) as Slot[];
+            if (daySlots.length === 0) return null;
+            return (
+              <details key={d} className="cm-wg-day" open={WEEK_FULL.filter(dd => rowKeys.some(rk => cell[dd + '|' + rk])).indexOf(d) === 0}>
+                <summary><span>{d}</span><span className="cm-wg-daycnt">{daySlots.length} slot{daySlots.length > 1 ? 's' : ''} ›</span></summary>
+                {daySlots.map(s2 => {
+                  const hasStudent = s2.status === 'booked' && !!(s2.booked_student && s2.booked_student.trim());
+                  const cls = hasStudent ? 'bk' : s2.status === 'available' ? 'av' : 'un';
+                  const lab = hasStudent ? 'Booked' : s2.status === 'available' ? 'Available' : 'Unavailable';
+                  return (
+                    <button key={s2.id} className="cm-wg-srow" onClick={canManage ? () => openPopover(s2.id) : undefined} style={{ cursor: canManage ? 'pointer' : 'default' }}>
+                      <span className="cm-wg-stime">{s2.start_time}–{s2.end_time}</span>
+                      <span className={'cm-wg-chip ' + cls}>{lab}{hasStudent ? ' · ' + s2.booked_student : ''}</span>
+                    </button>
+                  );
+                })}
+              </details>
+            );
+          })}
         </div>
         <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk" /> Booked<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tzLabel(tz) : ''}</div>
         {renderPopover(id)}
@@ -409,6 +431,18 @@ export function TeacherDirectory() {
         .cm-wg-sw.av{border-color:#0f766e;background:#e6f7f2}
         .cm-wg-sw.bk{border-color:#b45309;background:#fbeeda}
         .cm-wg-sw.un{border-color:#c7ccd6;background:#eef1f6}
+        .cm-wg-stack{display:none}
+        .cm-wg-day{border:1px solid var(--line,#e6e6ef);border-radius:12px;background:var(--card,#fff);margin-bottom:8px;overflow:hidden}
+        .cm-wg-day>summary{list-style:none;cursor:pointer;padding:12px 13px;display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:14px}
+        .cm-wg-day>summary::-webkit-details-marker{display:none}
+        .cm-wg-daycnt{font-size:11.5px;color:var(--muted,#64748b);font-weight:700}
+        .cm-wg-srow{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 13px;border:0;border-top:1px solid var(--line,#e6e6ef);background:transparent}
+        .cm-wg-stime{font-size:13px;font-weight:700;color:var(--ink,#1a1a2e)}
+        .cm-wg-chip{font-size:11px;font-weight:800;border-radius:999px;padding:4px 10px;border:1.5px solid;white-space:nowrap}
+        .cm-wg-chip.av{border-color:#0f766e;background:#e6f7f2;color:#0f766e}
+        .cm-wg-chip.bk{border-color:#b45309;background:#fbeeda;color:#b45309}
+        .cm-wg-chip.un{border-color:#c7ccd6;background:#eef1f6;color:#6b7280}
+        @media(max-width:640px){ .cm-wg-desk{display:none} .cm-wg-stack{display:block} }
         @media(max-width:920px){
           .cm-md{grid-template-columns:1fr}
           .cm-week{grid-template-columns:1fr}

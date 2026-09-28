@@ -341,7 +341,7 @@ export function Students() {
 
       {error ? <ErrorBox e={error} /> : (
         <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="tablewrap"><table>
+          <div className="tablewrap rcard-wrap"><table className="rcard">
             <thead><tr>
               {canAssign && <th style={{ width: 34 }}>
                 <input type="checkbox" style={{ width: 15, height: 15 }}
@@ -376,10 +376,10 @@ export function Students() {
               <React.Fragment key={r.id}>
               {header}
               <tr style={sel.has(r.id) ? { ...rowStyle, background: '#e8f0fb', boxShadow: 'inset 4px 0 0 var(--primary, #1f4fd6)' } : rowStyle}>
-                {canAssign && <td onClick={e => e.stopPropagation()}>
+                {canAssign && <td className="rcard-hide" onClick={e => e.stopPropagation()}>
                   <input type="checkbox" style={{ width: 15, height: 15 }} checked={sel.has(r.id)} onChange={() => toggleSel(r.id)} />
                 </td>}
-                <td>
+                <td className="rcard-title">
                   <div className="stud">
                     <span className="av">{avatarFor(r.id)}</span>
                     <span>
@@ -393,14 +393,14 @@ export function Students() {
                     </span>
                   </div>
                 </td>
-                {colOn('grade') && <td><div className="gradestk"><div className="g">Grade {r.grade_number}</div><StatusChip s={r.display_status} /></div></td>}
-                {colOn('tier') && <td>{r.membership_tier ? <span className="tag">{isTeacher ? tierWord(r.membership_tier) : tierLabel(r.membership_tier)}</span> : <span className="muted">—</span>}</td>}
-                {colOn('readiness') && <td><Readiness pct={r.readiness_pct} band={r.readiness_band} insufficient={r.readiness_insufficient} /></td>}
-                {colOn('progress') && <td><div className="progx"><span className="xp tabnum">{r.xp_total.toLocaleString()} XP</span><div className="sub tabnum">🪙 {r.coins}{r.streak_current > 0 ? ` · 🔥 ${r.streak_current}d` : ''} · {r.sets_completed ?? 0} sets</div></div></td>}
-                {colOn('email') && !isTeacher && <td>{r.guardian_email || <span className="muted">—</span>}</td>}
-                {colOn('phone') && !isTeacher && <td className="tabnum">{r.guardian_phone || <span className="muted">—</span>}</td>}
-                {colOn('devices') && <td>{r.device_total === 0 ? <span className="muted">None</span> : r.device_active < r.device_total ? `${r.device_active} of ${r.device_total} active` : `${r.device_total} device${r.device_total > 1 ? 's' : ''}`}</td>}
-                <td><div className="rowactions">
+                {colOn('grade') && <td data-label="Grade & status"><div className="gradestk"><div className="g">Grade {r.grade_number}</div><StatusChip s={r.display_status} /></div></td>}
+                {colOn('tier') && <td data-label={isTeacher ? 'Plan' : 'Tier'}>{r.membership_tier ? <span className="tag">{isTeacher ? tierWord(r.membership_tier) : tierLabel(r.membership_tier)}</span> : <span className="muted">—</span>}</td>}
+                {colOn('readiness') && <td data-label="Readiness"><Readiness pct={r.readiness_pct} band={r.readiness_band} insufficient={r.readiness_insufficient} /></td>}
+                {colOn('progress') && <td data-label="Progress"><div className="progx"><span className="xp tabnum">{r.xp_total.toLocaleString()} XP</span><div className="sub tabnum">🪙 {r.coins}{r.streak_current > 0 ? ` · 🔥 ${r.streak_current}d` : ''} · {r.sets_completed ?? 0} sets</div></div></td>}
+                {colOn('email') && !isTeacher && <td data-label="Parent email">{r.guardian_email || <span className="muted">—</span>}</td>}
+                {colOn('phone') && !isTeacher && <td data-label="Parent phone" className="tabnum">{r.guardian_phone || <span className="muted">—</span>}</td>}
+                {colOn('devices') && <td data-label="Devices">{r.device_total === 0 ? <span className="muted">None</span> : r.device_active < r.device_total ? `${r.device_active} of ${r.device_total} active` : `${r.device_total} device${r.device_total > 1 ? 's' : ''}`}</td>}
+                <td data-label=""><div className="rowactions">
                   {r.status === 'active' && can('student.suspend') && <button className="btn warn sm" onClick={() => act(r, 'suspended', 'Suspend')}>Suspend</button>}
                   {r.status === 'suspended' && can('student.unsuspend') && <button className="btn ghost sm" onClick={() => act(r, 'active', 'Unsuspend')}>Unsuspend</button>}
                   {r.status === 'banned' && can('student.unban') && <button className="btn ghost sm" onClick={() => act(r, 'active', 'Unban')}>Unban</button>}

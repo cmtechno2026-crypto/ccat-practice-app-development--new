@@ -199,8 +199,8 @@ export function BookingLinks() {
         </div>
         {err && <div className="empty" style={{ padding: 10, color: 'var(--coral,#c0392b)' }}>{err}</div>}
         {loading ? <div className="muted" style={{ padding: 12 }}>Loading…</div> : shownLinks.length === 0 ? <div className="muted" style={{ padding: 12 }}>{links.length === 0 ? 'No booking links.' : 'No links match your search.'}</div> : (
-          <div style={{ overflowX: 'auto', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, background: 'var(--card,#fff)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+          <div className="rcard-wrap" style={{ overflowX: 'auto', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, background: 'var(--card,#fff)' }}>
+            <table className="rcard" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
               <thead>
                 <tr>
                   {['Teacher', 'Subjects & grades', 'Status', 'Requests', 'Expiry', 'Link', ''].map((h, i) => (
@@ -217,24 +217,24 @@ export function BookingLinks() {
                   const shareUrl = l.url || ('/b/' + l.token);
                   return (
                     <tr key={l.id} style={{ borderBottom: '1px solid var(--line,#eef1f6)' }}>
-                      <td style={td}>
+                      <td className="rcard-title" style={td}>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           <span style={{ width: 30, height: 30, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 11, flex: 'none', background: avGrad(first) }}>{initials(first)}</span>
                           <div><div style={{ fontWeight: 700 }}>{first}{names.length > 1 && <span className="muted" style={{ fontWeight: 600, fontSize: 12 }}> +{names.length - 1}</span>}</div>{l.label && <div className="muted" style={{ fontSize: 11 }}>{l.label}</div>}</div>
                         </div>
                       </td>
-                      <td style={td}>
+                      <td data-label="Subjects & grades" className="rcard-block" style={td}>
                         {hasCombos ? sg.map(x => { const c = subjColor(x.subject); return (
                           <div key={x.subject} style={{ marginBottom: 2, fontSize: 12.5 }}><span style={{ display: 'inline-block', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>{x.subject}</span> <span className="muted">{x.grades.join(', ')}</span></div>
                         ); }) : <span className="muted" style={{ fontSize: 12.5 }}>All subjects &amp; grades</span>}
                       </td>
-                      <td style={td}>{statusChip(l.status)}</td>
-                      <td style={td}><span className="muted" style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{l.pending_requests} / {l.total_requests}</span></td>
-                      <td style={td}>{l.expires_at ? <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(l.expires_at).toLocaleDateString()}</span> : <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 999, background: '#eef2ff', color: '#4338ca' }}>Never</span>}</td>
-                      <td style={td}>
+                      <td data-label="Status" style={td}>{statusChip(l.status)}</td>
+                      <td data-label="Requests" style={td}><span className="muted" style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{l.pending_requests} / {l.total_requests}</span></td>
+                      <td data-label="Expiry" style={td}>{l.expires_at ? <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(l.expires_at).toLocaleDateString()}</span> : <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 999, background: '#eef2ff', color: '#4338ca' }}>Never</span>}</td>
+                      <td data-label="Link" style={td}>
                         <button onClick={() => copy(shareUrl, l.id)} title={shareUrl} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card2,#f7f9fc)', borderRadius: 6, padding: '4px 10px', color: copied === l.id ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>{copied === l.id ? '✓ Copied' : '⧉ Copy'}</button>
                       </td>
-                      <td style={td}>{canManage && <button onClick={() => setActive(l.id, l.is_active)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '5px 10px', color: l.is_active ? 'var(--coral,#c0392b)' : 'var(--good,#0f9d6b)', whiteSpace: 'nowrap' }}>{l.is_active ? 'Revoke' : 'Activate'}</button>}</td>
+                      <td data-label="" style={td}>{canManage && <button onClick={() => setActive(l.id, l.is_active)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, padding: '5px 10px', color: l.is_active ? 'var(--coral,#c0392b)' : 'var(--good,#0f9d6b)', whiteSpace: 'nowrap' }}>{l.is_active ? 'Revoke' : 'Activate'}</button>}</td>
                     </tr>
                   );
                 })}
