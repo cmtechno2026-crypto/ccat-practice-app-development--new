@@ -16,3 +16,7 @@ unnecessary/
 
 # Local working artifacts (mockups, prompt files) — not part of the app
 Claude outputs/
+
+# DB consolidation dumps — production data, never commit
+db-migration/
+*.dump
