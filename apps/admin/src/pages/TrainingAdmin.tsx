@@ -45,6 +45,9 @@ export function TrainingAdmin() {
   const [editing, setEditing] = useState<Draft | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
+  const [importMode, setImportMode] = useState<'txt' | 'pptx'>('txt');
+  const [pptxBusy, setPptxBusy] = useState(false);
+  const [pptxMsg, setPptxMsg] = useState('');
   const [dragIx, setDragIx] = useState<number | null>(null);
 
   const load = () => { setLoading(true); api.trainingModules().then(r => setModules(r.modules as Module[])).catch(e => setErr(e.message)).finally(() => setLoading(false)); };
@@ -99,6 +102,20 @@ export function TrainingAdmin() {
   };
   const readFile = (f: File | undefined, into: (t: string) => void) => { if (!f) return; const rd = new FileReader(); rd.onload = () => into(String(rd.result || '')); rd.readAsText(f); };
   const download = (name: string, text: string) => { const b = new Blob([text], { type: 'text/plain' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = name; a.click(); URL.revokeObjectURL(u); };
+  // ---- PowerPoint import → deterministic interactive course + questions ----
+  const readPptx = async (f?: File) => {
+    if (!f) return;
+    if (!/\.pptx$/i.test(f.name)) { setErr('Please choose a .pptx file.'); return; }
+    setPptxBusy(true); setPptxMsg('Reading slides…'); setErr('');
+    try {
+      const b64 = await new Promise<string>((res, rej) => { const rd = new FileReader(); rd.onload = () => res(String(rd.result || '').split(',')[1] || ''); rd.onerror = () => rej(new Error('Could not read the file.')); rd.readAsDataURL(f); });
+      setPptxMsg('Processing PowerPoint — building interactions and questions…');
+      const r = await api.trainingCreateFromPptx(f.name, b64) as { module: Module; slideCount: number; sectionCount: number; questionCount: number; warnings?: string[] };
+      setPptxBusy(false); setPptxMsg(''); setBulkOpen(false); load();
+      setErr(`Imported “${r.module.title}” — ${r.slideCount} slides → ${r.sectionCount} sections, ${r.questionCount} questions.${(r.warnings && r.warnings.length) ? ' Note: ' + r.warnings.join(' ') : ''}`);
+      openEditor(r.module);
+    } catch (e) { setPptxBusy(false); setPptxMsg(''); setErr((e as Error).message || 'Could not process the PowerPoint.'); }
+  };
 
   // ---- content .txt upload → fill draft ----
   const applyTxt = (text: string) => {
@@ -221,7 +238,7 @@ export function TrainingAdmin() {
           <h2 style={{ margin: '0 0 2px', fontSize: 21, fontWeight: 900, letterSpacing: '-.02em', color: navy }}>Learning modules</h2>
           <div className="muted" style={{ fontSize: 13 }}>Click a module to open it. Drag a row to reorder.</div>
         </div>
-        {canManage && <button style={btnG} onClick={() => { setBulkOpen(o => !o); }}>⬆ Bulk import</button>}
+        {canManage && <button style={btnG} onClick={() => { setBulkOpen(o => !o); }}>⬆ Import</button>}
         {canManage && <button style={btnP} onClick={() => openEditor(null)}>＋ New module</button>}
       </div>
 
@@ -229,7 +246,13 @@ export function TrainingAdmin() {
 
       {bulkOpen && canManage && (
         <section style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 16 }}>
-          <div style={{ fontWeight: 800, color: navy, fontSize: 14, marginBottom: 6 }}>Bulk import modules (.txt)</div>
+          <div style={{ fontWeight: 800, color: navy, fontSize: 14, marginBottom: 8 }}>Import a module</div>
+          <div style={{ display: 'inline-flex', background: 'var(--card2,#eef2f7)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: 3, gap: 3, marginBottom: 12 }}>
+            <button onClick={() => setImportMode('txt')} style={{ border: 0, background: importMode === 'txt' ? 'var(--card,#fff)' : 'transparent', color: importMode === 'txt' ? navy : 'var(--muted,#647089)', fontWeight: 800, fontSize: 12.5, padding: '7px 13px', borderRadius: 7, cursor: 'pointer', boxShadow: importMode === 'txt' ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>📄 .txt file</button>
+            <button onClick={() => setImportMode('pptx')} style={{ border: 0, background: importMode === 'pptx' ? 'var(--card,#fff)' : 'transparent', color: importMode === 'pptx' ? 'var(--amber,#b45309)' : 'var(--muted,#647089)', fontWeight: 800, fontSize: 12.5, padding: '7px 13px', borderRadius: 7, cursor: 'pointer', boxShadow: importMode === 'pptx' ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>📊 PowerPoint</button>
+          </div>
+          {importMode === 'txt' ? (<>
+          <div className="muted" style={{ fontSize: 12.5, marginBottom: 6, fontWeight: 700, color: navy }}>Bulk import (.txt)</div>
           <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>One block per module, separated by a line of <code>---</code>. All-or-nothing.</div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <label style={{ ...btnG, display: 'inline-flex', alignItems: 'center' }}>Choose .txt<input type="file" accept=".txt,.md,text/plain" style={{ display: 'none' }} onChange={e => readFile(e.target.files?.[0], setBulkText)} /></label>
@@ -238,6 +261,13 @@ export function TrainingAdmin() {
           <textarea value={bulkText} onChange={e => setBulkText(e.target.value)} placeholder="…or paste blocks here" spellCheck={false} style={{ ...inp, width: '100%', minHeight: 130, marginTop: 10, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12.5 }} />
           {parsed && !parsed.ok && <div style={{ marginTop: 10, border: '1px solid #f4cfc8', background: 'var(--coral-soft,#fdece9)', borderRadius: 8, padding: '8px 10px' }}><div style={{ fontWeight: 800, color: 'var(--coral,#c0392b)', fontSize: 12.5, marginBottom: 4 }}>{parsed.errors.length} problem(s):</div><ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5 }}>{parsed.errors.slice(0, 20).map((e, i) => <li key={i}>{e}</li>)}</ul></div>}
           {parsed && parsed.ok && <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 13, fontWeight: 700, color: 'var(--good,#0f9d6b)' }}>✓ {parsed.modules.length} module(s) ready</span><button style={{ ...btnP, marginLeft: 'auto' }} disabled={busy} onClick={runBulk}>{busy ? 'Importing…' : `Create ${parsed.modules.length} module(s)`}</button></div>}
+          </>) : (
+            <>
+              <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>Drop a <b>.pptx</b> — its slides become interactive cards, steps, tabs and accordions, plus source-based questions. You review the result before it goes live; questions can still come from a .txt afterward.</div>
+              <label style={{ ...btnP, display: 'inline-flex', alignItems: 'center', background: 'var(--teal,#0f766e)', opacity: pptxBusy ? 0.6 : 1, pointerEvents: pptxBusy ? 'none' : 'auto' }}>📊 Choose PowerPoint (.pptx)<input type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" style={{ display: 'none' }} onChange={e => readPptx(e.target.files?.[0])} /></label>
+              {pptxBusy && <div style={{ marginTop: 14, color: navy, fontWeight: 700, fontSize: 13 }}>⏳ {pptxMsg || 'Processing…'}</div>}
+            </>
+          )}
         </section>
       )}
 

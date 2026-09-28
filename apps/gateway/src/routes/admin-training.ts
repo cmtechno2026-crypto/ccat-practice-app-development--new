@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { makeAuthenticateAdmin, requirePermission, requireSite } from '../plugins/adminAuth.js';
 import { AppError, Errors } from '../errors.js';
 import { withTransaction } from '../db.js';
+import { buildCourseFromPptx } from '../lib/pptxCourse.js';
 
 // Web Admin — Training management for the TeacherHub site. CRUD over public.ta_training_modules,
 // which lives in the SEPARATE TeacherHub Supabase project reached through the teacher pool
@@ -49,7 +50,7 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
     active: z.boolean().optional(),
   });
 
-  const SELECT = `select id, title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active,
+  const SELECT = `select id, title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active, course_json, source_type, source_file,
                          created_at, updated_at, coalesce(jsonb_array_length(quiz), 0) as question_count
                     from public.ta_training_modules`;
 
@@ -78,6 +79,37 @@ export function registerAdminTrainingRoutes(app: FastifyInstance, db: DB, cfg: C
       [b.title, b.icon ?? '📘', b.duration_mins ?? 10, b.description ?? '', b.body_html ?? '',
        JSON.stringify(b.quiz ?? []), b.questions_per_module ?? 10, sort, b.active ?? true]);
     return { module: rows[0] };
+  });
+
+  // Create a module FROM a PowerPoint: parse slides → interactive Course JSON + source-based questions.
+  // Accepts the .pptx as base64 JSON (no multipart dep). Deterministic; no generative AI.
+  app.post('/v1/admin/training/modules/from-pptx', { preHandler: [authenticateAdmin], bodyLimit: 26214400 }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const body = z.object({ filename: z.string().max(300).optional(), data: z.string().min(1) }).parse(req.body ?? {});
+    let buf: Buffer;
+    try { buf = Buffer.from(body.data, 'base64'); } catch { throw Errors.validation('Invalid file data'); }
+    if (buf.length < 100) throw Errors.validation('The uploaded file is empty or too small.');
+    let built;
+    try { built = buildCourseFromPptx(buf, body.filename ?? ''); }
+    catch (e) { throw Errors.validation((e as Error).message || 'Could not process the PowerPoint.'); }
+    const { rows: sr } = await tdb().query(`select coalesce(max(sort_order), -1) + 1 as next from public.ta_training_modules`);
+    const sort = sr[0]?.next ?? 0;
+    const qpm = Math.min(Math.max(built.course.questions.length, 1), 20);
+    const { rows } = await tdb().query(
+      `insert into public.ta_training_modules
+         (title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active, course_json, source_type, source_file)
+       values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,'pptx',$11)
+       returning id, title, icon, duration_mins, description, body_html, quiz, questions_per_module, sort_order, active, course_json, source_type, source_file, created_at, updated_at`,
+      [built.title || 'Training module', '📊', Math.max(5, built.slideCount), built.description ?? '', '',
+       JSON.stringify(built.quiz ?? []), built.course.questions.length ? qpm : 10, sort, true,
+       JSON.stringify(built.course), body.filename ?? null]);
+    try {
+      await db.query(`insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+        values ($1,'admin','teacher.training.pptx_import','ta_training_module',$2,$3)`,
+        [req.admin!.adminId, String(rows[0].id), JSON.stringify({ slides: built.slideCount, sections: built.course.sections.length, questions: built.course.questions.length })]);
+    } catch { /* audit best-effort */ }
+    return { module: rows[0], slideCount: built.slideCount, sectionCount: built.course.sections.length, questionCount: built.course.questions.length, warnings: built.warnings };
   });
 
   // Update a module (any subset of fields).
