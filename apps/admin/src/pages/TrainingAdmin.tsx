@@ -62,6 +62,9 @@ export function TrainingAdmin() {
   const [bulkStep, setBulkStep] = useState<'paste' | 'preview'>('paste');
   const [bulkPreview, setBulkPreview] = useState<Array<ParsedModule & { icon: string }>>([]);
   const [iconOpen, setIconOpen] = useState<number | null>(null);
+  const [qMode, setQMode] = useState<'page' | 'file'>(() => { try { return localStorage.getItem('th_q_mode') === 'file' ? 'file' : 'page'; } catch { return 'page'; } });
+  const setQModeP = (mo: 'page' | 'file') => { setQMode(mo); try { localStorage.setItem('th_q_mode', mo); } catch { /* ignore */ } };
+  const effQpm = (m: ParsedModule): number => (qMode === 'file' ? (m.questions_per_module ?? ((m.quiz || []).length || pageQpm)) : pageQpm);
   const [pasteText, setPasteText] = useState('');
   const [showFormat, setShowFormat] = useState(false);
   const [copied2, setCopied2] = useState(false);
@@ -118,12 +121,12 @@ export function TrainingAdmin() {
 
   const startPreview = () => {
     if (!parsed || !parsed.ok) return;
-    setBulkPreview(parsed.modules.map(m => ({ ...m, icon: '🎓', questions_per_module: m.questions_per_module || pageQpm })));
+    setBulkPreview(parsed.modules.map(m => ({ ...m, icon: '🎓' })));
     setIconOpen(null); setBulkStep('preview');
   };
   const createBulk = async () => {
     setBusy(true); setErr('');
-    try { const r = await api.trainingBulkCreate(bulkPreview as unknown as ParsedModule[]); setBulkText(''); setBulkPreview([]); setBulkStep('paste'); setBulkOpen(false); load(); setErr(`Imported ${r.created} module(s).`); }
+    try { const r = await api.trainingBulkCreate(bulkPreview.map(m => ({ ...m, questions_per_module: effQpm(m) })) as unknown as ParsedModule[]); setBulkText(''); setBulkPreview([]); setBulkStep('paste'); setBulkOpen(false); load(); setErr(`Imported ${r.created} module(s).`); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
   const readFile = (f: File | undefined, into: (t: string) => void) => { if (!f) return; const rd = new FileReader(); rd.onload = () => into(String(rd.result || '')); rd.readAsText(f); };
@@ -311,10 +314,18 @@ export function TrainingAdmin() {
         {canManage && (
           <div>
             <div className="muted" style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 4 }}>Questions / module</div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--line,#d7dce8)', borderRadius: 10, overflow: 'hidden' }}>
-              <button onClick={() => setPageQpmClamped(pageQpm - 1)} style={{ border: 'none', background: 'var(--card2,#f7f9fc)', width: 34, height: 38, fontSize: 17, fontWeight: 800, cursor: 'pointer', color: 'var(--muted,#647089)' }}>−</button>
-              <span style={{ width: 44, textAlign: 'center', fontWeight: 800, fontSize: 15 }}>{pageQpm}</span>
-              <button onClick={() => setPageQpmClamped(pageQpm + 1)} style={{ border: 'none', background: 'var(--card2,#f7f9fc)', width: 34, height: 38, fontSize: 17, fontWeight: 800, cursor: 'pointer', color: 'var(--muted,#647089)' }}>＋</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'inline-flex', border: '1px solid var(--line,#d7dce8)', borderRadius: 10, overflow: 'hidden' }}>
+                <button onClick={() => setQModeP('page')} style={{ border: 'none', background: qMode === 'page' ? 'var(--brand,#2f6fd0)' : 'var(--card2,#f7f9fc)', color: qMode === 'page' ? '#fff' : 'var(--muted,#647089)', fontWeight: 800, fontSize: 12.5, padding: '9px 12px', cursor: 'pointer' }}>Page default</button>
+                <button onClick={() => setQModeP('file')} style={{ border: 'none', background: qMode === 'file' ? 'var(--brand,#2f6fd0)' : 'var(--card2,#f7f9fc)', color: qMode === 'file' ? '#fff' : 'var(--muted,#647089)', fontWeight: 800, fontSize: 12.5, padding: '9px 12px', cursor: 'pointer' }}>From .txt file</button>
+              </div>
+              {qMode === 'page' && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--line,#d7dce8)', borderRadius: 10, overflow: 'hidden' }}>
+                  <button onClick={() => setPageQpmClamped(pageQpm - 1)} style={{ border: 'none', background: 'var(--card2,#f7f9fc)', width: 34, height: 38, fontSize: 17, fontWeight: 800, cursor: 'pointer', color: 'var(--muted,#647089)' }}>−</button>
+                  <span style={{ width: 44, textAlign: 'center', fontWeight: 800, fontSize: 15 }}>{pageQpm}</span>
+                  <button onClick={() => setPageQpmClamped(pageQpm + 1)} style={{ border: 'none', background: 'var(--card2,#f7f9fc)', width: 34, height: 38, fontSize: 17, fontWeight: 800, cursor: 'pointer', color: 'var(--muted,#647089)' }}>＋</button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -355,7 +366,7 @@ export function TrainingAdmin() {
                     </div>
                     <input value={m.title} onChange={e => setBulkPreview(bp => bp.map((x, xi) => xi === i ? { ...x, title: e.target.value } : x))} placeholder={`Module ${i + 1}`} style={{ ...inp, flex: 1, fontWeight: 700 }} />
                     <span className="muted" style={{ fontSize: 12.5, whiteSpace: 'nowrap', flex: '0 0 auto' }}>{m.duration_mins ?? 0} min</span>
-                    <span style={{ fontWeight: 800, color: 'var(--good,#0f9d6b)', fontSize: 13, whiteSpace: 'nowrap', flex: '0 0 auto' }}>{(m.quiz || []).length} Q</span>
+                    <span style={{ fontWeight: 800, color: 'var(--good,#0f9d6b)', fontSize: 13, whiteSpace: 'nowrap', flex: '0 0 auto' }}>{effQpm(m)} Q</span>
                   </div>
                 ))}
               </div>

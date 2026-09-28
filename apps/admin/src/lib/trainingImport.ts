@@ -3,13 +3,11 @@
 // optional and carry NO marker. All-or-nothing parse with pinpointed Block/line errors.
 //
 //   >> TITLE: Welcome to Concept Mastery      # required
-//   >> MINUTES: 5                             # optional
 //   >> QUESTIONS: 10                          # optional, per-module question count (default 10)
 //   >> DESCRIPTION: One line shown on the card # optional
 //   >> BODY:                                  # optional; every line after, until a Q: line, is HTML
-//   >> SWAP: Greetings & lesson openings      # optional; heading is the text after the colon
-//   Good morning, student. => Hi! How's it going?   # one pair per line: left | right  OR  left => right
-//   Shall we start the class? | Ready to get started?
+//   >> SWAP: Section heading (optional)        # a "say this, not that" list
+//   Stiff phrasing => Natural phrasing         # one pair per line: left | right  OR  left => right
 //   <h2>Welcome, Teacher!</h2>
 //   <p>…</p>
 //   Q: How soon to review a request?          # optional questions (no >> marker)
@@ -21,7 +19,7 @@
 export interface QuizQuestion { q: string; opts: string[]; answer: number }
 export interface ParsedModule {
   title: string; duration_mins: number | null; description: string | null;
-  body_html: string | null; quiz: QuizQuestion[]; questions_per_module: number; active: boolean;
+  body_html: string | null; quiz: QuizQuestion[]; questions_per_module: number | null; active: boolean;
 }
 export interface ParseResult { ok: boolean; modules: ParsedModule[]; errors: string[] }
 
@@ -34,7 +32,6 @@ export const TXT_TEMPLATE = `# TeacherHub module template — fill the lines bel
 # Lines starting with # are comments (ignored). Keep the >> markers.
 
 >> TITLE: Welcome to Concept Mastery
->> MINUTES: 5
 >> QUESTIONS: ${DEFAULT_QPM}
 >> DESCRIPTION: An introduction to our values, mission and role.
 
@@ -43,10 +40,10 @@ export const TXT_TEMPLATE = `# TeacherHub module template — fill the lines bel
 <p>Your lesson HTML goes here…</p>
 
 # Or, instead of BODY HTML, use a SWAP list — a "say this, not that" table.
-# The text after ">> SWAP:" is an optional heading. One pair per line: left | right (or left => right).
-# >> SWAP: Greetings & lesson openings
-# Good morning, student. => Hi! How's it going?
-# Shall we start the class? => Ready to get started?
+# Heading after ">> SWAP:" is optional. One pair per line: left | right (or left => right).
+# >> SWAP: Section heading (optional)
+# Stiff phrasing => Natural phrasing
+# Another stiff line => Its natural version
 
 # Questions are optional and have NO marker. Add them here or in the panel:
 # Q: How soon should you review a parent request?
@@ -59,7 +56,6 @@ export const TXT_TEMPLATE = `# TeacherHub module template — fill the lines bel
 export function moduleToTxt(m: { title: string; duration_mins?: number | null; questions_per_module?: number | null; description?: string | null; body_html?: string | null; quiz?: QuizQuestion[] | null }): string {
   const lines = [
     `>> TITLE: ${m.title || ''}`,
-    `>> MINUTES: ${m.duration_mins ?? 0}`,
     `>> QUESTIONS: ${m.questions_per_module ?? DEFAULT_QPM}`,
     `>> DESCRIPTION: ${m.description || ''}`,
     '', '>> BODY:', (m.body_html || '').trim(), '',
@@ -105,7 +101,7 @@ export function parseTrainingText(input: string): ParseResult {
     const err = (n: number, msg: string) => errors.push(`Block ${blockNo}, line ${n}: ${msg}`);
 
     let title: string | null = null, description: string | null = null, duration: number | null = null;
-    let qpm: number = DEFAULT_QPM;
+    let qpm: number | null = null;
     const bodyLines: string[] = [];
     const quiz: QuizQuestion[] = [];
     let state: 'head' | 'body' | 'quiz' | 'swap' = 'head';
