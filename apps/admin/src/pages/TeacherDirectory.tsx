@@ -85,6 +85,8 @@ export function TeacherDirectory() {
   const [fGrade, setFGrade] = useState('');
   const [links, setLinks] = useState<any[]>([]);
   const [copied, setCopied] = useState(false);
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [linkErr, setLinkErr] = useState('');
   const studentRef = useRef<HTMLInputElement>(null);
   const { can } = useAuth();
   const canManage = can('teacher.slots.manage');
@@ -105,6 +107,14 @@ export function TeacherDirectory() {
   const loadReqs = () => { api.teacherBookingRequests({ status: 'all' }).then(r => setAllReqs((r.requests || []) as Req[])).catch(() => setAllReqs([])); };
   useEffect(() => { load(''); loadReqs(); }, []);
   useEffect(() => { api.teacherBookingLinks().then(r => setLinks(r.links || [])).catch(() => {}); }, []);
+  const createTeacherLink = async (teacherId: string) => {
+    setCreatingLink(true); setLinkErr('');
+    try {
+      const link = await api.teacherCreateBookingLink({ teacher_ids: [teacherId], never_expires: true });
+      setLinks(ls => [link, ...ls]);
+    } catch (e) { setLinkErr((e as Error).message || 'Could not create booking link'); }
+    finally { setCreatingLink(false); }
+  };
 
   const ensureSlots = async (id: string) => {
     if (slots[id]) return;
@@ -142,6 +152,26 @@ export function TeacherDirectory() {
     } catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not update slot' })); }
     finally { setSavingSlot(null); }
   };
+  const setUnavailable = async (teacherId: string, slot: Slot) => {
+    if (slot.status === 'booked' && slot.booked_student && slot.booked_student.trim() && !window.confirm(`This slot is booked for ${slot.booked_student}. Making it unavailable removes that booking. Continue?`)) return;
+    setSavingSlot(slot.id);
+    try {
+      await api.teacherSetSlotStatus(slot.id, 'unavailable');
+      patchLocal(teacherId, slot.id, { status: 'unavailable', booked_student: null, booked_note: null, booked_by: null });
+      setPopSlot(null);
+    } catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not update slot' })); }
+    finally { setSavingSlot(null); }
+  };
+  const deleteSlot = async (teacherId: string, slot: Slot) => {
+    if (!window.confirm(`Delete this slot (${slot.day_of_week} ${slot.start_time}\u2013${slot.end_time})? This cannot be undone.`)) return;
+    setSavingSlot(slot.id);
+    try {
+      await api.teacherDeleteSlot(slot.id);
+      setSlots(m => ({ ...m, [teacherId]: (m[teacherId] || []).filter(x => x.id !== slot.id) }));
+      setPopSlot(null);
+    } catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not delete slot' })); }
+    finally { setSavingSlot(null); }
+  };
 
   // Per-request slot selection (toggle which accepted slots to book; the rest are declined).
   const pickFor = (reqId: string, mineIds: string[]) => reqPick[reqId] ?? new Set(mineIds);
@@ -176,35 +206,30 @@ export function TeacherDirectory() {
     if (!popSlot) return null;
     const s = slotById(id, popSlot);
     if (!s) return null;
-    const booked = s.status === 'booked';
-    const hasStudent = booked && !!(s.booked_student && s.booked_student.trim());
+    const hasStudent = s.status === 'booked' && !!(s.booked_student && s.booked_student.trim());
+    const isAvail = s.status === 'available';
+    const slotBtn: React.CSSProperties = { flex: '1 1 40%', fontWeight: 800, padding: '7px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer' };
     return (
       <>
         <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 300, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject}</div>
-          {booked ? (
-            <>
-              {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
-              {s.booked_note && <div className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</div>}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'inherit', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Working…' : (hasStudent ? 'Unbook' : 'Make available')}</button>
-                <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Close</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}
-                onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
-              <input value={pNote} onChange={e => setPNote(e.target.value)} placeholder="Note (optional)" style={inp}
-                onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
-              {pErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12 }}>{pErr}</div>}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => book(id, s)} disabled={savingSlot === s.id} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Booking…' : 'Book'}</button>
-                <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Esc</button>
-              </div>
-            </>
-          )}
+          {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
+          {hasStudent && s.booked_note && <div className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</div>}
+          {isAvail && <>
+            <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}
+              onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
+            <input value={pNote} onChange={e => setPNote(e.target.value)} placeholder="Note (optional)" style={inp}
+              onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
+            {pErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12 }}>{pErr}</div>}
+          </>}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {isAvail && <button onClick={() => book(id, s)} disabled={savingSlot === s.id} style={{ flex: '1 1 100%', fontWeight: 800, padding: '7px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Booking…' : 'Book'}</button>}
+            {!isAvail && <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, opacity: savingSlot === s.id ? .6 : 1 }}>Make available</button>}
+            {s.status !== 'unavailable' && <button onClick={() => setUnavailable(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, color: 'var(--amber,#b45309)', opacity: savingSlot === s.id ? .6 : 1 }}>Make unavailable</button>}
+            <button onClick={() => deleteSlot(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, color: 'var(--coral,#c0392b)', opacity: savingSlot === s.id ? .6 : 1 }}>Delete</button>
+            <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Esc</button>
+          </div>
         </div>
       </>
     );
@@ -250,10 +275,9 @@ export function TeacherDirectory() {
                   {WEEK_FULL.map(d => {
                     const s = cell[d + '|' + rk];
                     if (!s) return <td key={d}><div className="cm-wg-empty">·</div></td>;
-                    const booked = s.status === 'booked';
-                    const hasStudent = booked && !!(s.booked_student && s.booked_student.trim());
-                    const cls = hasStudent ? 'bk' : booked ? 'un' : 'av';
-                    const lab = hasStudent ? 'Booked' : booked ? 'Unavailable' : 'Available';
+                    const hasStudent = s.status === 'booked' && !!(s.booked_student && s.booked_student.trim());
+                    const cls = hasStudent ? 'bk' : s.status === 'available' ? 'av' : 'un';
+                    const lab = hasStudent ? 'Booked' : s.status === 'available' ? 'Available' : 'Unavailable';
                     return (
                       <td key={d}>
                         <div className={'cm-wg-cell ' + cls} onClick={canManage ? () => openPopover(s.id) : undefined} title={s.subject + (gradeShort(s) ? ' · ' + gradeShort(s) : '')} style={{ cursor: canManage ? 'pointer' : 'default' }}>
@@ -466,7 +490,13 @@ export function TeacherDirectory() {
                       <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: teacherLink.url ? 'inherit' : 'var(--muted,#8a93a3)' }}>{teacherLink.url || ('/b/' + teacherLink.token)}</span>
                       <button onClick={() => copyLink(teacherLink.url || ('/b/' + teacherLink.token))} title="Copy link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', borderRadius: 6, padding: '4px 8px', color: copied ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12 }}>{copied ? 'Copied' : 'Copy'}</button>
                     </div>
-                  ) : <div className="muted" style={{ fontSize: 12 }}>No active booking link — create one in Link Generator.</div>}
+                  ) : (
+                    <div>
+                      <button onClick={() => selected && createTeacherLink(selected)} disabled={creatingLink || !canManage} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: creatingLink || !canManage ? 'default' : 'pointer', border: '1px solid var(--teal,#0f766e)', background: 'var(--teal,#0f766e)', color: '#fff', borderRadius: 8, padding: '7px 12px', fontWeight: 800, fontSize: 12.5, opacity: creatingLink || !canManage ? .6 : 1 }}>{creatingLink ? 'Creating…' : '+ Create booking link'}</button>
+                      <div className="muted" style={{ fontSize: 11.5, marginTop: 5 }}>No active booking link. Creates a never-expiring link for this teacher.</div>
+                      {linkErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12, marginTop: 5 }}>{linkErr}</div>}
+                    </div>
+                  )}
                 </div>
 
                 <div>

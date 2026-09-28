@@ -96,10 +96,10 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   // Booking a slot requires a student name; unbooking clears the detail. `booked_by` is a
   // human-readable admin name so the teacher's own view can show who booked it.
   const slotStatusSchema = z.object({
-    status: z.enum(['available', 'booked']),
+    status: z.enum(['available', 'booked', 'unavailable']),
     student: z.string().trim().max(120).optional(),
     note: z.string().trim().max(500).optional(),
-  }).refine((v) => v.status === 'available' || !!(v.student && v.student.length > 0), { message: 'Student name is required to book', path: ['student'] });
+  }).refine((v) => v.status !== 'booked' || !!(v.student && v.student.length > 0), { message: 'Student name is required to book', path: ['student'] });
 
   app.patch('/v1/admin/teacher/slots/:id', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.slots.manage');
@@ -137,6 +137,23 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return rows[0];
   });
 
+
+  // Permanently delete a slot (available, booked or unavailable). Cascades ta_booking_request_slots.
+  app.delete('/v1/admin/teacher/slots/:id', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = (req.params as { id: string }).id;
+    const { rows } = await tdb().query(
+      `delete from public.ta_slots where id = $1 returning id, teacher_name, status, day_of_week, start_time`, [id]);
+    if (rows.length === 0) throw Errors.notFound('Slot not found');
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin','teacher.slot.delete','ta_slot',$2,$3)`,
+        [req.admin!.adminId, id, JSON.stringify({ status: rows[0].status, teacher: rows[0].teacher_name })]);
+    } catch { /* audit best-effort */ }
+    return { deleted: id };
+  });
 
   // ==== Parent Booking Links (A) + Booking Requests inbox (B) =====================================
   // TeacherHub OWNS the ta_booking_* schema (shipped in cm-whiteboard migration `parent_booking_links`).
@@ -334,7 +351,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const b = createLinkSchema.parse(req.body ?? {});
     let combos = normalizeCombos(b.combos && b.combos.length ? b.combos : (b.subject && typeof b.grade === 'number' ? [{ subject: b.subject, grade: b.grade }] : []));
     if (combos.length === 0) combos = await combosForTeachers(b.teacher_ids); // auto: cover everything the selected teacher(s) teach
-    if (combos.length === 0) throw Errors.validation('The selected teacher(s) have no grade+subject offerings yet');
+    if (combos.length === 0) combos = normalizeCombos([{ subject: 'All subjects', grade: 1 }]); // fallback: never block a link (combos are display-only; slots filter by teacher_ids)
     const chk = await tdb().query('select id from public.ta_teachers where id = any($1::uuid[])', [b.teacher_ids]);
     const found = new Set(chk.rows.map((r) => r.id as string));
     const missing = b.teacher_ids.filter((id) => !found.has(id));
