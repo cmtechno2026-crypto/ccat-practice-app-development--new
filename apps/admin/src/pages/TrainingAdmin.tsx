@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { parseTrainingText, moduleToTxt, TXT_TEMPLATE, DEFAULT_QPM, type ParsedModule } from '../lib/trainingImport';
@@ -25,11 +26,21 @@ const padQuiz = (q: Quiz[], n: number): Quiz[] => { const out = q.slice(); while
 const newDraft = (): Draft => ({ title: '', icon: '🎓', duration_mins: 5, description: '', body_html: '', quiz: padQuiz([], DEFAULT_QPM), active: true });
 
 function Crumb({ leaf }: { leaf?: string }) {
+  // Render the breadcrumb tail into the top bar, right after the "Training" title.
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  useEffect(() => { setNode(document.getElementById('th-crumb')); }, []);
+  const linkS: React.CSSProperties = { color: 'var(--brand,#2f6fd0)', textDecoration: 'none', fontWeight: 700 };
+  const tail = (
+    <span style={{ fontSize: 13, color: 'var(--muted,#647089)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
+      <span style={{ margin: '0 6px', opacity: .7 }}>/</span>
+      {leaf ? <Link to="/teacherhub/training/modules" style={linkS}>Learning modules</Link> : <b style={{ color: 'var(--ink,inherit)' }}>Learning modules</b>}
+      {leaf && <><span style={{ margin: '0 6px', opacity: .7 }}>/</span><b style={{ color: 'var(--ink,inherit)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{leaf}</b></>}
+    </span>
+  );
+  if (node) return createPortal(tail, node);
   return (
     <div style={{ fontSize: 12.5, color: 'var(--muted,#647089)', marginBottom: 6 }}>
-      <Link to="/teacherhub/training" style={{ color: 'var(--brand,#2f6fd0)', textDecoration: 'none', fontWeight: 700 }}>Training</Link>
-      {' / '}{leaf ? <Link to="/teacherhub/training/modules" style={{ color: 'var(--brand,#2f6fd0)', textDecoration: 'none', fontWeight: 700 }}>Learning modules</Link> : <b style={{ color: 'var(--ink,inherit)' }}>Learning modules</b>}
-      {leaf && <> / <b style={{ color: 'var(--ink,inherit)' }}>{leaf}</b></>}
+      <Link to="/teacherhub/training" style={linkS}>Training</Link>{tail}
     </div>
   );
 }
@@ -168,11 +179,17 @@ export function TrainingAdmin() {
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ marginRight: 'auto' }}>
             <h2 style={{ margin: '0 0 2px', fontSize: 21, fontWeight: 900, letterSpacing: '-.02em', color: navy }}>{editing.id ? 'Edit module' : 'New module'}</h2>
-            <div className="muted" style={{ fontSize: 13 }}>Content comes from a .txt file; pick a symbol and add questions here.</div>
+            <div className="muted" style={{ fontSize: 13 }}>Set the module name, pick a symbol, add content and questions.</div>
           </div>
           <button style={btnG} onClick={closeEditor}>← Back</button>
         </div>
         {err && <div className="empty" style={{ padding: 10, color: err.startsWith('Imported') ? 'var(--good,#0f9d6b)' : 'var(--coral,#c0392b)' }}>{err}</div>}
+
+        {/* module name */}
+        <section style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 16 }}>
+          <label style={{ display: 'block', fontSize: 12, color: 'var(--muted,#647089)', marginBottom: 6, fontWeight: 700 }}>Module name</label>
+          <input value={editing.title} onChange={e => setEditing({ ...editing, title: e.target.value })} placeholder="e.g. Session Conduct & Professionalism" style={{ ...inp, width: '100%', fontWeight: 700, fontSize: 15 }} />
+        </section>
 
         {/* symbol + questions count + active */}
         <section style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 16, display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'flex-start' }}>

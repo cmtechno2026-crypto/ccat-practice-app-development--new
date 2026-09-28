@@ -261,6 +261,7 @@ export function Layout() {
             <button className="iconbtn hamburger" onClick={() => setDrawer(true)} aria-label="Open menu" aria-expanded={drawer}>☰</button>
             {offRail && <Link to={homePath} className="backlink">← Dashboard</Link>}
             <span className="title">{title}</span>
+            <span id="th-crumb" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 2, minWidth: 0, overflow: 'hidden' }} />
           </span>
           <div className="who">
             {sites.length > 1 && (
