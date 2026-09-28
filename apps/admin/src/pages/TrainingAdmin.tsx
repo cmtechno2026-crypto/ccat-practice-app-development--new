@@ -192,31 +192,39 @@ export function TrainingAdmin() {
 
         {/* questions */}
         <section style={{ background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <span style={{ fontWeight: 800, color: navy, fontSize: 14 }}>Questions</span>
-            <span className="muted" style={{ fontSize: 12 }}>Teachers pass at ≥ 2 of 3 correct. Blank questions are ignored on save.</span>
-            <button style={{ ...btnG, marginLeft: 'auto', padding: '6px 10px' }} onClick={() => setQpm(1)}>＋ Add question</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'linear-gradient(135deg,#1c3f6e,#2f6fd0)', color: '#fff', borderRadius: 12, padding: '12px 16px', marginBottom: 12 }}>
+            <span style={{ fontSize: 20 }}>📋</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>Knowledge check</div>
+              <div style={{ fontSize: 12, opacity: .85 }}>One correct answer per question · teachers pass at ≥ 2 of 3 · blank questions are ignored on save</div>
+            </div>
+            <button style={{ ...btnG, background: 'rgba(255,255,255,.16)', color: '#fff', border: '1px solid rgba(255,255,255,.32)', padding: '7px 12px', flex: '0 0 auto' }} onClick={() => setQpm(1)}>＋ Add question</button>
           </div>
           <div style={{ display: 'grid', gap: 10 }}>
             {editing.quiz.map((q, qi) => (
-              <div key={qi} style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, padding: 10, background: 'var(--card2,#f7f9fc)' }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontWeight: 800, fontSize: 12, color: 'var(--muted,#647089)' }}>Q{qi + 1}</span>
-                  <input value={q.q} onChange={e => setQ(qi, { q: e.target.value })} style={{ ...inp, flex: 1 }} placeholder="Question text (leave blank to skip)" />
-                  <button style={{ ...btnG, color: 'var(--coral,#c0392b)', padding: '6px 10px' }} onClick={() => setQpm(-1)}>Remove</button>
+              <div key={qi} style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, padding: 14, background: 'var(--card,#fff)', boxShadow: '0 1px 2px rgba(35,42,61,.05)' }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <span style={{ flex: '0 0 auto', width: 26, height: 26, borderRadius: 8, background: 'var(--tint,#eaf1fb)', color: 'var(--brand,#2f6fd0)', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 3 }}>{qi + 1}</span>
+                  <input value={q.q} onChange={e => setQ(qi, { q: e.target.value })} style={{ ...inp, flex: 1, fontWeight: 700, fontSize: 14.5 }} placeholder="Question text (leave blank to skip)" />
+                  <button style={{ ...btnG, color: 'var(--coral,#c0392b)', padding: '7px 11px', flex: '0 0 auto' }} onClick={() => setQpm(-1)}>Remove</button>
                 </div>
-                <div className="muted" style={{ fontSize: 11.5, margin: '8px 0 4px' }}>Options — select the correct one:</div>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  {q.opts.map((o, oi) => (
-                    <div key={oi} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <input type="radio" name={`ans-${qi}`} checked={q.answer === oi} onChange={() => setQ(qi, { answer: oi })} />
-                      <span style={{ fontWeight: 800, width: 18 }}>{String.fromCharCode(65 + oi)}</span>
-                      <input value={o} onChange={e => setOpt(qi, oi, e.target.value)} style={{ ...inp, flex: 1 }} placeholder={`Option ${String.fromCharCode(65 + oi)}`} />
-                      {q.opts.length > 2 && <button style={{ ...btnG, padding: '4px 8px', color: 'var(--coral,#c0392b)' }} onClick={() => rmOpt(qi, oi)}>✕</button>}
+                <div className="muted" style={{ fontSize: 11.5, margin: '12px 0 8px', paddingLeft: 36 }}>Select the correct answer</div>
+                <div style={{ display: 'grid', gap: 8, paddingLeft: 36 }}>
+                  {q.opts.map((o, oi) => {
+                    const correct = q.answer === oi;
+                    return (
+                    <div key={oi} style={{ display: 'flex', gap: 10, alignItems: 'center', border: '1px solid ' + (correct ? 'var(--teal,#0f766e)' : 'var(--line,#e6e6ef)'), background: correct ? 'var(--teal-soft,#e6f7f2)' : 'var(--card,#fff)', borderRadius: 10, padding: '8px 10px' }}>
+                      <button type="button" onClick={() => setQ(qi, { answer: oi })} title="Mark as the correct answer" aria-pressed={correct} style={{ flex: '0 0 auto', width: 20, height: 20, borderRadius: '50%', border: '2px solid ' + (correct ? 'var(--teal,#0f766e)' : '#c7ccd6'), background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                        {correct && <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--teal,#0f766e)' }} />}
+                      </button>
+                      <input value={o} onChange={e => setOpt(qi, oi, e.target.value)} style={{ ...inp, flex: 1, border: 'none', background: 'transparent', padding: '4px 2px' }} placeholder={`Option ${String.fromCharCode(65 + oi)}`} />
+                      {correct && <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--teal,#0f766e)', textTransform: 'uppercase', letterSpacing: '.03em', flex: '0 0 auto' }}>Correct</span>}
+                      {q.opts.length > 2 && <button style={{ border: 'none', background: 'transparent', color: 'var(--coral,#c0392b)', cursor: 'pointer', fontWeight: 800, fontSize: 14, flex: '0 0 auto', padding: '2px 6px' }} onClick={() => rmOpt(qi, oi)} title="Remove option">✕</button>}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
-                {q.opts.length < 6 && <button style={{ ...btnG, marginTop: 6, padding: '4px 10px' }} onClick={() => addOpt(qi)}>＋ Add option</button>}
+                {q.opts.length < 6 && <button style={{ ...btnG, marginTop: 10, marginLeft: 36, padding: '6px 12px' }} onClick={() => addOpt(qi)}>＋ Add option</button>}
               </div>
             ))}
           </div>
