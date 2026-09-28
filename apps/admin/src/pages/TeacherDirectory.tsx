@@ -69,7 +69,8 @@ export function TeacherDirectory() {
   const [err, setErr] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
-  const [mobileDetail, setMobileDetail] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 640);
+  useEffect(() => { const on = () => setIsMobile(window.innerWidth <= 640); window.addEventListener('resize', on); return () => window.removeEventListener('resize', on); }, []);
   const [slots, setSlots] = useState<Record<string, Slot[]>>({});
   const [slotErr, setSlotErr] = useState<Record<string, string>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -402,6 +403,58 @@ export function TeacherDirectory() {
   });
   const teacherLink = (rows && selected) ? (links.find((l: any) => Array.isArray(l.teacher_ids) && l.teacher_ids.includes(selected) && l.status === 'active') || links.find((l: any) => Array.isArray(l.teacher_ids) && l.teacher_ids.includes(selected)) || null) : null;
   const sel = rows && selected ? rows.find(t => t.id === selected) : null;
+  const renderDetail = (d: TeacherRow) => (
+    <div style={{ display: 'grid', gap: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <span className={'cm-av ' + GRADS[(filteredRows.findIndex(t => t.id === d.id)) % GRADS.length]} style={{ width: 44, height: 44, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flex: 'none' }}>{initials(d.name)}</span>
+                  <div><div style={{ fontWeight: 800, fontSize: 17 }}>{d.name}</div><div className="muted" style={{ fontSize: 12 }}>{d.email}</div></div>
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {reqBadge(d.id) > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(d.id)} ready to book</span>}
+                    {d.banned_at && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--coral,#c0392b)', background: 'var(--coral-soft,#fdece9)', borderRadius: 999, padding: '2px 10px' }}>Banned</span>}
+                    {canManage && <button onClick={() => banTeacher(d, !d.banned_at)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.banned_at ? 'Unban' : 'Ban'}</button>}
+                    {canManage && <button onClick={() => deleteTeacher(d)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--coral,#c0392b)', opacity: acting ? 0.6 : 1 }}>Delete</button>}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Teaches</h4>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {groupSubjects(d.subjects).map(g => { const c = comboColor(g.subject, 'all'); return (
+                      <span key={g.subject} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 8, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.tx }} />{g.subject}{g.grades.length ? <span style={{ fontWeight: 800 }}>{' · ' + compressGrades(g.grades)}</span> : null}
+                      </span>
+                    ); })}
+                    {groupSubjects(d.subjects).length === 0 && <span className="muted" style={{ fontSize: 12 }}>No subjects listed.</span>}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 6px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Booking link</h4>
+                  {teacherLink ? (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e9f0)', borderRadius: 8, padding: '6px 8px' }}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: teacherLink.url ? 'inherit' : 'var(--muted,#8a93a3)' }}>{teacherLink.url || ('/b/' + teacherLink.token)}</span>
+                      <button onClick={() => copyLink(teacherLink.url || ('/b/' + teacherLink.token))} title="Copy link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', borderRadius: 6, padding: '4px 8px', color: copied ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12 }}>{copied ? 'Copied' : 'Copy'}</button>
+                    </div>
+                  ) : (
+                    <div>
+                      <button onClick={() => selected && createTeacherLink(selected)} disabled={creatingLink || !canManage} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: creatingLink || !canManage ? 'default' : 'pointer', border: '1px solid var(--teal,#0f766e)', background: 'var(--teal,#0f766e)', color: '#fff', borderRadius: 8, padding: '7px 12px', fontWeight: 800, fontSize: 12.5, opacity: creatingLink || !canManage ? .6 : 1 }}>{creatingLink ? 'Creating…' : '+ Create booking link'}</button>
+                      <div className="muted" style={{ fontSize: 11.5, marginTop: 5 }}>No active booking link. Creates a never-expiring link for this teacher.</div>
+                      {linkErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12, marginTop: 5 }}>{linkErr}</div>}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 4px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Availability</h4>
+                  {renderSlots(d.id)}
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Parent requests {reqBadge(d.id) > 0 && <span style={{ ...countBadge, background: 'var(--amber,#b45309)' }}>{reqBadge(d.id)}</span>}</h4>
+                  {renderRequests(d.id)}
+                </div>    </div>
+  );
+
 
   return (
     <div>
@@ -456,7 +509,7 @@ export function TeacherDirectory() {
       {err && <div className="empty" style={{ marginBottom: 12 }}>{err}</div>}
       {!rows && !err && <div className="empty">Loading…</div>}
       {rows && (
-        <div className={'cm-md' + (mobileDetail ? ' show-detail' : '')}>
+        <div className="cm-md">
           {/* LEFT: roster */}
           <div className="cm-roster" style={{ display: 'grid', gap: 10 }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or email…"
@@ -476,7 +529,8 @@ export function TeacherDirectory() {
               {filteredRows.map((t, i) => {
                 const on = selected === t.id; const badge = reqBadge(t.id);
                 return (
-                  <button key={t.id} onClick={() => { selectTeacher(t.id); setMobileDetail(true); }}
+                  <div key={t.id} className="cm-teacher">
+                  <button onClick={() => { if (isMobile) { if (selected === t.id) { setSelected(null); setPopSlot(null); } else selectTeacher(t.id); } else selectTeacher(t.id); }}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', padding: 10, borderRadius: 12, cursor: 'pointer',
                       border: '1px solid ' + (on ? 'var(--brand,#2f6fd0)' : 'var(--line,#e6e6ef)'), background: on ? 'var(--brand-soft,#e7f0fc)' : 'var(--card,#fff)', color: 'inherit' }}>
                     <span className={'cm-av ' + GRADS[i % GRADS.length]} style={{ width: 38, height: 38, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 13, flex: 'none' }}>{initials(t.name)}</span>
@@ -485,68 +539,21 @@ export function TeacherDirectory() {
                       <span className="muted" style={{ fontSize: 11.5 }}>{t.slots} slots · {t.open_slots} open{t.banned_at ? <span style={{ color: 'var(--coral,#c0392b)', fontWeight: 700 }}> · Banned</span> : ''}</span>
                     </span>
                     {badge > 0 && <span style={{ ...countBadge, background: 'var(--amber,#b45309)' }}>{badge}</span>}
+                    {isMobile && <span aria-hidden style={{ marginLeft: 4, color: on ? 'var(--brand,#2f6fd0)' : 'var(--muted,#8a93a3)', fontSize: 12, flex: '0 0 auto' }}>{on ? '▲' : '▼'}</span>}
                   </button>
+                  {isMobile && on && sel && <div className="cm-inline">{renderDetail(sel)}</div>}
+                  </div>
                 );
               })}
             </div>
           </div>
 
-          {/* RIGHT: detail */}
-          <div className="cm-detail" style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 14, background: 'var(--card,#fff)', padding: 16, minHeight: 200 }}>
-            {!sel ? <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Select a teacher.</div> : (
-              <div style={{ display: 'grid', gap: 16 }}>
-                <button className="cm-back" onClick={() => setMobileDetail(false)}>← All teachers</button>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <span className={'cm-av ' + GRADS[(filteredRows.findIndex(t => t.id === sel.id)) % GRADS.length]} style={{ width: 44, height: 44, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flex: 'none' }}>{initials(sel.name)}</span>
-                  <div><div style={{ fontWeight: 800, fontSize: 17 }}>{sel.name}</div><div className="muted" style={{ fontSize: 12 }}>{sel.email}</div></div>
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    {reqBadge(sel.id) > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(sel.id)} ready to book</span>}
-                    {sel.banned_at && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--coral,#c0392b)', background: 'var(--coral-soft,#fdece9)', borderRadius: 999, padding: '2px 10px' }}>Banned</span>}
-                    {canManage && <button onClick={() => banTeacher(sel, !sel.banned_at)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{sel.banned_at ? 'Unban' : 'Ban'}</button>}
-                    {canManage && <button onClick={() => deleteTeacher(sel)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--coral,#c0392b)', opacity: acting ? 0.6 : 1 }}>Delete</button>}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Teaches</h4>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {groupSubjects(sel.subjects).map(g => { const c = comboColor(g.subject, 'all'); return (
-                      <span key={g.subject} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 8, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.tx }} />{g.subject}{g.grades.length ? <span style={{ fontWeight: 800 }}>{' · ' + compressGrades(g.grades)}</span> : null}
-                      </span>
-                    ); })}
-                    {groupSubjects(sel.subjects).length === 0 && <span className="muted" style={{ fontSize: 12 }}>No subjects listed.</span>}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 style={{ margin: '0 0 6px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Booking link</h4>
-                  {teacherLink ? (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card2,#f2f5fa)', border: '1px solid var(--line,#e6e9f0)', borderRadius: 8, padding: '6px 8px' }}>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: teacherLink.url ? 'inherit' : 'var(--muted,#8a93a3)' }}>{teacherLink.url || ('/b/' + teacherLink.token)}</span>
-                      <button onClick={() => copyLink(teacherLink.url || ('/b/' + teacherLink.token))} title="Copy link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', borderRadius: 6, padding: '4px 8px', color: copied ? 'var(--good,#0f9d6b)' : 'inherit', fontWeight: 700, fontSize: 12 }}>{copied ? 'Copied' : 'Copy'}</button>
-                    </div>
-                  ) : (
-                    <div>
-                      <button onClick={() => selected && createTeacherLink(selected)} disabled={creatingLink || !canManage} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: creatingLink || !canManage ? 'default' : 'pointer', border: '1px solid var(--teal,#0f766e)', background: 'var(--teal,#0f766e)', color: '#fff', borderRadius: 8, padding: '7px 12px', fontWeight: 800, fontSize: 12.5, opacity: creatingLink || !canManage ? .6 : 1 }}>{creatingLink ? 'Creating…' : '+ Create booking link'}</button>
-                      <div className="muted" style={{ fontSize: 11.5, marginTop: 5 }}>No active booking link. Creates a never-expiring link for this teacher.</div>
-                      {linkErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12, marginTop: 5 }}>{linkErr}</div>}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <h4 style={{ margin: '0 0 4px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Availability</h4>
-                  {renderSlots(sel.id)}
-                </div>
-
-                <div>
-                  <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Parent requests {reqBadge(sel.id) > 0 && <span style={{ ...countBadge, background: 'var(--amber,#b45309)' }}>{reqBadge(sel.id)}</span>}</h4>
-                  {renderRequests(sel.id)}
-                </div>
-              </div>
-            )}
-          </div>
+          {/* RIGHT: detail (desktop two-column). On mobile the detail renders inline under the tapped row. */}
+          {!isMobile && (
+            <div className="cm-detail" style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 14, background: 'var(--card,#fff)', padding: 16, minHeight: 200 }}>
+              {!sel ? <div className="muted" style={{ padding: 20, textAlign: 'center' }}>Select a teacher.</div> : renderDetail(sel)}
+            </div>
+          )}
         </div>
       )}
     </div>
