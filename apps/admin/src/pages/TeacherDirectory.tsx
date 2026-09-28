@@ -497,8 +497,10 @@ export function TeacherDirectory() {
         .cm-wg-chip.bk{border-color:#b45309;background:#fbeeda;color:#b45309}
         .cm-wg-chip.un{border-color:#c7ccd6;background:#eef1f6;color:#6b7280}
         @media(max-width:640px){ .cm-wg-desk{display:none} .cm-wg-stack{display:block} }
+        @media(max-width:640px){ .cm-inline,.cm-inline *{min-width:0;max-width:100%} .cm-inline{overflow:hidden} }
         @media(max-width:920px){
-          .cm-md{grid-template-columns:1fr}
+          .cm-md{grid-template-columns:minmax(0,1fr);min-width:0}
+          .cm-roster{min-width:0}
           .cm-week{grid-template-columns:1fr}
           .cm-wday.cm-empty{display:none}
           .cm-wday{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
@@ -531,7 +533,7 @@ export function TeacherDirectory() {
                 return (
                   <div key={t.id} className="cm-teacher">
                   <button onClick={() => { if (isMobile) { if (selected === t.id) { setSelected(null); setPopSlot(null); } else selectTeacher(t.id); } else selectTeacher(t.id); }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', padding: 10, borderRadius: 12, cursor: 'pointer',
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', padding: 10, borderRadius: (isMobile && on) ? '12px 12px 0 0' : 12, cursor: 'pointer',
                       border: '1px solid ' + (on ? 'var(--brand,#2f6fd0)' : 'var(--line,#e6e6ef)'), background: on ? 'var(--brand-soft,#e7f0fc)' : 'var(--card,#fff)', color: 'inherit' }}>
                     <span className={'cm-av ' + GRADS[i % GRADS.length]} style={{ width: 38, height: 38, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 13, flex: 'none' }}>{initials(t.name)}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
