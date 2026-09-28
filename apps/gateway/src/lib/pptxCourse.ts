@@ -144,7 +144,8 @@ function titleWord(title: string): string { return (title || 'this topic').repla
 // ---------- Rule Engine: slide → section ----------
 function slideToSection(s: Slide): Section | null {
   if (s.tables.length) {
-    const rows = s.tables[0].map(r => r.map(c => c.trim()));
+    const t0 = s.tables[0]!;
+    const rows = t0.map(r => r.map(c => c.trim()));
     if (rows.length) return { type: 'table', title: s.title || 'Table', rows };
   }
   const top = s.body.filter(p => p.lvl === 0);
@@ -186,7 +187,7 @@ function buildQuestions(slides: Slide[]): Question[] {
   const pick = (exclude: string[], k: number): string[] => {
     const avail = pool.filter(x => !exclude.includes(x));
     const out: string[] = [];
-    for (let i = 0; i < avail.length && out.length < k; i++) out.push(avail[i]); // deterministic order
+    for (let i = 0; i < avail.length && out.length < k; i++) out.push(avail[i]!); // deterministic order
     return out;
   };
 
@@ -200,10 +201,10 @@ function buildQuestions(slides: Slide[]): Question[] {
     if (numbered && items.length >= 2 && items.length <= 6) {
       qs.push({ type: 'ordering', q: `Put these steps in the correct order.`, items: [...items], answer: items.map((_, i) => i), source: `Slide ${s.index}` });
       const distract = pick(items, 3);
-      if (distract.length >= 1) qs.push({ type: 'mcq', q: `What is the first step in ${tw}?`, opts: uniqCap([items[0], ...distract], 4), answer: 0, explain: `${items[0]} comes first.`, source: `Slide ${s.index}` });
+      if (distract.length >= 1) qs.push({ type: 'mcq', q: `What is the first step in ${tw}?`, opts: uniqCap([items[0]!, ...distract], 4), answer: 0, explain: `${items[0]!} comes first.`, source: `Slide ${s.index}` });
     } else if (items.length >= 2 && items.length <= 8) {
       // "which of the following is part of X?" MCQ (correct = a real item; distractors from pool)
-      const correct = items[0];
+      const correct = items[0]!;
       const distract = pick(items, 3);
       if (distract.length >= 2) qs.push({ type: 'mcq', q: `Which of the following is part of ${tw}?`, opts: uniqCap([correct, ...distract], 4), answer: 0, explain: `${correct} is listed under ${tw}.`, source: `Slide ${s.index}` });
       // true/false from a real item
@@ -212,9 +213,9 @@ function buildQuestions(slides: Slide[]): Question[] {
 
     // matching from a table with 2 columns
     if (s.tables.length) {
-      const rows = s.tables[0].filter(r => r.length >= 2 && r[0].trim() && r[1].trim());
-      const body = rows.slice(rows.length > 1 && /—|:|=>/.test('') ? 1 : 0); // keep all; header detection is unreliable
-      const pairs = rows.filter(r => isShort(r[0]) && r[1].length <= 120).slice(0, 6).map(r => [r[0].trim(), r[1].trim()] as [string, string]);
+      const t0 = s.tables[0]!;
+      const rows = t0.filter(r => r.length >= 2 && (r[0] || '').trim() && (r[1] || '').trim());
+      const pairs = rows.filter(r => isShort(r[0] || '') && (r[1] || '').length <= 120).slice(0, 6).map(r => [(r[0] || '').trim(), (r[1] || '').trim()] as [string, string]);
       if (pairs.length >= 2) qs.push({ type: 'matching', q: `Match each item with its description (${s.title || 'from the table'}).`, pairs, source: `Slide ${s.index}` });
     }
 
