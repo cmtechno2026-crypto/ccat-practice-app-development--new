@@ -16,12 +16,12 @@ export type Tier = 'free' | 't50' | 't250' | 't500';
 // to ALLOWED_TIERS below.
 const TIER_ORDER: Tier[] = ['free', 't50', 't250', 't500'];
 
-// PHASE CLAMP: tiers reachable this phase. Phase 1 (Stripe checkout) OPENS all four — a paid t250/t500
+// PHASE CLAMP: tiers reachable this phase. Phase 1 (PayPal checkout) OPENS all four — a paid t250/t500
 // now grants its real capabilities. clampTier still guards against a tier outside this array (defence in
 // depth). To re-close a tier, remove it here and any t250/t500 row is clamped down to the highest listed.
 export const ALLOWED_TIERS: Tier[] = ['free', 't50', 't250', 't500'];
 
-// Tiers that can be PURCHASED via Stripe (free is the default, never sold). Order low -> high.
+// Tiers that can be PURCHASED via PayPal (free is the default, never sold). Order low -> high.
 export const SELLABLE_TIERS: Tier[] = ['t50', 't250', 't500'];
 
 // Numeric rank of a tier in TIER_ORDER (free=0). Unknown -> 0 (treated as free).
@@ -85,7 +85,7 @@ export function clampTier(t: Tier): Tier {
   return i > maxI ? maxAllowed : t;
 }
 
-// Grant provenance. 'paid' = Stripe-confirmed payment (only the webhook writes it). Everything else is
+// Grant provenance. 'paid' = PayPal-confirmed payment (only the capture/webhook writes it). Everything else is
 // non-paying access. Mirrors the ccat.entitlements.grant_reason CHECK (migration 0043).
 export type GrantReason = 'paid' | 'sale' | 'discount' | 'comp' | 'trial' | 'other';
 export const GRANT_REASONS: GrantReason[] = ['paid', 'sale', 'discount', 'comp', 'trial', 'other'];

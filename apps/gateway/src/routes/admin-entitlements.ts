@@ -18,8 +18,8 @@ function escapeHtml(s: string): string {
 // membership view/edit scoped by student id.
 //
 // grant_reason: default is 'comp' — an omitted reason is never treated as a payment. 'paid' is normally
-// set by the Stripe webhook (a real, confirmed payment), but admins may also set it manually (e.g. to
-// record a payment taken outside Stripe). A manual 'paid' grant is indistinguishable from a webhook one
+// set by the PayPal capture/webhook (a real, confirmed payment), but admins may also set it manually (e.g. to
+// record a payment taken outside PayPal). A manual 'paid' grant is indistinguishable from a webhook one
 // in the audit trail, so use it only for genuine payments.
 const ADMIN_GRANT_REASONS = ['paid', 'sale', 'discount', 'comp', 'trial', 'other'] as const;
 
@@ -99,7 +99,7 @@ export function registerAdminEntitlementsRoutes(app: FastifyInstance, db: DB, cf
 
     // Tier-upgrade confirmation email (behind PAYMENTS_ENABLED; fire-and-forget). Only when the tier moved
     // UP and the new row is active — not on downgrade, cancel, or a same-tier re-save. This is the CCAT
-    // "plan active" message (Stripe sends its own receipt separately).
+    // "plan active" message (PayPal sends its own receipt separately).
     if (cfg.paymentsEnabled && status === 'active') {
       const p = prev.rows[0];
       const prevActive = p && p.status === 'active' && (p.current_period_end == null || new Date(p.current_period_end) > new Date());

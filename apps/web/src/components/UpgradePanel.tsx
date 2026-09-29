@@ -48,7 +48,7 @@ export function UpgradePanel({
         <div style={{ fontSize: 40, lineHeight: 1 }} aria-hidden>{c.icon}</div>
         <h2 style={{ marginTop: 10 }}>{c.title}</h2>
         <div className="muted" style={{ marginTop: 6 }}>{c.line}</div>
-        {/* Payments Phase 1: keep the upgrade path IN-APP (Stripe Checkout via My Plan). When payments is
+        {/* Payments Phase 1: keep the upgrade path IN-APP (PayPal Checkout via My Plan). When payments is
             off, fall back to the external membership link so the Phase 2 behaviour is unchanged. */}
         {PAYMENTS_ENABLED ? (
           <Link

@@ -10,7 +10,7 @@ import { withHst } from '../lib/tax.js';
 import { grantPaidEntitlementPaypal } from '../lib/paypal-grant.js';
 import { verifyEmailToken } from './email-verify.js';
 
-// CCAT Payments — PayPal in-app checkout (Orders v2). Mirrors the Stripe checkout trust model:
+// CCAT Payments — PayPal in-app checkout (Orders v2). Checkout trust model:
 //  - student authenticated; guardian resolved from the SESSION, never the client.
 //  - tier validated server-side (sellable, strictly higher than current).
 //  - amount comes from the server's tier->amount map (CAD). The client sends ONLY a tier string.

@@ -15,7 +15,7 @@ export type GrantOutcome = 'granted' | 'deduped' | 'ignored' | 'amount_mismatch'
 
 // The ONE place a PayPal-paid entitlement is written. Called by BOTH the return-time capture endpoint and
 // the PAYMENT.CAPTURE.COMPLETED webhook — keyed on the SAME PayPal capture id, so the grant happens
-// exactly once regardless of which path arrives first (or if both do). Mirrors the Stripe webhook grant:
+// exactly once regardless of which path arrives first (or if both do). Paid-grant contract:
 // grant_reason='paid' (overrides any prior comp/sale/etc.), 1-year plan -> active, expires 1 year from
 // purchase (current_period_end = now + 1 year); a later re-purchase resets a fresh year. Audited.
 export async function grantPaidEntitlementPaypal(

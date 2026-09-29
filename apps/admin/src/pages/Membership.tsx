@@ -3,7 +3,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Panel, useToast } from '../components/ui';
 
-// Payments Phase 2 — MANUAL membership grant (temporary bridge until Stripe/webhook exist). Set a
+// Payments Phase 2 — MANUAL membership grant (for payments taken outside the PayPal flow). Set a
 // guardian's tier by email so both states can be tested today with no payment: free (demo-only) vs
 // t50 (all practice; Exam/Combine still locked). Super-Admin only (server enforces config.global).
 // All four tiers are grantable here (free / $49 / $99 / $199) — prices match the web CCAT plans.

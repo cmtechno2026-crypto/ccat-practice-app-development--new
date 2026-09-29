@@ -51,9 +51,9 @@ export function capsOf(ent: EntitlementsMe | null | undefined, loaded: boolean =
 
 export type UpgradeFeature = 'practice' | 'combine' | 'exam' | 'weekly';
 
-// ---- Payments Phase 1 (My Plan / Stripe Checkout) --------------------------------------------------
+// ---- Payments Phase 1 (My Plan / PayPal Checkout) --------------------------------------------------
 // DISPLAY-ONLY tier catalog for the My Plan page. Prices here are for showing the user; the gateway
-// owns the real Stripe price and the eligibility decision (this list never gates anything server-side).
+// owns the real PayPal price and the eligibility decision (this list never gates anything server-side).
 import type { EntitlementTier } from '@ccat/api-client';
 
 export interface TierInfo {
