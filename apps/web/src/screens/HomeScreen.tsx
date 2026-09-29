@@ -98,6 +98,11 @@ export function HomeScreen() {
       {data && summary && (() => {
         const batteries = data.analytics?.batteries ?? [];
         const battOf = (key: string, alt: string) => batteries.find((b) => b.key === key || b.key === alt);
+        // Show only the batteries that actually have sets for this student's grade (e.g. Grade 5 = 2).
+        // Fall back to all three when analytics didn't load, so a grade WITH content never renders empty.
+        const shownBatteries = batteries.length
+          ? BATTERIES.filter((bt) => { const b = battOf(bt.key, bt.alt); return !!b && (b.setsTotal ?? 0) > 0; })
+          : BATTERIES;
 
         const ach = data.achievements ?? [];
         const badgesTotal = ach.length;
@@ -122,7 +127,9 @@ export function HomeScreen() {
                   <span className="hpanel-hint">Pick a battery to practise</span>
                 </div>
                 <div className="hchar-row">
-                  {BATTERIES.map((bt, i) => {
+                  {shownBatteries.length === 0 && <div className="muted" style={{ padding: 6 }}>No practice sets for your grade yet.</div>}
+                  {shownBatteries.map((bt) => {
+                    const i = BATTERIES.findIndex((x) => x.key === bt.key);
                     const b = battOf(bt.key, bt.alt);
                     const done = b?.setsDone ?? 0;
                     const total = b?.setsTotal ?? 0;
@@ -145,7 +152,9 @@ export function HomeScreen() {
                   <span className="hpanel-hint">Timed full-battery mocks</span>
                 </div>
                 <div className="hchar-row">
-                  {BATTERIES.map((bt, i) => {
+                  {shownBatteries.length === 0 && <div className="muted" style={{ padding: 6 }}>No exams for your grade yet.</div>}
+                  {shownBatteries.map((bt) => {
+                    const i = BATTERIES.findIndex((x) => x.key === bt.key);
                     const b = battOf(bt.key, bt.alt);
                     return (
                       <button

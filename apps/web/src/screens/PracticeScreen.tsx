@@ -246,19 +246,20 @@ export function PracticeScreen() {
           {loading && <Loader />}
           {error && <ErrorNote error={error} onRetry={reload} />}
           {data && examItems.length === 0 && <div className="empty">No exam sets for your grade yet.<br />Check back after your teacher publishes an exam.</div>}
-          {data && examItems.length > 0 && BATTERY_ORDER.map((key) => {
+          {data && examItems.length > 0 && BATTERY_ORDER
+            .filter((key) => (examByBattery[key] ?? []).length > 0)
+            .map((key) => {
             const bm = batteryMeta(key);
             const cnt = (examByBattery[key] ?? []).length;
-            const empty = cnt === 0;
             return (
               <button key={key} className="battery-card" style={{ ['--bat' as any]: bm.color, ['--bat-tint' as any]: bm.tint }}
-                disabled={empty} onClick={() => go({ battery: key })} aria-disabled={empty}>
+                onClick={() => go({ battery: key })}>
                 <span className="bat-ic" style={{ background: bm.tint }}>{bm.icon}</span>
                 <span className="bat-body">
                   <span className="bat-name">{bm.name} Battery Test</span>
-                  <span className="bat-sub">{empty ? 'No exam sets yet' : `${cnt} set${cnt === 1 ? '' : 's'}`}</span>
+                  <span className="bat-sub">{cnt} set{cnt === 1 ? '' : 's'}</span>
                 </span>
-                <span className="bat-go">{empty ? '' : '›'}</span>
+                <span className="bat-go">›</span>
               </button>
             );
           })}
@@ -472,21 +473,23 @@ export function PracticeScreen() {
       <div className="content stack">
         {loading && <Loader />}
         {error && <ErrorNote error={error} onRetry={reload} />}
-        {data && BATTERY_ORDER.map((key) => {
+        {data && practice.length === 0 && <div className="empty">No practice sets for your grade yet.<br />Check back after your teacher publishes sets.</div>}
+        {data && BATTERY_ORDER
+          .filter((key) => Object.values(grouped[key] ?? {}).reduce((n, arr) => n + arr.length, 0) > 0)
+          .map((key) => {
           const bm = batteryMeta(key);
           const cats = grouped[key] ?? {};
           const catCount = Object.keys(cats).length;
           const setCount = Object.values(cats).reduce((n, arr) => n + arr.length, 0);
-          const empty = setCount === 0;
           return (
             <button key={key} className="battery-card" style={{ ['--bat' as any]: bm.color, ['--bat-tint' as any]: bm.tint }}
-              disabled={empty} onClick={() => go({ battery: key })} aria-disabled={empty}>
+              onClick={() => go({ battery: key })}>
               <span className="bat-ic" style={{ background: bm.tint }}>{bm.icon}</span>
               <span className="bat-body">
                 <span className="bat-name">{bm.name}</span>
-                <span className="bat-sub">{empty ? 'No sets published yet' : `${setCount} set${setCount === 1 ? '' : 's'} · ${catCount} categor${catCount === 1 ? 'y' : 'ies'}`}</span>
+                <span className="bat-sub">{setCount} set{setCount === 1 ? '' : 's'} · {catCount} categor{catCount === 1 ? 'y' : 'ies'}</span>
               </span>
-              <span className="bat-go">{empty ? '' : '›'}</span>
+              <span className="bat-go">›</span>
             </button>
           );
         })}
