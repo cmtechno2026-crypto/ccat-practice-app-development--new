@@ -446,6 +446,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.get('/v1/admin/teacher/booking-links', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.directory');
     requireSite(req, 'teacher');
+    try { await tdb().query('select public.ta_ensure_booking_links(null)'); } catch { /* best-effort auto-renew of expired links */ }
     const q = req.query as { status?: string };
     const filter = (q.status ?? 'all').trim();
     const { rows } = await tdb().query(
