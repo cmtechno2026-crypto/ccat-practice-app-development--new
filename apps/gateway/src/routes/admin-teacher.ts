@@ -489,7 +489,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
          join public.ta_booking_links l on l.id = r.link_id
          left join lateral (
            select json_agg(json_build_object(
-             'slot_id', rs.slot_id, 'outcome', rs.outcome,
+             'slot_id', rs.slot_id, 'outcome', rs.outcome, 'teacher_slot_status', rs.teacher_slot_status,
              'teacher_id', s.teacher_id, 'teacher_name', s.teacher_name, 'subject', s.subject,
              'day_of_week', s.day_of_week, 'start_time', s.start_time, 'end_time', s.end_time,
              'mode', s.mode, 'status', s.status, 'timezone', s.timezone,
