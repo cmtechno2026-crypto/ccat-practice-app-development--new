@@ -1,0 +1,28 @@
+name: RLS anon probe
+
+# Security regression canary: proves the public anon key cannot read any
+# sensitive table. Runs on every PR and push to master, and daily.
+# Requires one repo secret: SUPABASE_ANON_KEY (the publishable anon key).
+# Optionally set repo variable SUPABASE_URL (defaults to the project URL).
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  rls-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Probe anon exposure
+        run: node test/rls-probe.mjs
+        env:
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
