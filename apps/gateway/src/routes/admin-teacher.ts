@@ -76,7 +76,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (teacherId) { params.push(teacherId); where = 'where s.teacher_id = $1'; }
     const { rows } = await tdb().query(
       `select s.id, s.teacher_id, s.teacher_name, s.subject, s.grade, s.grade_min, s.grade_max, s.day_of_week,
-              s.start_time, s.end_time, s.mode, s.status, s.timezone, s.notes,
+              s.start_time, s.end_time, s.status, s.timezone, s.notes,
               s.booked_student, s.booked_note, s.booked_by, s.booked_at, br.session_type
          from public.ta_slots s
          left join public.ta_booking_requests br on br.id = s.booked_request_id
@@ -124,7 +124,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
               updated_at     = now()
         where id = $1
         returning id, teacher_id, teacher_name, subject, grade, day_of_week, start_time, end_time,
-                  mode, status, timezone, booked_student, booked_note, booked_by, booked_at`,
+                  status, timezone, booked_student, booked_note, booked_by, booked_at`,
       // booked_student and booked_by are NOT NULL (default ''); clear them to '' on unbook, never null.
       [id, b.status, booking ? (b.student ?? '') : '', booking ? (b.note ?? null) : null, booking ? bookedBy : '']);
     if (rows.length === 0) throw Errors.notFound('Slot not found');
@@ -243,7 +243,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   function escapeHtml(v: unknown): string {
     return String(v ?? '').replace(/[&<>"']/g, (c) => (({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string));
   }
-  type DecisionSlot = { outcome: string; teacher_name: string; subject: string; day_of_week: string; start_time: string; end_time: string; mode: string; timezone: string };
+  type DecisionSlot = { outcome: string; teacher_name: string; subject: string; day_of_week: string; start_time: string; end_time: string; timezone: string };
   async function sendDecisionEmail(log: FastifyBaseLogger, o: {
     decision: string; to: string; parentName: string; studentName: string | null; numClasses: number; reason: string | null; slots: DecisionSlot[];
   }): Promise<void> {
@@ -251,7 +251,6 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const who = escapeHtml(o.studentName || 'your child');
     const parent = escapeHtml(o.parentName || 'there');
     const booked = o.slots.filter((x) => x.outcome === 'approved');
-    const notBooked = o.slots.filter((x) => x.outcome === 'taken' || x.outcome === 'rejected');
 
     // ---- Branded template (matches TeacherHub_Booking_Email_Templates). Styles are inlined because
     // email clients strip <style> blocks. The Concept Mastery logo is rendered as a text "brand pill"
@@ -303,14 +302,15 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
         + sessions(booked)
         + `<p style="${P}">Please keep these times available for ${who}. If you need to make a change, contact us as soon as possible so we can check availability.</p>`;
     } else if (o.decision === 'partially_approved') {
-      subject = 'Your Concept Mastery booking is partially confirmed';
-      body = h2('Your booking is partially confirmed')
-        + preview('Some requested sessions were booked, but one or more times were no longer available.')
+      // Folded into the Confirmed email: list the booked sessions and add a short note that a few
+      // requested times were not available. No separate "No longer available" table.
+      subject = 'Your Concept Mastery booking is confirmed';
+      body = h2('Your booking is confirmed')
+        + preview(`We have booked the available sessions for ${who}.`)
         + `<p style="${P}">Hello ${parent},</p>`
-        + `<p style="${P}">We have booked the available sessions for ${who}. Some of the requested times were no longer available by the time the booking was finalized.</p>`
-        + panel('Confirmed sessions', sessions(booked))
-        + panel('No longer available', sessions(notBooked))
-        + `<p style="${P}">Our office will help with the next available options if another session is still needed.</p>`;
+        + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked with the child's name in TeacherHub.</p>`
+        + sessions(booked)
+        + `<p style="${P}">A few of the other requested times were no longer available. Our office will help with alternatives if you would like another session.</p>`;
     } else {
       subject = 'Update on your Concept Mastery booking request';
       const reason = o.reason ? escapeHtml(o.reason) : 'We are not able to confirm the requested times this time.';
@@ -534,7 +534,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
              'slot_id', rs.slot_id, 'outcome', rs.outcome, 'teacher_slot_status', rs.teacher_slot_status,
              'teacher_id', s.teacher_id, 'teacher_name', s.teacher_name, 'subject', s.subject,
              'day_of_week', s.day_of_week, 'start_time', s.start_time, 'end_time', s.end_time,
-             'mode', s.mode, 'status', s.status, 'timezone', s.timezone,
+             'status', s.status, 'timezone', s.timezone,
              'grade_min', s.grade_min, 'grade_max', s.grade_max
            ) order by s.day_of_week, s.start_time) as slots
              from public.ta_booking_request_slots rs
@@ -596,7 +596,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       const newStatus = approved === 0 ? 'rejected' : (approved === requested.length ? 'approved' : 'partially_approved');
       await client.query(`update public.ta_booking_requests set status = $2, decided_by = $3, decided_at = now() where id = $1`, [reqId, newStatus, req.admin!.adminId]);
       const detail = await client.query(
-        `select rs.slot_id, rs.outcome, s.teacher_name, s.subject, s.day_of_week, s.start_time, s.end_time, s.mode, s.timezone
+        `select rs.slot_id, rs.outcome, s.teacher_name, s.subject, s.day_of_week, s.start_time, s.end_time, s.timezone
            from public.ta_booking_request_slots rs join public.ta_slots s on s.id = rs.slot_id where rs.request_id = $1`, [reqId]);
       return { request, newStatus, approved, taken, rejected, slots: detail.rows };
     });
@@ -638,7 +638,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       const stamped = reason ? ((prevNotes && prevNotes.trim()) ? prevNotes + '\n' + stamp : stamp) : prevNotes;
       await client.query(`update public.ta_booking_requests set status = 'rejected', decided_by = $2, decided_at = now(), notes = $3 where id = $1`, [reqId, req.admin!.adminId, stamped]);
       const detail = await client.query(
-        `select rs.slot_id, rs.outcome, s.teacher_name, s.subject, s.day_of_week, s.start_time, s.end_time, s.mode, s.timezone
+        `select rs.slot_id, rs.outcome, s.teacher_name, s.subject, s.day_of_week, s.start_time, s.end_time, s.timezone
            from public.ta_booking_request_slots rs join public.ta_slots s on s.id = rs.slot_id where rs.request_id = $1`, [reqId]);
       return { request, slots: detail.rows };
     });

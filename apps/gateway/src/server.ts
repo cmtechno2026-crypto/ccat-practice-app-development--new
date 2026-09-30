@@ -6,6 +6,7 @@ import { finalizeOverdueSessions } from './lib/finalize.js';
 import { reconcileStreaks } from './lib/streaks.js';
 import { publishScheduledAnnouncements } from './lib/comms.js';
 import { recordJobRun } from './lib/ops.js';
+import { runTeacherSlaTick } from './lib/teacher-sla.js';
 
 loadEnv(); // populate process.env from .env before any config is read
 const cfg = loadConfig();
@@ -41,6 +42,20 @@ const annWorker = setInterval(() => {
     .catch((err) => { app.log.error({ err }, 'announcement scheduler failed'); return recordJobRun(workerPool, 'announcement_publisher', 'error', String(err?.message ?? err)); });
 }, 30_000);
 annWorker.unref();
+
+// Teacher acceptance SLA (12h): remind the teacher ~1h before expiry, then auto-decline still-pending
+// requested slots and notify teacher / parent / admin. Runs against the TeacherHub ("cm-whiteboard")
+// DB. Every 15 min, so the one-hour reminder always lands inside its window.
+const teacherPool = cfg.teacherDatabaseUrl ? createPool(cfg.teacherDatabaseUrl) : null;
+if (teacherPool) {
+  const SLA_INTERVAL_MS = 15 * 60 * 1000;
+  const slaTick = () => runTeacherSlaTick(teacherPool, cfg, app.log)
+    .then((r) => { if (r.reminded || r.expired) app.log.info(r, 'teacher accept SLA tick'); return recordJobRun(workerPool, 'teacher_accept_sla', 'ok', (r.reminded || r.expired) ? `reminded ${r.reminded}, expired ${r.expired}` : 'idle'); })
+    .catch((err) => { app.log.error({ err }, 'teacher accept SLA tick failed'); return recordJobRun(workerPool, 'teacher_accept_sla', 'error', String(err?.message ?? err)); });
+  slaTick();
+  const slaWorker = setInterval(slaTick, SLA_INTERVAL_MS);
+  slaWorker.unref();
+}
 
 app
   .listen({ port: cfg.port, host: cfg.host })

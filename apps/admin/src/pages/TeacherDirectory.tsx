@@ -9,7 +9,7 @@ import { useAuth } from '../lib/auth';
 interface TeacherRow { id: string; name: string; email: string; subjects: string[]; slots: number; open_slots: number; created_at: string; banned_at?: string | null; }
 interface Slot {
   id: string; subject: string; grade: number | null; grade_min?: number | null; grade_max?: number | null; day_of_week: string; start_time: string; end_time: string;
-  mode: string; status: string; timezone: string; notes: string;
+  status: string; timezone: string; notes: string;
   booked_student?: string | null; booked_note?: string | null; booked_by?: string | null; session_type?: string | null;
 }
 

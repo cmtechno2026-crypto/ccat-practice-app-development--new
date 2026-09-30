@@ -17,7 +17,7 @@ import { useAuth } from '../lib/auth';
 interface Slot {
   slot_id: string; outcome: string; teacher_slot_status?: string | null;
   teacher_id: string; teacher_name: string; subject: string;
-  day_of_week: string; start_time: string; end_time: string; mode: string; status: string; timezone?: string | null;
+  day_of_week: string; start_time: string; end_time: string; status: string; timezone?: string | null;
 }
 interface RequestRow {
   id: string; parent_name: string; parent_email: string; parent_phone: string | null;
@@ -314,8 +314,8 @@ export function BookingRequests() {
                         </div>
                       )}
                       <div style={{ border: '1px solid #e3eaf6', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0,.9fr) minmax(0,.7fr) minmax(0,1.1fr) minmax(0,1.1fr)', gap: 14, alignItems: 'center', padding: '10px 18px', background: '#eef3fb', color: '#6f7890', fontSize: 11, fontWeight: 900, letterSpacing: '.08em', textTransform: 'uppercase' }}>
-                          <span></span><span>Day / Time</span><span>Mode</span><span>Teacher response</span><span>Booking status</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.1fr)', gap: 14, alignItems: 'center', padding: '10px 18px', background: '#eef3fb', color: '#6f7890', fontSize: 11, fontWeight: 900, letterSpacing: '.08em', textTransform: 'uppercase' }}>
+                          <span></span><span>Day / Time</span><span>Teacher response</span><span>Booking status</span>
                         </div>
                         {r.slots.map(s => {
                           const tt = slotTeacher(s, r); const tp = TP[tt] || TP.pending;
@@ -323,10 +323,9 @@ export function BookingRequests() {
                           const bookable = isBookable(s, r); const checked = cset.has(s.slot_id);
                           const bg = s.outcome === 'approved' ? '#f4fbf7' : (tt === 'rejected' ? '#fdfafa' : '#fff');
                           return (
-                            <div key={s.slot_id} style={{ display: 'grid', gridTemplateColumns: '44px minmax(0,.9fr) minmax(0,.7fr) minmax(0,1.1fr) minmax(0,1.1fr)', gap: 14, alignItems: 'center', padding: '12px 18px', borderTop: '1px solid #f0f4fa', background: bg }}>
+                            <div key={s.slot_id} style={{ display: 'grid', gridTemplateColumns: '44px minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.1fr)', gap: 14, alignItems: 'center', padding: '12px 18px', borderTop: '1px solid #f0f4fa', background: bg }}>
                               {actionable && bookable ? <input type="checkbox" checked={checked} onChange={() => toggleSlot(r, s.slot_id)} style={{ width: 18, height: 18, cursor: 'pointer' }} /> : <span />}
                               <span style={{ fontSize: 14.5, fontWeight: 900 }}>{shortDay(s.day_of_week)} <span style={{ color: '#8b93aa', fontWeight: 800, fontSize: 13 }}>{s.start_time}–{s.end_time}</span></span>
-                              <span style={{ color: '#8b93aa', fontSize: 12.5, fontWeight: 700 }}>{s.mode}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 900, color: tp.fg }}><span style={{ width: 9, height: 9, borderRadius: 99, background: tp.dot, flex: 'none' }} />{tp.label}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 900, color: ap.fg }}><span style={{ width: 9, height: 9, borderRadius: 99, background: ap.dot, flex: 'none' }} />{ap.label}{tt !== 'accepted' && s.outcome !== 'approved' ? ` · ${tt === 'pending' ? 'teacher hasn’t replied' : 'teacher rejected'}` : ''}</span>
                             </div>
