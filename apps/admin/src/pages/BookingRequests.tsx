@@ -22,6 +22,7 @@ interface Slot {
 interface RequestRow {
   id: string; parent_name: string; parent_email: string; parent_phone: string | null;
   student_name: string | null; notes: string | null; parent_timezone: string | null;
+  session_type?: string | null; custom_time_requests?: any[] | null;
   status: string; teacher_status: string; teacher_decided_at: string | null;
   decided_by_name: string | null; decided_at: string | null; created_at: string; slots: Slot[];
 }
@@ -59,6 +60,13 @@ const FILTERS: [string, string, string][] = [
   ['Needs booking', 'action', '#2f6fde'], ['Awaiting teacher', 'awaiting', '#f7b12b'],
   ['Booked', 'booked', '#10a869'], ['Declined / rejected', 'closed', '#d42a21'], ['All', 'all', '#8b93aa'],
 ];
+
+const SESSION_TYPE: Record<string, { label: string; bg: string; fg: string }> = {
+  demo: { label: 'Demo', bg: '#e7efff', fg: '#1a4f9e' },
+  recurring: { label: 'Recurring', bg: '#e6f5ec', fg: '#0e7a52' },
+  makeup: { label: 'Make-up', bg: '#fbf1dc', fg: '#a4701a' },
+};
+
 
 const stageOf = (r: RequestRow): keyof typeof PILL => {
   if (r.status === 'approved') return 'booked';
@@ -189,7 +197,8 @@ export function BookingRequests() {
       taken: ['🔒', '#fdf6ea', '#f0dcb0', '#a4701a'], declined: ['⊘', '#f6f8fc', '#e3eaf6', '#8b93aa'],
     };
     const c = m[stt] || m.pending;
-    return <span key={s.slot_id} style={chip(c[1], c[2], c[3])} title={`${s.day_of_week} ${s.start_time}–${s.end_time} · ${s.teacher_name}`}>{c[0]} {shortDay(s.day_of_week)} {s.start_time}</span>;
+    const st = r.session_type ? SESSION_TYPE[r.session_type] : null;
+    return <span key={s.slot_id} style={chip(c[1], c[2], c[3])} title={`${s.day_of_week} ${s.start_time}–${s.end_time} · ${s.teacher_name}`}>{c[0]} {shortDay(s.day_of_week)} {s.start_time}{st ? ` ${st.label}` : ''}</span>;
   };
 
   return (
@@ -324,6 +333,20 @@ export function BookingRequests() {
                           );
                         })}
                       </div>
+                      {Array.isArray(r.custom_time_requests) && r.custom_time_requests.length > 0 && (
+                        <div style={{ marginTop: 12, border: '1px solid #f0dcb0', background: '#fffaf0', borderRadius: 10, padding: '10px 12px' }}>
+                          <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: '.08em', textTransform: 'uppercase', color: '#8a5a00', marginBottom: 6 }}>📅 Custom time requests</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {r.custom_time_requests.map((c: any, i: number) => (
+                              <div key={i} style={{ fontSize: 12.5, color: '#6a5a2e' }}>
+                                {c && typeof c === 'object'
+                                  ? Object.entries(c).map(([k, v]) => <span key={k} style={{ marginRight: 12 }}><b style={{ color: '#8a5a00', fontWeight: 800 }}>{k}:</b> {String(v)}</span>)
+                                  : String(c)}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {(r.decided_at || r.teacher_decided_at) && (
                         <div style={{ color: '#8b93aa', fontSize: 12, fontWeight: 700, marginTop: 10 }}>
                           {r.teacher_decided_at ? `Teacher decided ${new Date(r.teacher_decided_at).toLocaleString()}. ` : ''}

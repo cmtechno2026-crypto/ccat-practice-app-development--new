@@ -10,8 +10,12 @@ interface TeacherRow { id: string; name: string; email: string; subjects: string
 interface Slot {
   id: string; subject: string; grade: number | null; grade_min?: number | null; grade_max?: number | null; day_of_week: string; start_time: string; end_time: string;
   mode: string; status: string; timezone: string; notes: string;
-  booked_student?: string | null; booked_note?: string | null; booked_by?: string | null;
+  booked_student?: string | null; booked_note?: string | null; booked_by?: string | null; session_type?: string | null;
 }
+
+const SESSION_TYPE_META: Record<string, [string, string, string]> = { demo: ['Demo', '#e7efff', '#1a4f9e'], recurring: ['Recurring', '#e6f5ec', '#0e7a52'], makeup: ['Make-up', '#fbf1dc', '#a4701a'] };
+function stBadge(t?: string | null) { const m = t ? SESSION_TYPE_META[t] : null; return m ? <span style={{ marginLeft: 6, display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: m[1], color: m[2], fontSize: 10.5, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', verticalAlign: 'middle' }}>{m[0]}</span> : null; }
+
 interface Req {
   id: string; num_classes: number; parent_name: string; parent_email: string; parent_phone: string | null;
   student_name: string | null; notes: string | null; status: string; teacher_status: string; teacher_decided_at: string | null;
@@ -216,7 +220,7 @@ export function TeacherDirectory() {
         <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 300, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject}</div>
-          {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
+          {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{stBadge(s.session_type)}{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
           {hasStudent && s.booked_note && <div className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</div>}
           {isAvail && <>
             <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}

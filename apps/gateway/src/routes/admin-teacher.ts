@@ -77,8 +77,9 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const { rows } = await tdb().query(
       `select s.id, s.teacher_id, s.teacher_name, s.subject, s.grade, s.grade_min, s.grade_max, s.day_of_week,
               s.start_time, s.end_time, s.mode, s.status, s.timezone, s.notes,
-              s.booked_student, s.booked_note, s.booked_by, s.booked_at
+              s.booked_student, s.booked_note, s.booked_by, s.booked_at, br.session_type
          from public.ta_slots s
+         left join public.ta_booking_requests br on br.id = s.booked_request_id
          ${where}
          order by s.teacher_name,
                   case s.day_of_week
@@ -401,6 +402,46 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { ...row, url: base ? `${base}/b/${row.token}` : null };
   });
 
+  // ── n8n integration (Stage-8 R5): create a per-parent booking link via API key, no admin session.
+  // Auth: X-API-Key header must equal cfg.teacherhubApiKey (set TEACHERHUB_API_KEY). Body:
+  //   { grade, subject, teacher_ids[], num_classes?, expires_in_days?=7, label? } -> { token, url, expires_at }
+  const n8nLinkSchema = z.object({
+    teacher_ids: z.array(uuid).min(1).max(50),
+    grade: z.number().int().min(1).max(12),
+    subject: z.string().trim().min(1).max(120),
+    num_classes: z.number().int().min(1).max(200).optional(),
+    expires_in_days: z.number().int().min(1).max(365).optional(),
+    label: z.string().trim().max(160).optional(),
+  });
+  app.post('/teacherhub/booking-links', async (req, reply) => {
+    const key = String((req.headers['x-api-key'] as string | undefined) ?? '');
+    if (!cfg.teacherhubApiKey || key !== cfg.teacherhubApiKey) return reply.code(401).send({ error: 'unauthorized' });
+    requireSite(req, 'teacher');
+    const b = n8nLinkSchema.parse(req.body ?? {});
+    const chk = await tdb().query('select id from public.ta_teachers where id = any($1::uuid[])', [b.teacher_ids]);
+    const found = new Set(chk.rows.map((r) => r.id as string));
+    const missing = b.teacher_ids.filter((id) => !found.has(id));
+    if (missing.length) throw Errors.validation('Unknown teacher id(s)', { missing });
+    const combos = normalizeCombos([{ subject: b.subject, grade: b.grade }]);
+    const first = combos[0]!;
+    const token = randomBytes(24).toString('base64url');
+    const expiresAt = new Date(Date.now() + (b.expires_in_days ?? 7) * 86400000);
+    const { rows } = await tdb().query(
+      `insert into public.ta_booking_links (token, label, teacher_ids, grade, subject, combos, expires_at, is_active, created_by)
+       values ($1,$2,$3::uuid[],$4,$5,$6::jsonb,$7,true,$8)
+       returning id, token, expires_at`,
+      [token, b.label ?? null, b.teacher_ids, first.grade, first.subject, JSON.stringify(combos), expiresAt, 'n8n']);
+    const row = rows[0]!;
+    try {
+      await tdb().query(
+        `insert into public.ta_audit_log (actor_kind, event_type, target_kind, target_id, new_value)
+         values ('system','teacher.booking_link.create','ta_booking_link',$1,$2::jsonb)`,
+        [String(row.id), JSON.stringify({ via: 'n8n', teachers: b.teacher_ids.length, subject: b.subject, grade: b.grade })]);
+    } catch { /* audit best-effort */ }
+    const base = cfg.teachTimePublicUrl;
+    return { token: row.token, url: base ? `${base}/b/${row.token}` : null, expires_at: row.expires_at };
+  });
+
   // List links with computed status (active/expired/revoked) + request counts + created-by names.
   app.get('/v1/admin/teacher/booking-links', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.directory');
@@ -481,7 +522,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const where = conds.length ? 'where ' + conds.join(' and ') : '';
     const { rows } = await tdb().query(
       `select r.id, r.link_id, r.num_classes, r.parent_name, r.parent_email, r.parent_phone,
-              r.student_name, r.notes, r.parent_timezone, r.status, r.teacher_status, r.teacher_decided_at,
+              r.student_name, r.notes, r.parent_timezone, r.session_type, r.custom_time_requests, r.status, r.teacher_status, r.teacher_decided_at,
               r.decided_by, r.decided_at, r.created_at,
               l.subject as link_subject, l.grade as link_grade, l.label as link_label,
               coalesce(js.slots, '[]'::json) as slots

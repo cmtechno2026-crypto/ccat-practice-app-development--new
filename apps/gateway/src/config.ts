@@ -7,6 +7,7 @@ export interface Config {
   databaseUrl: string;
   teacherDatabaseUrl: string;   // Teacher Hub (TeacherHub) DB — separate Supabase project; '' when unset
   teachTimePublicUrl: string;   // TeacherHub public site base (for parent booking links, /b/<token>); '' when unset
+  teacherhubApiKey: string;     // n8n booking-link API key (X-API-Key header); '' when unset
   hmacSecret: string;
   env: 'local' | 'development' | 'staging' | 'production';
   // Launch defaults; all are config-versioned in production (§30).
@@ -93,6 +94,7 @@ export function loadConfig(): Config {
     teacherDatabaseUrl: process.env.TEACHER_DATABASE_URL ?? '',
     // TeacherHub public origin, trailing slash trimmed, so booking links render as `${base}/b/<token>`.
     teachTimePublicUrl: (process.env.TEACHTIME_PUBLIC_URL ?? '').trim().replace(/\/$/, ''),
+    teacherhubApiKey: (process.env.TEACHERHUB_API_KEY ?? '').trim(),
     hmacSecret,
     env,
     pinPepper,
