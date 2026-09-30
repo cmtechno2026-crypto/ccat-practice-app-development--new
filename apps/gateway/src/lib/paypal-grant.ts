@@ -95,7 +95,7 @@ export async function grantPaidEntitlementPaypal(
 
   // Record the capture id LAST so a crash before this simply reprocesses the same (idempotent) grant.
   await db.query(
-    'insert into ccat.paypal_payment_events (capture_id, event_type, order_id) values ($1, $2, $3) on conflict (capture_id) do nothing',
+    'insert into ccat.paypal_payment_events (capture_id, event_type, order_id, signature_verified) values ($1, $2, $3, true) on conflict (capture_id) do nothing',
     [args.captureId, args.eventType, args.orderId],
   );
 
