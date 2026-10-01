@@ -274,7 +274,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
   const authorCardSchema = z.object({
     id: z.string().uuid().optional(), // existing DRAFT member to update; omit to create a new draft
     category_id: z.string().uuid(),
-    subcategory_id: z.string().uuid(),
+    subcategory_id: z.string().uuid().nullish(), // null for subcategory-less batteries (NGAT Quant/Non-verbal)
     grade_id: z.string().uuid(),
     difficulty_id: z.string().uuid(),
     question_type: z.string().min(1),
@@ -323,7 +323,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
       // Batch-insert the new logical questions, then their draft versions — one multi-row statement each.
       if (newCards.length) {
         const lqParams: unknown[] = [];
-        const lqVals = newCards.map((n, i) => { const o = i * 4; lqParams.push(n.lqId, n.q.category_id, n.q.subcategory_id, req.admin!.adminId); return `($${o + 1},$${o + 2},$${o + 3},$${o + 4})`; }).join(',');
+        const lqVals = newCards.map((n, i) => { const o = i * 4; lqParams.push(n.lqId, n.q.category_id, n.q.subcategory_id ?? null, req.admin!.adminId); return `($${o + 1},$${o + 2},$${o + 3},$${o + 4})`; }).join(',');
         await c.query(`insert into ccat.logical_questions(id,category_id,subcategory_id,created_by) values ${lqVals}`, lqParams);
 
         const qvParams: unknown[] = [];

@@ -233,3 +233,9 @@ The real fix for large figure sets: the browser now uploads image bytes **straig
 - **Student `PracticeScreen.tsx`:** a battery whose sets have no subcategory skips the category step and routes straight to the set list (`__sets__` sentinel + a redirect effect).
 
 No content exists for Quant/Non-verbal yet, so this was a clean structural change. **Redeploy `apps/gateway` (Render) + `apps/admin` and `apps/web` (Vercel).** Can't typecheck over the mount — run the builds before deploy.
+
+**Author-endpoint fix (422 on bulk-create into a subcategory-less battery):** two further blockers surfaced and were fixed:
+- `apps/gateway/src/routes/admin-content-authoring.ts` — the `author` (batch question save) Zod schema required `subcategory_id` to be a UUID → **422**. Now `subcategory_id` is nullish, and the `logical_questions` insert passes `null` when absent.
+- DB (live + migration `0058`): `ccat.logical_questions.subcategory_id` was `NOT NULL` — dropped the NOT NULL (metadata-only) so questions can exist with no subcategory. CCAT/Verbal questions still carry one via the app; nothing backfilled.
+- `apps/admin/src/components/SetEditor.tsx` — per-set cap is 100 (not 15) for a subcategory-less set.
+- Known minor: the deprecated `/v1/admin/content/questions` list inner-joins subcategories, so it won't show null-subcategory questions. That page is redirected to Content; not used.
