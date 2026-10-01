@@ -15,93 +15,136 @@ import { readBulkInput, matchImages, uploadImages, attachImages, BulkImage, Matc
 // FORMAT_TEXT (BLOCK A) — shown by "View/Show format" and the Instruction panel, and copied by "Copy format".
 // SAMPLE_FILE_TEXT (BLOCK B) — the clean starter file written by "Download sample" (.txt, UTF-8).
 export const FORMAT_TEXT = `# ============================================================
-# CCAT BULK-ADD — COPY THIS WHOLE THING
+# CCAT / NGAT BULK-ADD - COPY THIS WHOLE THING
 # Paste it into ChatGPT or Claude TOGETHER WITH your raw questions.
 # ============================================================
 #
 # PROMPT (what to tell the AI):
-# "Convert my questions into the exact CCAT bulk-add format shown below.
+# "Convert my questions into the exact bulk-add format shown below.
 #  - One BLOCK per question, separated by ONE blank line.
 #  - Start each block with 'Q:' then the question text.
-#  - List options as 'A)' 'B)' 'C)' 'D)' (2-4 options).
-#  - Put the correct option letter on an 'Answer:' line — it MUST match an option.
+#  - List options as 'A) B) C) ...' OR '1) 2) 3) ...' (2 to 6 options).
+#  - Put the correct option(s) on an 'Answer:' line. Most questions have ONE
+#    answer ('Answer: C' or 'Answer: 3'). A 'which TWO go together' question has
+#    TWO ('Answer: 1 and 2' or 'Answer: A, B'). Each must match an option.
 #  - 'Explanation:' is optional, one line.
-#  - If a question or an option has a FIGURE/IMAGE, add a 'Q-Image:' or
-#    '<Letter>-Image:' line with the image FILENAME, and give me the list of
-#    filenames I must put in a .zip with this file. A question or option may be
-#    figure-only (no text).
+#  - If a question or an option is a PICTURE, add a 'Q-Image:' or '<label>-Image:'
+#    line with the image FILENAME, and list the filenames to put in a .zip with
+#    this file. A question or an option may be picture-only (no text).
 #  - Do NOT change my answers. Output ONLY the formatted blocks, nothing else."
 #
 # ============================================================
 # FORMAT RULES
 # ============================================================
 # - Blocks are separated by a BLANK LINE. No blank line inside a block.
-# - Minimum 2 options. 'Answer:' is ONE letter and must match a present option.
-# - A QUESTION needs text OR a Q-Image (or both). An OPTION needs text OR an
-#   <Letter>-Image (or both).
+# - 2 to 6 options. Labels may be letters (A B C ...) or numbers (1 2 3 ...).
+#   Do not mix a letter and the matching number for the same option.
+# - 'Answer:' is one or more labels, separated by 'and', a comma, '&' or '/'
+#   (e.g. 'Answer: 1 and 2'). Every label must match a present option.
+# - A QUESTION needs text OR a Q-Image (or both). An OPTION needs text OR a
+#   <label>-Image (or both). Picture papers are usually image-only options.
 # - Images are OPTIONAL. Text-only files need no zip.
-# - Image files: png / jpg / jpeg / webp. Reference them by filename; put the
-#   actual files in a .ZIP with this text file (at the zip root or in images/).
-# - Lines starting with '#' are comments and are ignored (you can delete them).
+# - Image files: png / jpg / jpeg / webp. Reference by filename; put the actual
+#   files in a .ZIP with this text file (at the zip root or in images/).
+# - Lines starting with '#' are comments and are ignored.
 #
 # BLOCK TEMPLATE:
 # Q: <question text>            (optional if the question has a figure)
-# Q-Image: <filename>           (optional — question figure)
-# A) <option A text>            (text optional if the option has an image)
-# A-Image: <filename>           (optional — option A figure)
-# B) <option B text>
-# C) <option C text>
-# D) <option D text>
-# Answer: <A/B/C/D>
+# Q-Image: <filename>           (optional - question figure / stimulus)
+# 1) <option text>              (text optional if the option has an image)
+# 1-Image: <filename>           (optional - option 1 picture)
+# 2) <option text>
+# ...
+# Answer: <one or more labels>
 # Explanation: <optional one line>
 #
 # ============================================================
-# EXAMPLES
+# NGAT PICTURE EXAMPLES (Part A / B / C)
 # ============================================================
 
-Q: Which word best completes the sentence: The puppy ___ across the yard.
-A) run
-B) runs
-C) running
-D) ran
-Answer: B
-Explanation: Present tense, singular subject takes "runs".
+# Part A - Which one does NOT belong? (6 picture options, ONE answer)
+Q: One picture does not belong because it is different from the others. Which one?
+1-Image: a_plane.png
+2-Image: a_train.png
+3-Image: a_tree.png
+4-Image: a_bus.png
+5-Image: a_bike.png
+6-Image: a_car.png
+Answer: 3
+Explanation: Not a way to travel - all the others carry people from place to place.
 
-Q: Choose the odd one out.
-A) Apple
-B) Banana
-C) Carrot
-D) Mango
-Answer: C
-Explanation: Carrot is a vegetable; the rest are fruits.
+# Part B - Which picture completes the pair? (ONE stimulus image + 6 options, ONE answer)
+Q: The first two pictures go together in some way. Choose the picture that goes with the third one in the same way.
+Q-Image: b_chicken_egg_cow.png
+1-Image: b_honey.png
+2-Image: b_milk.png
+3-Image: b_jar.png
+4-Image: b_bread.png
+5-Image: b_egg.png
+6-Image: b_cheese.png
+Answer: 2
+Explanation: The animal and what it gives us.
 
-# Figure in the QUESTION, text options:
-Q: Which shape comes next in the pattern?
-Q-Image: q_pattern_01.png
-A) Circle
-B) Square
-C) Triangle
-D) Star
-Answer: C
+# Part C - Which TWO pictures go together? (6 options, TWO answers)
+Q: Two of these six pictures go together. Which two?
+1-Image: c_nutbolt.png
+2-Image: c_hammer.png
+3-Image: c_kite.png
+4-Image: c_duck.png
+5-Image: c_rose.png
+6-Image: c_teapot.png
+Answer: 1 and 2
+Explanation: A hammer and a nut and bolt are both used to fix things together.
 
-# Figure-only QUESTION, figure OPTIONS (e.g. Figure analogy):
-Q-Image: q_matrix_02.png
-A)
-A-Image: opt2_a.png
-B)
-B-Image: opt2_b.png
-C)
-C-Image: opt2_c.png
-D)
-D-Image: opt2_d.png
+# Text-only example (no images, no zip needed):
+Q: Choose the word that means the same as "big".
+A) tiny
+B) large
+C) narrow
+D) short
 Answer: B
 `;
 
-export const SAMPLE_FILE_TEXT = `# CCAT bulk-add sample — edit or replace with your own questions.
+export const SAMPLE_FILE_TEXT = `# NGAT / CCAT bulk-add sample - edit or replace with your own questions.
 # One block per question, separated by a blank line.
-# Options A) B) C) D); Answer: <letter> must match an option; Explanation: optional.
-# For figures: add Q-Image:/A-Image: lines with filenames and zip the images with this file.
+# Options A) B) C) ... OR 1) 2) 3) ...   Answer: one or more labels (e.g. "1 and 2").
+# For pictures: add Q-Image:/<label>-Image: lines with filenames and zip the images with this file.
 
+# --- NGAT Part A: odd one out (6 picture options, one answer) ---
+Q: One picture does not belong because it is different from the others. Which one?
+1-Image: a_plane.png
+2-Image: a_train.png
+3-Image: a_tree.png
+4-Image: a_bus.png
+5-Image: a_bike.png
+6-Image: a_car.png
+Answer: 3
+Explanation: Not a way to travel - all the others carry people from place to place.
+
+# --- NGAT Part B: complete the pair (stimulus image + 6 options, one answer) ---
+Q: The first two pictures go together in some way. Choose the picture that goes with the third one in the same way.
+Q-Image: b_chicken_egg_cow.png
+1-Image: b_honey.png
+2-Image: b_milk.png
+3-Image: b_jar.png
+4-Image: b_bread.png
+5-Image: b_egg.png
+6-Image: b_cheese.png
+Answer: 2
+Explanation: The animal and what it gives us.
+
+# --- NGAT Part C: which two go together (6 options, TWO answers) ---
+Q: Two of these six pictures go together. Which two?
+1-Image: c_nutbolt.png
+2-Image: c_hammer.png
+3-Image: c_kite.png
+4-Image: c_duck.png
+5-Image: c_rose.png
+6-Image: c_teapot.png
+Answer: 1 and 2
+Explanation: A hammer and a nut and bolt are both used to fix things together.
+
+# --- Text-only question (no images) ---
 Q: Which word best completes the sentence: The children ___ happily in the park.
 A) plays
 B) played
@@ -109,30 +152,6 @@ C) playing
 D) play
 Answer: D
 Explanation: Plural subject "children" takes "play".
-
-Q: Choose the word that means the same as "big".
-A) tiny
-B) large
-C) narrow
-D) short
-Answer: B
-
-Q: Which one is the odd one out?
-A) Rose
-B) Lily
-C) Tulip
-D) Oak
-Answer: D
-Explanation: Oak is a tree; the others are flowers.
-
-# Example with a question figure (include q_shape_01.png in the zip):
-Q: Which shape completes the sequence?
-Q-Image: q_shape_01.png
-A) Circle
-B) Square
-C) Pentagon
-D) Hexagon
-Answer: C
 `;
 
 const MAX_SHOWN = 10;

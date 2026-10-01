@@ -129,3 +129,24 @@ Verified: NGAT now has verbal (Part A/B/C), quantitative (General), non_verbal (
 - **Learning plans** not program-scoped (NGAT has none this phase).
 - **Mobile app** untouched (sees CCAT).
 - **Exam-paper scaffold** for NGAT uses the `verbal` battery as the anchor within NGAT (same convention as CCAT).
+
+---
+
+## 8. Bulk-add upgraded for NGAT picture formats — Part A / B / C (2026-10-01)
+
+The data model already supported image stems, image options, and **multiple** correct answers (`correct_option_ids` is an array). The bulk-add authoring path was upgraded to use them so the three NGAT Verbal picture formats can be transcribed verbatim from the booklet.
+
+**Parser — `apps/admin/src/lib/importParse.ts`:**
+- `Answer:` now accepts **one or more** labels, separated by `and`, comma, `&` or `/` — e.g. `Answer: 1 and 2` (Part C, which-two-go-together) as well as `Answer: C` / `Answer: 3`. Every label is validated against the present options. Multiple correct flow straight through `authorSet` → `correct_option_ids`.
+- Option labels may be **letters (A–F) or numbers (1–6)** — the papers print options as 1–6, so they transcribe directly. Numbers are normalised to A–F by position; a letter and its matching number can't be used for the same slot.
+- Image-only options (`1-Image: file.png`) and a question stimulus image (`Q-Image:`) work as before — Part A/C use six image options; Part B uses one stimulus image plus six image options.
+- Unit-tested: single-letter, numeric, two-answer (`1 and 2` → two corrects), comma form, stimulus+numeric, and the invalid/no-answer error paths.
+
+**Editor — `apps/admin/src/components/SetEditor.tsx`:** the per-option correct control changed from a **radio (single)** to a **checkbox (toggle)**, so a Part C set's two correct answers survive manual editing. Validation still requires ≥1 correct.
+
+**Samples — `apps/admin/src/components/BulkImport.tsx`** (`FORMAT_TEXT` + `SAMPLE_FILE_TEXT`, shared by both bulk panels): rewritten with worked **Part A (odd-one-out), Part B (complete-the-pair), Part C (which-two-go-together)** examples, numbered image options, the multi-answer `Answer:` syntax, and the picture-paper rules. "Download sample" / "Copy format" now emit these.
+
+**How to author an NGAT picture set in bulk:** Content → NGAT → Verbal → *Bulk add sets* → "Download sample", fill in the blocks (one stimulus image for Part B; `Answer: 1 and 2` for Part C), zip the text file with the option images (filenames matching the `-Image:` lines), upload, preview, create, publish.
+
+### Downstream dependency (not yet done — needs your call)
+Part C questions carry **two** correct answers. The **student app (`apps/web`)** must render and score a "pick two" question (multi-select) for that to work for students — that is a separate change in the already-shipped student NGAT screens and was **not** part of this bulk-authoring task. Authoring and admin preview handle two correct answers now; confirm if you want the student-side multi-select built next.

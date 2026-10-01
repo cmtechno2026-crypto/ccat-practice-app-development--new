@@ -129,7 +129,8 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
 
   const mark = () => setDirty(true);
   const patchCard = (key: string, patch: Partial<Card>) => { setCards(cs => cs.map(c => c.key === key ? { ...c, ...patch } : c)); mark(); };
-  const markCorrect = (key: string, i: number) => { setCards(cs => cs.map(c => c.key === key ? { ...c, opts: c.opts.map((o, j) => ({ ...o, correct: j === i })) } : c)); mark(); };
+  // Toggle (not radio): a question may have MORE THAN ONE correct option (e.g. NGAT 'which two go together').
+  const markCorrect = (key: string, i: number) => { setCards(cs => cs.map(c => c.key === key ? { ...c, opts: c.opts.map((o, j) => j === i ? { ...o, correct: !o.correct } : o) } : c)); mark(); };
   const addOpt = (key: string) => { setCards(cs => cs.map(c => c.key === key && c.opts.length < 6 ? { ...c, opts: [...c.opts, { option_id: OPTION_IDS[c.opts.length], text: '', correct: false }] } : c)); mark(); };
   const rmOpt = (key: string, i: number) => { setCards(cs => cs.map(c => c.key === key && c.opts.length > 2 ? { ...c, opts: c.opts.filter((_, j) => j !== i).map((o, j) => ({ ...o, option_id: OPTION_IDS[j] })) } : c)); mark(); };
   // New cards inherit the previous card's type (a convenience); type is then set per-card. There is no
@@ -318,7 +319,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
                   <div className="qopts">
                     {c.opts.map((o, j) => (
                       <div className="qopt" key={o.option_id} style={{ flexWrap: 'wrap' }}>
-                        <input type="radio" name={`correct-${c.key}`} checked={o.correct} onChange={() => markCorrect(c.key, j)} aria-label={`Mark option ${o.option_id} correct`} />
+                        <input type="checkbox" checked={o.correct} onChange={() => markCorrect(c.key, j)} aria-label={`Mark option ${o.option_id} correct`} />
                         <input className="qopttext" placeholder={`Option ${o.option_id.toUpperCase()}`} value={o.text} onChange={e => { setCards(cs => cs.map(cc => cc.key === c.key ? { ...cc, opts: cc.opts.map((oo, jj) => jj === j ? { ...oo, text: e.target.value } : oo) } : cc)); mark(); }} />
                         <label className="iconbtn" title="Add image to this option" style={{ cursor: 'pointer' }}>
                           {imgBusy === `${c.key}:${j}` ? '…' : '🖼'}
