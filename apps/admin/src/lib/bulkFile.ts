@@ -140,8 +140,9 @@ async function normalizeImage(bytes: Uint8Array, type: string): Promise<{ bytes:
 // Per-request upload chunk caps. A single huge request (all figures' base64 in one POST) is rejected as 413
 // by the JSON body limit / edge proxy, so the referenced images are uploaded in bounded CHUNKS. Each chunk is
 // still stored server-side with bounded concurrency + one multi-row insert; results are stitched back in order.
-const UPLOAD_CHUNK_MAX_BYTES = 8 * 1024 * 1024; // ≤ 8 MB of base64 per request (gateway JSON limit is 16 MB)
-const UPLOAD_CHUNK_MAX_IMAGES = 20;             // …and at most 20 images per request
+const UPLOAD_CHUNK_MAX_BYTES = 10 * 1024 * 1024; // ≤ 10 MB of base64 per request (gateway JSON limit is 16 MB)
+const UPLOAD_CHUNK_MAX_IMAGES = 40;             // …and at most 40 images per request
+const UPLOAD_CHUNK_PARALLEL = 3;                 // chunks uploaded concurrently (bounded)
 
 // Upload every referenced+matched image ONCE (de-duplicated by basename), in size-bounded batches so a large
 // figure set imports reliably instead of failing a single oversized request. `uploadBatch` sends one chunk
@@ -157,33 +158,48 @@ export async function uploadImages(
   const out = new Map<string, ImgRef>();
   if (!keys.length) return out;
 
-  const items: { mime_type: string; data_base64: string; alt_text?: string }[] = [];
+  type Item = { mime_type: string; data_base64: string; alt_text?: string };
+  // Normalize + hash each unique-by-name image, then DEDUPE BY CONTENT so an identical picture reused
+  // across many questions (common in reasoning papers) is uploaded ONCE and shared by every reference.
+  // This is the biggest lever: e.g. 360 option refs can collapse to a few dozen real uploads.
+  const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
+    const subtle = (globalThis.crypto as { subtle?: SubtleCrypto } | undefined)?.subtle;
+    if (!subtle) return `len:${bytes.length}`; // fallback: no content-dedup, but still correct
+    const copy = bytes.slice();
+    const d = await subtle.digest('SHA-256', copy.buffer as ArrayBuffer);
+    return Array.from(new Uint8Array(d)).map((x) => x.toString(16).padStart(2, '0')).join('');
+  };
+  const keyToHash = new Map<string, string>();
+  const hashToIndex = new Map<string, number>();
+  const uniqueItems: Item[] = [];
   for (const k of keys) {
     const img = images.get(k)!;
     const norm = await normalizeImage(img.bytes, img.type);
-    items.push({ mime_type: norm.type, data_base64: bytesToB64(norm.bytes), alt_text: img.name });
-  }
-
-  // Split into chunks that stay under both the byte and count caps (a single image over the byte cap still
-  // rides alone in its own chunk — it is already ≤ 3 MB by the per-image limit, well under the request cap).
-  const chunks: { start: number; items: typeof items }[] = [];
-  let cur: typeof items = []; let curBytes = 0; let start = 0;
-  for (let i = 0; i < items.length; i++) {
-    const sz = items[i]!.data_base64.length;
-    if (cur.length && (cur.length >= UPLOAD_CHUNK_MAX_IMAGES || curBytes + sz > UPLOAD_CHUNK_MAX_BYTES)) {
-      chunks.push({ start, items: cur }); cur = []; curBytes = 0; start = i;
+    const hash = await sha256Hex(norm.bytes);
+    keyToHash.set(k, hash);
+    if (!hashToIndex.has(hash)) {
+      hashToIndex.set(hash, uniqueItems.length);
+      uniqueItems.push({ mime_type: norm.type, data_base64: bytesToB64(norm.bytes), alt_text: img.name });
     }
-    cur.push(items[i]!); curBytes += sz;
   }
-  if (cur.length) chunks.push({ start, items: cur });
 
-  // Upload chunks sequentially (each chunk is itself parallelised server-side); stitch results back by index.
-  // Each chunk retries with backoff so a cold-start / transient network drop (common on a spun-down host:
-  // the very first request fails while the instance wakes) doesn't fail the whole import — the retry
-  // lands once the gateway is up. Only transient failures retry (network error, 5xx, 429, 408); a 4xx
-  // (e.g. validation) throws immediately.
+  // Chunk the UNIQUE items under the per-request byte/count caps.
+  const chunks: { start: number; items: Item[] }[] = [];
+  { let cur: Item[] = []; let curBytes = 0; let start = 0;
+    for (let i = 0; i < uniqueItems.length; i++) {
+      const sz = uniqueItems[i]!.data_base64.length;
+      if (cur.length && (cur.length >= UPLOAD_CHUNK_MAX_IMAGES || curBytes + sz > UPLOAD_CHUNK_MAX_BYTES)) {
+        chunks.push({ start, items: cur }); cur = []; curBytes = 0; start = i;
+      }
+      cur.push(uniqueItems[i]!); curBytes += sz;
+    }
+    if (cur.length) chunks.push({ start, items: cur });
+  }
+
+  // Each chunk retries with backoff so a cold-start / transient drop doesn't fail the whole import
+  // (retry only on network error / 5xx / 429 / 408; a 4xx throws immediately).
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  const uploadWithRetry = async (items: { mime_type: string; data_base64: string; alt_text?: string }[]) => {
+  const uploadWithRetry = async (items: Item[]) => {
     for (let attempt = 0; ; attempt++) {
       try { return await uploadBatch(items); }
       catch (e) {
@@ -194,10 +210,23 @@ export async function uploadImages(
       }
     }
   };
-  for (const ch of chunks) {
-    const assets = await uploadWithRetry(ch.items);
-    if (assets.length !== ch.items.length) throw new Error(`Upload returned ${assets.length} assets for ${ch.items.length} image(s).`);
-    assets.forEach((a, j) => { const k = keys[ch.start + j]!; out.set(k, { asset_id: a.id, url: a.url, alt: '' }); });
+
+  // Upload chunks with BOUNDED PARALLELISM so a large set finishes in a fraction of the sequential time
+  // without hammering the gateway. Results map back to the unique items by index.
+  const uniqueAssets: ({ id: string; url: string } | undefined)[] = new Array(uniqueItems.length);
+  for (let i = 0; i < chunks.length; i += UPLOAD_CHUNK_PARALLEL) {
+    const wave = chunks.slice(i, i + UPLOAD_CHUNK_PARALLEL);
+    await Promise.all(wave.map(async (ch) => {
+      const assets = await uploadWithRetry(ch.items);
+      if (assets.length !== ch.items.length) throw new Error(`Upload returned ${assets.length} assets for ${ch.items.length} image(s).`);
+      assets.forEach((a, j) => { uniqueAssets[ch.start + j] = a; });
+    }));
+  }
+
+  // Map every referenced image (by its content hash) to its uploaded asset.
+  for (const k of keys) {
+    const a = uniqueAssets[hashToIndex.get(keyToHash.get(k)!)!];
+    if (a) out.set(k, { asset_id: a.id, url: a.url, alt: '' });
   }
   return out;
 }

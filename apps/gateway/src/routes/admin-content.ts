@@ -40,7 +40,7 @@ const QIMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const BATCH_MAX_IMAGES = 400;                    // images per request
 const BATCH_MAX_IMAGE_BYTES = 3 * 1024 * 1024;   // ≤ 3 MB per image (png/jpg/jpeg/webp)
 const BATCH_TOTAL_MAX_BYTES = 50 * 1024 * 1024;  // ≤ 50 MB decoded per request
-const STORAGE_UPLOAD_CONCURRENCY = 10;           // bounded concurrent storage puts (avoid rate-limiting)
+const STORAGE_UPLOAD_CONCURRENCY = 16;           // bounded concurrent storage puts (avoid rate-limiting)
 
 // Run `fn` over `items` with at most `limit` promises in flight at once (bounded concurrency). Order preserved.
 async function mapPool<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {

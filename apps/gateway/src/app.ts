@@ -103,6 +103,9 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
     // so the preflight allow-list must include them — the default omitted PATCH/PUT/DELETE.
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     exposedHeaders: ['ETag'],
+    // Cache the CORS preflight for 24h. Bulk uploads fire many POSTs; without this each pays a fresh
+    // (and on a cold host, multi-second) OPTIONS round-trip. The browser reuses one preflight instead.
+    maxAge: 86400,
   });
 
   // Rate limiting — fail closed by default policy (§36.4). Per-route limits refined later.

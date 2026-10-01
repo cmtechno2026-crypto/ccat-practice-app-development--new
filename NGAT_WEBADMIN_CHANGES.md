@@ -172,3 +172,23 @@ Three issues surfaced testing an authored NGAT Part C set; fixed at the real roo
 **Fix (`apps/admin/src/lib/bulkFile.ts`):** each upload chunk now **retries with backoff** (up to 3 retries, 2s/4s/8s) on transient failures (network error, 5xx, 429, 408); a 4xx throws immediately. The retry lands once the instance is up, so a cold start no longer fails the whole import. Chunk size lowered 30 → 20 images for lighter first requests. Applies to both bulk panels (Bulk add sets and Bulk add from file). **Redeploy `apps/admin`.**
 
 > If a bulk upload still fails after this, the gateway instance may be down rather than merely cold — check the Render service `ccat-gateway-payment` is live (and that its `DATABASE_URL` points at the live DB `cqzpzhdleqyrmedymypg`). On a free/spun-down instance, simply retrying the Create once (now automatic per-chunk) warms it.
+
+---
+
+## 11. Bulk image-upload speed — dedup + parallel + preflight cache (2026-10-01)
+
+**Symptom:** uploading a 360-image set ("Uploading 360 images…") took ~9.7 min across ~56 requests.
+
+**Why so many requests:** 360 images were uploaded in sequential chunks of 20 (~18 `assets/batch` POSTs), and because the admin and gateway are different origins, **each POST pays its own CORS preflight** (the `OPTIONS` "preflight" rows), roughly doubling the count — plus the 60-second notification poll firing throughout. So: ~18 POST + ~18 preflight + notification polls ≈ 56.
+
+**Fixes:**
+- **Client `apps/admin/src/lib/bulkFile.ts`:**
+  - **Content dedup** — images are now hashed (SHA-256) and **identical pictures upload once**, shared by every reference. A paper that reuses the same art across questions collapses hundreds of refs to a few dozen real uploads (the single biggest win).
+  - **Parallel chunks** — chunks upload 3-at-a-time instead of one-by-one.
+  - **Bigger chunks** — 20 → 40 images (10 MB) per request, so fewer round-trips. Retry/backoff retained.
+- **Gateway `apps/gateway/src/app.ts`:** CORS `maxAge: 86400` — the browser caches the preflight for 24h, so the many chunk POSTs no longer each trigger an `OPTIONS`. Removes ~half the requests and the per-chunk preflight latency.
+- **Gateway `apps/gateway/src/routes/admin-content.ts`:** `STORAGE_UPLOAD_CONCURRENCY` 10 → 16 — each batch stores more images in parallel.
+
+**Also:** fewer, smaller source images help most. For odd-one-out/pair papers that reuse the same emoji, reuse the **same filename** (and bytes) across questions so both the client content-dedup and the server checksum-dedup skip re-uploading. Or split a very large battery into a couple of bulk runs.
+
+**Redeploy:** `apps/admin` (Vercel) and `apps/gateway` (Render).
