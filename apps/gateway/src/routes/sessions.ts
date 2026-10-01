@@ -523,6 +523,8 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
   // Exam Progress panel. One row per paper: distinct on the paper (question_set), keeping the newest attempt.
   app.get('/v1/exams/history', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
+    // NGAT workspace: scope exam history to one program. Defaults to 'ccat'.
+    const program = (req.query as { program?: string }).program === 'ngat' ? 'ngat' : 'ccat';
     // Close out any fully-timed-out exams first so a just-ended paper appears here immediately.
     await finalizeTimedOutExams(db, sid);
     const q = req.query as { from?: string; to?: string };
@@ -535,6 +537,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     ];
     if (q.from) { params.push(q.from); cond.push(`s.terminal_at >= $${params.length}`); }
     if (q.to) { params.push(q.to); cond.push(`s.terminal_at < $${params.length}`); }
+    params.push(program); cond.push(`cat.program = $${params.length}`);
 
     const res = await db.query(
       `select distinct on (qs.id)

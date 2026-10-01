@@ -10,6 +10,8 @@ import type { DB } from '../db.js';
 export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
   app.get('/v1/assignments', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
+    // NGAT workspace: show only assignments whose set belongs to this program. Defaults to 'ccat'.
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     const { rows } = await db.query(
       `select a.id, a.set_version_id, a.assigned_at,
               qs.id as question_set_id, qs.name,
@@ -23,7 +25,7 @@ export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
          from ccat.student_assignments a
          join ccat.question_set_versions sv on sv.id = a.set_version_id
          join ccat.question_sets qs on qs.id = sv.question_set_id
-         join ccat.categories cat on cat.id = qs.category_id
+         join ccat.categories cat on cat.id = qs.category_id and cat.program = $2
          left join ccat.subcategories sub on sub.id = qs.subcategory_id
          left join ccat.admin_profiles ap on ap.id = a.assigned_by
          left join lateral (
@@ -47,7 +49,7 @@ export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
         where a.student_id = $1
         -- Incomplete (assigned/in_progress) first, then done; newest assigned first within each group.
         order by coalesce(sess.is_terminal, false) asc, a.assigned_at desc, a.id desc`,
-      [sid]);
+      [sid, program]);
 
     return rows.map((r: any) => {
       const isExam = r.allowed_exam === true;

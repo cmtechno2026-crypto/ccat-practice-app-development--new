@@ -39,6 +39,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
                        and exists (select 1 from ccat.set_version_questions svq
                                     where svq.set_version_id = sv.id and svq.active = true)
                  where qs.grade_id = g.id
+                   and cat.program = 'ccat'
                    and cat.key in ('verbal', 'quantitative', 'non_verbal')
               ) >= 3 as practice_ready
          from ccat.grades g
@@ -55,6 +56,8 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
   // count; none → not_started.
   app.get('/v1/catalog', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
+    // NGAT workspace: scope the catalog to one program. Defaults to 'ccat' so existing clients are unaffected.
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     // Close out any fully-timed-out exam papers first so their catalog status reflects "done" (→ Retake).
     await finalizeTimedOutExams(db, sid);
     const { rows } = await db.query(
@@ -70,7 +73,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
          from ccat.students st
          join ccat.grades g on g.id = st.grade_id
          join ccat.question_sets qs on qs.grade_id = st.grade_id
-         join ccat.categories cat on cat.id = qs.category_id
+         join ccat.categories cat on cat.id = qs.category_id and cat.program = $2
          -- LEFT JOIN: exam sets are single-battery with NO subcategory (subcategory_id is NULL), so an
          -- inner join would drop them. Practice sets always have a subcategory.
          left join ccat.subcategories sub on sub.id = qs.subcategory_id
@@ -100,7 +103,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
         -- oldest→newest by the version's created_at (a newly published set lands at the BOTTOM), then the
         -- student's own RETIRED sets last. Never sort by qs.name (numeric/editable → lexical 1,10,11,2).
         order by cat.display_order, sub.display_order, (sv.state = 'retired'), sv.created_at asc, sv.id asc`,
-      [sid],
+      [sid, program],
     );
 
     // Payments Phase 2 — when the flag is ON, resolve this student's effective entitlement once and mark
@@ -180,6 +183,8 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
       is_preview: s.is_preview === true,
       // Whether a teacher is assigned to this student (drives the Assignment panel/nav gating in web).
       has_teacher: s.has_teacher === true,
+      // NGAT workspace gate (seam for a future entitlement/paywall): true only for allow-listed usernames.
+      ngat_enabled: cfg.ngatEnabledUsernames.includes(String(s.username ?? '').toLowerCase()),
     };
   });
 

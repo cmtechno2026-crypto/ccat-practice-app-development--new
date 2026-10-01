@@ -4,13 +4,20 @@ import type {
   SessionResult, ExamHistoryItem, RewardsSummary, CoinsPanel, Readiness, Progress, CatalogItem, Bookmark, BookmarkReview, Achievement,
   AvatarsResponse, Theme, Announcement, Book, AdultChallenge, RetailerHandoff, PracticeAttemptResult, Assignment,
   SupportCase, SupportCaseCreated, AccountInfo, AccountGuardian, DeletionResult, ReferralInfo,
-  ContactValidated, ProgressSummary, ProgressBreakdownCategory, ProgressQuery, ProgressSetsQuery, ProgressSetRow, ProgressSetReview,
+  ContactValidated, ProgressSummary, ProgressBreakdownCategory, ProgressQuery, ProgressSetsQuery, ProgressSetRow, ProgressSetReview, Program,
   EntitlementsMe,
   GradeChangeStatus, GradeChangeRequest,
   PromoPublic,
 } from './types.js';
 
 export * from './types.js';
+
+// NGAT workspace: append `program=ngat` to a scoped request URL. Omitting it (or 'ccat') leaves the URL
+// byte-identical to before, so existing callers and the gateway default to CCAT — a true no-op.
+function withProgram(path: string, program?: Program): string {
+  if (program !== 'ngat') return path;
+  return path + (path.includes('?') ? '&' : '?') + 'program=ngat';
+}
 
 // Build a `?a=b&c=d` query string from the progress filters, skipping empty values.
 function progressQs(q: ProgressQuery): string {
@@ -178,7 +185,7 @@ export class CcatClient {
   // it and signs out the old one — there is no separate device-replacement flow.
 
   // ---- catalog / profile / home ---------------------------------------------
-  catalog() { return this.request<CatalogItem[]>('GET', '/v1/catalog', { auth: true }); }
+  catalog(program?: Program) { return this.request<CatalogItem[]>('GET', withProgram('/v1/catalog', program), { auth: true }); }
   profile() { return this.request<StudentProfile>('GET', '/v1/profile', { auth: true }); }
   // Payments Phase 2 — the student's effective membership + capabilities. paymentsEnabled:false when the
   // gateway flag is off (capabilities unlock everything). Web calls this only when VITE_PAYMENTS_ENABLED.
@@ -212,19 +219,19 @@ export class CcatClient {
   progress() { return this.request<Progress>('GET', '/v1/progress', { auth: true }); }
   achievements() { return this.request<Achievement[]>('GET', '/v1/achievements', { auth: true }); }
   // Teacher-assigned sets for the signed-in student (read-only). Ordered incomplete-first, then done.
-  assignments() { return this.request<Assignment[]>('GET', '/v1/assignments', { auth: true }); }
+  assignments(program?: Program) { return this.request<Assignment[]>('GET', withProgram('/v1/assignments', program), { auth: true }); }
 
   // ---- progress & analytics (real practice data) ----------------------------
   // Both endpoints read the authenticated student's own data and accept a ?from=&to= date range.
-  progressSummary(q: ProgressQuery = {}) {
-    return this.request<ProgressSummary>('GET', `/v1/progress/summary${progressQs(q)}`, { auth: true });
+  progressSummary(q: ProgressQuery = {}, program?: Program) {
+    return this.request<ProgressSummary>('GET', withProgram(`/v1/progress/summary${progressQs(q)}`, program), { auth: true });
   }
-  progressBreakdown(q: ProgressQuery = {}) {
-    return this.request<ProgressBreakdownCategory[]>('GET', `/v1/progress/breakdown${progressQs(q)}`, { auth: true });
+  progressBreakdown(q: ProgressQuery = {}, program?: Program) {
+    return this.request<ProgressBreakdownCategory[]>('GET', withProgram(`/v1/progress/breakdown${progressQs(q)}`, program), { auth: true });
   }
   // Per-set rows for one battery (finished sets), optional subcategory filter ('all'/omitted = every one).
-  progressSets(q: ProgressSetsQuery) {
-    return this.request<ProgressSetRow[]>('GET', `/v1/progress/sets${progressQs(q)}`, { auth: true });
+  progressSets(q: ProgressSetsQuery, program?: Program) {
+    return this.request<ProgressSetRow[]>('GET', withProgram(`/v1/progress/sets${progressQs(q)}`, program), { auth: true });
   }
   // Latest submitted attempt of a set, rebuilt for the read-only review panel.
   progressSetReview(setId: string) {
@@ -254,7 +261,7 @@ export class CcatClient {
   rotateReferral() { return this.request<{ code: string }>('POST', '/v1/referrals/rotate', { auth: true, body: {} }); }
 
   // ---- bookmarks (§32.4) ----------------------------------------------------
-  bookmarks() { return this.request<Bookmark[]>('GET', '/v1/bookmarks', { auth: true }); }
+  bookmarks(program?: Program) { return this.request<Bookmark[]>('GET', withProgram('/v1/bookmarks', program), { auth: true }); }
   addBookmark(logicalQuestionId: string, note?: string) {
     return this.request<{ bookmarked: boolean }>('PUT', '/v1/bookmarks', { auth: true, body: { logical_question_id: logicalQuestionId, note } });
   }
@@ -310,7 +317,7 @@ export class CcatClient {
     return this.request<BatteryState>('POST', `/v1/sessions/${sessionId}/batteries/${key}/complete`, { auth: true });
   }
     sessionResult(id: string) { return this.request<SessionResult>('GET', `/v1/sessions/${id}/result`, { auth: true }); }
-  examHistory(range: { from?: string; to?: string } = {}) {
+  examHistory(range: { from?: string; to?: string } = {}, program?: Program) {
     const parts: string[] = [];
     if (range.from) parts.push(`from=${encodeURIComponent(range.from)}`);
     if (range.to) parts.push(`to=${encodeURIComponent(range.to)}`);

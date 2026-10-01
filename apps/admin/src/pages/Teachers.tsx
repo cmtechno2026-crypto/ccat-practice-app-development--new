@@ -47,7 +47,6 @@ export function Teachers() {
                   <td><span className="tag">View only</span></td>
                   <td><StatusPill status={t.status} /></td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
-                    <button className="btn ghost sm" onClick={() => pick(t)}>{on ? '▾ Open' : 'Add students ›'}</button>{' '}
                     <button className="btn ghost sm" onClick={() => toggle(t)}>{t.status === 'active' ? 'Disable' : 'Enable'}</button>
                   </td>
                 </tr>
@@ -113,23 +112,41 @@ function CreateTeacherModal({ onClose, onCreated, toast }: { onClose: () => void
   );
 }
 
-// Inline panel (below the Teachers table) for the picked teacher. Ticks are the teacher's full assigned
-// set — pre-loaded and saved with setTeacherStudents (tick = has access, untick = removed).
+// Right slide-over drawer for the picked teacher. Ticks are the teacher's full assigned set —
+// pre-loaded and saved with setTeacherStudents (tick = has access, untick = removed). Already-assigned
+// students are pinned to the top of the list, above all other students, regardless of the search filter.
 function AddStudentsPanel({ teacher, onClose, onSaved, toast }: { teacher: { id: string; name: string }; onClose: () => void; onSaved: () => void; toast: (m: string) => void }) {
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [shown, setShown] = useState(false);
+
+  // Slide-in on mount + lock background scroll while open.
+  useEffect(() => {
+    const t = setTimeout(() => setShown(true), 10);
+    const prev = document.body.style.overflow; document.body.style.overflow = 'hidden';
+    return () => { clearTimeout(t); document.body.style.overflow = prev; };
+  }, []);
 
   // Current assignments (ids) — pre-tick these.
   const assignedAsync = useAsync(() => api.teacherStudents(teacher.id), [teacher.id]);
   useEffect(() => { if (assignedAsync.data) setAssigned(new Set(assignedAsync.data.student_ids)); }, [assignedAsync.data]);
 
-  // Searchable student list (defaults to first 50; narrows as you type).
-  const listAsync = useAsync(() => api.students({ q: q.trim() || undefined, limit: 50 }), [q]);
-  const students: any[] = listAsync.data?.items ?? [];
+  // Full student roster (loaded once) so assigned students always resolve + pin to the top,
+  // even when they fall outside the current search. Student directory is small; one page covers it.
+  const listAsync = useAsync(() => api.students({ limit: 500 }), []);
+  const all: any[] = listAsync.data?.items ?? [];
 
   const toggle = (id: string) => setAssigned((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const matches = (s: any) => {
+    const t = q.trim().toLowerCase(); if (!t) return true;
+    return [s.display_name, s.username, s.guardian_name, s.guardian_email].filter(Boolean).some((v: string) => String(v).toLowerCase().includes(t));
+  };
+  const byName = (a: any, b: any) => String(a.display_name || '').localeCompare(String(b.display_name || ''));
+  const assignedStudents = all.filter((s) => assigned.has(s.id)).filter(matches).sort(byName);
+  const otherStudents = all.filter((s) => !assigned.has(s.id)).filter(matches).sort(byName);
 
   const save = async () => {
     setBusy(true); setErr('');
@@ -137,30 +154,47 @@ function AddStudentsPanel({ teacher, onClose, onSaved, toast }: { teacher: { id:
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
 
+  const Row = (s: any) => (
+    <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--line)', cursor: 'pointer', fontSize: 13.5, background: assigned.has(s.id) ? '#f3f8ff' : undefined }}>
+      <input type="checkbox" style={{ width: 16, height: 16 }} checked={assigned.has(s.id)} onChange={() => toggle(s.id)} />
+      <b>{s.display_name}</b>
+      <span className="muted">@{s.username}{s.grade_number != null ? ` \u00b7 Grade ${s.grade_number}` : ''}</span>
+    </label>
+  );
+
+  const loading = assignedAsync.loading || listAsync.loading;
+
   return (
-    <div style={{ border: '1px dashed var(--primary, #1A5EAB)', background: '#f7faff', borderRadius: 12, padding: '14px 16px', marginTop: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--primary, #1A5EAB)', letterSpacing: .3 }}>ADD STUDENTS → {teacher.name}</div>
-        <span className="muted" style={{ fontSize: 12 }}>{assigned.size} assigned</span>
-        <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onClose}>✕ Close</button>
-      </div>
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students by name, username, or guardian…" />
-      <div style={{ maxHeight: 320, overflow: 'auto', marginTop: 10, border: '1px solid var(--line)', borderRadius: 10, background: '#fff' }}>
-        {assignedAsync.loading || listAsync.loading ? <Loading /> : listAsync.error ? <ErrorBox e={listAsync.error} /> : students.length === 0 ? (
-          <div className="muted" style={{ padding: 14 }}>No students match.</div>
-        ) : students.map((s: any) => (
-          <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--line)', cursor: 'pointer', fontSize: 13.5 }}>
-            <input type="checkbox" style={{ width: 15, height: 15 }} checked={assigned.has(s.id)} onChange={() => toggle(s.id)} />
-            <b>{s.display_name}</b>
-            <span className="muted">@{s.username} · Grade {s.grade_number}</span>
-          </label>
-        ))}
-      </div>
-      {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-        <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn" disabled={busy} onClick={save}>{busy ? 'Saving…' : `Save (${assigned.size})`}</button>
-      </div>
-    </div>
+    <>
+      {/* backdrop */}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,38,67,.34)', opacity: shown ? 1 : 0, transition: 'opacity .2s ease', zIndex: 1000 }} />
+      {/* drawer */}
+      <aside role="dialog" aria-label={`Add students to ${teacher.name}`} style={{ position: 'fixed', top: 0, right: 0, height: '100vh', width: 440, maxWidth: '92vw', background: '#fff', boxShadow: '-18px 0 50px rgba(15,38,67,.18)', display: 'flex', flexDirection: 'column', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .22s ease', zIndex: 1001 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--primary, #1A5EAB)', letterSpacing: .4 }}>ADD STUDENTS →</span>
+          <span style={{ fontWeight: 800, fontSize: 15 }}>{teacher.name}</span>
+          <span className="muted" style={{ fontSize: 12 }}>{assigned.size} assigned</span>
+          <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onClose}>✕ Close</button>
+        </div>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)' }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students by name, username, or guardian…" style={{ width: '100%' }} />
+        </div>
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          {loading ? <Loading /> : listAsync.error ? <ErrorBox e={listAsync.error} /> : (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .5, color: 'var(--primary, #1A5EAB)', textTransform: 'uppercase', padding: '10px 16px 6px', position: 'sticky', top: 0, background: '#fff' }}>★ Assigned ({assignedStudents.length})</div>
+              {assignedStudents.length ? assignedStudents.map(Row) : <div className="muted" style={{ padding: '8px 16px', fontSize: 12.5 }}>None yet — tick students below.</div>}
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .5, color: '#90a0b5', textTransform: 'uppercase', padding: '12px 16px 6px', position: 'sticky', top: 0, background: '#fff' }}>All students</div>
+              {otherStudents.length ? otherStudents.map(Row) : <div className="muted" style={{ padding: '8px 16px', fontSize: 12.5 }}>No students match.</div>}
+            </>
+          )}
+        </div>
+        {err && <div className="err" style={{ margin: '8px 16px 0' }}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--line)', background: '#fafcff' }}>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" disabled={busy} onClick={save}>{busy ? 'Saving…' : `Save (${assigned.size})`}</button>
+        </div>
+      </aside>
+    </>
   );
 }

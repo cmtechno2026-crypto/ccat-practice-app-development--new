@@ -28,6 +28,9 @@ export interface Config {
   // Turn on only for the payments preview/branch. See PAYMENTS_ENABLED in .env.example.
   paymentsEnabled: boolean;
   emailVerifyRequired: boolean;
+  // NGAT workspace access allowlist (seam for a future entitlement/paywall). Lowercased usernames
+  // allowed to see/use the NGAT workspace. Env NGAT_ENABLED_USERNAMES (comma-separated). Default: test acct.
+  ngatEnabledUsernames: string[];
   // PayPal (active processor). All SERVER-ONLY. env selects the API base (sandbox vs live). prices are
   // server-owned amounts per tier in CAD (e.g. '50.00'); a client-supplied amount is never accepted.
   // webhookId verifies inbound webhook signatures via PayPal's verify-webhook-signature API.
@@ -109,6 +112,8 @@ export function loadConfig(): Config {
     // Default OFF. Only the literal string 'true' enables it, so any other value keeps production free.
     paymentsEnabled: process.env.PAYMENTS_ENABLED === 'true',
     emailVerifyRequired: process.env.EMAIL_VERIFY_REQUIRED === 'true',
+    ngatEnabledUsernames: (process.env.NGAT_ENABLED_USERNAMES ?? 'user_d')
+      .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     paypal: {
       env: (process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox'),
       clientId: process.env.PAYPAL_CLIENT_ID ?? '',

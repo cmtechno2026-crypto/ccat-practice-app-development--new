@@ -25,6 +25,10 @@ interface AppState {
   // Practice vs Exam correctly on the shared /session and /result routes. null when not in a session.
   activeMode: 'practice' | 'exam' | null;
   setActiveMode: (m: 'practice' | 'exam' | null) => void;
+  // NGAT workspace: which program the SCOPED screens (Practice/Exam/Assignments/Progress) operate in.
+  // Shared screens (Home chrome, Profile, Achievements, My Plan) ignore it. Persisted per browser.
+  program: 'ccat' | 'ngat';
+  setProgram: (p: 'ccat' | 'ngat') => void;
   setProfile: (p: StudentProfile | null) => void;
   refreshProfile: () => Promise<StudentProfile | null>;
   refreshEntitlements: () => Promise<void>;
@@ -44,6 +48,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Payments OFF: nothing to load, so start loaded=true.
   const [entitlementsLoaded, setEntLoaded] = useState<boolean>(!PAYMENTS_ENABLED);
   const [activeMode, setActiveMode] = useState<'practice' | 'exam' | null>(null);
+  // NGAT workspace — restore the last-used workspace (no CCAT bias); first-ever visit defaults to CCAT.
+  const [program, setProgramState] = useState<'ccat' | 'ngat'>(() => {
+    try { return localStorage.getItem('cm_active_program') === 'ngat' ? 'ngat' : 'ccat'; } catch { return 'ccat'; }
+  });
+  const setProgram = useCallback((p: 'ccat' | 'ngat') => {
+    setProgramState(p);
+    try { localStorage.setItem('cm_active_program', p); } catch { /* private mode */ }
+  }, []);
 
   const flash = useCallback((msg: string) => {
     setToast(msg);
@@ -84,6 +96,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setEntLoaded(!PAYMENTS_ENABLED);
   }, []);
 
+  // NGAT is allow-listed (seam for a future paywall). If the signed-in student isn't entitled, never
+  // leave them stranded in NGAT — snap back to CCAT once the profile says ngat_enabled !== true.
+  useEffect(() => {
+    if (program === 'ngat' && profile && profile.ngat_enabled !== true) setProgram('ccat');
+  }, [program, profile, setProgram]);
+
   // Resume from a stored token on load.
   useEffect(() => {
     applyStoredPalette(); // paint the last-equipped theme before any fetch, so no flash of base colors
@@ -108,6 +126,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ready, profile, appConfig, toast,
       paymentsEnabled: PAYMENTS_ENABLED, entitlements, entitlementsLoaded,
       activeMode, setActiveMode,
+      program, setProgram,
       setProfile, refreshProfile, refreshEntitlements, signOut, flash,
     }}>
       {children}

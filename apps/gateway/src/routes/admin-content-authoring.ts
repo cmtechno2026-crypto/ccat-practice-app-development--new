@@ -387,7 +387,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
 
     // Live taxonomy for name resolution (scope is authoritative on the server).
     const grades = (await db.query(`select id, grade_number, lower(name) name from ccat.grades where active and retired_at is null`)).rows as any[];
-    const cats = (await db.query(`select id, lower(key) key, lower(name) name from ccat.categories where active`)).rows as any[];
+    const cats = (await db.query(`select id, lower(key) key, lower(name) name from ccat.categories where active and program = 'ccat'`)).rows as any[];
     const subs = (await db.query(`select id, category_id, lower(key) key, lower(name) name from ccat.subcategories where active`)).rows as any[];
     const diffs = (await db.query(`select id, lower(key) key, lower(name) name from ccat.difficulties`)).rows as any[];
 
@@ -481,8 +481,8 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
            join ccat.question_sets qs on qs.id=sv.question_set_id
           where qs.grade_id=$1 and sv.allowed_exam=true`, [b.grade_id]);
       if (existing.rows[0]!.n > 0) return 0; // already has exam papers; nothing to scaffold
-      const cat = await c.query(`select id from ccat.categories where key='verbal' and active limit 1`);
-      const anchorCat = cat.rows[0]?.id ?? (await c.query('select id from ccat.categories order by display_order limit 1')).rows[0]?.id;
+      const cat = await c.query(`select id from ccat.categories where key='verbal' and active and program='ccat' limit 1`);
+      const anchorCat = cat.rows[0]?.id ?? (await c.query("select id from ccat.categories where program='ccat' order by display_order limit 1")).rows[0]?.id;
       const sub = await c.query('select id from ccat.subcategories where category_id=$1 order by display_order limit 1', [anchorCat]);
       if (!anchorCat || sub.rows.length === 0) throw Errors.validation('Taxonomy not ready — add a category/subcategory first');
       for (const label of ['A', 'B', 'C']) {

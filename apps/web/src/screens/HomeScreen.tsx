@@ -51,7 +51,7 @@ const BATTERY_ACCENT: Record<string, string> = {
 
 export function HomeScreen() {
   const nav = useNavigate();
-  const { profile, entitlements, entitlementsLoaded } = useApp();
+  const { profile, entitlements, entitlementsLoaded, program } = useApp();
   const examLocked = PAYMENTS_ENABLED && !capsOf(entitlements, entitlementsLoaded).exam;
   // Fail OPEN: hide the Assignment panel ONLY when we know there is no teacher (false). undefined
   // (older gateway / still loading) shows it, so a student with a teacher is never wrongly hidden.
@@ -61,10 +61,10 @@ export function HomeScreen() {
     const [summary, readiness, progress, announcements, active, achievements, analytics] = await Promise.all([
       client.rewardsSummary(), client.readiness(), client.progress(), client.announcements(),
       client.activeSession(), client.achievements().catch(() => [] as Achievement[]),
-      client.progressSummary().catch(() => null as ProgressSummary | null),
+      client.progressSummary({}, program).catch(() => null as ProgressSummary | null),
     ]);
     return { summary, readiness, progress, announcements, active, achievements, analytics };
-  });
+  }, [program]);
 
   const name = firstName(profile?.display_name);
   const summary = data?.summary;

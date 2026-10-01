@@ -183,9 +183,10 @@ function fmtWhen(iso: string | null | undefined): string {
 // Battery Practice set (per-question review). Values come straight from GET /v1/exams/history.
 const EXAM_BATTERIES = ['verbal', 'quantitative', 'non_verbal'];
 function ExamProgress({ query, locked, onUpgrade, onOpenReview }: { query: ProgressQuery; locked: boolean; onUpgrade: () => void; onOpenReview: (setId: string, label: string) => void }) {
+  const { program } = useApp();
   const { loading, error, data, reload } = useAsync(
-    async () => (locked ? ([] as ExamHistoryItem[]) : (client.examHistory({ from: query.from, to: query.to }) as Promise<ExamHistoryItem[]>)),
-    [query, locked],
+    async () => (locked ? ([] as ExamHistoryItem[]) : (client.examHistory({ from: query.from, to: query.to }, program) as Promise<ExamHistoryItem[]>)),
+    [query, locked, program],
   );
   const [battery, setBattery] = useState('verbal');
   const papers = (data ?? []).filter((p) => (p.battery_key ?? 'verbal') === battery);
@@ -281,6 +282,7 @@ export function ProgressScreen() {
   const [tab, setTab] = useState<string | null>(null);
   const [sub, setSub] = useState('');
   const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
+  const { program } = useApp();
   const query = useMemo<ProgressQuery>(() => {
     const q: ProgressQuery = {};
     const from = rangeToFrom(range);
@@ -288,7 +290,7 @@ export function ProgressScreen() {
     return q;
   }, [range]);
 
-  const { loading, error, data, reload } = useAsync(async () => client.progressSummary(query) as Promise<ProgressSummary>, [query]);
+  const { loading, error, data, reload } = useAsync(async () => client.progressSummary(query, program) as Promise<ProgressSummary>, [query, program]);
 
   const batteries = data?.batteries ?? [];
   const active = batteries.find((b) => b.key === tab) ?? batteries[0] ?? null;
@@ -299,8 +301,8 @@ export function ProgressScreen() {
   const subColor = new Map(subOptions.map((s, i) => [s.key, i % 6] as const));
 
   const setsAsync = useAsync(
-    async () => (activeKey ? await client.progressSets({ battery: activeKey, subcategory: subActive || 'all', ...query }) : ([] as ProgressSetRow[])),
-    [activeKey, subActive, query],
+    async () => (activeKey ? await client.progressSets({ battery: activeKey, subcategory: subActive || 'all', ...query }, program) : ([] as ProgressSetRow[])),
+    [activeKey, subActive, query, program],
   );
   const setsShown = setsAsync.data ?? [];
 

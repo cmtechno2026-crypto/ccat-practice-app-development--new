@@ -9,8 +9,8 @@ import { TodoRow, DoneRow } from '../components/AssignmentPanel';
 // Rows are the shared TodoRow / DoneRow in non-compact form (question counts, Review button).
 export function AssignmentsScreen() {
   const nav = useNavigate();
-  const { flash, profile } = useApp();
-  const { data, loading, error, reload } = useAsync(() => client.assignments());
+  const { flash, profile, program } = useApp();
+  const { data, loading, error, reload } = useAsync(() => client.assignments(program), [program]);
 
   // No teacher → this page is locked (mirrors the sidebar lock + hidden Home panel).
   if (profile && profile.has_teacher === false) {

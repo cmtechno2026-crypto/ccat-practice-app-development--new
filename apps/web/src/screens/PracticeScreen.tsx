@@ -49,7 +49,7 @@ function loadPrefs(): Prefs {
 
 export function PracticeScreen() {
   const nav = useNavigate();
-  const { flash, entitlements, entitlementsLoaded } = useApp();
+  const { flash, entitlements, entitlementsLoaded, program } = useApp();
   const caps = capsOf(entitlements, entitlementsLoaded);
   const [upgrade, setUpgrade] = useState<UpgradeFeature | null>(null);
   // Membership-locked clicks go straight to the plan page (no interstitial popup) when payments is on;
@@ -65,7 +65,7 @@ export function PracticeScreen() {
   const battery = sp.get('battery');            // level 2 when set
   const category = sp.get('category');          // level 3 when set
   const setId = sp.get('set');                  // start screen when set
-  const { loading, error, data, reload } = useAsync(() => client.catalog(), []);
+  const { loading, error, data, reload } = useAsync(() => client.catalog(program), [program]);
   const [starting, setStarting] = useState(false);
 
   const initial = loadPrefs();

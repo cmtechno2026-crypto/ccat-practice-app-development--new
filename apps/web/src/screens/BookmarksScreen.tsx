@@ -141,8 +141,8 @@ function ReviewPlayer({ ids, onClose, onUnbookmark }: { ids: string[]; onClose: 
 }
 
 export function BookmarksScreen() {
-  const { flash } = useApp();
-  const { loading, error, data, reload } = useAsync(() => client.bookmarks(), []);
+  const { flash, program } = useApp();
+  const { loading, error, data, reload } = useAsync(() => client.bookmarks(program), [program]);
   const [local, setLocal] = useState<Bookmark[] | null>(null);
   const list = local ?? data ?? [];
 

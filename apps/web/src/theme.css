@@ -1031,3 +1031,36 @@ p { line-height: 1.5; }
 .hpg-frac { font-weight: 800; font-size: 20px; color: #20264a; line-height: 1; }
 .hpg-frac .den { color: #aab3c6; font-size: 14px; }
 .hpg-nm { font-weight: 800; font-size: 12.5px; color: #5b6b86; margin-top: 3px; }
+
+/* ===== NGAT workspace switcher (Sidebar header) =====================================
+   Segmented pill [ CCAT · NGAT ]. Rendered only for allow-listed accounts (the component
+   self-hides otherwise). Hidden in the COLLAPSED desktop rail — it appears when the rail
+   is hover-expanded or in the mobile drawer, exactly like the nav text labels. */
+.ws-switch {
+  display: flex;
+  gap: 4px;
+  margin: 10px 12px 2px;
+  padding: 3px;
+  background: var(--tint, #eef1f6);
+  border-radius: 999px;
+}
+.sidebar:not(.expanded):not(.drawer-open) .ws-switch { display: none; }
+.ws-seg {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: .02em;
+  color: var(--muted, #667);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.ws-seg.active {
+  background: #fff;
+  color: var(--primary, #3e7bee);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .12);
+}
+.ws-seg:hover:not(.active) { color: var(--primary, #3e7bee); }

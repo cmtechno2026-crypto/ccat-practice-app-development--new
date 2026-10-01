@@ -2,6 +2,8 @@
 
 export type Channel = 'email' | 'sms';
 export type Mode = 'practice' | 'exam';
+// NGAT workspace: which program a scoped request/screen is operating in. 'ccat' is the default everywhere.
+export type Program = 'ccat' | 'ngat';
 export type TimerType = 'untimed' | 'timed';
 export type SessionState =
   | 'IN_PROGRESS' | 'SUBMITTED' | 'AUTO_SUBMITTED' | 'ABANDONED'
@@ -37,6 +39,7 @@ export interface StudentProfile {
   current_avatar?: CurrentAvatar | null;  // resolved equipped avatar for consistent rendering everywhere
   is_preview?: boolean;   // synthetic preview/"cheat" account — clients show a Preview-mode banner
   has_teacher?: boolean;  // a teacher is assigned to this student — gates the Assignment panel + nav in web
+  ngat_enabled?: boolean; // NGAT workspace access (allow-listed accounts only); drives the CCAT/NGAT switcher
 }
 
 export interface Session {

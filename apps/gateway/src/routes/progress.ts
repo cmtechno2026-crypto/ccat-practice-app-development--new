@@ -54,6 +54,8 @@ const eqSet = (a: string[], b: string[]): boolean => {
 const CAT_ORDER = ['verbal', 'quantitative', 'non_verbal'] as const;
 
 export interface Range { from?: string; to?: string }
+// NGAT workspace: which program a progress request is scoped to. Defaults to 'ccat'.
+export function progOf(q: any): 'ccat' | 'ngat' { return q?.program === 'ngat' ? 'ngat' : 'ccat'; }
 export function pickRange(q: any): Range {
   const r: Range = {};
   if (typeof q?.from === 'string' && q.from.trim()) r.from = q.from.trim();
@@ -76,12 +78,13 @@ function daysAgoLabel(isoDay: string | null, todayIso: string): string {
 
 // Per-set row from the "most recent finished attempt per set" window. Shared by /summary and /sets.
 // Returns raw rows (rn=1), ordered category → subcategory → set creation → set id.
-async function finishedSetRows(db: DB, sid: string, r: Range) {
+async function finishedSetRows(db: DB, sid: string, r: Range, program: 'ccat' | 'ngat' = 'ccat') {
   const p: any[] = [sid];
   const extra: string[] = [];
   if (r.from) { p.push(r.from); extra.push(`s.terminal_at >= $${p.length}`); }
   if (r.to) { p.push(r.to); extra.push(`s.terminal_at < $${p.length}`); }
-  const where = ["s.student_id = $1", "s.mode <> 'exam'", "sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')", ...extra].join(' and ');
+  p.push(program);
+  const where = ["s.student_id = $1", "s.mode <> 'exam'", "sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')", `cat.program = $${p.length}`, ...extra].join(' and ');
   const res = await db.query(
     `with fin as (
        select qs.id as set_id, qs.name as set_name, qs.created_at as set_created,
@@ -143,7 +146,7 @@ export async function progressCardTotals(
 // ---- Shared compute functions (student id passed explicitly) --------------------------------------
 
 // GET /v1/progress/summary — per-battery sets-done/total, subcategory accuracy, practice time, exam done/total.
-export async function computeProgressSummary(db: DB, sid: string, r: Range) {
+export async function computeProgressSummary(db: DB, sid: string, r: Range, program: 'ccat' | 'ngat' = 'ccat') {
   const tzRow = await db.query('select timezone from ccat.students where id=$1', [sid]);
   const tz = (tzRow.rows[0]?.timezone as string) || 'UTC';
 
@@ -153,14 +156,14 @@ export async function computeProgressSummary(db: DB, sid: string, r: Range) {
   // Battery skeleton — every ACTIVE category, in display order (names + keys straight from the DB, so
   // nothing is hard-coded). Empty batteries still appear with zeros / null.
   const catRows = await db.query(
-    `select key, name from ccat.categories where active = true order by display_order, name`);
+    `select key, name from ccat.categories where active = true and program = $1 order by display_order, name`, [program]);
   const cats = (catRows.rows as any[]).map((c) => ({ key: c.key as string, name: c.name as string }));
 
   // FULL subcategory list per category (active), including combine — one box per subcategory.
   const subListRows = await db.query(
     `select c.key as cat, s.key as sub_key, s.name as sub_name, s.display_order as sub_order
        from ccat.subcategories s join ccat.categories c on c.id = s.category_id
-      where s.active = true order by c.display_order, s.display_order`);
+      where s.active = true and c.program = $1 order by c.display_order, s.display_order`, [program]);
 
   // Per-subcategory accuracy is derived from the SAME finished-set rows as the sets table below (built
   // in the fold loop) so the subcategory box, the battery ring and each Set row reconcile exactly.
@@ -181,7 +184,8 @@ export async function computeProgressSummary(db: DB, sid: string, r: Range) {
                        where sv.question_set_id = qs.id and sv.state = 'published'
                          and exists (select 1 from ccat.set_version_questions svq
                                       where svq.set_version_id = sv.id and svq.active = true))
-        group by cat.key`, [gradeId]);
+          and cat.program = $2
+        group by cat.key`, [gradeId, program]);
     for (const t of totalRows.rows as any[]) totalByCat.set(t.cat, t.total);
   }
 
@@ -189,7 +193,7 @@ export async function computeProgressSummary(db: DB, sid: string, r: Range) {
   // COMBINE is a separate "battery mock" track (Option A): it feeds only its OWN subcategory box, and is
   // EXCLUDED from the battery ring/score/time and from sets-done — so nothing double-counts and the
   // battery ring equals the sum of the NORMAL subcategory boxes exactly.
-  const rows = await finishedSetRows(db, sid, r);
+  const rows = await finishedSetRows(db, sid, r, program);
   type Bucket = { correct: number; total: number; totalQ: number; setsDone: number; secs: number };
   const byCat = new Map<string, Bucket>();
   let scoreCorrect = 0, scoreTotal = 0, setsDone = 0;
@@ -212,19 +216,29 @@ export async function computeProgressSummary(db: DB, sid: string, r: Range) {
   const tp: any[] = [sid]; const tc: string[] = ['s.student_id = $1', "s.mode <> 'exam'", 's.terminal_at is not null'];
   if (r.from) { tp.push(r.from); tc.push(`s.terminal_at >= $${tp.length}`); }
   if (r.to) { tp.push(r.to); tc.push(`s.terminal_at < $${tp.length}`); }
+  tp.push(program); tc.push(`cat.program = $${tp.length}`);
   const timeRow = await db.query(
     `select round(coalesce(sum(extract(epoch from (s.terminal_at - s.started_at))), 0) / 60.0)::int as mins
-       from ccat.sessions s where ${tc.join(' and ')}`, tp);
+       from ccat.sessions s
+       join ccat.question_set_versions sv on sv.id = s.set_version_id
+       join ccat.question_sets qs on qs.id = sv.question_set_id
+       join ccat.categories cat on cat.id = qs.category_id
+      where ${tc.join(' and ')}`, tp);
   const practiceTimeMinutes = Number(timeRow.rows[0]?.mins ?? 0);
 
   // --- practice time series: per-day minutes (tz-aware), chronological for the line chart ---
   const spar: any[] = [sid, tz]; const scnd: string[] = ['s.student_id = $1', "s.mode <> 'exam'", 's.terminal_at is not null'];
   if (r.from) { spar.push(r.from); scnd.push(`s.terminal_at >= $${spar.length}`); }
   if (r.to) { spar.push(r.to); scnd.push(`s.terminal_at < $${spar.length}`); }
+  spar.push(program); scnd.push(`cat.program = $${spar.length}`);
   const seriesRow = await db.query(
     `select to_char((s.terminal_at at time zone $2)::date, 'YYYY-MM-DD') as date,
             round(sum(extract(epoch from (s.terminal_at - s.started_at))) / 60.0)::int as minutes
-       from ccat.sessions s where ${scnd.join(' and ')}
+       from ccat.sessions s
+       join ccat.question_set_versions sv on sv.id = s.set_version_id
+       join ccat.question_sets qs on qs.id = sv.question_set_id
+       join ccat.categories cat on cat.id = qs.category_id
+      where ${scnd.join(' and ')}
       group by 1 order by 1`, spar);
   const practiceTimeSeries = (seriesRow.rows as any[]).map((x) => ({ date: x.date as string, minutes: Number(x.minutes) }));
 
@@ -238,16 +252,18 @@ export async function computeProgressSummary(db: DB, sid: string, r: Range) {
     const et = await db.query(
       `select count(distinct qs.id)::int as total
          from ccat.question_sets qs
+         join ccat.categories cat on cat.id = qs.category_id and cat.program = $2
         where qs.grade_id = $1
           and exists (select 1 from ccat.question_set_versions sv
                        where sv.question_set_id = qs.id and sv.state = 'published' and sv.allowed_exam = true
                          and exists (select 1 from ccat.set_version_questions svq
                                       where svq.set_version_id = sv.id and svq.active = true))`,
-      [gradeId]);
+      [gradeId, program]);
     examPapersTotal = Number(et.rows[0]?.total ?? 0);
 
     const dp: any[] = [sid, gradeId];
     const dc: string[] = ["s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')", "qs.grade_id = $2", "sv.allowed_exam = true"];
+    dp.push(program); dc.push(`cat.program = $${dp.length}`);
     if (r.from) { dp.push(r.from); dc.push(`s.terminal_at >= $${dp.length}`); }
     if (r.to) { dp.push(r.to); dc.push(`s.terminal_at < $${dp.length}`); }
     const doneRow = await db.query(
@@ -256,6 +272,7 @@ export async function computeProgressSummary(db: DB, sid: string, r: Range) {
          join ccat.session_results r on r.session_id = s.id
          join ccat.question_set_versions sv on sv.id = s.set_version_id
          join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.categories cat on cat.id = qs.category_id
         where ${dc.join(' and ')}`, dp);
     examPapersDone = Number(doneRow.rows[0]?.done ?? 0);
   }
@@ -295,9 +312,9 @@ export async function computeProgressSummary(db: DB, sid: string, r: Range) {
 
 // GET /v1/progress/sets — per-set rows for one battery (most recent finished attempt per set),
 // optionally filtered to a subcategory. Reconciles with /summary batteries.
-export async function computeProgressSets(db: DB, sid: string, battery: string, sub: string | null, r: Range) {
+export async function computeProgressSets(db: DB, sid: string, battery: string, sub: string | null, r: Range, program: 'ccat' | 'ngat' = 'ccat') {
   if (!battery) return [] as any[];
-  const rows = await finishedSetRows(db, sid, r);
+  const rows = await finishedSetRows(db, sid, r, program);
   return rows
     .filter((row) => row.cat_key === battery && (sub == null || row.sub_key === sub))
     .map((row) => ({
@@ -383,7 +400,7 @@ export async function computeSetReview(db: DB, sid: string, setId: string) {
 }
 
 // GET /v1/progress/breakdown — per category, with nested topics (subcategories).
-export async function computeBreakdown(db: DB, sid: string, r: Range) {
+export async function computeBreakdown(db: DB, sid: string, r: Range, program: 'ccat' | 'ngat' = 'ccat') {
   const meta = await db.query('select grade_id, timezone from ccat.students where id=$1', [sid]);
   const gradeId = meta.rows[0]?.grade_id as string | undefined;
   const tz = (meta.rows[0]?.timezone as string) || 'UTC';
@@ -392,6 +409,7 @@ export async function computeBreakdown(db: DB, sid: string, r: Range) {
   const ap: any[] = [sid, tz]; const ac: string[] = ['sa.is_locked'];
   if (r.from) { ap.push(r.from); ac.push(`sa.updated_at >= $${ap.length}`); }
   if (r.to) { ap.push(r.to); ac.push(`sa.updated_at < $${ap.length}`); }
+  ap.push(program); ac.push(`cat.program = $${ap.length}`);
   const rows = await db.query(
     `select cat.key as category, cat.display_order as cat_order,
             coalesce(sub.id::text, 'none') as subid, coalesce(sub.name, 'General') as subname,
@@ -414,9 +432,10 @@ export async function computeBreakdown(db: DB, sid: string, r: Range) {
             count(distinct qs.id)::int as total,
             count(distinct sc.question_set_id)::int as done
        from ccat.question_sets qs
+       join ccat.categories cat on cat.id = qs.category_id and cat.program = $3
        left join ccat.set_completions sc on sc.question_set_id = qs.id and sc.student_id = $1
       where qs.grade_id = $2
-      group by coalesce(qs.subcategory_id::text,'none')`, [sid, gradeId]) : { rows: [] as any[] };
+      group by coalesce(qs.subcategory_id::text,'none')`, [sid, gradeId, program]) : { rows: [] as any[] };
   const compBySub = new Map<string, { total: number; done: number }>();
   for (const c of compRows.rows as any[]) compBySub.set(c.subid, { total: c.total, done: c.done });
 
@@ -463,7 +482,7 @@ export async function computeBreakdown(db: DB, sid: string, r: Range) {
 export function registerProgressRoutes(app: FastifyInstance, db: DB) {
   // GET /v1/progress/summary?from=&to=
   app.get('/v1/progress/summary', { preHandler: [app.authenticateStudent] }, async (req) =>
-    computeProgressSummary(db, req.student!.studentId, pickRange(req.query)));
+    computeProgressSummary(db, req.student!.studentId, pickRange(req.query), progOf(req.query)));
 
   // GET /v1/progress/sets?battery=<category key>&subcategory=<subcategory key | 'all'>
   app.get('/v1/progress/sets', { preHandler: [app.authenticateStudent] }, async (req) => {
@@ -471,7 +490,7 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
     const battery = typeof q.battery === 'string' ? q.battery.trim() : '';
     const subRaw = typeof q.subcategory === 'string' ? q.subcategory.trim() : '';
     const sub = subRaw && subRaw.toLowerCase() !== 'all' ? subRaw : null;
-    return computeProgressSets(db, req.student!.studentId, battery, sub, pickRange(req.query));
+    return computeProgressSets(db, req.student!.studentId, battery, sub, pickRange(req.query), progOf(req.query));
   });
 
   // GET /v1/progress/set-review?setId=<question_set id>
@@ -483,5 +502,5 @@ export function registerProgressRoutes(app: FastifyInstance, db: DB) {
 
   // GET /v1/progress/breakdown?from=&to=  → per category, with nested topics (subcategories).
   app.get('/v1/progress/breakdown', { preHandler: [app.authenticateStudent] }, async (req) =>
-    computeBreakdown(db, req.student!.studentId, pickRange(req.query)));
+    computeBreakdown(db, req.student!.studentId, pickRange(req.query), progOf(req.query)));
 }

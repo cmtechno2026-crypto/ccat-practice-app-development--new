@@ -252,7 +252,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
 
   // Taxonomy (for pickers)
   app.get('/v1/admin/content/taxonomy', guard, async () => {
-    const cats = await db.query('select id,key,name from ccat.categories where active order by display_order');
+    const cats = await db.query("select id,key,name from ccat.categories where active and program = 'ccat' order by display_order");
     const subs = await db.query('select id,category_id,key,name,coalesce(max_questions_per_set,15) as max_questions_per_set from ccat.subcategories where active order by display_order');
     const diffs = await db.query('select id,key,name,weight from ccat.difficulties order by display_order');
     const grades = await db.query('select id,grade_number,name from ccat.grades where active and retired_at is null order by display_order');

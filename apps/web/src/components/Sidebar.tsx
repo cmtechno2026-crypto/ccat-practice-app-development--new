@@ -6,6 +6,7 @@ import { useApp } from '../lib/store';
 import { PAYMENTS_ENABLED, capsOf } from '../lib/entitlements';
 import { REWARDS_LOCKED } from '../lib/features';
 import { Avatar } from './Avatar';
+import { WorkspaceSwitch } from './WorkspaceSwitch';
 
 // Primary navigation — persistent LEFT sidebar (desktop + tablet). PUSH model: this panel sits in the
 // layout flow; expanding widens it AND shifts the content area right (the offset lives on `.main`,
@@ -51,7 +52,7 @@ const CLOSE_DELAY_MS = 200;
 export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDrawer }: SidebarProps) {
   const loc = useLocation();
   const nav = useNavigate();
-  const { profile, signOut, entitlements, entitlementsLoaded, activeMode } = useApp();
+  const { profile, signOut, entitlements, entitlementsLoaded, activeMode, program } = useApp();
   // Free plan → Progress is a membership feature; show a lock on its nav item.
   const progressLocked = PAYMENTS_ENABLED && capsOf(entitlements, entitlementsLoaded).practice !== 'all';
   // Live "to do" count for the Assignments nav badge. Refetched on navigation (cheap endpoint) so the
@@ -64,11 +65,11 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
   useEffect(() => {
     if (!hasTeacher) { setAsgnTodo(0); return; }
     let alive = true;
-    client.assignments()
+    client.assignments(program)
       .then((list) => { if (alive) setAsgnTodo(list.filter((a) => a.status !== 'done').length); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [loc.pathname, hasTeacher]);
+  }, [loc.pathname, hasTeacher, program]);
   const openT = useRef<number | undefined>(undefined);
   const closeT = useRef<number | undefined>(undefined);
 
@@ -99,11 +100,13 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
             that fades in when the rail expands. Rendered as crisp markup, not a raster. */}
         <Link to="/home" className="brand" aria-label="Concept Mastery — home">
           <img className="brand-tile" src={cmMark} alt="" aria-hidden />
-          <span className="brandtext"><strong>Concept Mastery</strong><small>CCAT Practice</small></span>
+          <span className="brandtext"><strong>Concept Mastery</strong><small>{program === 'ngat' ? 'NGAT Practice' : 'CCAT Practice'}</small></span>
         </Link>
         {/* Mobile drawer close (CSS-hidden on desktop) */}
         <button type="button" className="sidebar-close" aria-label="Close menu" onClick={onCloseDrawer}>✕</button>
       </div>
+      {/* NGAT workspace switcher (allow-listed accounts only; self-hides otherwise). */}
+      <WorkspaceSwitch />
       <nav className="snav-list">
         {NAV.map((it) => {
           const active = it.match({ pathname: loc.pathname, search: loc.search, mode: activeMode });

@@ -10,6 +10,8 @@ export function registerBookmarkRoutes(app: FastifyInstance, db: DB) {
   // (category, subcategory, difficulty, representative set name + question position, date) so a
   // client can render filters and a rich card (§32.4). Data-only; no answer key here.
   app.get('/v1/bookmarks', { preHandler: [app.authenticateStudent] }, async (req) => {
+    // NGAT workspace: scope the bookmark list to one program. Defaults to 'ccat'.
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     const { rows } = await db.query(
       `select b.logical_question_id, b.note, b.created_at,
               cat.key as category_key, sub.name as subcategory,
@@ -19,7 +21,7 @@ export function registerBookmarkRoutes(app: FastifyInstance, db: DB) {
                  order by qv.version_number desc limit 1) as prompt_blocks
          from ccat.bookmarks b
          join ccat.logical_questions lq on lq.id = b.logical_question_id
-         join ccat.categories cat on cat.id = lq.category_id
+         join ccat.categories cat on cat.id = lq.category_id and cat.program = $2
          join ccat.subcategories sub on sub.id = lq.subcategory_id
          left join lateral (
             select qs.name as set_name, d.key as difficulty, svq.position
@@ -34,7 +36,7 @@ export function registerBookmarkRoutes(app: FastifyInstance, db: DB) {
          ) m on true
         where b.student_id = $1
         order by b.created_at desc`,
-      [req.student!.studentId],
+      [req.student!.studentId, program],
     );
     return rows.map((r) => ({
       logical_question_id: r.logical_question_id,
