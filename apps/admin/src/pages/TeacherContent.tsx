@@ -116,7 +116,7 @@ function TeacherContent({ mode }: { mode: 'practice' | 'exam' }) {
                 <span style={{ position: 'absolute', top: 14, right: 14, fontSize: 11, fontWeight: 800, color: '#33405c', background: '#f3f6fb', borderRadius: 8, padding: '3px 8px' }}>{count} {unit}{count === 1 ? '' : 's'}</span>
                 <div style={{ width: 44, height: 44, borderRadius: 12, background: vis.tint, display: 'grid', placeItems: 'center', fontSize: 22, marginBottom: 10 }}>{vis.icon}</div>
                 <div style={{ fontWeight: 800, fontSize: 14.5 }}>{vis.name}</div>
-                <div className="muted" style={{ fontSize: 12 }}>{mode === 'exam' ? `${count} exam ${count === 1 ? 'paper' : 'papers'}` : subs.slice(0, 3).join(' · ')}</div>
+                <div className="muted" style={{ fontSize: 12 }}>{mode === 'exam' ? `${count} exam ${count === 1 ? 'paper' : 'papers'}` : (subs.filter(k => k !== '—').slice(0, 3).join(' · ') || `${count} set${count === 1 ? '' : 's'}`)}</div>
               </button>
             );
           })}
@@ -129,6 +129,7 @@ function TeacherContent({ mode }: { mode: 'practice' | 'exam' }) {
             <span style={{ marginLeft: 10 }}><b style={{ color: '#33405c' }}>{BATTERY_VIS[battery]?.name || battery}</b></span>
           </div>
           {mode === 'practice' ? (<>
+            {Object.keys(grouped[battery] || {}).length > 1 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
               {Object.keys(grouped[battery] || {}).map(sk => (
                 <button key={sk} onClick={() => setSub(sk)}
@@ -137,6 +138,7 @@ function TeacherContent({ mode }: { mode: 'practice' | 'exam' }) {
                 </button>
               ))}
             </div>
+            )}
             <div className="panel" style={{ padding: 14, marginTop: 8 }}>
               {(grouped[battery]?.[sub || ''] || []).map(setRow)}
             </div>

@@ -96,7 +96,7 @@ export function PracticeScreen() {
   // battery_key -> subcategory -> sets  (only batteries/categories with real sets appear beneath the 3)
   const grouped = useMemo(() => {
     const g: Record<string, Record<string, CatalogItem[]>> = {};
-    for (const c of practice) { (g[c.category_key] ??= {}); (g[c.category_key]![c.subcategory] ??= []).push(c); }
+    for (const c of practice) { (g[c.category_key] ??= {}); const sk = c.subcategory || '__sets__'; (g[c.category_key]![sk] ??= []).push(c); }
     return g;
   }, [practice]);
 
@@ -106,6 +106,15 @@ export function PracticeScreen() {
     for (const [k, v] of Object.entries(params)) { if (v == null) next.delete(k); else next.set(k, v); }
     setSp(next);
   };
+
+  // Subcategory-less batteries (NGAT Quant / Non-verbal) skip the category step — go straight to the sets.
+  useEffect(() => {
+    if (mode !== 'exam' && battery && !category) {
+      const cats = grouped[battery] ?? {};
+      const ks = Object.keys(cats);
+      if (ks.length === 1 && ks[0] === '__sets__') go({ category: '__sets__' });
+    }
+  }, [battery, category, grouped, mode]); // eslint-disable-line
 
   async function startSet(item: CatalogItem, resumeId?: string | null) {
     if (resumeId) { nav(`/session/${resumeId}`); return; }
@@ -364,12 +373,12 @@ export function PracticeScreen() {
     const sets = (grouped[battery]?.[category] ?? []).slice().sort((a, b) => (a.retired ? 1 : 0) - (b.retired ? 1 : 0));
     return (
       <>
-        <AppBar title={titleCase(category)} sub={`${batteryMeta(battery).name} · pick a set`} back />
+        <AppBar title={category === '__sets__' ? batteryMeta(battery).name : titleCase(category)} sub={`${batteryMeta(battery).name} · pick a set`} back />
         <div className="content stack">
           {crumb}
           {loading && <Loader />}
           {error && <ErrorNote error={error} onRetry={reload} />}
-          {sets.length === 0 && <div className="empty">No sets in {category} yet.<br />Check back after your teacher publishes more.</div>}
+          {sets.length === 0 && <div className="empty">No sets in {category === '__sets__' ? 'this battery' : category} yet.<br />Check back after your teacher publishes more.</div>}
           {sets.map((s) => {
             const st = s.progress?.status ?? 'not_started';
             const pct = st === 'in_progress' && s.question_count ? Math.round((100 * (s.progress!.answered_count)) / s.question_count) : 0;
@@ -442,7 +451,7 @@ export function PracticeScreen() {
   if (battery) {
     const cats = grouped[battery] ?? {};
     const bm = batteryMeta(battery);
-    const entries = Object.entries(cats);
+    const entries = Object.entries(cats).filter(([k]) => k !== '__sets__');
     return (
       <>
         <AppBar title={bm.name} sub="Pick a category" back />
@@ -485,7 +494,7 @@ export function PracticeScreen() {
           .map((key) => {
           const bm = batteryMeta(key);
           const cats = grouped[key] ?? {};
-          const catCount = Object.keys(cats).length;
+          const catCount = Object.keys(cats).filter((k) => k !== '__sets__').length;
           const setCount = Object.values(cats).reduce((n, arr) => n + arr.length, 0);
           return (
             <button key={key} className="battery-card" style={{ ['--bat' as any]: bm.color, ['--bat-tint' as any]: bm.tint }}
@@ -493,7 +502,7 @@ export function PracticeScreen() {
               <span className="bat-ic" style={{ background: bm.tint }}>{bm.icon}</span>
               <span className="bat-body">
                 <span className="bat-name">{bm.name}</span>
-                <span className="bat-sub">{setCount} set{setCount === 1 ? '' : 's'} · {catCount} categor{catCount === 1 ? 'y' : 'ies'}</span>
+                <span className="bat-sub">{setCount} set{setCount === 1 ? '' : 's'}{catCount > 0 ? ` · ${catCount} categor${catCount === 1 ? 'y' : 'ies'}` : ''}</span>
               </span>
               <span className="bat-go">›</span>
             </button>

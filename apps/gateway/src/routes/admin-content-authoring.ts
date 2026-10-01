@@ -115,11 +115,16 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     requirePermission(req, 'content.create');
     const b = createSetSchema.parse(req.body);
     // Practice sets must live under a subcategory; exam sets never do (Battery → Sets → Questions).
-    if (!b.allowed_exam && !b.subcategory_id) throw Errors.validation('Practice sets require a subcategory', { code: 'SUBCATEGORY_REQUIRED' });
+    // Practice sets normally require a subcategory. EXCEPTION: a battery with NO active subcategories
+    // (e.g. NGAT Quantitative / Non-verbal) takes sets directly, so a null subcategory is allowed there.
+    if (!b.allowed_exam && !b.subcategory_id) {
+      const hasSub = await db.query('select 1 from ccat.subcategories where category_id = $1 and active limit 1', [b.category_id]);
+      if (hasSub.rows.length) throw Errors.validation('Practice sets require a subcategory', { code: 'SUBCATEGORY_REQUIRED' });
+    }
     const subId = b.allowed_exam ? null : (b.subcategory_id ?? null);
-    // Per-set cap: exam = 60 (single battery); practice = the subcategory's max (45 Combine / 15 otherwise).
+    // Per-set cap: exam / subcategory-less battery = the app ceiling; practice = the subcategory's max.
     let maxq = 100;
-    if (!b.allowed_exam) {
+    if (!b.allowed_exam && subId) {
       const capRow = await db.query('select coalesce(max_questions_per_set, 15) as maxq from ccat.subcategories where id = $1', [subId]);
       maxq = Number(capRow.rows[0]?.maxq ?? 15);
     }

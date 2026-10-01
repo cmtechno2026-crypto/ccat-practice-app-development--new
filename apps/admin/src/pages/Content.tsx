@@ -74,7 +74,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
 
   const act = async (fn: Promise<any>, m: string) => { try { await fn; toast(m); load(); } catch (e) { toast((e as Error).message); } };
   // Per-set cap for a subcategory (45 for a "… Battery Combine", 15 otherwise) — read from the catalog.
-  const subMaxById = (id: string) => maxQuestionsForSub((tax?.subcategories ?? []).find((s: any) => s.id === id));
+  const subMaxById = (id: string | null | undefined) => id ? maxQuestionsForSub((tax?.subcategories ?? []).find((s: any) => s.id === id)) : PER_SET_CEILING;
 
   const inGrade = useMemo(() => (sets || [])
     .filter(s => !grade || String(s.grade_number) === grade)
@@ -88,12 +88,14 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
       const subs = new Map<string, { name: string; count: number }>();
       for (const s of (tax?.subcategories ?? []).filter((s: any) => s.category_id === c.id)) subs.set(s.id, { name: s.name, count: 0 });
       if (subs.size) m.set(c.id, { category: c.name, subs });
+      else m.set(c.id, { category: c.name, subs: new Map([[`cat:${c.id}`, { name: 'All sets', count: 0 }]]) }); // subcategory-less battery -> add sets directly
     }
     for (const s of inGrade) {
       if (!m.has(s.category_id)) m.set(s.category_id, { category: s.category, subs: new Map() });
       const c = m.get(s.category_id)!;
-      const cur = c.subs.get(s.subcategory_id) || { name: s.subcategory, count: 0 };
-      cur.count++; c.subs.set(s.subcategory_id, cur);
+      const key = s.subcategory_id || `cat:${s.category_id}`;
+      const cur = c.subs.get(key) || { name: s.subcategory || 'All sets', count: 0 };
+      cur.count++; c.subs.set(key, cur);
     }
     return m;
   }, [tax, inGrade]);
@@ -108,10 +110,15 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
   // Render sets in the ORDER THE GATEWAY RETURNS — canonical: active oldest→newest (new one at the
   // bottom), then retired last (see /v1/admin/content/sets ORDER BY). No client-side re-sort: filtering
   // preserves the server order, so we must NOT sort by name (numeric/editable → lexical 1,10,11,2).
+  // `sub` is a real subcategory id, OR a `cat:<categoryId>` sentinel for a subcategory-less battery
+  // (NGAT Quant / Non-verbal) whose sets attach directly to the battery (null subcategory).
+  const catOnly = sub.startsWith('cat:') ? sub.slice(4) : null;
+  const matchSub = (s: any) => !sub || (catOnly ? (s.category_id === catOnly && !s.subcategory_id) : s.subcategory_id === sub);
   const rows = useMemo(() => inGrade
-    .filter(s => s.difficulty_key === diff && (!sub || s.subcategory_id === sub)), [inGrade, diff, sub]);
-  const activeSubName = sub ? (inGrade.find(s => s.subcategory_id === sub)?.subcategory) : null;
-  const activeCatName = sub ? (inGrade.find(s => s.subcategory_id === sub)?.category) : null;
+    .filter(s => s.difficulty_key === diff && matchSub(s)), [inGrade, diff, sub]); // eslint-disable-line
+  const catName = (id: string | null) => (tax?.categories ?? []).find((c: any) => c.id === id)?.name ?? null;
+  const activeSubName = catOnly ? catName(catOnly) : (sub ? (inGrade.find(s => s.subcategory_id === sub)?.subcategory) : null);
+  const activeCatName = catOnly ? catName(catOnly) : (sub ? (inGrade.find(s => s.subcategory_id === sub)?.category) : null);
 
   if (error) return <div><h2>Content</h2><ErrorBox e={error} /></div>;
 
@@ -225,8 +232,8 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
           taxonomy={tax}
           prefill={{
             gradeId: tax.grades?.find((g: any) => String(g.grade_number) === grade)?.id,
-            catId: sub ? tax.subcategories?.find((s: any) => s.id === sub)?.category_id : undefined,
-            subId: sub || undefined,
+            catId: catOnly ?? (sub ? tax.subcategories?.find((s: any) => s.id === sub)?.category_id : undefined),
+            subId: catOnly ? undefined : (sub || undefined),
             diffId: tax.difficulties?.find((d: any) => d.key === diff)?.id,
           }}
           onClose={() => setNewSet(false)}
@@ -235,17 +242,17 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
       )}
       {bulkSets && tax && sub && (() => {
         const gradeObj = tax.grades?.find((g: any) => String(g.grade_number) === grade);
-        const subObj = tax.subcategories?.find((s: any) => s.id === sub);
-        const catObj = tax.categories?.find((c: any) => c.id === subObj?.category_id);
         const diffObj = tax.difficulties?.find((d: any) => d.key === diff);
-        if (!gradeObj || !subObj || !catObj || !diffObj) return null;
+        const subObj = catOnly ? null : tax.subcategories?.find((s: any) => s.id === sub);
+        const catObj = catOnly ? tax.categories?.find((c: any) => c.id === catOnly) : tax.categories?.find((c: any) => c.id === subObj?.category_id);
+        if (!gradeObj || !diffObj || !catObj || (!catOnly && !subObj)) return null;
         return (
           <BulkSets
             ctx={{
-              gradeId: gradeObj.id, catId: catObj.id, subId: subObj.id, diffId: diffObj.id,
-              qType: slugKey(subObj.key) || 'verbal_analogy',
-              gradeNumber: gradeObj.grade_number, categoryName: catObj.name, subcategoryName: subObj.name,
-              difficultyLabel: diffObj.name, diffKey: diff, maxPerSet: maxQuestionsForSub(subObj),
+              gradeId: gradeObj.id, catId: catObj.id, subId: catOnly ? '' : subObj.id, diffId: diffObj.id,
+              qType: catOnly ? (catObj.key || 'verbal') : (slugKey(subObj.key) || 'verbal_analogy'),
+              gradeNumber: gradeObj.grade_number, categoryName: catObj.name, subcategoryName: catOnly ? 'All sets' : subObj.name,
+              difficultyLabel: diffObj.name, diffKey: diff, maxPerSet: catOnly ? PER_SET_CEILING : maxQuestionsForSub(subObj),
             }}
             existingSets={sets || []} taxonomy={tax}
             onClose={() => setBulkSets(false)} onDone={load}

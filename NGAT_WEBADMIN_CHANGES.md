@@ -218,3 +218,18 @@ The real fix for large figure sets: the browser now uploads image bytes **straig
 **Redeploy:** `apps/gateway` (Render) and `apps/admin` (Vercel). The bucket lockdown is already live.
 
 > First-run check: the browser `PUT`s cross-origin to `*.supabase.co`. Supabase Storage allows CORS for signed uploads, so this should work; if a `PUT` is CORS-blocked, tell me and I'll add a PUT-failure fallback to the server batch path.
+
+---
+
+## 13. NGAT Verbal subcategory renames + Quant/Non-verbal with NO subcategory (2026-10-01)
+
+**Verbal subcategory renames (live DB + migration `0054`):** Part A → **Picture Classification**, Part B → **Picture Analogies**, Part C → **Picture Pairs** (keys `part_a/b/c` unchanged, so content/import logic is unaffected). The `Verbal Battery Test` subcategory is unchanged.
+
+**Quant & Non-verbal: sets attach directly to the battery, no subcategory** (admin + student + teacher). Verbal and all of CCAT are unaffected.
+- **DB (live + migration `0057`):** their subcategories (`general`, `battery_test`) were set **inactive** — the taxonomy reads only active subcategories, so these batteries now expose none. (Used `UPDATE active=false`, not `DELETE`: a delete on `ccat.subcategories` hangs on this DB from an unindexed FK validation.)
+- **Gateway `admin-content-authoring.ts`:** `createSet` now allows a **null subcategory** for a practice set *only when the category has no active subcategories* (CCAT/Verbal still require one). Per-set cap for such battery-level sets = the app ceiling (100).
+- **Admin `Content.tsx`:** the category tree now shows subcategory-less batteries via a `cat:<id>` sentinel ("All sets"); set filtering, the New-set dialog, and Bulk-add all create/select with `subcategory_id = null`. `SetsView` (New set) hides the subcategory field and sends null when the battery has none. `BulkSets` sends null and scopes numbering to null-subcategory sets.
+- **Admin/teacher browse `TeacherContent.tsx`:** the subcategory tab row is hidden when a battery has a single/empty group → battery → sets directly.
+- **Student `PracticeScreen.tsx`:** a battery whose sets have no subcategory skips the category step and routes straight to the set list (`__sets__` sentinel + a redirect effect).
+
+No content exists for Quant/Non-verbal yet, so this was a clean structural change. **Redeploy `apps/gateway` (Render) + `apps/admin` and `apps/web` (Vercel).** Can't typecheck over the mount — run the builds before deploy.

@@ -187,3 +187,14 @@ Wired in two places, program- and mode-aware:
 - `apps/web/src/screens/PracticeScreen.tsx` — `NGAT_ICONS` override in `batteryMeta` for the Practice/Exam battery landings.
 
 CCAT is untouched; needs a web redeploy to show.
+
+---
+
+## 12. NGAT gate → plan-based (any non-free plan)
+
+Changed the NGAT access rule from a username allow-list to **plan-based**:
+- `apps/gateway/src/routes/catalog.ts` → `GET /v1/profile` now sets `ngat_enabled` by resolving the student's effective entitlement (`resolveEntitlement`): **true when the plan is non-free** (`tier !== 'free'`, i.e. Standard/Plus/Premium).
+- When payments is **disabled** (`PAYMENTS_ENABLED` off → the app is free-for-all), NGAT is open to everyone.
+- The `NGAT_ENABLED_USERNAMES` allow-list is **kept as a manual override** (grants NGAT to a listed account even on the free plan — e.g. a comp/test account). Default is still `user_d`; set `NGAT_ENABLED_USERNAMES=` (empty) to make it purely plan-based.
+
+No web change — the client still gates everything on `profile.ngat_enabled`; the store already snaps a user back to CCAT if the flag turns false (e.g. plan lapses). Gateway-only change → needs a Render redeploy.

@@ -95,7 +95,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
   // Grade 4 start at "Set 2" because Grade 3 already had "Set 1".)
   const inScope = (s: any) => exam
     ? (s.allowed_exam && String(s.grade_number) === String(ctx.gradeNumber) && s.category_id === ctx.catId)
-    : (String(s.grade_number) === String(ctx.gradeNumber) && s.subcategory_id === ctx.subId && s.difficulty_key === ctx.diffKey);
+    : (String(s.grade_number) === String(ctx.gradeNumber) && (ctx.subId ? s.subcategory_id === ctx.subId : !s.subcategory_id) && s.difficulty_key === ctx.diffKey);
 
   // Numbers already used by existing "Set N" names in THIS grade+subcategory+difficulty (retired sets free
   // their number). New sets start at the lowest free number.
@@ -180,7 +180,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
     if (c.img) prompt_blocks.push({ type: 'image', asset_id: c.img.asset_id, url: c.img.url, alt: c.img.alt ?? '' });
     if (!prompt_blocks.length) prompt_blocks.push({ type: 'text', value: '' });
     return {
-      category_id: ctx.catId, subcategory_id: ctx.subId, grade_id: ctx.gradeId, difficulty_id: ctx.diffId,
+      category_id: ctx.catId, subcategory_id: ctx.subId || null, grade_id: ctx.gradeId, difficulty_id: ctx.diffId,
       question_type: ctx.qType, prompt_blocks,
       option_blocks: filled.map(o => ({
         option_id: o.option_id,
@@ -223,7 +223,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
         setProgress(`Creating ${name} (${i + 1}/${chunks.length})…`);
         const r = await api.createSet(exam
           ? { name, grade_id: ctx.gradeId, category_id: ctx.catId, allowed_practice: false, allowed_exam: true, allowed_timers: ['timed'], question_version_ids: [], duration_minutes: Math.max(1, Math.min(180, Number(examDur) || 25)) }
-          : { name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
+          : { name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId || null, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
         await api.authorSet(r.set_version_id, chunks[i].map(cardToPayload));
         done.push({ name, id: r.set_version_id, count: chunks[i].length, full: chunks[i].length >= perSet });
       }

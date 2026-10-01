@@ -171,6 +171,20 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
     );
     if (rows.length === 0) throw Errors.notFound('Profile not found');
     const s = rows[0]!;
+    // NGAT workspace gate: open to any NON-FREE plan. When payments is OFF the whole app is free-for-all,
+    // so NGAT is open to everyone then. The NGAT_ENABLED_USERNAMES allow-list stays as a manual override
+    // (e.g. a free comp/test account). Entitlement is resolved from the guardian contact server-side.
+    let ngatEnabled = cfg.ngatEnabledUsernames.includes(String(s.username ?? '').toLowerCase());
+    if (!ngatEnabled) {
+      if (!cfg.paymentsEnabled) {
+        ngatEnabled = true;
+      } else {
+        try {
+          const ent = await resolveEntitlement(db, req.student!.studentId);
+          ngatEnabled = ent.tier !== 'free';
+        } catch { ngatEnabled = false; }
+      }
+    }
     return {
       id: s.id,
       display_name: s.display_name,
@@ -183,8 +197,8 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
       is_preview: s.is_preview === true,
       // Whether a teacher is assigned to this student (drives the Assignment panel/nav gating in web).
       has_teacher: s.has_teacher === true,
-      // NGAT workspace gate (seam for a future entitlement/paywall): true only for allow-listed usernames.
-      ngat_enabled: cfg.ngatEnabledUsernames.includes(String(s.username ?? '').toLowerCase()),
+      // NGAT workspace gate — true for any paid (non-free) plan, or an allow-listed override. See above.
+      ngat_enabled: ngatEnabled,
     };
   });
 

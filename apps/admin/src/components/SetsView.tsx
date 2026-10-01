@@ -33,7 +33,7 @@ export function CreateSet({ mode, taxonomy, onClose, onDone, prefill }: {
     if (!name.trim()) { setErr('Name required'); return; }
     setBusy(true); setErr('');
     try {
-      const r = await api.createSet({ name: name.trim(), grade_id: gradeId, category_id: catId, subcategory_id: subId, difficulty_id: diffId, allowed_practice: mode === 'practice', allowed_exam: mode === 'exam', allowed_timers: mode === 'exam' ? ['timed'] : ['untimed'], question_version_ids: [] });
+      const r = await api.createSet({ name: name.trim(), grade_id: gradeId, category_id: catId, subcategory_id: subId || null, difficulty_id: diffId, allowed_practice: mode === 'practice', allowed_exam: mode === 'exam', allowed_timers: mode === 'exam' ? ['timed'] : ['untimed'], question_version_ids: [] });
       toast('Set created');
       onDone(r.set_version_id, { blank: bulk ? false : startBlank, bulk });
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -46,7 +46,7 @@ export function CreateSet({ mode, taxonomy, onClose, onDone, prefill }: {
       <div className="editor"><div className="grid2">
         <div><label>Grade</label><select value={gradeId} onChange={e => setGradeId(e.target.value)}>{grades.map((g: any) => <option key={g.id} value={g.id}>Grade {g.grade_number}</option>)}</select></div>
         <div><label>Category</label><select value={catId} onChange={e => setCatId(e.target.value)}>{cats.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-        <div><label>Subcategory</label><select value={subId} onChange={e => setSubId(e.target.value)}>{subFor.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+        {subFor.length > 0 && <div><label>Subcategory</label><select value={subId} onChange={e => setSubId(e.target.value)}>{subFor.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>}
         <div><label>Difficulty</label><select value={diffId} onChange={e => setDiffId(e.target.value)}>{diffs.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
       </div></div>
 
