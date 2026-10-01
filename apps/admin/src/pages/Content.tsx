@@ -57,7 +57,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
   const setDefault = (n: number) => { const v = Math.min(PER_SET_CEILING, Math.max(1, Math.round(n || 1))); setDefPerSet(v); saveDefaultPerSet(v); };
 
   const load = () => { setError(null); api.sets(program).then(r => setSets(r.items)).catch(setError); };
-  useEffect(() => { setSets(null); setTax(null); setGrade(''); setSub(''); load(); api.taxonomy(program).then(setTax).catch(() => {}); }, [program]); // eslint-disable-line
+  useEffect(() => { setSub(''); load(); api.taxonomy(program).then(setTax).catch(() => {}); }, [program]); // eslint-disable-line
   useEffect(() => {
     if (grade || !tax?.grades?.length || !sets) return;
     const byGrade = new Map<string, number>(); const byDiff = new Map<string, Map<string, number>>();
@@ -133,7 +133,8 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
             </span>
           )}
         </div>
-        <div className="row" style={{ margin: 0, gap: 8 }}>
+        <div className="row" style={{ margin: 0, gap: 8, alignItems: 'center' }}>
+          <ProgramPills />
           {!isExam && can('content.create') && <button className="btn ghost" onClick={() => { if (!sub) { toast('Pick a subcategory on the left first'); return; } setBulkSets(true); }}>⤓ Bulk add sets</button>}
           {can('content.create') && <button className="btn" onClick={() => setNewSet(true)}>+ New {isExam ? 'exam set' : 'set'}</button>}
         </div>
@@ -141,7 +142,6 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
 
       <div className="contentnav">
         <ContentTabs active={isExam ? 'exam' : 'practice'} />
-        <ProgramPills style={{ marginLeft: 8 }} />
         {tax && (
           <label className="gradesel">GRADE
             <select value={grade} onChange={e => { setGrade(e.target.value); setSub(''); }}>

@@ -42,7 +42,7 @@ export function ExamPapers() {
   const catIdFor = (key: string) => (tax?.categories ?? []).find((c: any) => c.key === key)?.id as string | undefined;
 
   const loadSets = () => api.sets(program).then(r => setSets(r.items)).catch(setError);
-  useEffect(() => { setSets(null); setTax(null); setGrade(''); setBattery('verbal'); loadSets(); api.taxonomy(program).then(setTax).catch(() => {}); }, [program]); // eslint-disable-line
+  useEffect(() => { setBattery('verbal'); loadSets(); api.taxonomy(program).then(setTax).catch(() => {}); }, [program]); // eslint-disable-line
   useEffect(() => { if (!grade && tax?.grades?.length) setGrade(String(tax.grades[0].grade_number)); }, [tax]); // eslint-disable-line
 
   // Exam sets in this grade + selected battery.
@@ -67,7 +67,8 @@ export function ExamPapers() {
           <h2 style={{ fontSize: 22 }}>Content</h2>
           <p className="lead" style={{ marginBottom: 0 }}>Exam papers are single-battery timed sets. Pick a battery, add sets, then publish.</p>
         </div>
-        <div className="row" style={{ margin: 0, gap: 8 }}>
+        <div className="row" style={{ margin: 0, gap: 8, alignItems: 'center' }}>
+          <ProgramPills />
           {manage && <button className="btn ghost" onClick={() => { if (!catIdFor(battery)) { toast('Pick a battery first'); return; } setBulk(true); }}>⤓ Bulk add sets</button>}
           {manage && <button className="btn" onClick={() => setCreating(true)}>+ New exam set</button>}
         </div>
@@ -75,7 +76,6 @@ export function ExamPapers() {
 
       <div className="contentnav">
         <ContentTabs active="exam" />
-        <ProgramPills style={{ marginLeft: 8 }} />
         {tax && (
           <label className="gradesel">GRADE
             <select value={grade} onChange={e => setGrade(e.target.value)}>

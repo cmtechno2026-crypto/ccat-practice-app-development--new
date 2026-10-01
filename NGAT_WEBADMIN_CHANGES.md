@@ -58,8 +58,10 @@ Optional `program?: 'ccat' | 'ngat'` added to: `taxonomy`, `sets`, `scaffoldExam
 ### 3.4 Admin SPA (`apps/admin/src/`)
 - **`lib/auth.tsx`** — new `program` / `setProgram` in the auth context, persisted to `localStorage['ccat_admin_program']` (fallback `ccat`). **Separate from** the site state (`activeSite` / `ccat_admin_site`).
 - **`components/ProgramPills.tsx` (NEW)** — the `[ CCAT · NGAT ]` segmented pill; reads/sets the program state. Visually mirrors the site pill but is clearly the program axis.
-- **`pages/Content.tsx`** — `ProgramPills` in the content nav; `api.sets(program)` + `api.taxonomy(program)`; refetches and resets grade/subcategory on program switch.
-- **`pages/ExamPapers.tsx`** — `ProgramPills` in the content nav; `api.sets(program)` + `api.taxonomy(program)`; resets grade + battery on switch.
+- **`pages/Content.tsx`** — `ProgramPills` in the **toolbar row, left of "Bulk add sets"**; `api.sets(program)` + `api.taxonomy(program)`. On switch it refetches and resets only the subcategory — it does **not** null `tax`/`sets` or reset `grade` (grades are shared across programs), which avoids the blank-flash and keeps the pill from moving.
+- **`pages/ExamPapers.tsx`** — same: `ProgramPills` in the toolbar row (left of "Bulk add sets"); on switch refetches + resets battery to `verbal`, keeps grade, no null-flash.
+
+> **Fix (2026-10-01, post-first-deploy):** the pill was originally in the content-nav row and the switch nulled `tax`/`sets`/`grade`. That caused the pill to jump (the grade selector beside it vanished during reload) and a brief blank (sets resolved while taxonomy was still null → empty tree). Moved the pill to the always-present toolbar and made the switch non-blanking. **Redeploy `apps/admin` on Vercel to pick this up.**
 - **`pages/ImportQuestions.tsx`** — `ProgramPills` in the toolbar; `api.importScopedQuestions(rows, program)`.
 - **`pages/TeacherContent.tsx`** — uses the program state; `api.teacherCatalog(gradeId, program)`, refetches + resets browse position on switch. In-page `ProgramPills` shown for **non-teacher admins** (teacher accounts use the top-bar pill instead).
 - **`components/Layout.tsx`** — renders `ProgramPills` in the top bar **only for teacher accounts** (`me.is_teacher`) on program-scoped routes (`/teacher-practice`, `/teacher-exam`, `/students`). No program pill added to the regular-admin top bar (decision #1).
