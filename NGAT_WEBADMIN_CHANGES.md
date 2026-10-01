@@ -148,5 +148,17 @@ The data model already supported image stems, image options, and **multiple** co
 
 **How to author an NGAT picture set in bulk:** Content → NGAT → Verbal → *Bulk add sets* → "Download sample", fill in the blocks (one stimulus image for Part B; `Answer: 1 and 2` for Part C), zip the text file with the option images (filenames matching the `-Image:` lines), upload, preview, create, publish.
 
-### Downstream dependency (not yet done — needs your call)
-Part C questions carry **two** correct answers. The **student app (`apps/web`)** must render and score a "pick two" question (multi-select) for that to work for students — that is a separate change in the already-shipped student NGAT screens and was **not** part of this bulk-authoring task. Authoring and admin preview handle two correct answers now; confirm if you want the student-side multi-select built next.
+### Downstream dependency — DONE (see §9)
+Part C's two-answer rendering/scoring in the student app has now been built and fixed.
+
+---
+
+## 9. Part C student-app fixes (2026-10-01)
+
+Three issues surfaced testing an authored NGAT Part C set; fixed at the real root cause (mostly student app, not the bulk tool):
+
+1. **Could select more than two.** The gateway sent only `multi: true`, not how many to pick, so the client couldn't cap. Fixed: `apps/gateway/src/routes/sessions.ts` now also returns `multi_count` (the count of correct options — count only, never which); `packages/api-client/src/types.ts` gains `multi_count?: number`; `apps/web/src/screens/SessionScreen.tsx` caps selection at `multi_count` (can't pick a 3rd), shows "Pick 2 answers, then Check", and enables Check only when exactly that many are chosen.
+2. **6th option had no letter.** `SessionScreen.tsx` had `KEYS = ['A','B','C','D','E']` — the 6th fell off. Fixed to include `F`.
+3. **Black image tiles vs the clean paper look.** The asset uploader stores image bytes **unchanged** (no format conversion/flatten), so the black backgrounds are **baked into the source PNGs** that were uploaded — not added by the tool. Can't be stripped in code. Mitigations: question/option figures now render on a clean **white, padded tile** (`theme.css` `.q-figure` / `.opt-figure`) so correctly-sourced (white/transparent) images look like the paper; and the bulk format/sample (`BulkImport.tsx`) now tells authors to use clean white/transparent images (a black-background file stays black). **Action for you:** re-upload clean versions of the affected option images (kiwi, needle, thread, ant in that set) to remove the black.
+
+**Redeploy for §9:** `apps/web` and `apps/gateway` (Render) — the multi-select cap needs both. `apps/admin` redeploy picks up the updated sample text.

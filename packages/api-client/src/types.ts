@@ -56,6 +56,7 @@ export interface BatteryState { category_key: string; started_at: string; deadli
 export interface SessionQuestion {
   question_version_id: string; logical_question_id: string; question_type: string;
   multi?: boolean; // "pick all correct" — number of correct options > 1 (never which)
+  multi_count?: number; // how many correct options to pick (count only, never which)
   category_key?: string; category_name?: string; // battery grouping for exam mode
   prompt_blocks: unknown[]; option_blocks: { option_id: string; content: unknown[]; image_url?: string | null }[];
   // Ready-to-use figure URL for the question and for each option (null when none). Absolute for cloud

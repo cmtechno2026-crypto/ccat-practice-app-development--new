@@ -623,10 +623,10 @@ p { line-height: 1.5; }
 /* ============================================================================
    Content figures — question & option images (Practice / Exam / bookmark review)
    ========================================================================== */
-.q-figure { display: block; max-width: 100%; max-height: 320px; object-fit: contain; margin: 6px auto 6px; border-radius: var(--radius-md); background: var(--bg, #f7f8fb); }
+.q-figure { display: block; max-width: 100%; max-height: 320px; object-fit: contain; margin: 6px auto 6px; border-radius: var(--radius-md); background: #fff; padding: 8px; }
 .option .opt-body { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; flex: 1; }
 .option .opt-text { min-width: 0; overflow-wrap: anywhere; }
-.option .opt-figure { display: block; max-width: 100%; max-height: 150px; object-fit: contain; border-radius: 10px; background: var(--bg, #f7f8fb); }
+.option .opt-figure { display: block; max-width: 100%; max-height: 150px; object-fit: contain; border-radius: 10px; background: #fff; padding: 8px; }
 .option:has(.opt-figure) { align-items: flex-start; }
 .option:has(.opt-figure) .key { margin-top: 2px; }
 

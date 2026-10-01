@@ -301,6 +301,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     const qs = await db.query(
       `select svq.position, qv.id as question_version_id, qv.logical_question_id, qv.question_type, qv.prompt_blocks, qv.option_blocks,
               (coalesce(array_length(qv.correct_option_ids, 1), 1) > 1) as multi,
+              coalesce(array_length(qv.correct_option_ids, 1), 1) as multi_count,
               qcat.key as category_key, qcat.name as category_name,
               sa.selected_option_ids, sa.answer_version
          from ccat.set_version_questions svq
@@ -330,6 +331,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
         logical_question_id: r.logical_question_id,
         question_type: r.question_type,
         multi: r.multi === true, // "pick all correct" — count only, never which options
+        multi_count: Number(r.multi_count) || 1, // how many to pick (count only, never which)
         category_key: r.category_key, // battery grouping for exam (Verbal/Non-verbal/Quantitative)
         category_name: r.category_name,
         prompt_blocks: r.prompt_blocks,

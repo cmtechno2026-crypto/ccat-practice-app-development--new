@@ -46,6 +46,10 @@ export const FORMAT_TEXT = `# ==================================================
 # - Images are OPTIONAL. Text-only files need no zip.
 # - Image files: png / jpg / jpeg / webp. Reference by filename; put the actual
 #   files in a .ZIP with this text file (at the zip root or in images/).
+# - Use CLEAN images like the paper: white or transparent background, no black
+#   backdrop. The image is stored UNCHANGED, so a black-background file stays black.
+# - A 'which two go together' question must give exactly TWO answers; the app then
+#   lets the child pick exactly two.
 # - Lines starting with '#' are comments and are ignored.
 #
 # BLOCK TEMPLATE:

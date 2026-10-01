@@ -7,7 +7,7 @@ import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AppBar, Loader, ErrorNote, Card, Figure } from '../components/ui';
 
-const KEYS = ['A', 'B', 'C', 'D', 'E'];
+const KEYS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 // Per-question PRACTICE feedback state (exam leaves this empty and stays silent).
 interface PQ {
@@ -170,7 +170,13 @@ export function SessionScreen() {
   const toggleMultiPick = (oid: string) => {
     if (!q) return; const qid = q.question_version_id;
     if (pq[qid]?.locked) return;
-    setMultiPicks((m) => { const cur = m[qid] ?? []; return { ...m, [qid]: cur.includes(oid) ? cur.filter((x) => x !== oid) : [...cur, oid] }; });
+    const need = q.multi_count ?? 2; // how many to pick (e.g. "which two go together" -> 2)
+    setMultiPicks((m) => {
+      const cur = m[qid] ?? [];
+      if (cur.includes(oid)) return { ...m, [qid]: cur.filter((x) => x !== oid) };
+      if (cur.length >= need) return m; // cap: cannot select more than the required number
+      return { ...m, [qid]: [...cur, oid] };
+    });
   };
 
   // ---- EXAM: silent select + versioned autosave (no feedback) ----
@@ -234,6 +240,7 @@ export function SessionScreen() {
   const shownRemaining = isExamMode && examBattery ? batRemaining(examBattery) : remaining;
   const timerColor = shownRemaining != null && shownRemaining < 60 ? 'var(--coral)' : (shownRemaining != null && shownRemaining < 180 ? 'var(--amber)' : 'var(--green)');
   const isMulti = !isExam && q.multi === true;
+  const requiredCount = isMulti ? (q.multi_count ?? 2) : 1;
   const myMulti = multiPicks[q.question_version_id] ?? [];
   const subLine = [titleCase(sess.subcategory), sess.set_name].filter(Boolean).join(' · ');
 
@@ -292,7 +299,7 @@ export function SessionScreen() {
           {/* Question TEXT first, then the figure below it (gateway image_url, or an image block fallback). */}
           {(() => { const t = blocksToText(q.prompt_blocks); return t ? <h2 style={{ margin: '8px 0 4px' }}>{t}</h2> : null; })()}
           <Figure url={q.image_url} blocks={q.prompt_blocks} kind="question" />
-          {isMulti && <div className="muted">✔ Pick all correct answers, then Check.</div>}
+          {isMulti && <div className="muted">✔ Pick {requiredCount} answers, then Check.</div>}
         </div>
 
         {!isExam && p?.hint && hintOpen[q.question_version_id] && (
@@ -340,7 +347,7 @@ export function SessionScreen() {
         </div>
 
         {isMulti && !p?.locked && (
-          <button className="btn" disabled={myMulti.length === 0} onClick={() => attempt(myMulti)}>Check answer</button>
+          <button className="btn" disabled={myMulti.length !== requiredCount} onClick={() => attempt(myMulti)}>Check answer</button>
         )}
 
         {/* PRACTICE feedback panel. The "reveal" case (locked & wrong) is the explanation panel — show it
