@@ -122,6 +122,18 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     }
 
     const checksum = createHash('sha256').update(bytes).digest('hex');
+    // GLOBAL DEDUP (#1): reuse an identical content image if one is already stored (skip upload + insert).
+    // Scoped to content/ so avatar art never dedupes into content figures.
+    if (!isAvatar) {
+      const dup = await db.query(
+        `select id, public_url from ccat.content_assets
+          where checksum_sha256 = $1 and storage_key like 'content/%' and public_url is not null
+          order by created_at asc limit 1`, [checksum]);
+      if (dup.rows[0]) {
+        await audit(db, req, 'content.asset.reused', 'content_asset', dup.rows[0].id as string, `dedup ${checksum.slice(0, 12)}`);
+        return { id: dup.rows[0].id as string, url: dup.rows[0].public_url as string };
+      }
+    }
     const ext = b.mime_type === 'image/png' ? 'png' : (b.mime_type.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '');
     const key = `${isAvatar ? 'avatars' : 'content'}/${randomUUID()}.${ext}`;
 
@@ -189,8 +201,23 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     for (const p of preps) if (!uniqueByChecksum.has(p.checksum)) uniqueByChecksum.set(p.checksum, p);
     const uniqueList = [...uniqueByChecksum.values()];
 
+    // GLOBAL DEDUP (#1): reuse any of these checksums already stored as content assets; upload only the rest.
+    const existingByChecksum = new Map<string, { id: string; url: string }>();
+    {
+      const checks = [...uniqueByChecksum.keys()];
+      if (checks.length) {
+        const ex = await db.query(
+          `select distinct on (checksum_sha256) checksum_sha256, id, public_url
+             from ccat.content_assets
+            where checksum_sha256 = any($1::text[]) and storage_key like 'content/%' and public_url is not null
+            order by checksum_sha256, created_at asc`, [checks]);
+        for (const r of ex.rows) existingByChecksum.set(r.checksum_sha256 as string, { id: r.id as string, url: r.public_url as string });
+      }
+    }
+    const toUpload = uniqueList.filter((p) => !existingByChecksum.has(p.checksum));
+
     const failures: string[] = [];
-    await mapPool(uniqueList, STORAGE_UPLOAD_CONCURRENCY, async (p) => {
+    await mapPool(toUpload, STORAGE_UPLOAD_CONCURRENCY, async (p) => {
       try { await storage.put(p.key, p.bytes, p.mime); }
       catch (e) { failures.push(`${p.label}: ${(e as Error).message}`); }
     });
@@ -198,10 +225,10 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
       throw new AppError(502, 'STORAGE_UPLOAD_FAILED',
         `${failures.length} image(s) failed to store (driver "${storage.driver}"): ${failures.slice(0, 10).join('; ')}${failures.length > 10 ? ` …and ${failures.length - 10} more` : ''}`);
 
-    const assetByChecksum = new Map<string, { id: string; url: string }>();
-    await withTransaction(db, async (c) => {
+    const assetByChecksum = new Map<string, { id: string; url: string }>(existingByChecksum);
+    if (toUpload.length) await withTransaction(db, async (c) => {
       const params: unknown[] = [];
-      const rowsSql = uniqueList.map((p, i) => {
+      const rowsSql = toUpload.map((p, i) => {
         const o = i * 8;
         params.push(p.key, p.mime, p.bytes.length, p.checksum, p.width, p.height, p.alt, req.admin!.adminId);
         return `($${o + 1},$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6},$${o + 7},$${o + 8})`;
@@ -212,7 +239,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
       const idByKey = new Map<string, string>();
       for (const r of ins.rows) idByKey.set(r.storage_key as string, r.id as string);
       const ids: string[] = [], urls: string[] = [];
-      for (const p of uniqueList) {
+      for (const p of toUpload) {
         const id = idByKey.get(p.key)!;
         const url = storage.publicUrl(p.key) ?? `/v1/assets/${id}`;
         assetByChecksum.set(p.checksum, { id, url });
@@ -229,6 +256,76 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
       `${assets.length} images (${uniqueList.length} unique), ${elapsedMs}ms`);
     req.log.info({ count: assets.length, unique: uniqueList.length, elapsed_ms: elapsedMs }, 'bulk asset batch imported');
     return { assets, count: assets.length, unique: uniqueList.length, elapsed_ms: elapsedMs };
+  });
+
+  // ORPHAN CLEANUP (#3): remove content figures no longer referenced by any question_version block.
+  // Dry-run by default; pass {"apply":true} to actually delete. Scoped to content/ keys past a grace window,
+  // and EXCLUDES anything referenced by question blocks (prompt/option/explanation), book covers, announcement
+  // images, or avatar stages — so in-use art is never deleted. Rows are deleted first (FK constraints protect
+  // any in-use asset), then their storage objects are removed best-effort.
+  app.post('/v1/admin/content/assets/cleanup-orphans', guard, async (req) => {
+    requirePermission(req, 'content.create');
+    const body = (req.body ?? {}) as { apply?: boolean; grace_hours?: number; limit?: number };
+    const apply = body.apply === true;
+    const graceHours = Math.min(Math.max(Number(body.grace_hours ?? 1), 0), 720);
+    const limit = Math.min(Math.max(Number(body.limit ?? 300), 1), 5000);
+
+    const { rows } = await db.query(
+      `with refs as (
+         select (blk->>'asset_id') as asset_id
+           from ccat.question_versions qv, lateral jsonb_array_elements(coalesce(qv.prompt_blocks,'[]'::jsonb)) blk
+          where blk ? 'asset_id'
+         union
+         select (blk->>'asset_id')
+           from ccat.question_versions qv, lateral jsonb_array_elements(coalesce(qv.explanation_blocks,'[]'::jsonb)) blk
+          where blk ? 'asset_id'
+         union
+         select (cb->>'asset_id')
+           from ccat.question_versions qv,
+                lateral jsonb_array_elements(coalesce(qv.option_blocks,'[]'::jsonb)) opt,
+                lateral jsonb_array_elements(coalesce(opt->'content','[]'::jsonb)) cb
+          where cb ? 'asset_id'
+       )
+       select a.id, a.storage_key, coalesce(a.byte_size,0) as byte_size
+         from ccat.content_assets a
+        where a.storage_key like 'content/%'
+          and a.created_at < now() - make_interval(hours => $1::int)
+          and a.id::text not in (select asset_id from refs where asset_id is not null)
+          and not exists (select 1 from ccat.books bk where bk.cover_asset_id = a.id)
+          and not exists (select 1 from ccat.announcements an where an.image_asset_id = a.id)
+          and not exists (select 1 from ccat.avatar_stages av where av.asset_id = a.id)
+        order by a.created_at asc
+        limit $2`, [graceHours, limit]);
+    const totalBytes = rows.reduce((n: number, r: any) => n + Number(r.byte_size || 0), 0);
+
+    if (!apply) {
+      return { dry_run: true, orphans: rows.length, bytes: totalBytes,
+        note: rows.length ? 'pass {"apply":true} to delete these' : 'nothing to clean',
+        sample: rows.slice(0, 20).map((r: any) => ({ id: r.id, storage_key: r.storage_key })) };
+    }
+
+    // Delete rows first — FK constraints block anything still referenced; fall back to per-row so one
+    // protected straggler cannot abort the whole batch.
+    let rowsDeleted: { id: string; storage_key: string }[] = [];
+    try {
+      const del = await db.query(
+        'delete from ccat.content_assets where id = any($1::uuid[]) returning id, storage_key',
+        [rows.map((r: any) => r.id)]);
+      rowsDeleted = del.rows as any;
+    } catch {
+      for (const r of rows as any[]) {
+        try { const d = await db.query('delete from ccat.content_assets where id=$1 returning id, storage_key', [r.id]); if (d.rows[0]) rowsDeleted.push(d.rows[0] as any); }
+        catch { /* still referenced — leave it */ }
+      }
+    }
+    const failures: string[] = [];
+    await mapPool(rowsDeleted, STORAGE_UPLOAD_CONCURRENCY, async (r) => {
+      try { await storage.delete(r.storage_key); } catch (e) { failures.push(`${r.storage_key}: ${(e as Error).message}`); }
+    });
+    if (rowsDeleted.length)
+      await audit(db, req, 'content.asset.cleanup', 'content_asset', rowsDeleted[0]!.id,
+        `deleted ${rowsDeleted.length}/${rows.length} orphan asset(s), ~${totalBytes} bytes${failures.length ? `, ${failures.length} storage-delete failures` : ''}`);
+    return { dry_run: false, deleted: rowsDeleted.length, attempted: rows.length, bytes_freed_est: totalBytes, storage_delete_failures: failures.slice(0, 20) };
   });
 
   // PUBLIC asset serve (no auth — <img> tags can't send a bearer token). Redirects to the absolute

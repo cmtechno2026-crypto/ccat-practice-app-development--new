@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
@@ -13,6 +13,8 @@ export interface StorageService {
   readonly driver: string;
   put(key: string, bytes: Buffer, contentType: string): Promise<void>;
   get(key: string): Promise<FetchedObject | null>;
+  /** Remove an object. Must resolve (no throw) when the object is already absent. */
+  delete(key: string): Promise<void>;
   /** Absolute, client-usable URL for the object (e.g. a public CDN URL), or null when the object must be
    *  served back through the Gateway's own asset route (the local-disk driver). */
   publicUrl(key: string): string | null;
@@ -42,6 +44,10 @@ class LocalDiskStorage implements StorageService {
     if (!existsSync(p)) return null;
     const bytes = await readFile(p);
     return { bytes, contentType: this.meta.get(key) ?? 'application/octet-stream' };
+  }
+  async delete(key: string): Promise<void> {
+    try { await unlink(this.pathFor(key)); } catch (e: any) { if (e?.code !== 'ENOENT') throw e; }
+    this.meta.delete(key);
   }
   publicUrl(): string | null { return null; } // served via the Gateway asset route
   urlFor(assetId: string): string { return `/v1/assets/${assetId}`; }
@@ -80,6 +86,17 @@ class SupabaseStorage implements StorageService {
     const buf = Buffer.from(await res.arrayBuffer());
     return { bytes: buf, contentType: res.headers.get('content-type') ?? 'application/octet-stream' };
   }
+  async delete(key: string): Promise<void> {
+    const res = await fetch(this.objectUrl(key), {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${this.serviceKey}`, apikey: this.serviceKey },
+    });
+    // 404/400 = already gone → treat as success; other errors surface.
+    if (!res.ok && res.status !== 404 && res.status !== 400) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Supabase Storage delete failed (${res.status}): ${detail.slice(0, 300)}`);
+    }
+  }
   publicUrl(key: string): string {
     return `${this.baseUrl}/storage/v1/object/public/${this.bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
   }
@@ -94,6 +111,7 @@ class UnconfiguredCloudStorage implements StorageService {
   }
   async put(): Promise<void> { this.fail(); }
   async get(): Promise<FetchedObject | null> { this.fail(); }
+  async delete(): Promise<void> { this.fail(); }
   publicUrl(): string | null { return null; }
   urlFor(assetId: string): string { return `/v1/assets/${assetId}`; }
 }

@@ -111,6 +111,32 @@ function bytesToB64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+// #2 CLIENT COMPRESSION: downscale oversized figures and re-encode to WebP before upload. Shrinks what gets
+// stored (non-verbal line art compresses hard) and the upload payload itself. Fully defensive — if the browser
+// can't decode/encode, or WebP isn't actually smaller, the original bytes/type are kept unchanged.
+const COMPRESS_MAX_DIM = 900;        // longest side cap (px) — ample for CCAT/NGAT figures
+const COMPRESS_WEBP_QUALITY = 0.85;
+
+async function normalizeImage(bytes: Uint8Array, type: string): Promise<{ bytes: Uint8Array; type: string }> {
+  try {
+    if (typeof document === 'undefined' || typeof createImageBitmap !== 'function') return { bytes, type };
+    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type }));
+    const scale = Math.min(1, COMPRESS_MAX_DIM / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { bmp.close?.(); return { bytes, type }; }
+    ctx.drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    const out: Blob | null = await new Promise((res) => canvas.toBlob(res, 'image/webp', COMPRESS_WEBP_QUALITY));
+    if (!out) return { bytes, type };
+    const outBytes = new Uint8Array(await out.arrayBuffer());
+    return outBytes.length < bytes.length ? { bytes: outBytes, type: 'image/webp' } : { bytes, type };
+  } catch { return { bytes, type }; }
+}
+
 // Per-request upload chunk caps. A single huge request (all figures' base64 in one POST) is rejected as 413
 // by the JSON body limit / edge proxy, so the referenced images are uploaded in bounded CHUNKS. Each chunk is
 // still stored server-side with bounded concurrency + one multi-row insert; results are stitched back in order.
@@ -131,7 +157,12 @@ export async function uploadImages(
   const out = new Map<string, ImgRef>();
   if (!keys.length) return out;
 
-  const items = keys.map(k => { const img = images.get(k)!; return { mime_type: img.type, data_base64: bytesToB64(img.bytes), alt_text: img.name }; });
+  const items: { mime_type: string; data_base64: string; alt_text?: string }[] = [];
+  for (const k of keys) {
+    const img = images.get(k)!;
+    const norm = await normalizeImage(img.bytes, img.type);
+    items.push({ mime_type: norm.type, data_base64: bytesToB64(norm.bytes), alt_text: img.name });
+  }
 
   // Split into chunks that stay under both the byte and count caps (a single image over the byte cap still
   // rides alone in its own chunk — it is already ≤ 3 MB by the per-image limit, well under the request cap).
