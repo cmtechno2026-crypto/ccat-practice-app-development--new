@@ -97,6 +97,12 @@ export const api = {
     if (opts.registered_to) p.set('registered_to', opts.registered_to);
     return req<{ matched: number; items: any[]; next_cursor: string | null }>('GET', `/v1/admin/students?${p.toString()}`);
   },
+  studentsLite: (opts: { q?: string; limit?: number } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.q) p.set('q', opts.q);
+    p.set('limit', String(opts.limit ?? 1000));
+    return req<{ items: any[] }>('GET', `/v1/admin/students/lite?${p.toString()}`);
+  },
   // ---- Teacher Hub (multi-site) — client for the gateway teacher endpoints (admin-teacher.ts +
   // admin-students.ts teacher block). Plain authenticated calls; no site header needed. ----
   teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number; pending_requests: number; ready_to_book: number; pending_leave: number; active_links: number; expired_links: number; requests_this_week: number; booked_this_week: number; new_teachers_week: number }>('GET', '/v1/admin/teacher/summary'),

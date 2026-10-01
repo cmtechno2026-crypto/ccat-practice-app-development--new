@@ -135,14 +135,14 @@ function AddStudentsPanel({ teacher, onClose, onSaved, toast }: { teacher: { id:
 
   // Full student roster (loaded once) so assigned students always resolve + pin to the top,
   // even when they fall outside the current search. Student directory is small; one page covers it.
-  const listAsync = useAsync(() => api.students({ limit: 500 }), []);
+  const listAsync = useAsync(() => api.studentsLite({ limit: 2000 }), []);
   const all: any[] = listAsync.data?.items ?? [];
 
   const toggle = (id: string) => setAssigned((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const matches = (s: any) => {
     const t = q.trim().toLowerCase(); if (!t) return true;
-    return [s.display_name, s.username, s.guardian_name, s.guardian_email].filter(Boolean).some((v: string) => String(v).toLowerCase().includes(t));
+    return [s.display_name, s.username].filter(Boolean).some((v: string) => String(v).toLowerCase().includes(t));
   };
   const byName = (a: any, b: any) => String(a.display_name || '').localeCompare(String(b.display_name || ''));
   const assignedStudents = all.filter((s) => assigned.has(s.id)).filter(matches).sort(byName);
@@ -177,7 +177,7 @@ function AddStudentsPanel({ teacher, onClose, onSaved, toast }: { teacher: { id:
           <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onClose}>✕ Close</button>
         </div>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)' }}>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students by name, username, or guardian…" style={{ width: '100%' }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students by name or username…" style={{ width: '100%' }} />
         </div>
         <div style={{ flex: 1, overflow: 'auto' }}>
           {loading ? <Loading /> : listAsync.error ? <ErrorBox e={listAsync.error} /> : (

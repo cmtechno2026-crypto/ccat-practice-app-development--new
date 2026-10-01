@@ -278,6 +278,32 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     };
   });
 
+  // GET /v1/admin/students/lite — minimal student list for pickers (teacher "Add students" drawer).
+  // No lateral joins, no tier computation — just id/name/username/grade so it returns fast even for the
+  // whole directory. Same teacher-scope + preview/purged filtering as the full list.
+  app.get('/v1/admin/students/lite', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'student.directory');
+    const q = req.query as Record<string, string | undefined>;
+    const search = q.q && q.q.trim() ? `%${q.q.trim()}%` : null;
+    const limit = Math.min(Math.max(Number(q.limit ?? 1000), 1), 2000);
+    const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
+    const { rows } = await db.query(
+      `select s.id, s.display_name, s.username_normalized::text as username, g.grade_number
+         from ccat.students s
+         join ccat.grades g on g.id = s.grade_id
+         left join ccat.student_guardians sg on sg.student_id = s.id and sg.is_primary = true
+         left join ccat.guardian_contacts gc on gc.id = sg.guardian_id
+        where s.is_preview = false and s.status <> 'purged'
+          and ($1::text is null or s.username_normalized::text ilike $1
+               or s.display_name ilike $1 or gc.email ilike $1 or coalesce(gc.phone,'') ilike $1)
+          and ($3::uuid is null or s.id in (select ts.student_id from ccat.teacher_students ts where ts.teacher_admin_id = $3::uuid))
+        order by s.display_name asc
+        limit $2`,
+      [search, limit, teacherId],
+    );
+    return { items: rows.map((r) => ({ id: r.id, display_name: r.display_name, username: r.username, grade_number: r.grade_number })) };
+  });
+
   // GET /v1/admin/students/stats — directory KPI cards + filter-chip counts (§24). One cheap
   // aggregate; the directory shows these without paging the whole table.
   app.get('/v1/admin/students/stats', { preHandler: [authenticateAdmin] }, async (req) => {
