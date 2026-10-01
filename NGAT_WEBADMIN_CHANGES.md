@@ -162,3 +162,13 @@ Three issues surfaced testing an authored NGAT Part C set; fixed at the real roo
 3. **Black image tiles vs the clean paper look.** The asset uploader stores image bytes **unchanged** (no format conversion/flatten), so the black backgrounds are **baked into the source PNGs** that were uploaded — not added by the tool. Can't be stripped in code. Mitigations: question/option figures now render on a clean **white, padded tile** (`theme.css` `.q-figure` / `.opt-figure`) so correctly-sourced (white/transparent) images look like the paper; and the bulk format/sample (`BulkImport.tsx`) now tells authors to use clean white/transparent images (a black-background file stays black). **Action for you:** re-upload clean versions of the affected option images (kiwi, needle, thread, ant in that set) to remove the black.
 
 **Redeploy for §9:** `apps/web` and `apps/gateway` (Render) — the multi-select cap needs both. `apps/admin` redeploy picks up the updated sample text.
+
+---
+
+## 10. Bulk image-upload reliability — cold-start retry (2026-10-01)
+
+**Symptom:** bulk-creating a large figure set (e.g. 60 Part A questions × 6 images) failed with `POST /v1/admin/content/assets/batch` showing `(failed)` after ~25s, with the preflight taking ~13s. **Cause:** the gateway host (`ccat-gateway-payment.onrender.com`) had spun down; the slow preflight is the cold start, and the first heavy POST was dropped while the instance woke. The admin client's `fetch` has no timeout, so it surfaced as a dropped connection, not an HTTP error. Not a payload-size bug — the client already chunks uploads, and the downscaled WebP figures are small.
+
+**Fix (`apps/admin/src/lib/bulkFile.ts`):** each upload chunk now **retries with backoff** (up to 3 retries, 2s/4s/8s) on transient failures (network error, 5xx, 429, 408); a 4xx throws immediately. The retry lands once the instance is up, so a cold start no longer fails the whole import. Chunk size lowered 30 → 20 images for lighter first requests. Applies to both bulk panels (Bulk add sets and Bulk add from file). **Redeploy `apps/admin`.**
+
+> If a bulk upload still fails after this, the gateway instance may be down rather than merely cold — check the Render service `ccat-gateway-payment` is live (and that its `DATABASE_URL` points at the live DB `cqzpzhdleqyrmedymypg`). On a free/spun-down instance, simply retrying the Create once (now automatic per-chunk) warms it.

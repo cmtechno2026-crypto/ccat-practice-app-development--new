@@ -141,7 +141,7 @@ async function normalizeImage(bytes: Uint8Array, type: string): Promise<{ bytes:
 // by the JSON body limit / edge proxy, so the referenced images are uploaded in bounded CHUNKS. Each chunk is
 // still stored server-side with bounded concurrency + one multi-row insert; results are stitched back in order.
 const UPLOAD_CHUNK_MAX_BYTES = 8 * 1024 * 1024; // ≤ 8 MB of base64 per request (gateway JSON limit is 16 MB)
-const UPLOAD_CHUNK_MAX_IMAGES = 30;             // …and at most 30 images per request
+const UPLOAD_CHUNK_MAX_IMAGES = 20;             // …and at most 20 images per request
 
 // Upload every referenced+matched image ONCE (de-duplicated by basename), in size-bounded batches so a large
 // figure set imports reliably instead of failing a single oversized request. `uploadBatch` sends one chunk
@@ -178,8 +178,24 @@ export async function uploadImages(
   if (cur.length) chunks.push({ start, items: cur });
 
   // Upload chunks sequentially (each chunk is itself parallelised server-side); stitch results back by index.
+  // Each chunk retries with backoff so a cold-start / transient network drop (common on a spun-down host:
+  // the very first request fails while the instance wakes) doesn't fail the whole import — the retry
+  // lands once the gateway is up. Only transient failures retry (network error, 5xx, 429, 408); a 4xx
+  // (e.g. validation) throws immediately.
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const uploadWithRetry = async (items: { mime_type: string; data_base64: string; alt_text?: string }[]) => {
+    for (let attempt = 0; ; attempt++) {
+      try { return await uploadBatch(items); }
+      catch (e) {
+        const st = (e as { status?: number } | undefined)?.status;
+        const transient = st === undefined || st >= 500 || st === 429 || st === 408;
+        if (!transient || attempt >= 3) throw e;
+        await sleep(2000 * Math.pow(2, attempt)); // 2s, 4s, 8s
+      }
+    }
+  };
   for (const ch of chunks) {
-    const assets = await uploadBatch(ch.items);
+    const assets = await uploadWithRetry(ch.items);
     if (assets.length !== ch.items.length) throw new Error(`Upload returned ${assets.length} assets for ${ch.items.length} image(s).`);
     assets.forEach((a, j) => { const k = keys[ch.start + j]!; out.set(k, { asset_id: a.id, url: a.url, alt: '' }); });
   }
