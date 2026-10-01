@@ -239,3 +239,10 @@ No content exists for Quant/Non-verbal yet, so this was a clean structural chang
 - DB (live + migration `0058`): `ccat.logical_questions.subcategory_id` was `NOT NULL` — dropped the NOT NULL (metadata-only) so questions can exist with no subcategory. CCAT/Verbal questions still carry one via the app; nothing backfilled.
 - `apps/admin/src/components/SetEditor.tsx` — per-set cap is 100 (not 15) for a subcategory-less set.
 - Known minor: the deprecated `/v1/admin/content/questions` list inner-joins subcategories, so it won't show null-subcategory questions. That page is redirected to Content; not used.
+
+## 14. Publish 422 on subcategory-less NGAT sets (2026-10-01)
+- Symptom: `POST /v1/admin/content/sets/:id/publish` returned 422 `SET_TOO_LARGE` ("This set allows up to 15 questions") for the newly created NGAT Quantitative/Non-verbal sets (20 questions each).
+- Cause: the publish handler re-validates the per-set cap. For a set with no subcategory, the `left join ccat.subcategories` yields no row, so `coalesce(sub.max_questions_per_set, 15)` fell back to **15**. Authoring was already raised to the 100 ceiling, but publish still defaulted to 15.
+- Fix (`apps/gateway/src/routes/admin-content.ts`, publish handler): the cap query now also selects `(qs.subcategory_id is not null) as has_sub`, and `maxq` is `allowed_exam ? 60 : (has_sub ? sub.max_questions_per_set : 100)`. No-subcategory practice sets use the 100 ceiling that authoring uses; exam=60; subcategory sets unchanged → CCAT/Verbal behavior identical.
+- DB: none.
+- Deploy: `apps/gateway` (Render) rebuild + redeploy.

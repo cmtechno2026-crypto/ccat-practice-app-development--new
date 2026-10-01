@@ -678,12 +678,14 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (cnt.rows[0]!.a < 5) throw Errors.validation('A set needs at least 5 active questions before it can be published (§18)');
     // Per-set cap at publish: exam = 60 (single battery, no subcategory); practice = the subcategory's max.
     const capRow = await db.query(
-      `select sv.allowed_exam, coalesce(sub.max_questions_per_set, 15) as maxq
+      `select sv.allowed_exam, (qs.subcategory_id is not null) as has_sub, coalesce(sub.max_questions_per_set, 15) as maxq
          from ccat.question_set_versions sv
          join ccat.question_sets qs on qs.id = sv.question_set_id
          left join ccat.subcategories sub on sub.id = qs.subcategory_id
         where sv.id = $1`, [id]);
-    const maxq = capRow.rows[0]?.allowed_exam ? 60 : Number(capRow.rows[0]?.maxq ?? 15);
+    // No-subcategory practice sets (NGAT Quantitative / Non-verbal) use the 100-question
+    // authoring ceiling; exam sets cap at 60; sets with a subcategory use its configured max.
+    const maxq = capRow.rows[0]?.allowed_exam ? 60 : (capRow.rows[0]?.has_sub ? Number(capRow.rows[0]?.maxq ?? 15) : 100);
     if (cnt.rows[0]!.n > maxq) throw Errors.validation(`This set allows up to ${maxq} questions`, { code: 'SET_TOO_LARGE' });
     // Validate every ACTIVE member card is complete before publish (blocks an invalid publish):
     // a stem, ≥2 options, ≥1 correct answer, no empty option content.
