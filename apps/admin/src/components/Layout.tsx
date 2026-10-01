@@ -128,7 +128,7 @@ const TEACHER_RAIL: RailItem[] = [
   { to: '/teacherhub/training/progress', label: 'Teacher Progress', ic: '📈', match: '/teacherhub/training/progress', perm: 'teacher.directory' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
 ];
-const SITE_NAMES: Record<string, string> = { ccat: 'CCAT Practice', teacher: 'TeacherHub' };
+const SITE_NAMES: Record<string, string> = { ccat: 'Practice Web', teacher: 'TeacherHub' };
 function railForSite(site: string): RailItem[] { return site === 'teacher' ? TEACHER_RAIL : RAIL; }
 
 // Teacher accounts see ONLY the student directory — every other admin feature is locked away (both the
