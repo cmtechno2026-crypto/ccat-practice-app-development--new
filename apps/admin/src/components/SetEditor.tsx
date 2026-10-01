@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { prepareImageUpload } from '../lib/bulkFile';
 import { api } from '../lib/api';
 import { useToast } from './ui';
 import { useAuth } from '../lib/auth';
@@ -162,7 +163,6 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   const imgError = (f: File): string | null =>
     !IMG_TYPES.includes(f.type) ? 'Image must be a PNG, JPG, or WEBP file.'
       : f.size > IMG_MAX ? 'Image is too large (max 2 MB).' : null;
-  const toB64 = (file: File) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] ?? ''); r.onerror = rej; r.readAsDataURL(file); });
 
   // busy holds the target currently uploading: `${cardKey}` for the stem, `${cardKey}:${optIndex}` for an option.
   const [imgBusy, setImgBusy] = useState<string | null>(null);
@@ -171,7 +171,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   const uploadImg = async (key: string, file: File) => {
     const bad = imgError(file); if (bad) { toast(bad); return; }
     setImgBusy(key);
-    try { const b64 = await toB64(file); const r = await api.uploadAsset(file.type, b64, 'stem'); patchCard(key, { img: { asset_id: r.id, url: r.url, alt: '' } }); toast('Figure uploaded'); }
+    try { const up = await prepareImageUpload(file); const r = await api.uploadAsset(up.mime_type, up.data_base64, 'stem'); patchCard(key, { img: { asset_id: r.id, url: r.url, alt: '' } }); toast('Figure uploaded'); }
     catch (e) { toast((e as Error).message); } finally { setImgBusy(null); }
   };
   // Option figure — attaches an image to one option alongside its text.
@@ -179,8 +179,8 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
     const bad = imgError(file); if (bad) { toast(bad); return; }
     setImgBusy(`${key}:${i}`);
     try {
-      const b64 = await toB64(file);
-      const r = await api.uploadAsset(file.type, b64, 'option');
+      const up = await prepareImageUpload(file);
+      const r = await api.uploadAsset(up.mime_type, up.data_base64, 'option');
       setCards(cs => cs.map(c => c.key === key ? { ...c, opts: c.opts.map((o, j) => j === i ? { ...o, img: { asset_id: r.id, url: r.url, alt: '' } } : o) } : c));
       mark(); toast('Option image uploaded');
     } catch (e) { toast((e as Error).message); } finally { setImgBusy(null); }

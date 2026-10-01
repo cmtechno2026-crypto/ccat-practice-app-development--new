@@ -186,6 +186,14 @@ export async function uploadImages(
   return out;
 }
 
+// Prepare a single picked File for upload through the normal asset endpoint — same #2 compression
+// (downscale + WebP) as the bulk path, so manually-added stem/option figures are optimized too.
+export async function prepareImageUpload(file: File): Promise<{ mime_type: string; data_base64: string }> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const norm = await normalizeImage(bytes, file.type);
+  return { mime_type: norm.type, data_base64: bytesToB64(norm.bytes) };
+}
+
 // Attach resolved assets onto the parsed cards (question figure + option images). Unmatched refs stay null.
 export function attachImages(cards: ImportCard[], uploaded: Map<string, ImgRef>): ImportCard[] {
   const pick = (ref?: string | null): ImgRef | null => ref ? (uploaded.get(baseName(ref).toLowerCase()) ?? null) : null;
