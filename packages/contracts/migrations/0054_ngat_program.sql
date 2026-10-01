@@ -62,8 +62,8 @@ begin
   end if;
 
   insert into ccat.subcategories (category_id, key, name, display_order, active) values
-    (v_cat, 'part_a', 'Part A', 10, true),
-    (v_cat, 'part_b', 'Part B', 20, true),
-    (v_cat, 'part_c', 'Part C', 30, true)
+    (v_cat, 'part_a', 'Picture Classification', 10, true),
+    (v_cat, 'part_b', 'Picture Analogies', 20, true),
+    (v_cat, 'part_c', 'Picture Pairs', 30, true)
   on conflict (category_id, key) do update set name = excluded.name, active = true;
 end $$;

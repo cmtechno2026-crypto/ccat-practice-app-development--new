@@ -148,9 +148,22 @@ const UPLOAD_CHUNK_PARALLEL = 3;                 // chunks uploaded concurrently
 // figure set imports reliably instead of failing a single oversized request. `uploadBatch` sends one chunk
 // (the Gateway stores it with bounded concurrency + one multi-row insert) and returns assets 1:1 with the
 // order sent. Returns basename(lowercased) → resolved asset.
+// Direct-to-storage upload API (gateway mints signed URLs; browser PUTs bytes straight to storage).
+export type DirectUploadApi = {
+  sign: (images: { ext: string; mime_type: string; checksum: string; alt_text?: string }[]) => Promise<{
+    supported: boolean;
+    items?: { existing?: { id: string; url: string }; upload?: { key: string; uploadUrl: string } }[];
+  }>;
+  register: (assets: { key: string; mime_type: string; checksum: string; byte_size: number; width?: number | null; height?: number | null; alt_text?: string }[]) => Promise<{ assets: { id: string; url: string }[] }>;
+};
+
+// Upload every referenced+matched image ONCE (de-duplicated by CONTENT), attaching the resolved assets.
+// Prefers DIRECT-TO-STORAGE (browser -> Supabase Storage via signed URLs, so the gateway never buffers the
+// bytes); falls back to the server batch path when the driver can't sign (local dev) or signing is down.
 export async function uploadImages(
   refs: string[], images: Map<string, BulkImage>,
   uploadBatch: (items: { mime_type: string; data_base64: string; alt_text?: string }[]) => Promise<{ id: string; url: string }[]>,
+  direct?: DirectUploadApi,
 ): Promise<Map<string, ImgRef>> {
   const keys: string[] = [];
   const seen = new Set<string>();
@@ -158,10 +171,6 @@ export async function uploadImages(
   const out = new Map<string, ImgRef>();
   if (!keys.length) return out;
 
-  type Item = { mime_type: string; data_base64: string; alt_text?: string };
-  // Normalize + hash each unique-by-name image, then DEDUPE BY CONTENT so an identical picture reused
-  // across many questions (common in reasoning papers) is uploaded ONCE and shared by every reference.
-  // This is the biggest lever: e.g. 360 option refs can collapse to a few dozen real uploads.
   const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
     const subtle = (globalThis.crypto as { subtle?: SubtleCrypto } | undefined)?.subtle;
     if (!subtle) return `len:${bytes.length}`; // fallback: no content-dedup, but still correct
@@ -169,39 +178,30 @@ export async function uploadImages(
     const d = await subtle.digest('SHA-256', copy.buffer as ArrayBuffer);
     return Array.from(new Uint8Array(d)).map((x) => x.toString(16).padStart(2, '0')).join('');
   };
+  const extFromMime = (m: string): string => (m === 'image/png' ? 'png' : m === 'image/webp' ? 'webp' : 'jpg');
+
+  // Normalize + content-hash each unique-by-name image; DEDUPE BY CONTENT so an identical picture reused
+  // across many questions uploads once and is shared by every reference (the big lever on reasoning papers).
+  type U = { mime: string; bytes: Uint8Array; hash: string; ext: string; alt: string };
   const keyToHash = new Map<string, string>();
   const hashToIndex = new Map<string, number>();
-  const uniqueItems: Item[] = [];
+  const uniq: U[] = [];
   for (const k of keys) {
     const img = images.get(k)!;
     const norm = await normalizeImage(img.bytes, img.type);
     const hash = await sha256Hex(norm.bytes);
     keyToHash.set(k, hash);
     if (!hashToIndex.has(hash)) {
-      hashToIndex.set(hash, uniqueItems.length);
-      uniqueItems.push({ mime_type: norm.type, data_base64: bytesToB64(norm.bytes), alt_text: img.name });
+      hashToIndex.set(hash, uniq.length);
+      uniq.push({ mime: norm.type, bytes: norm.bytes, hash, ext: extFromMime(norm.type), alt: img.name });
     }
   }
+  const hashToAsset = new Map<string, ImgRef>();
 
-  // Chunk the UNIQUE items under the per-request byte/count caps.
-  const chunks: { start: number; items: Item[] }[] = [];
-  { let cur: Item[] = []; let curBytes = 0; let start = 0;
-    for (let i = 0; i < uniqueItems.length; i++) {
-      const sz = uniqueItems[i]!.data_base64.length;
-      if (cur.length && (cur.length >= UPLOAD_CHUNK_MAX_IMAGES || curBytes + sz > UPLOAD_CHUNK_MAX_BYTES)) {
-        chunks.push({ start, items: cur }); cur = []; curBytes = 0; start = i;
-      }
-      cur.push(uniqueItems[i]!); curBytes += sz;
-    }
-    if (cur.length) chunks.push({ start, items: cur });
-  }
-
-  // Each chunk retries with backoff so a cold-start / transient drop doesn't fail the whole import
-  // (retry only on network error / 5xx / 429 / 408; a 4xx throws immediately).
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  const uploadWithRetry = async (items: Item[]) => {
+  const withRetry = async <T>(fn: () => Promise<T>): Promise<T> => {
     for (let attempt = 0; ; attempt++) {
-      try { return await uploadBatch(items); }
+      try { return await fn(); }
       catch (e) {
         const st = (e as { status?: number } | undefined)?.status;
         const transient = st === undefined || st >= 500 || st === 429 || st === 408;
@@ -211,23 +211,64 @@ export async function uploadImages(
     }
   };
 
-  // Upload chunks with BOUNDED PARALLELISM so a large set finishes in a fraction of the sequential time
-  // without hammering the gateway. Results map back to the unique items by index.
-  const uniqueAssets: ({ id: string; url: string } | undefined)[] = new Array(uniqueItems.length);
-  for (let i = 0; i < chunks.length; i += UPLOAD_CHUNK_PARALLEL) {
-    const wave = chunks.slice(i, i + UPLOAD_CHUNK_PARALLEL);
-    await Promise.all(wave.map(async (ch) => {
-      const assets = await uploadWithRetry(ch.items);
-      if (assets.length !== ch.items.length) throw new Error(`Upload returned ${assets.length} assets for ${ch.items.length} image(s).`);
-      assets.forEach((a, j) => { uniqueAssets[ch.start + j] = a; });
-    }));
+  // ---- DIRECT-TO-STORAGE PATH (production) ----
+  let directDone = false;
+  if (direct) {
+    let sign: Awaited<ReturnType<DirectUploadApi['sign']>> | null = null;
+    try { sign = await withRetry(() => direct.sign(uniq.map((u) => ({ ext: u.ext, mime_type: u.mime, checksum: u.hash, alt_text: u.alt })))); }
+    catch { sign = null; } // signing unreachable -> fall through to server batch
+    if (sign && sign.supported && sign.items && sign.items.length === uniq.length) {
+      const putTasks: { idx: number; key: string; uploadUrl: string }[] = [];
+      sign.items.forEach((it, i) => {
+        if (it.existing) hashToAsset.set(uniq[i]!.hash, { asset_id: it.existing.id, url: it.existing.url, alt: '' });
+        else if (it.upload) putTasks.push({ idx: i, key: it.upload.key, uploadUrl: it.upload.uploadUrl });
+      });
+      const PAR = 12; // direct PUTs are light (one object each) and go to storage, not the gateway
+      for (let i = 0; i < putTasks.length; i += PAR) {
+        const wave = putTasks.slice(i, i + PAR);
+        await Promise.all(wave.map((t) => withRetry(async () => {
+          const u = uniq[t.idx]!;
+          const res = await fetch(t.uploadUrl, { method: 'PUT', headers: { 'content-type': u.mime, 'x-upsert': 'true' }, body: u.bytes as BlobPart });
+          if (!res.ok) { const err = new Error(`storage upload ${res.status}`) as Error & { status?: number }; err.status = res.status; throw err; }
+        })));
+      }
+      if (putTasks.length) {
+        const reg = await withRetry(() => direct.register(putTasks.map((t) => ({
+          key: t.key, mime_type: uniq[t.idx]!.mime, checksum: uniq[t.idx]!.hash, byte_size: uniq[t.idx]!.bytes.length, alt_text: uniq[t.idx]!.alt,
+        }))));
+        if (!reg.assets || reg.assets.length !== putTasks.length) throw new Error(`Register returned ${reg.assets?.length ?? 0} assets for ${putTasks.length} upload(s).`);
+        putTasks.forEach((t, j) => hashToAsset.set(uniq[t.idx]!.hash, { asset_id: reg.assets[j]!.id, url: reg.assets[j]!.url, alt: '' }));
+      }
+      directDone = true;
+    }
   }
 
-  // Map every referenced image (by its content hash) to its uploaded asset.
-  for (const k of keys) {
-    const a = uniqueAssets[hashToIndex.get(keyToHash.get(k)!)!];
-    if (a) out.set(k, { asset_id: a.id, url: a.url, alt: '' });
+  // ---- FALLBACK: server batch path (local dev / signing unavailable) ----
+  if (!directDone) {
+    type Item = { mime_type: string; data_base64: string; alt_text?: string };
+    const items: Item[] = uniq.map((u) => ({ mime_type: u.mime, data_base64: bytesToB64(u.bytes), alt_text: u.alt }));
+    const chunks: { start: number; items: Item[] }[] = [];
+    { let cur: Item[] = []; let curBytes = 0; let start = 0;
+      for (let i = 0; i < items.length; i++) {
+        const sz = items[i]!.data_base64.length;
+        if (cur.length && (cur.length >= UPLOAD_CHUNK_MAX_IMAGES || curBytes + sz > UPLOAD_CHUNK_MAX_BYTES)) {
+          chunks.push({ start, items: cur }); cur = []; curBytes = 0; start = i;
+        }
+        cur.push(items[i]!); curBytes += sz;
+      }
+      if (cur.length) chunks.push({ start, items: cur });
+    }
+    for (let i = 0; i < chunks.length; i += UPLOAD_CHUNK_PARALLEL) {
+      const wave = chunks.slice(i, i + UPLOAD_CHUNK_PARALLEL);
+      await Promise.all(wave.map(async (ch) => {
+        const assets = await withRetry(() => uploadBatch(ch.items));
+        if (assets.length !== ch.items.length) throw new Error(`Upload returned ${assets.length} assets for ${ch.items.length} image(s).`);
+        assets.forEach((a, j) => { hashToAsset.set(uniq[ch.start + j]!.hash, { asset_id: a.id, url: a.url, alt: '' }); });
+      }));
+    }
   }
+
+  for (const k of keys) { const a = hashToAsset.get(keyToHash.get(k)!); if (a) out.set(k, a); }
   return out;
 }
 

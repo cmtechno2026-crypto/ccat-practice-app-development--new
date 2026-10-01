@@ -20,6 +20,9 @@ export interface StorageService {
   publicUrl(key: string): string | null;
   /** Legacy per-asset-id route (kept for interface compatibility). */
   urlFor(assetId: string): string;
+  /** Mint a short-lived signed URL the browser can PUT ONE object to directly (offloads image bytes from
+   *  the gateway). Returns null when the driver can't sign (local disk) so callers fall back to server upload. */
+  createSignedUploadUrl(key: string): Promise<{ uploadUrl: string } | null>;
 }
 
 /** Local filesystem driver — dev/local parity. Files live under baseDir; served back through the
@@ -51,6 +54,7 @@ class LocalDiskStorage implements StorageService {
   }
   publicUrl(): string | null { return null; } // served via the Gateway asset route
   urlFor(assetId: string): string { return `/v1/assets/${assetId}`; }
+  async createSignedUploadUrl(): Promise<{ uploadUrl: string } | null> { return null; } // no direct upload in dev
 }
 
 /** Supabase Storage driver — uploads via the Storage REST API using the SERVER-ONLY service-role key,
@@ -100,6 +104,19 @@ class SupabaseStorage implements StorageService {
   publicUrl(key: string): string {
     return `${this.baseUrl}/storage/v1/object/public/${this.bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
   }
+  async createSignedUploadUrl(key: string): Promise<{ uploadUrl: string } | null> {
+    const encKey = key.split('/').map(encodeURIComponent).join('/');
+    const res = await fetch(`${this.baseUrl}/storage/v1/object/upload/sign/${this.bucket}/${encKey}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${this.serviceKey}`, apikey: this.serviceKey, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) { const d = await res.text().catch(() => ''); throw new Error(`Supabase sign-upload failed (${res.status}): ${d.slice(0, 200)}`); }
+    const j = await res.json() as { url?: string };
+    if (!j.url) throw new Error('Supabase sign-upload: no url in response');
+    // j.url is relative, e.g. "/object/upload/sign/{bucket}/{key}?token=..."; the client PUTs bytes here.
+    return { uploadUrl: `${this.baseUrl}/storage/v1${j.url}` };
+  }
   urlFor(assetId: string): string { return `/v1/assets/${assetId}`; }
 }
 
@@ -114,6 +131,7 @@ class UnconfiguredCloudStorage implements StorageService {
   async delete(): Promise<void> { this.fail(); }
   publicUrl(): string | null { return null; }
   urlFor(assetId: string): string { return `/v1/assets/${assetId}`; }
+  async createSignedUploadUrl(): Promise<{ uploadUrl: string } | null> { return null; }
 }
 
 export interface StorageOpts {

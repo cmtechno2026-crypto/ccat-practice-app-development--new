@@ -40,6 +40,11 @@ const BATTERY_VIS: Record<string, { fallbackName: string; icon: string; color: s
   quantitative: { fallbackName: 'Quantitative reasoning', icon: '🔢', color: '#22c3a6', tint: '#e8f7f1' },
   non_verbal: { fallbackName: 'Non-verbal reasoning', icon: '🧩', color: '#8b5cf6', tint: '#f3ecfb' },
 };
+// NGAT battery icons — separate per mode (practice vs exam). CCAT keeps BATTERY_VIS.icon above.
+const NGAT_ICONS: Record<'practice' | 'exam', Record<string, string>> = {
+  practice: { verbal: '✎', quantitative: '📐', non_verbal: '🧩' },
+  exam:     { verbal: '📝', quantitative: '🧮', non_verbal: '◪' },
+};
 
 type Prefs = { difficulty: string; timerMin: number | null; customMins: number | null };
 function loadPrefs(): Prefs {
@@ -84,7 +89,8 @@ export function PracticeScreen() {
   const batteryMeta = (key: string) => {
     const vis = BATTERY_VIS[key];
     const name = (data ?? []).find((c) => c.category_key === key)?.category_name ?? vis?.fallbackName ?? key.replace('_', '-');
-    return { name, icon: vis?.icon ?? '📘', color: vis?.color ?? 'var(--primary)', tint: vis?.tint ?? 'var(--tint-blue)' };
+    const icon = program === 'ngat' ? (NGAT_ICONS[mode][key] ?? vis?.icon ?? '📘') : (vis?.icon ?? '📘');
+    return { name, icon, color: vis?.color ?? 'var(--primary)', tint: vis?.tint ?? 'var(--tint-blue)' };
   };
 
   // battery_key -> subcategory -> sets  (only batteries/categories with real sets appear beneath the 3)

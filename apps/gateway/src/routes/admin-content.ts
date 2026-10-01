@@ -258,6 +258,98 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { assets, count: assets.length, unique: uniqueList.length, elapsed_ms: elapsedMs };
   });
 
+  // DIRECT-TO-STORAGE (large figure sets): the browser PUTs image bytes STRAIGHT to Supabase Storage via
+  // short-lived signed URLs the gateway mints, so the gateway never buffers them (fixes OOM/timeout on big
+  // sets). Flow: sign-batch (mint URLs, dedup by checksum) -> client PUTs to storage -> register (record rows).
+  const EXT_OK = new Set(['png', 'jpg', 'jpeg', 'webp']);
+  const signBatchSchema = z.object({
+    images: z.array(z.object({
+      ext: z.string().min(1).max(5),
+      mime_type: z.string().min(1),
+      checksum: z.string().min(16).max(128),
+      alt_text: z.string().max(500).optional(),
+    })).min(1).max(BATCH_MAX_IMAGES),
+  });
+  app.post('/v1/admin/content/assets/sign-batch', guard, async (req) => {
+    requirePermission(req, 'content.create');
+    const b = signBatchSchema.parse(req.body);
+    // Reuse any identical bytes already stored (by checksum) so repeats are not re-uploaded.
+    const checks = [...new Set(b.images.map((i) => i.checksum))];
+    const existing = new Map<string, { id: string; url: string }>();
+    if (checks.length) {
+      const ex = await db.query(
+        `select distinct on (checksum_sha256) checksum_sha256, id, public_url
+           from ccat.content_assets
+          where checksum_sha256 = any($1::text[]) and storage_key like 'content/%' and public_url is not null
+          order by checksum_sha256, created_at asc`, [checks]);
+      for (const r of ex.rows) existing.set(r.checksum_sha256 as string, { id: r.id as string, url: r.public_url as string });
+    }
+    const items: { existing?: { id: string; url: string }; upload?: { key: string; uploadUrl: string } }[] = [];
+    for (const img of b.images) {
+      if (!QIMAGE_TYPES.has(img.mime_type)) throw Errors.validation(`Unsupported image type ${img.mime_type}`);
+      const ext = img.ext.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!EXT_OK.has(ext)) throw Errors.validation(`Unsupported extension ${img.ext}`);
+      const ex = existing.get(img.checksum);
+      if (ex) { items.push({ existing: ex }); continue; }
+      const key = `content/${randomUUID()}.${ext}`;
+      const signed = await storage.createSignedUploadUrl(key);
+      if (!signed) return { supported: false }; // driver can't sign (local dev) -> client uses server batch
+      items.push({ upload: { key, uploadUrl: signed.uploadUrl } });
+    }
+    return { supported: true, items };
+  });
+
+  const registerBatchSchema = z.object({
+    assets: z.array(z.object({
+      key: z.string().regex(/^content\/[0-9a-fA-F-]{36}\.(png|jpe?g|webp)$/),
+      mime_type: z.string().min(1),
+      checksum: z.string().min(16).max(128),
+      byte_size: z.number().int().min(1).max(BATCH_MAX_IMAGE_BYTES),
+      width: z.number().int().positive().nullable().optional(),
+      height: z.number().int().positive().nullable().optional(),
+      alt_text: z.string().max(500).optional(),
+    })).min(1).max(BATCH_MAX_IMAGES),
+  });
+  app.post('/v1/admin/content/assets/register', guard, async (req) => {
+    requirePermission(req, 'content.create');
+    const b = registerBatchSchema.parse(req.body);
+    for (const a of b.assets) if (!QIMAGE_TYPES.has(a.mime_type)) throw Errors.validation(`Unsupported image type ${a.mime_type}`);
+    const checks = [...new Set(b.assets.map((a) => a.checksum))];
+    const byChecksum = new Map<string, { id: string; url: string }>();
+    if (checks.length) {
+      const ex = await db.query(
+        `select distinct on (checksum_sha256) checksum_sha256, id, public_url
+           from ccat.content_assets
+          where checksum_sha256 = any($1::text[]) and storage_key like 'content/%' and public_url is not null
+          order by checksum_sha256, created_at asc`, [checks]);
+      for (const r of ex.rows) byChecksum.set(r.checksum_sha256 as string, { id: r.id as string, url: r.public_url as string });
+    }
+    const toInsert: typeof b.assets = [];
+    const seen = new Set<string>(byChecksum.keys());
+    for (const a of b.assets) { if (!seen.has(a.checksum)) { seen.add(a.checksum); toInsert.push(a); } }
+    if (toInsert.length) await withTransaction(db, async (c) => {
+      const params: unknown[] = [];
+      const rowsSql = toInsert.map((a, i) => {
+        const o = i * 8;
+        params.push(a.key, a.mime_type, a.byte_size, a.checksum, a.width ?? null, a.height ?? null, a.alt_text ?? null, req.admin!.adminId);
+        return `($${o + 1},$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6},$${o + 7},$${o + 8})`;
+      }).join(',');
+      const ins = await c.query(
+        `insert into ccat.content_assets(storage_key,mime_type,byte_size,checksum_sha256,width,height,alt_text,created_by)
+         values ${rowsSql} returning id, storage_key, checksum_sha256`, params);
+      const ids: string[] = [], urls: string[] = [];
+      for (const r of ins.rows) {
+        const url = storage.publicUrl(r.storage_key as string) ?? `/v1/assets/${r.id}`;
+        byChecksum.set(r.checksum_sha256 as string, { id: r.id as string, url });
+        ids.push(r.id as string); urls.push(url);
+      }
+      await c.query(`update ccat.content_assets a set public_url = v.url from unnest($1::uuid[], $2::text[]) as v(id, url) where a.id = v.id`, [ids, urls]);
+    });
+    const assets = b.assets.map((a) => byChecksum.get(a.checksum)!);
+    await audit(db, req, 'content.asset.registered', 'content_asset', assets[0]!.id, `${assets.length} direct-uploaded image(s)`);
+    return { assets, count: assets.length };
+  });
+
   // ORPHAN CLEANUP (#3): remove content figures no longer referenced by any question_version block.
   // Dry-run by default; pass {"apply":true} to actually delete. Scoped to content/ keys past a grace window,
   // and EXCLUDES anything referenced by question blocks (prompt/option/explanation), book covers, announcement

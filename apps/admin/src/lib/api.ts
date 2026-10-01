@@ -201,6 +201,11 @@ export const api = {
   uploadAsset: (mime_type: string, data_base64: string, alt_text?: string, constraint?: 'avatar_512') => req<{ id: string; url: string }>('POST', '/v1/admin/content/assets', { mime_type, data_base64, alt_text, constraint }),
   // Batch upload many figures in ONE request (bulk-add with figures). Server stores with bounded concurrency
   // and inserts the rows in one shot; returns assets 1:1 with input order plus the measured timings.
+  // Direct-to-storage: mint signed upload URLs (browser PUTs bytes to Supabase directly), then register rows.
+  signAssetBatch: (images: { ext: string; mime_type: string; checksum: string; alt_text?: string }[]) =>
+    req<{ supported: boolean; items?: { existing?: { id: string; url: string }; upload?: { key: string; uploadUrl: string } }[] }>('POST', '/v1/admin/content/assets/sign-batch', { images }),
+  registerAssetBatch: (assets: { key: string; mime_type: string; checksum: string; byte_size: number; width?: number | null; height?: number | null; alt_text?: string }[]) =>
+    req<{ assets: { id: string; url: string }[]; count: number }>('POST', '/v1/admin/content/assets/register', { assets }),
   uploadAssetsBatch: (images: { mime_type: string; data_base64: string; alt_text?: string }[]) =>
     req<{ assets: { id: string; url: string }[]; count: number; unique: number; upload_ms: number; insert_ms: number; elapsed_ms: number }>('POST', '/v1/admin/content/assets/batch', { images }),
   // Public, unauthenticated serve route (redirects to cloud storage or streams local bytes). Used as an

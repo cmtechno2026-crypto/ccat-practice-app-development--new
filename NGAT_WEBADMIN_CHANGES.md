@@ -192,3 +192,29 @@ Three issues surfaced testing an authored NGAT Part C set; fixed at the real roo
 **Also:** fewer, smaller source images help most. For odd-one-out/pair papers that reuse the same emoji, reuse the **same filename** (and bytes) across questions so both the client content-dedup and the server checksum-dedup skip re-uploading. Or split a very large battery into a couple of bulk runs.
 
 **Redeploy:** `apps/admin` (Vercel) and `apps/gateway` (Render).
+
+---
+
+## 12. Direct-to-storage bulk upload (2026-10-01)
+
+The real fix for large figure sets: the browser now uploads image bytes **straight to Supabase Storage** via short-lived signed URLs the gateway mints, so image bytes never pass through the Render instance (which was crashing/timing out buffering them). Chosen over "gentle/slower" and "bigger instance" for speed + reliability at any size.
+
+**Flow:** client hashes + content-dedups images → `POST /v1/admin/content/assets/sign-batch` (gateway mints one signed URL per *new* image, returns existing asset for repeats) → browser `PUT`s each image directly to Supabase (bounded-parallel, retried) → `POST /v1/admin/content/assets/register` records the `content_assets` rows. Falls back automatically to the old server-batch path when the driver can't sign (local dev) or signing is unreachable.
+
+**Files:**
+- `apps/gateway/src/services/storage.ts` — `createSignedUploadUrl(key)` on the Supabase driver (REST `object/upload/sign`); local/unconfigured drivers return null (→ fallback).
+- `apps/gateway/src/routes/admin-content.ts` — `sign-batch` (content.create-gated, checksum-dedup, gateway-generated `content/<uuid>.<ext>` keys) and `register` (content.create-gated, key-regex validated, checksum-dedup, inserts rows + public_url).
+- `apps/admin/src/lib/api.ts` — `signAssetBatch`, `registerAssetBatch`.
+- `apps/admin/src/lib/bulkFile.ts` — `uploadImages` rewritten: content-dedup → direct sign/PUT/register, fallback to server batch; `DirectUploadApi` type.
+- `apps/admin/src/components/BulkSets.tsx` + `BulkImport.tsx` — pass the direct callbacks.
+
+**Security guardrails (implemented):**
+- Only `content.create` admins can mint URLs or register (same gate as before — doesn't widen who can upload).
+- **Gateway generates the object key** (`content/<uuid>.<ext>`); client can't choose paths. `register` validates the key against `^content/<uuid>.(png|jpg|jpeg|webp)$`.
+- Signed URLs are short-lived, single-object, one-time.
+- **Live `assets` bucket locked** (applied to prod DB): `file_size_limit = 5 MB`, `allowed_mime_types = png/jpeg/webp`, public-read, **no anon write** (no RLS write policies → only the service key and signed tokens can write). This is the backstop that enforces size/type since the gateway no longer sees the bytes.
+- **Trade-off (accepted):** the gateway no longer decodes images to validate real format/dimensions; that validation now rests on the bucket's MIME/size limits. Acceptable for a staff-only tool.
+
+**Redeploy:** `apps/gateway` (Render) and `apps/admin` (Vercel). The bucket lockdown is already live.
+
+> First-run check: the browser `PUT`s cross-origin to `*.supabase.co`. Supabase Storage allows CORS for signed uploads, so this should work; if a `PUT` is CORS-blocked, tell me and I'll add a PUT-failure fallback to the server batch path.

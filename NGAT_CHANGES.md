@@ -173,3 +173,17 @@ Per review, the workspace switch moved out of the sidebar into the Home page.
 - `apps/web/src/theme.css` — added `.appbar-ws`. (Old `.ws-foot` / `.hh-ws small` rules now unused — harmless.)
 
 Needs a web redeploy + the shared-client change to take effect; the gateway already scoped correctly.
+
+---
+
+## 11. NGAT battery symbols (distinct from CCAT)
+
+NGAT batteries now use their own icons (CCAT keeps `Aa/123/◧▲` practice and `🔤/🔢/🧩` exam):
+- **Practice:** Verbal ✎ · Quantitative 📐 · Non-verbal 🧩
+- **Exam:** Verbal 📝 · Quantitative 🧮 · Non-verbal ◪
+
+Wired in two places, program- and mode-aware:
+- `apps/web/src/screens/HomeScreen.tsx` — `NGAT_SYMBOLS` + `batterySymbol(program, mode, bt)` for the Home Practice/Exam cards.
+- `apps/web/src/screens/PracticeScreen.tsx` — `NGAT_ICONS` override in `batteryMeta` for the Practice/Exam battery landings.
+
+CCAT is untouched; needs a web redeploy to show.

@@ -45,6 +45,15 @@ const BATTERIES: { key: string; alt: string; name: string; glyph: string; emoji:
   { key: 'quantitative', alt: 'quantitative', name: 'Quantitative', glyph: '123', emoji: '🔢' },
   { key: 'non_verbal', alt: 'nonverbal', name: 'Non-Verbal', glyph: '◧▲', emoji: '🧩' },
 ];
+// NGAT uses its OWN battery symbols (CCAT keeps the glyph/emoji above). Practice and Exam differ.
+const NGAT_SYMBOLS: Record<'practice' | 'exam', Record<string, string>> = {
+  practice: { verbal: '✎', quantitative: '📐', non_verbal: '🧩' },
+  exam:     { verbal: '📝', quantitative: '🧮', non_verbal: '◪' },
+};
+function batterySymbol(program: 'ccat' | 'ngat', mode: 'practice' | 'exam', bt: { key: string; glyph: string; emoji: string }): string {
+  if (program === 'ngat') return NGAT_SYMBOLS[mode][bt.key] ?? (mode === 'exam' ? bt.emoji : bt.glyph);
+  return mode === 'exam' ? bt.emoji : bt.glyph;
+}
 // Progress-panel ring accent per battery (Verbal blue, Quant green, Non-verbal purple).
 const BATTERY_ACCENT: Record<string, string> = {
   verbal: '#2f74e6', quantitative: '#12a566', non_verbal: '#7c4dff', nonverbal: '#7c4dff', default: '#2f74e6',
@@ -138,7 +147,7 @@ export function HomeScreen() {
                     const total = b?.setsTotal ?? 0;
                     return (
                       <button key={bt.key} className={`hchar hchar-b${i + 1}`} onClick={() => nav(`/practice?battery=${bt.key}`)}>
-                        <span className="hchar-badge"><span className="hchar-glyph">{bt.glyph}</span></span>
+                        <span className="hchar-badge"><span className="hchar-glyph">{batterySymbol(program, 'practice', bt)}</span></span>
                         <span className="hchar-name">{b?.name ?? bt.name}</span>
                         <span className="hchar-ribbon">{total > 0 ? `${done} / ${total} sets` : 'Start practising'}</span>
                         <span className="hchar-cta">Practise ▶</span>
@@ -165,7 +174,7 @@ export function HomeScreen() {
                         className={`hchar hchar-g${i + 1}`}
                         onClick={() => (examLocked ? nav('/plan') : nav(`/practice?mode=exam&battery=${bt.key}`))}
                       >
-                        <span className="hchar-badge"><span className="hchar-emoji">{bt.emoji}</span></span>
+                        <span className="hchar-badge"><span className="hchar-emoji">{batterySymbol(program, 'exam', bt)}</span></span>
                         <span className="hchar-name">{b?.name ?? bt.name} Exam</span>
                         <span className="hchar-ribbon">Full timed mock</span>
                         <span className="hchar-cta">{examLocked ? '🔒 Membership' : 'Start ▶'}</span>

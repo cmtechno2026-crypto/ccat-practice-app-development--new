@@ -211,7 +211,7 @@ export function BulkImport({ title = 'Bulk add from file', onClose, onImport }: 
         const uploaded = await uploadImages(refs, images, items => api.uploadAssetsBatch(items).then(r => {
           console.info(`[bulk] uploaded ${r.count} image(s) (${r.unique} unique) in ${r.elapsed_ms} ms — storage ${r.upload_ms} ms, db ${r.insert_ms} ms`);
           return r.assets;
-        }));
+        }), { sign: (im) => api.signAssetBatch(im), register: (a) => api.registerAssetBatch(a) });
         out = attachImages(cards, uploaded);
       }
       await onImport(out);
