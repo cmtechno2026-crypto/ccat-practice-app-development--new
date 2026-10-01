@@ -157,3 +157,19 @@ Per review, the workspace switch moved out of the sidebar into the Home page.
 - **`apps/web/src/theme.css`** — styles for `.ws-tabs`, `.hh-ws`, `.ws-foot`, `.ws-avatar`.
 
 **Behaviour:** switching happens on the Home card only; Practice/Exam/Progress show the current workspace's data and the sidebar label reflects it. (Earlier `.ws-switch` sidebar styles remain in theme.css, now unused — harmless.)
+
+---
+
+## 10. Leak fixes + top-panel workspace name (T3)
+
+**Two data-leak fixes (NGAT was showing CCAT data):**
+- `packages/api-client/src/index.ts` — `examHistory()` accepted `program` but never appended it to the URL. Now appends `program=ngat`, so **NGAT Progress → Exam Progress** no longer shows CCAT exam history.
+- `apps/web/src/components/AssignmentPanel.tsx` (Home "My Assignments" widget) — was calling `client.assignments()` with no program. Now passes `program` (and refetches on switch), so **NGAT Home** no longer shows CCAT assignments. (The full Assignments page was already scoped.)
+
+**UI changes:**
+- `apps/web/src/components/ui.tsx` — AppBar top-right now shows the **workspace name wordmark** (`CCAT`/`NGAT`, plain T3 style) on every in-app page for NGAT-enabled accounts; other accounts keep the avatar control.
+- `apps/web/src/screens/HomeScreen.tsx` — hero wordmark dropped the "WORKSPACE" sublabel (just `CCAT`/`NGAT`).
+- `apps/web/src/components/Sidebar.tsx` — removed the "Workspace · CCAT/NGAT" footer label.
+- `apps/web/src/theme.css` — added `.appbar-ws`. (Old `.ws-foot` / `.hh-ws small` rules now unused — harmless.)
+
+Needs a web redeploy + the shared-client change to take effect; the gateway already scoped correctly.

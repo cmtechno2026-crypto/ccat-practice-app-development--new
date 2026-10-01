@@ -12,8 +12,8 @@ import { assignmentTitle, assignDateStamp, batteryVis, openAssignment } from '..
 // renders a friendly empty state.
 export function AssignmentPanel() {
   const nav = useNavigate();
-  const { flash } = useApp();
-  const { data, loading, error } = useAsync(() => client.assignments());
+  const { flash, program } = useApp();
+  const { data, loading, error } = useAsync(() => client.assignments(program), [program]);
 
   const items = data ?? [];
   const todo = items.filter((a) => a.status !== 'done');

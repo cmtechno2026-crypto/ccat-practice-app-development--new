@@ -130,10 +130,6 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
         })}
       </nav>
       <div className="sidebar-foot">
-        {/* NGAT workspace indicator (read-only; the switch lives in the Home card). Allow-listed accounts only. */}
-        {profile?.ngat_enabled && (
-          <div className="ws-foot" aria-hidden>Workspace · <b>{program === 'ngat' ? 'NGAT' : 'CCAT'}</b></div>
-        )}
         {/* The user's NAME row is the entry point to Profile (Profile nav item removed above). */}
         <button className="snav snav-profile" onClick={() => nav('/profile')} aria-label="Open your profile"
           title={`${profile?.display_name ?? 'You'} — open profile`}>

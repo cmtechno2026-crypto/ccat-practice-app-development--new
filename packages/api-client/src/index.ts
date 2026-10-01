@@ -321,6 +321,7 @@ export class CcatClient {
     const parts: string[] = [];
     if (range.from) parts.push(`from=${encodeURIComponent(range.from)}`);
     if (range.to) parts.push(`to=${encodeURIComponent(range.to)}`);
+    if (program === 'ngat') parts.push('program=ngat');
     const qs = parts.length ? `?${parts.join('&')}` : '';
     return this.request<ExamHistoryItem[]>('GET', `/v1/exams/history${qs}`, { auth: true });
   }

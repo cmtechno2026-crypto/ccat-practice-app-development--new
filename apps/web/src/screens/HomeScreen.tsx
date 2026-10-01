@@ -90,7 +90,7 @@ export function HomeScreen() {
           )}
           <GradePlanChip />
           {profile?.ngat_enabled
-            ? <span className="hh-ws" aria-label={`${program === 'ngat' ? 'NGAT' : 'CCAT'} workspace`}>{program === 'ngat' ? 'NGAT' : 'CCAT'}<small>WORKSPACE</small></span>
+            ? <span className="hh-ws" aria-label={`${program === 'ngat' ? 'NGAT' : 'CCAT'} workspace`}>{program === 'ngat' ? 'NGAT' : 'CCAT'}</span>
             : <AvatarControl />}
         </div>
       </header>

@@ -96,7 +96,7 @@ export function Figure({ url, blocks, kind, alt }: { url?: string | null; blocks
 
 export function AppBar({ title, sub, back, right, wide, below }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; wide?: boolean; below?: React.ReactNode }) {
   const nav = useNavigate();
-  const { profile } = useApp();
+  const { profile, program } = useApp();
   return (
     <div className="appbar">
       {/* `wide` aligns the header's inner content to the same column as `.content-wide` pages (Progress),
@@ -112,8 +112,11 @@ export function AppBar({ title, sub, back, right, wide, below }: { title: string
         {right}
         {/* Grade + membership plan (single chip, links to /plan), just left of the avatar — on every in-app page. */}
         <GradePlanChip />
-        {/* Top-right avatar is a control: opens the avatar + theme management panel. Only on in-app pages (has profile). */}
-        {profile ? <AvatarControl /> : <div className="avatar-chip" aria-hidden>🦊</div>}
+        {/* Top-right: workspace name for NGAT-enabled accounts (read-only; switch is on Home). Others keep the
+            avatar control that opens the avatar + theme panel. Pre-auth shows the static fox. */}
+        {profile?.ngat_enabled
+          ? <span className="appbar-ws" aria-label={`${program === 'ngat' ? 'NGAT' : 'CCAT'} workspace`}>{program === 'ngat' ? 'NGAT' : 'CCAT'}</span>
+          : profile ? <AvatarControl /> : <div className="avatar-chip" aria-hidden>🦊</div>}
       </div>
     </div>
   );
