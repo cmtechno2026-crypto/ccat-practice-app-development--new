@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { ProgramPills } from '../components/ProgramPills';
 import { Loading, ErrorBox, useToast } from '../components/ui';
 import { CreateSet } from '../components/SetsView';
 import { SetEditor } from '../components/SetEditor';
@@ -40,7 +41,7 @@ export function ContentTabs({ active }: { active: 'practice' | 'exam' }) {
 }
 
 export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
-  const { can } = useAuth();
+  const { can, program } = useAuth();
   const toast = useToast();
   const [tax, setTax] = useState<any>(null);
   const [sets, setSets] = useState<any[] | null>(null);
@@ -55,8 +56,8 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
   const isExam = mode === 'exam';
   const setDefault = (n: number) => { const v = Math.min(PER_SET_CEILING, Math.max(1, Math.round(n || 1))); setDefPerSet(v); saveDefaultPerSet(v); };
 
-  const load = () => { setError(null); api.sets().then(r => setSets(r.items)).catch(setError); };
-  useEffect(() => { load(); api.taxonomy().then(setTax).catch(() => {}); }, []);
+  const load = () => { setError(null); api.sets(program).then(r => setSets(r.items)).catch(setError); };
+  useEffect(() => { setSets(null); setTax(null); setGrade(''); setSub(''); load(); api.taxonomy(program).then(setTax).catch(() => {}); }, [program]); // eslint-disable-line
   useEffect(() => {
     if (grade || !tax?.grades?.length || !sets) return;
     const byGrade = new Map<string, number>(); const byDiff = new Map<string, Map<string, number>>();
@@ -140,6 +141,7 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
 
       <div className="contentnav">
         <ContentTabs active={isExam ? 'exam' : 'practice'} />
+        <ProgramPills style={{ marginLeft: 8 }} />
         {tax && (
           <label className="gradesel">GRADE
             <select value={grade} onChange={e => { setGrade(e.target.value); setSub(''); }}>

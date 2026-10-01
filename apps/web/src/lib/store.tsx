@@ -4,6 +4,7 @@ import { DEFAULT_APP_CONFIG, type AppConfig } from '@ccat/client-core';
 import { client } from './api';
 import { applyStoredPalette } from './theme-apply';
 import { PAYMENTS_ENABLED } from './entitlements';
+import { clearAsyncCache } from './async-cache';
 
 // App-level state shared across screens: auth/profile + app-config (channel gate) + a toast.
 // Screen NAVIGATION uses react-router (URLs); this store holds cross-cutting state only, so web and
@@ -91,6 +92,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     try { await client.logout(); } catch { /* ignore */ }
+    clearAsyncCache(); // drop cached per-workspace data so the next account in this tab starts clean
     setProfileState(null);
     setEntitlements(null);
     setEntLoaded(!PAYMENTS_ENABLED);

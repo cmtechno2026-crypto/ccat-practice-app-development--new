@@ -251,9 +251,10 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
   });
 
   // Taxonomy (for pickers)
-  app.get('/v1/admin/content/taxonomy', guard, async () => {
-    const cats = await db.query("select id,key,name from ccat.categories where active and program = 'ccat' order by display_order");
-    const subs = await db.query('select id,category_id,key,name,coalesce(max_questions_per_set,15) as max_questions_per_set from ccat.subcategories where active order by display_order');
+  app.get('/v1/admin/content/taxonomy', guard, async (req) => {
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const cats = await db.query("select id,key,name from ccat.categories where active and program = $1 order by display_order", [program]);
+    const subs = await db.query('select s.id,s.category_id,s.key,s.name,coalesce(s.max_questions_per_set,15) as max_questions_per_set from ccat.subcategories s join ccat.categories c on c.id=s.category_id and c.program=$1 where s.active order by s.display_order', [program]);
     const diffs = await db.query('select id,key,name,weight from ccat.difficulties order by display_order');
     const grades = await db.query('select id,grade_number,name from ccat.grades where active and retired_at is null order by display_order');
     return { categories: cats.rows, subcategories: subs.rows, difficulties: diffs.rows, grades: grades.rows };
@@ -277,8 +278,9 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         where ($1::text is null or qv.state::text = $1)
           and ($2::uuid is null or qv.grade_id = $2)
           and ($3::uuid is null or lq.category_id = $3)
+          and cat.program = $5
         order by qv.created_at desc limit $4`,
-      [q.state ?? null, q.grade_id ?? null, q.category_id ?? null, limit],
+      [q.state ?? null, q.grade_id ?? null, q.category_id ?? null, limit, ((q as any).program === 'ngat' ? 'ngat' : 'ccat')],
     );
     return { items: rows.rows.map(r => ({ ...r, preview: preview(r.prompt_blocks) })) };
   });
@@ -357,6 +359,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
   // Sets list + publish
   app.get('/v1/admin/content/sets', guard, async (req) => {
     requirePermission(req, 'content.create');
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     const rows = await db.query(`select sv.id, qs.id set_id, qs.name, g.grade_number, cat.name category, qs.category_id,
         sub.name subcategory, qs.subcategory_id, d.key difficulty_key, sv.difficulty_id, sv.version_number,
         sv.question_count, sv.duration_minutes, sv.state, sv.allowed_practice, sv.allowed_exam, sv.published_at,
@@ -364,7 +367,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         from ccat.question_set_versions sv
         join ccat.question_sets qs on qs.id=sv.question_set_id
         join ccat.grades g on g.id=qs.grade_id
-        join ccat.categories cat on cat.id=qs.category_id
+        join ccat.categories cat on cat.id=qs.category_id and cat.program=$1
         left join ccat.subcategories sub on sub.id=qs.subcategory_id
         left join ccat.difficulties d on d.id=sv.difficulty_id
         -- Canonical set order (SAME as the student catalog): active sets first (state != 'retired'),
@@ -374,7 +377,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
         -- limit was 400: the admin list is NOT grade-scoped, so once total set versions exceeded 400 the
         -- last groups (newest sets, incl. Combine) were truncated → missing in admin though present in web CCAT.
         order by cat.display_order, sub.display_order, (sv.state = 'retired'), sv.created_at asc, sv.id asc
-        limit 5000`);
+        limit 5000`, [program]);
     return { items: rows.rows };
   });
   app.post('/v1/admin/content/sets/:id/unpublish', guard, async (req) => {

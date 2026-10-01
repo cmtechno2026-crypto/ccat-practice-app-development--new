@@ -381,14 +381,15 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
   app.post('/v1/admin/content/import', guard, async (req) => {
     requirePermission(req, 'content.create');
     const b = importSchema.parse(req.body);
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     const norm = (s: string) => String(s ?? '').trim().toLowerCase();
     const key = (s: string) => norm(s).replace(/[\s-]+/g, '_'); // "Non-verbal" -> "non_verbal"
     const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
     // Live taxonomy for name resolution (scope is authoritative on the server).
     const grades = (await db.query(`select id, grade_number, lower(name) name from ccat.grades where active and retired_at is null`)).rows as any[];
-    const cats = (await db.query(`select id, lower(key) key, lower(name) name from ccat.categories where active and program = 'ccat'`)).rows as any[];
-    const subs = (await db.query(`select id, category_id, lower(key) key, lower(name) name from ccat.subcategories where active`)).rows as any[];
+    const cats = (await db.query(`select id, lower(key) key, lower(name) name from ccat.categories where active and program = $1`, [program])).rows as any[];
+    const subs = (await db.query(`select s.id, s.category_id, lower(s.key) key, lower(s.name) name from ccat.subcategories s join ccat.categories c on c.id=s.category_id and c.program=$1 where s.active`, [program])).rows as any[];
     const diffs = (await db.query(`select id, lower(key) key, lower(name) name from ccat.difficulties`)).rows as any[];
 
     type Ready = { grade: any; cat: any; sub: any; diff: any; row: any; filled: { text: string; correct: boolean }[] };
@@ -473,6 +474,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
   app.post('/v1/admin/content/exam-papers/scaffold', guard, async (req) => {
     requirePermission(req, 'content.create');
     const b = z.object({ grade_id: z.string().uuid() }).parse(req.body);
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     const created = await withTransaction(db, async (c) => {
       const grade = await c.query('select id from ccat.grades where id=$1 and active and retired_at is null', [b.grade_id]);
       if (grade.rows.length === 0) throw Errors.notFound('Grade not found');
@@ -481,8 +483,8 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
            join ccat.question_sets qs on qs.id=sv.question_set_id
           where qs.grade_id=$1 and sv.allowed_exam=true`, [b.grade_id]);
       if (existing.rows[0]!.n > 0) return 0; // already has exam papers; nothing to scaffold
-      const cat = await c.query(`select id from ccat.categories where key='verbal' and active and program='ccat' limit 1`);
-      const anchorCat = cat.rows[0]?.id ?? (await c.query("select id from ccat.categories where program='ccat' order by display_order limit 1")).rows[0]?.id;
+      const cat = await c.query(`select id from ccat.categories where key='verbal' and active and program=$1 limit 1`, [program]);
+      const anchorCat = cat.rows[0]?.id ?? (await c.query("select id from ccat.categories where program=$1 order by display_order limit 1", [program])).rows[0]?.id;
       const sub = await c.query('select id from ccat.subcategories where category_id=$1 order by display_order limit 1', [anchorCat]);
       if (!anchorCat || sub.rows.length === 0) throw Errors.validation('Taxonomy not ready — add a category/subcategory first');
       for (const label of ['A', 'B', 'C']) {

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { asyncCache } from '../lib/async-cache';
 import { useNavigate } from 'react-router-dom';
 import type { Grade } from '@ccat/api-client';
 import { client } from '../lib/api';
@@ -142,12 +143,20 @@ export function Field({ label, hint, hintKind, children }: { label: string; hint
 }
 
 // A tiny data-loading hook to keep screens declarative: run(), loading/error/data states.
-export function useAsync<T>(fn: () => Promise<T>, deps: React.DependencyList = []) {
-  const [state, setState] = useState<{ loading: boolean; error: string | null; data: T | null }>({ loading: true, error: null, data: null });
+export function useAsync<T>(fn: () => Promise<T>, deps: React.DependencyList = [], cacheKey?: string) {
+  const [state, setState] = useState<{ loading: boolean; error: string | null; data: T | null }>(() =>
+    (cacheKey != null && asyncCache.has(cacheKey))
+      ? { loading: false, error: null, data: asyncCache.get(cacheKey) as T }
+      : { loading: true, error: null, data: null });
   const reload = React.useCallback(() => {
-    setState((s) => ({ ...s, loading: true, error: null }));
-    fn().then((data) => setState({ loading: false, error: null, data }))
-      .catch((e) => setState({ loading: false, error: e?.message ?? 'Something went wrong', data: null }));
+    const hasCache = cacheKey != null && asyncCache.has(cacheKey);
+    // Cached key → show it now (no spinner) and revalidate silently. Uncached → normal spinner.
+    setState((s) => hasCache
+      ? { loading: false, error: null, data: asyncCache.get(cacheKey!) as T }
+      : { ...s, loading: true, error: null });
+    fn()
+      .then((data) => { if (cacheKey != null) asyncCache.set(cacheKey, data); setState({ loading: false, error: null, data }); })
+      .catch((e) => setState((s) => ({ loading: false, error: e?.message ?? 'Something went wrong', data: cacheKey != null ? s.data : null })));
   }, deps); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { reload(); }, [reload]);
   return { ...state, reload };

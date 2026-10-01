@@ -5,6 +5,7 @@ import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { Card, Loader, ErrorNote, useAsync, GradePlanChip } from '../components/ui';
 import { AvatarControl } from '../components/AvatarControl';
+import { WorkspaceTabs } from '../components/WorkspaceSwitch';
 import { Avatar } from '../components/Avatar';
 import { PromoInline } from '../components/DiscountBanner';
 import { AssignmentPanel } from '../components/AssignmentPanel';
@@ -64,7 +65,7 @@ export function HomeScreen() {
       client.progressSummary({}, program).catch(() => null as ProgressSummary | null),
     ]);
     return { summary, readiness, progress, announcements, active, achievements, analytics };
-  }, [program]);
+  }, [program], `home:${program}`);
 
   const name = firstName(profile?.display_name);
   const summary = data?.summary;
@@ -88,7 +89,9 @@ export function HomeScreen() {
             </button>
           )}
           <GradePlanChip />
-          <AvatarControl />
+          {profile?.ngat_enabled
+            ? <span className="hh-ws" aria-label={`${program === 'ngat' ? 'NGAT' : 'CCAT'} workspace`}>{program === 'ngat' ? 'NGAT' : 'CCAT'}<small>WORKSPACE</small></span>
+            : <AvatarControl />}
         </div>
       </header>
 
@@ -217,8 +220,11 @@ export function HomeScreen() {
             {/* ---------------- RIGHT MOTIVATION RAIL ---------------- */}
             <aside className="home-rail" aria-label="Your progress">
               <div className="rail-card mascot-card">
+                <WorkspaceTabs />
                 <div className="mascot-emoji"><Avatar size={46} /></div>
-                <div className="mascot-line">{mascotLine(streak, completion)}</div>
+                <div className="mascot-line">{program === 'ngat' && profile?.ngat_enabled
+                  ? mascotLine(streak, completion).replace("today's practice", "today's NGAT practice")
+                  : mascotLine(streak, completion)}</div>
               </div>
 
               <div className="rail-card">

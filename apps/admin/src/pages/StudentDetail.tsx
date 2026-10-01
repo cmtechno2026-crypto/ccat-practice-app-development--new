@@ -351,23 +351,23 @@ const fmtMMSS = (secs: number | null | undefined) => {
 };
 
 function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; onOpenSet: (setId: string, label: string) => void }) {
-  const { me } = useAuth();
+  const { me, program } = useAuth();
   const reviewLabel = me?.is_teacher ? 'Review' : '⬇ Review / Download';   // teachers can't download
-  const { data, loading, error } = useAsync(() => api.getStudentProgress(studentId), [studentId]);
+  const { data, loading, error } = useAsync(() => api.getStudentProgress(studentId, program), [studentId, program]);
   const batteries: any[] = data?.batteries ?? [];
   const [battery, setBattery] = useState<string>('');
   const activeKey = battery || batteries[0]?.key || '';
   const activeBattery = batteries.find((b: any) => b.key === activeKey);
   const [sub, setSub] = useState<string>('all');
   const setsAsync = useAsync(
-    async () => (activeKey ? await api.getStudentProgressSets(studentId, activeKey, sub) : []),
-    [studentId, activeKey, sub],
+    async () => (activeKey ? await api.getStudentProgressSets(studentId, activeKey, sub, program) : []),
+    [studentId, activeKey, sub, program],
   );
   const sets: any[] = setsAsync.data ?? [];
   const subOptions: any[] = activeBattery?.subcategories ?? [];
 
   // Exam papers (finished attempts) for the Exam Progress panel.
-  const examAsync = useAsync(() => api.getStudentExamHistory(studentId), [studentId]);
+  const examAsync = useAsync(() => api.getStudentExamHistory(studentId, program), [studentId, program]);
   const papers: any[] = examAsync.data ?? [];
   const [examBattery, setExamBattery] = useState<string>('verbal');
   const examPapers = papers.filter((p: any) => (p.battery_key ?? 'verbal') === examBattery);
@@ -643,8 +643,9 @@ function timeAgo(iso?: string | null): string {
 }
 
 function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSet: (setId: string, label: string) => void }) {
+  const { program } = useAuth();
   const [tick, setTick] = useState(0);
-  const { data, loading, error } = useAsync(() => api.getStudentAssignments(studentId), [studentId, tick]);
+  const { data, loading, error } = useAsync(() => api.getStudentAssignments(studentId, program), [studentId, tick, program]);
   const items: any[] = data?.assignments ?? [];
   const [assignOpen, setAssignOpen] = useState(false);
   const toast = useToast();
@@ -727,7 +728,8 @@ function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSe
 }
 
 function AssignModal({ studentId, onClose, onAssigned }: { studentId: string; onClose: () => void; onAssigned: () => void }) {
-  const { data, loading, error } = useAsync(() => api.getStudentAssignmentsCatalog(studentId), [studentId]);
+  const { program } = useAuth();
+  const { data, loading, error } = useAsync(() => api.getStudentAssignmentsCatalog(studentId, program), [studentId, program]);
   const catalog: any[] = data ?? [];
   const [battery, setBattery] = useState<string>('');
   const [sub, setSub] = useState<string>('all');

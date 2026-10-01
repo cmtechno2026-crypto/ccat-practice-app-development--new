@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { ProgramPills } from '../components/ProgramPills';
 import { Loading, ErrorBox } from '../components/ui';
 
 // Teacher Practice / Exam browse — the SAME published content the web CCAT client shows, but a teacher
@@ -27,6 +29,7 @@ export function TeacherPractice() { return <TeacherContent mode="practice" />; }
 export function TeacherExam() { return <TeacherContent mode="exam" />; }
 
 function TeacherContent({ mode }: { mode: 'practice' | 'exam' }) {
+  const { program, me } = useAuth();
   const [grades, setGrades] = useState<{ id: string; grade_number: number; name: string }[]>([]);
   const [gradeId, setGradeId] = useState<string>(() => { try { return localStorage.getItem(GRADE_KEY) || ''; } catch { return ''; } });
   const [items, setItems] = useState<any[] | null>(null);
@@ -51,8 +54,8 @@ function TeacherContent({ mode }: { mode: 'practice' | 'exam' }) {
     if (!gradeId) return;
     try { localStorage.setItem(GRADE_KEY, gradeId); } catch { /* ignore */ }
     setLoading(true); setError(null); setBattery(null); setSub(null);
-    api.teacherCatalog(gradeId).then(setItems).catch(setError).finally(() => setLoading(false));
-  }, [gradeId]);
+    api.teacherCatalog(gradeId, program).then(setItems).catch(setError).finally(() => setLoading(false));
+  }, [gradeId, program]);
 
   const forMode = useMemo(() => (items ?? []).filter(i => i.allowed_modes?.includes(mode)), [items, mode]);
 
@@ -69,6 +72,7 @@ function TeacherContent({ mode }: { mode: 'practice' | 'exam' }) {
   const header = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
       <b style={{ fontSize: 16 }}>{mode === 'practice' ? 'Practice' : 'Exam'}</b>
+      {!me?.is_teacher && <ProgramPills style={{ marginLeft: 4 }} />}
       <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--tint, #eef4fd)', border: '1px solid #d5e3f7', borderRadius: 12, padding: '7px 12px', fontWeight: 700, color: 'var(--primary, #1A5EAB)', fontSize: 13 }}>
         Grade
         <select value={gradeId} onChange={e => setGradeId(e.target.value)} style={{ border: '1px solid #cbdcf3', borderRadius: 8, padding: '5px 8px', fontWeight: 700, color: 'var(--primary, #1A5EAB)', background: '#fff', fontFamily: 'inherit' }}>

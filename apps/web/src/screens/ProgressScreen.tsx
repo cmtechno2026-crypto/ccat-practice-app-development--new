@@ -187,6 +187,7 @@ function ExamProgress({ query, locked, onUpgrade, onOpenReview }: { query: Progr
   const { loading, error, data, reload } = useAsync(
     async () => (locked ? ([] as ExamHistoryItem[]) : (client.examHistory({ from: query.from, to: query.to }, program) as Promise<ExamHistoryItem[]>)),
     [query, locked, program],
+    `exam:history:${program}:${query.from ?? 'all'}:${query.to ?? 'all'}:${locked}`,
   );
   const [battery, setBattery] = useState('verbal');
   const papers = (data ?? []).filter((p) => (p.battery_key ?? 'verbal') === battery);
@@ -290,7 +291,7 @@ export function ProgressScreen() {
     return q;
   }, [range]);
 
-  const { loading, error, data, reload } = useAsync(async () => client.progressSummary(query, program) as Promise<ProgressSummary>, [query, program]);
+  const { loading, error, data, reload } = useAsync(async () => client.progressSummary(query, program) as Promise<ProgressSummary>, [query, program], `progress:summary:${program}:${query.from ?? 'all'}`);
 
   const batteries = data?.batteries ?? [];
   const active = batteries.find((b) => b.key === tab) ?? batteries[0] ?? null;
@@ -303,6 +304,7 @@ export function ProgressScreen() {
   const setsAsync = useAsync(
     async () => (activeKey ? await client.progressSets({ battery: activeKey, subcategory: subActive || 'all', ...query }, program) : ([] as ProgressSetRow[])),
     [activeKey, subActive, query, program],
+    `progress:sets:${program}:${activeKey ?? ''}:${subActive}:${query.from ?? 'all'}`,
   );
   const setsShown = setsAsync.data ?? [];
 

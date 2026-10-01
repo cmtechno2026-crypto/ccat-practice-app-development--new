@@ -10,7 +10,7 @@ import { TodoRow, DoneRow } from '../components/AssignmentPanel';
 export function AssignmentsScreen() {
   const nav = useNavigate();
   const { flash, profile, program } = useApp();
-  const { data, loading, error, reload } = useAsync(() => client.assignments(program), [program]);
+  const { data, loading, error, reload } = useAsync(() => client.assignments(program), [program], `assignments:${program}`);
 
   // No teacher → this page is locked (mirrors the sidebar lock + hidden Home panel).
   if (profile && profile.has_teacher === false) {

@@ -66,7 +66,7 @@ function seedFrom(...parts: string[]): number {
 // per-battery breakdown. Same shape as GET /v1/exams/history. Used read-only by the admin Student Detail
 // Exam Progress panel (no finalize side-effects there). The student route below still owns its own copy
 // with finalize; this function takes the student id explicitly so admin can pass the target student.
-export async function computeExamHistory(db: DB, sid: string, range: { from?: string; to?: string } = {}) {
+export async function computeExamHistory(db: DB, sid: string, range: { from?: string; to?: string } = {}, program: 'ccat' | 'ngat' = 'ccat') {
   const params: any[] = [sid];
   const cond: string[] = [
     "s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')",
@@ -74,6 +74,7 @@ export async function computeExamHistory(db: DB, sid: string, range: { from?: st
   ];
   if (range.from) { params.push(range.from); cond.push(`s.terminal_at >= $${params.length}`); }
   if (range.to) { params.push(range.to); cond.push(`s.terminal_at < $${params.length}`); }
+  params.push(program); cond.push(`cat.program = $${params.length}`);
 
   const res = await db.query(
     `select distinct on (qs.id)

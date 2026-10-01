@@ -6,7 +6,6 @@ import { useApp } from '../lib/store';
 import { PAYMENTS_ENABLED, capsOf } from '../lib/entitlements';
 import { REWARDS_LOCKED } from '../lib/features';
 import { Avatar } from './Avatar';
-import { WorkspaceSwitch } from './WorkspaceSwitch';
 
 // Primary navigation — persistent LEFT sidebar (desktop + tablet). PUSH model: this panel sits in the
 // layout flow; expanding widens it AND shifts the content area right (the offset lives on `.main`,
@@ -105,8 +104,6 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
         {/* Mobile drawer close (CSS-hidden on desktop) */}
         <button type="button" className="sidebar-close" aria-label="Close menu" onClick={onCloseDrawer}>✕</button>
       </div>
-      {/* NGAT workspace switcher (allow-listed accounts only; self-hides otherwise). */}
-      <WorkspaceSwitch />
       <nav className="snav-list">
         {NAV.map((it) => {
           const active = it.match({ pathname: loc.pathname, search: loc.search, mode: activeMode });
@@ -133,10 +130,14 @@ export function Sidebar({ expanded, onExpand, onCollapse, drawerOpen, onCloseDra
         })}
       </nav>
       <div className="sidebar-foot">
+        {/* NGAT workspace indicator (read-only; the switch lives in the Home card). Allow-listed accounts only. */}
+        {profile?.ngat_enabled && (
+          <div className="ws-foot" aria-hidden>Workspace · <b>{program === 'ngat' ? 'NGAT' : 'CCAT'}</b></div>
+        )}
         {/* The user's NAME row is the entry point to Profile (Profile nav item removed above). */}
         <button className="snav snav-profile" onClick={() => nav('/profile')} aria-label="Open your profile"
           title={`${profile?.display_name ?? 'You'} — open profile`}>
-          <span className="ico"><Avatar size={22} /></span>
+          <span className="ico ws-avatar"><Avatar size={22} /></span>
           <span className="label">{profile?.display_name ?? 'You'}</span>
         </button>
         <button className="snav snav-logout" onClick={logout} title="Log out">

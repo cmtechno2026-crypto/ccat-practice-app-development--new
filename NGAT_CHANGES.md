@@ -122,3 +122,38 @@ A single new column — `ccat.categories.program` (`'ccat' | 'ngat'`) — carrie
 - **Legacy `GET /v1/progress`** (learning-plan coverage, used by a Home widget) is **not** program-scoped — NGAT has no learning plans so it returns empty/overall; scope it when NGAT learning plans exist.
 - **Mobile app** untouched (sees CCAT).
 - **Registration/grade picker** intentionally CCAT-only (`practice_ready` pinned to `ccat`).
+
+---
+
+## 8. Workspace-switch performance fix (post-review)
+
+**Symptom:** every CCAT⇄NGAT switch showed a full-screen loader and re-fetched everything, even when switching back to a workspace already loaded in the same session.
+
+**Cause:** `useAsync` had no cache. Changing `program` flipped `loading:true` and refetched; screens gate the `<Loader/>` on `loading`, so the spinner appeared on every switch.
+
+**Fix — stale-while-revalidate cache (session-lived):**
+- `apps/web/src/lib/async-cache.ts` (NEW) — a shared in-memory `Map` + `clearAsyncCache()` (own module to avoid a ui↔store import cycle).
+- `apps/web/src/components/ui.tsx` — `useAsync` takes an optional `cacheKey`. With a key: first load spins once, then the result is cached; subsequent mounts/switches render the cached data **instantly** (no spinner) and refresh silently in the background. Without a key: unchanged behaviour.
+- Cache keys added to the program-scoped calls: catalog (`catalog:<program>`), progress summary/sets, exam history, assignments, bookmarks, Home (`home:<program>`).
+- `apps/web/src/lib/store.tsx` — `signOut()` calls `clearAsyncCache()` so a different account signing in to the same tab never sees the previous user's cached data.
+
+**Result:** one brief spinner per workspace per session on first open; every switch after is instant. Data still refreshes in the background each switch, so it never goes stale.
+
+**Follow-up note (separate, not this fix):** the Home "Practice — pick a battery" preview shows all three battery cards regardless of program. In NGAT only Verbal has content, so Quantitative/Non-Verbal there lead to an empty Practice screen. If you want Home to show only batteries with content in the active workspace, that's a small HomeScreen change — tell me and I'll do it.
+
+---
+
+## 9. Switcher UI reposition (variant B)
+
+Per review, the workspace switch moved out of the sidebar into the Home page.
+
+- **`apps/web/src/components/WorkspaceSwitch.tsx`** — repurposed from a sidebar pill to **`WorkspaceTabs`**: a CCAT/NGAT tabbed header used inside the Home "ready to practise" card. Still self-hides unless `profile.ngat_enabled`.
+- **`apps/web/src/screens/HomeScreen.tsx`**
+  - The right-rail mascot card ("Ready for today's practice?") now leads with the `WorkspaceTabs`; the line reads "…today's NGAT practice?" when NGAT is active.
+  - The **hero** top-right avatar is replaced by the active **workspace wordmark** (`NGAT` / `CCAT` + "WORKSPACE") for allow-listed accounts; other accounts keep the avatar unchanged.
+- **`apps/web/src/components/Sidebar.tsx`**
+  - Removed the sidebar switch pill. Added a small **read-only** "Workspace · NGAT" label (allow-listed accounts only) so the current workspace is always visible even though switching happens on Home.
+  - Profile avatar given higher contrast (`.ws-avatar`: warm tint + orange ring).
+- **`apps/web/src/theme.css`** — styles for `.ws-tabs`, `.hh-ws`, `.ws-foot`, `.ws-avatar`.
+
+**Behaviour:** switching happens on the Home card only; Practice/Exam/Progress show the current workspace's data and the sidebar label reflects it. (Earlier `.ws-switch` sidebar styles remain in theme.css, now unused — harmless.)

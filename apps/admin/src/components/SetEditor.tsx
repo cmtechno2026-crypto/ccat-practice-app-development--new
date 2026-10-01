@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from './ui';
+import { useAuth } from '../lib/auth';
 import { BulkImport } from './BulkImport';
 import { RenameSetName } from './RenameSetName';
 import { maxQuestionsForSub } from './BulkSets';
@@ -47,6 +48,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   const [subId, setSubId] = useState('');
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { program } = useAuth();
   const [err, setErr] = useState('');
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -56,7 +58,7 @@ export function SetEditor({ taxonomy, setId, scopeCategoryId, scopeLabel, startB
   const [siblingNames, setSiblingNames] = useState<Set<string>>(new Set());
   const loadSiblings = async () => {
     try {
-      const r = await api.sets();
+      const r = await api.sets(program);
       const mine = (r.items || []).find((x: any) => x.id === setId);
       if (!mine) return;
       setSiblingNames(new Set((r.items || [])

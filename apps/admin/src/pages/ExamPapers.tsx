@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { ProgramPills } from '../components/ProgramPills';
 import { Loading, ErrorBox, Modal, useToast } from '../components/ui';
 import { ContentTabs } from './Content';
 import { BulkSets } from '../components/BulkSets';
@@ -26,7 +27,7 @@ const fmtDate = (d: string) => {
 };
 
 export function ExamPapers() {
-  const { can } = useAuth();
+  const { can, program } = useAuth();
   const toast = useToast();
   const manage = can('content.create');
   const [tax, setTax] = useState<any>(null);
@@ -40,8 +41,8 @@ export function ExamPapers() {
 
   const catIdFor = (key: string) => (tax?.categories ?? []).find((c: any) => c.key === key)?.id as string | undefined;
 
-  const loadSets = () => api.sets().then(r => setSets(r.items)).catch(setError);
-  useEffect(() => { loadSets(); api.taxonomy().then(setTax).catch(() => {}); }, []);
+  const loadSets = () => api.sets(program).then(r => setSets(r.items)).catch(setError);
+  useEffect(() => { setSets(null); setTax(null); setGrade(''); setBattery('verbal'); loadSets(); api.taxonomy(program).then(setTax).catch(() => {}); }, [program]); // eslint-disable-line
   useEffect(() => { if (!grade && tax?.grades?.length) setGrade(String(tax.grades[0].grade_number)); }, [tax]); // eslint-disable-line
 
   // Exam sets in this grade + selected battery.
@@ -74,6 +75,7 @@ export function ExamPapers() {
 
       <div className="contentnav">
         <ContentTabs active="exam" />
+        <ProgramPills style={{ marginLeft: 8 }} />
         {tax && (
           <label className="gradesel">GRADE
             <select value={grade} onChange={e => setGrade(e.target.value)}>

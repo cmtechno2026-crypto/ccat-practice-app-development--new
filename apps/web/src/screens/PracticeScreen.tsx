@@ -65,7 +65,7 @@ export function PracticeScreen() {
   const battery = sp.get('battery');            // level 2 when set
   const category = sp.get('category');          // level 3 when set
   const setId = sp.get('set');                  // start screen when set
-  const { loading, error, data, reload } = useAsync(() => client.catalog(program), [program]);
+  const { loading, error, data, reload } = useAsync(() => client.catalog(program), [program], `catalog:${program}`);
   const [starting, setStarting] = useState(false);
 
   const initial = loadPrefs();

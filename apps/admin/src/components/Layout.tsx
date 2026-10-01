@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-do
 import { useAuth } from '../lib/auth';
 import { PAYMENTS_ENABLED } from '../lib/payments';
 import { api } from '../lib/api';
+import { ProgramPills } from './ProgramPills';
 
 // Request kinds surfaced in the bell + Students highlighting, each with its own colour so the two
 // surfaces read consistently (grade-change = blue, deletion = coral, break-glass = amber).
@@ -265,6 +266,9 @@ export function Layout() {
             <span id="th-crumb" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 2, minWidth: 0, overflow: 'hidden' }} />
           </span>
           <div className="who">
+            {me?.is_teacher && (loc.pathname.startsWith('/teacher-practice') || loc.pathname.startsWith('/teacher-exam') || loc.pathname.startsWith('/students')) && (
+              <span className="hide-mobile" style={{ marginRight: 4 }}><ProgramPills /></span>
+            )}
             {sites.length > 1 && (
               <div role="tablist" aria-label="Workspace" className="hide-mobile" style={{ display: 'inline-flex', background: 'var(--card2,#eef2f7)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: 3, gap: 3, marginRight: 4 }}>
                 {sites.map(sid => {

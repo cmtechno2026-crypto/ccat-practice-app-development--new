@@ -9,7 +9,7 @@ import { makeAuthenticateAdmin, requirePermission, requireSuperAdmin, assertStud
 import { deriveAgeYears } from '../lib/age.js';
 import { hashSecret } from '../security/crypto.js';
 import { randomBytes } from 'node:crypto';
-import { progressCardTotals, computeProgressSummary, computeProgressSets, computeSetReview, pickRange } from './progress.js';
+import { progressCardTotals, computeProgressSummary, computeProgressSets, computeSetReview, pickRange, progOf } from './progress.js';
 import { computeExamHistory } from './sessions.js';
 
 // Shared break-glass enrollment: revoke any active device + live sessions, then enroll the new device
@@ -141,7 +141,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
     await assertStudentVisible(db, req, id);
-    return computeProgressSummary(db, id, pickRange(req.query));
+    return computeProgressSummary(db, id, pickRange(req.query), progOf(req.query));
   });
   app.get('/v1/admin/students/:id/progress/sets', guard, async (req) => {
     requirePermission(req, 'student.directory');
@@ -151,7 +151,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const battery = typeof q.battery === 'string' ? q.battery.trim() : '';
     const subRaw = typeof q.subcategory === 'string' ? q.subcategory.trim() : '';
     const sub = subRaw && subRaw.toLowerCase() !== 'all' ? subRaw : null;
-    return computeProgressSets(db, id, battery, sub, pickRange(req.query));
+    return computeProgressSets(db, id, battery, sub, pickRange(req.query), progOf(req.query));
   });
   app.get('/v1/admin/students/:id/progress/set-review', guard, async (req) => {
     requirePermission(req, 'student.directory');
@@ -167,7 +167,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const id = (req.params as any).id;
     await assertStudentVisible(db, req, id);
     const r = pickRange(req.query);
-    return computeExamHistory(db, id, { from: r.from, to: r.to });
+    return computeExamHistory(db, id, { from: r.from, to: r.to }, progOf(req.query));
   });
 
   // ---- Assignments (teacher → student SET assignments) ----------------------------------------------
@@ -181,6 +181,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
     await assertStudentVisible(db, req, id);
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     const { rows } = await db.query(
       `select a.id, a.set_version_id, a.assigned_at,
               qs.id as question_set_id, qs.name,
@@ -193,7 +194,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
          from ccat.student_assignments a
          join ccat.question_set_versions sv on sv.id = a.set_version_id
          join ccat.question_sets qs on qs.id = sv.question_set_id
-         join ccat.categories cat on cat.id = qs.category_id
+         join ccat.categories cat on cat.id = qs.category_id and cat.program = $2
          left join ccat.subcategories sub on sub.id = qs.subcategory_id
          left join ccat.admin_profiles ap on ap.id = a.assigned_by
          left join lateral (
@@ -211,7 +212,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
             limit 1
          ) sess on true
         where a.student_id = $1
-        order by a.assigned_at desc, a.id desc`, [id]);
+        order by a.assigned_at desc, a.id desc`, [id, program]);
     return {
       assignments: rows.map((r: any) => {
         const isExam = r.allowed_exam === true;
@@ -250,6 +251,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
     await assertStudentVisible(db, req, id);
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name,
               cat.key as category_key, cat.name as category_name,
@@ -259,13 +261,13 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
          from ccat.students st
          join ccat.grades g on g.id = st.grade_id
          join ccat.question_sets qs on qs.grade_id = st.grade_id
-         join ccat.categories cat on cat.id = qs.category_id
+         join ccat.categories cat on cat.id = qs.category_id and cat.program = $2
          left join ccat.subcategories sub on sub.id = qs.subcategory_id
          join ccat.question_set_versions sv on sv.question_set_id = qs.id and sv.state = 'published'
               and exists (select 1 from ccat.set_version_questions svq where svq.set_version_id = sv.id and svq.active = true)
         where st.id = $1
           and not exists (select 1 from ccat.student_assignments a where a.student_id = st.id and a.set_version_id = sv.id)
-        order by cat.display_order, sub.display_order, sv.created_at asc, sv.id asc`, [id]);
+        order by cat.display_order, sub.display_order, sv.created_at asc, sv.id asc`, [id, program]);
     return rows.map((r: any) => ({
       set_version_id: r.set_version_id,
       name: r.name,
@@ -426,6 +428,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   app.get('/v1/admin/teacher/catalog', guard, async (req) => {
     const gradeId = String((req.query as any)?.grade_id ?? '').trim();
     if (!gradeId) throw Errors.validation('grade_id is required');
+    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name, cat.key as category_key, cat.name as category_name,
               sub.name as subcategory, sub.key as subcategory_key,
@@ -434,7 +437,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
               g.practice_enabled as grade_practice_enabled
          from ccat.grades g
          join ccat.question_sets qs on qs.grade_id = g.id
-         join ccat.categories cat on cat.id = qs.category_id
+         join ccat.categories cat on cat.id = qs.category_id and cat.program = $2
          left join ccat.subcategories sub on sub.id = qs.subcategory_id
          join ccat.question_set_versions sv on sv.question_set_id = qs.id
               and sv.state = 'published'
@@ -442,7 +445,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
          left join ccat.difficulties d on d.id = sv.difficulty_id
         where g.id = $1
         order by cat.display_order, sub.display_order, sv.created_at asc, sv.id asc`,
-      [gradeId],
+      [gradeId, program],
     );
     return rows.map((r: any) => ({
       set_version_id: r.set_version_id,

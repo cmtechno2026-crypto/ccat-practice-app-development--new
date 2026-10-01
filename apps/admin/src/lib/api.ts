@@ -147,19 +147,19 @@ export const api = {
   teacherStudents: (id: string) => req<{ student_ids: string[] }>('GET', `/v1/admin/teachers/${id}/students`),
   setTeacherStudents: (id: string, student_ids: string[]) => req<{ student_ids: string[] }>('PUT', `/v1/admin/teachers/${id}/students`, { student_ids }),
   addTeacherStudents: (id: string, student_ids: string[]) => req<{ added: number }>('POST', `/v1/admin/teachers/${id}/students/add`, { student_ids }),
-  teacherCatalog: (grade_id: string) => req<any>('GET', `/v1/admin/teacher/catalog?grade_id=${encodeURIComponent(grade_id)}`),
+  teacherCatalog: (grade_id: string, program?: 'ccat' | 'ngat') => req<any>('GET', `/v1/admin/teacher/catalog?grade_id=${encodeURIComponent(grade_id)}${program === 'ngat' ? '&program=ngat' : ''}`),
   teacherSetPreview: (setId: string) => req<any>('GET', `/v1/admin/teacher/set-preview?setId=${encodeURIComponent(setId)}`),
   publicGrades: () => req<any[]>('GET', '/v1/grades'),
   studentStats: () => req<{ total: number; active: number; suspended: number; banned: number; pending_deletion: number; practised_today: number }>('GET', '/v1/admin/students/stats'),
   studentDetail: (id: string) => req<any>('GET', `/v1/admin/students/${id}/detail`),
   // ---- Student detail: progress, set review, exam history (admin-students.ts) ----
-  getStudentProgress: (id: string) => req<any>('GET', `/v1/admin/students/${id}/progress/summary`),
-  getStudentProgressSets: (id: string, battery?: string, subcategory?: string) => { const p = new URLSearchParams(); if (battery) p.set('battery', battery); if (subcategory) p.set('subcategory', subcategory); const qs = p.toString(); return req<any>('GET', `/v1/admin/students/${id}/progress/sets${qs ? '?' + qs : ''}`); },
+  getStudentProgress: (id: string, program?: 'ccat' | 'ngat') => req<any>('GET', `/v1/admin/students/${id}/progress/summary${program === 'ngat' ? '?program=ngat' : ''}`),
+  getStudentProgressSets: (id: string, battery?: string, subcategory?: string, program?: 'ccat' | 'ngat') => { const p = new URLSearchParams(); if (battery) p.set('battery', battery); if (subcategory) p.set('subcategory', subcategory); if (program === 'ngat') p.set('program', 'ngat'); const qs = p.toString(); return req<any>('GET', `/v1/admin/students/${id}/progress/sets${qs ? '?' + qs : ''}`); },
   getStudentSetReview: (id: string, setId: string) => req<any>('GET', `/v1/admin/students/${id}/progress/set-review?setId=${encodeURIComponent(setId)}`),
-  getStudentExamHistory: (id: string) => req<any>('GET', `/v1/admin/students/${id}/exams/history`),
+  getStudentExamHistory: (id: string, program?: 'ccat' | 'ngat') => req<any>('GET', `/v1/admin/students/${id}/exams/history${program === 'ngat' ? '?program=ngat' : ''}`),
   // Assignments (teacher → student set assignments)
-  getStudentAssignments: (id: string) => req<any>('GET', `/v1/admin/students/${id}/assignments`),
-  getStudentAssignmentsCatalog: (id: string) => req<any>('GET', `/v1/admin/students/${id}/assignments/catalog`),
+  getStudentAssignments: (id: string, program?: 'ccat' | 'ngat') => req<any>('GET', `/v1/admin/students/${id}/assignments${program === 'ngat' ? '?program=ngat' : ''}`),
+  getStudentAssignmentsCatalog: (id: string, program?: 'ccat' | 'ngat') => req<any>('GET', `/v1/admin/students/${id}/assignments/catalog${program === 'ngat' ? '?program=ngat' : ''}`),
   addStudentAssignments: (id: string, set_version_ids: string[]) => req<any>('POST', `/v1/admin/students/${id}/assignments`, { set_version_ids }),
   removeStudentAssignment: (id: string, assignmentId: string) => req<any>('DELETE', `/v1/admin/students/${id}/assignments/${assignmentId}`),
   createStudent: (b: { display_name: string; username: string; pin: string; grade_id: string; birth_month?: number; birth_year?: number; guardian_email?: string; guardian_name?: string; guardian_phone?: string }) =>
@@ -186,7 +186,7 @@ export const api = {
   rewardAdjust: (student_id: string, kind: string, delta: number, reason: string, reference: string) =>
     req<any>('POST', '/v1/admin/rewards/adjust', { student_id, kind, delta, reason, reference }),
   // content
-  taxonomy: () => req<any>('GET', '/v1/admin/content/taxonomy'),
+  taxonomy: (program?: 'ccat' | 'ngat') => req<any>('GET', `/v1/admin/content/taxonomy${program === 'ngat' ? '?program=ngat' : ''}`),
   questions: (q: { state?: string; grade_id?: string; category_id?: string } = {}) => {
     const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as any).toString();
     return req<{ items: any[] }>('GET', `/v1/admin/content/questions${p ? '?' + p : ''}`);
@@ -207,7 +207,7 @@ export const api = {
   // <img src> — must NOT require a bearer token, so it points at /v1/assets/:id, not the admin route.
   assetUrl: (id: string) => `${GATEWAY}/v1/assets/${id}`,
   // sets + exam papers
-  sets: () => req<{ items: any[] }>('GET', '/v1/admin/content/sets'),
+  sets: (program?: 'ccat' | 'ngat') => req<{ items: any[] }>('GET', `/v1/admin/content/sets${program === 'ngat' ? '?program=ngat' : ''}`),
   set: (id: string) => req<any>('GET', `/v1/admin/content/sets/${id}`),
   createSet: (b: any) => req<{ set_version_id: string }>('POST', '/v1/admin/content/sets', b),
   patchSet: (id: string, b: { name?: string; duration_minutes?: number | null; battery_durations?: Record<string, number> | null; preserve_order?: boolean }) => req<any>('PATCH', `/v1/admin/content/sets/${id}`, b),
@@ -216,11 +216,11 @@ export const api = {
   // battery via scope_category_id) in one pass.
   authorSet: (id: string, questions: any[], scope_category_id?: string) => req<{ question_version_ids: string[]; question_count: number }>('POST', `/v1/admin/content/sets/${id}/author`, scope_category_id ? { questions, scope_category_id } : { questions }),
   // Ensure a grade's 3 starter exam papers exist (idempotent; creates only when the grade has none).
-  scaffoldExamPapers: (grade_id: string) => req<{ created: number }>('POST', '/v1/admin/content/exam-papers/scaffold', { grade_id }),
+  scaffoldExamPapers: (grade_id: string, program?: 'ccat' | 'ngat') => req<{ created: number }>('POST', `/v1/admin/content/exam-papers/scaffold${program === 'ngat' ? '?program=ngat' : ''}`, { grade_id }),
   // Scoped bulk import: each row names its scope (grade/battery/category/difficulty) + question fields.
   // The gateway resolves scope, groups by it, creates DRAFT practice set(s), and returns imported/
   // created sets + rejected rows (with reasons). Nothing publishes until the admin publishes each set.
-  importScopedQuestions: (rows: any[]) => req<{ imported: number; sets: { set_version_id: string; name: string; grade: number; battery: string; category: string; difficulty: string; question_count: number }[]; rejected: { index: number; reasons: string[] }[] }>('POST', '/v1/admin/content/import', { rows }),
+  importScopedQuestions: (rows: any[], program?: 'ccat' | 'ngat') => req<{ imported: number; sets: { set_version_id: string; name: string; grade: number; battery: string; category: string; difficulty: string; question_count: number }[]; rejected: { index: number; reasons: string[] }[] }>('POST', `/v1/admin/content/import${program === 'ngat' ? '?program=ngat' : ''}`, { rows }),
   setQuestionActive: (id: string, qid: string, active: boolean) => req<any>('PATCH', `/v1/admin/content/sets/${id}/questions/${qid}`, { active }),
   publishSet: (id: string) => req<any>('POST', `/v1/admin/content/sets/${id}/publish`),
   unpublishSet: (id: string) => req<any>('POST', `/v1/admin/content/sets/${id}/unpublish`),

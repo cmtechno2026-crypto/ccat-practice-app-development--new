@@ -8,6 +8,7 @@ interface AuthState {
   logout: () => void;
   can: (perm: string) => boolean;
   sites: string[]; activeSite: string; switchSite: (site: string) => void;
+  program: 'ccat' | 'ngat'; setProgram: (p: 'ccat' | 'ngat') => void;
 }
 const Ctx = createContext<AuthState | null>(null);
 
@@ -17,6 +18,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Multi-site (CCAT / Teacher Hub) switcher state — consumed by Layout. Persisted per-admin.
   const [activeSite, setActiveSite] = useState<string>(() => { try { return localStorage.getItem('ccat_admin_site') || 'ccat'; } catch { return 'ccat'; } });
   const switchSite = useCallback((site: string) => { setActiveSite(site); try { localStorage.setItem('ccat_admin_site', site); } catch { /* ignore */ } }, []);
+  // Program (CCAT / NGAT) — the content/teacher workspace dimension, independent of activeSite. Persisted per-admin.
+  const [program, setProgramState] = useState<'ccat' | 'ngat'>(() => { try { return (localStorage.getItem('ccat_admin_program') as 'ccat' | 'ngat') || 'ccat'; } catch { return 'ccat'; } });
+  const setProgram = useCallback((p: 'ccat' | 'ngat') => { setProgramState(p); try { localStorage.setItem('ccat_admin_program', p); } catch { /* ignore */ } }, []);
 
   useEffect(() => {
     (async () => {
@@ -50,6 +54,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // resetting then would wipe a remembered 'teacher' site on every hard refresh (chrome/URL mismatch).
   useEffect(() => { if (ready && !sites.includes(activeSite)) setActiveSite('ccat'); }, [ready, sites, activeSite]);
 
-  return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite, program, setProgram }}>{children}</Ctx.Provider>;
 }
 export function useAuth() { const v = useContext(Ctx); if (!v) throw new Error('useAuth outside provider'); return v; }
