@@ -95,7 +95,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
   // Grade 4 start at "Set 2" because Grade 3 already had "Set 1".)
   const inScope = (s: any) => exam
     ? (s.allowed_exam && String(s.grade_number) === String(ctx.gradeNumber) && s.category_id === ctx.catId)
-    : (String(s.grade_number) === String(ctx.gradeNumber) && (ctx.subId ? s.subcategory_id === ctx.subId : !s.subcategory_id) && s.difficulty_key === ctx.diffKey);
+    : (String(s.grade_number) === String(ctx.gradeNumber) && (ctx.subId ? s.subcategory_id === ctx.subId : (!s.subcategory_id && s.category_id === ctx.catId)) && s.difficulty_key === ctx.diffKey);
 
   // Numbers already used by existing "Set N" names in THIS grade+subcategory+difficulty (retired sets free
   // their number). New sets start at the lowest free number.

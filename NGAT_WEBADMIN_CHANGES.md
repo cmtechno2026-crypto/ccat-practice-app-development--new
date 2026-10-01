@@ -246,3 +246,10 @@ No content exists for Quant/Non-verbal yet, so this was a clean structural chang
 - Fix (`apps/gateway/src/routes/admin-content.ts`, publish handler): the cap query now also selects `(qs.subcategory_id is not null) as has_sub`, and `maxq` is `allowed_exam ? 60 : (has_sub ? sub.max_questions_per_set : 100)`. No-subcategory practice sets use the 100 ceiling that authoring uses; exam=60; subcategory sets unchanged → CCAT/Verbal behavior identical.
 - DB: none.
 - Deploy: `apps/gateway` (Render) rebuild + redeploy.
+
+## 15. Set-name collision across subcategory-less batteries (2026-10-02)
+- Symptom: in Grade 4 Non-verbal (Medium) the Bulk-add dialog reported "A set with this name already exists here" for Set 1/2/3 and auto-numbered 4/5/6, even though Grade 4 Non-verbal Medium was empty. Grade 4 **Quantitative** Medium had Set 1/2/3.
+- Cause: the client name/number scope (`inScope` in `BulkSets.tsx`, plus the rename `existingNames` in `Content.tsx` and `siblingNames` in `SetEditor.tsx`) matched on grade + subcategory + difficulty but **not battery/category**. For subcategory-less batteries it matched on `!subcategory_id`, so every subcategory-less battery in the same grade+difficulty (NGAT Quantitative and Non-verbal) shared one number/name space and collided with each other. (Not a cross-grade bug — that was already fixed; this is cross-battery within a grade.)
+- Fix: the no-subcategory branch now also requires `category_id` to match (`!s.subcategory_id && s.category_id === ctx.catId`); the two rename checks add `&& x.category_id === …`. Subcategory sets are unaffected (a subcategory already implies its battery). No gateway/DB change — set-name uniqueness is client-side only.
+- Files: `apps/admin/src/components/BulkSets.tsx`, `apps/admin/src/components/SetEditor.tsx`, `apps/admin/src/pages/Content.tsx`.
+- Redeploy: `apps/admin` (Vercel).
