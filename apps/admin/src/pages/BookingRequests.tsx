@@ -24,6 +24,7 @@ interface RequestRow {
   id: string; parent_name: string; parent_email: string; parent_phone: string | null;
   student_name: string | null; notes: string | null; parent_timezone: string | null;
   session_type?: string | null; custom_time_requests?: any[] | null;
+  link_subject?: string | null; link_grade?: number | null; link_label?: string | null;
   status: string; teacher_status: string; teacher_decided_at: string | null;
   decided_by_name: string | null; decided_at: string | null; created_at: string; slots: Slot[];
 }
@@ -106,6 +107,9 @@ export function BookingRequests() {
   const [chosen, setChosen] = useState<Record<string, Set<string>>>({});
   const [autoBook, setAutoBook] = useState<boolean | null>(null);
   const [savingAuto, setSavingAuto] = useState(false);
+  type XferTeacher = { id: string; name: string; open: string[] };
+  const [xfer, setXfer] = useState<{ req: RequestRow; teachers: XferTeacher[]; times: { day_of_week: string; start_time: string; end_time: string }[]; sel: string } | null>(null);
+  const [xferBusy, setXferBusy] = useState(false);
 
   const reload = () => {
     setLoading(true); setErr('');
@@ -147,6 +151,25 @@ export function BookingRequests() {
     setBusy(r.id); setErr('');
     try { await api.teacherRejectRequest(r.id, reason || undefined); reload(); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+  };
+  const openTransfer = async (r: RequestRow) => {
+    setBusy(r.id); setErr('');
+    try {
+      const c = await api.teacherTransferCandidates(r.id);
+      setXfer({ req: r, teachers: c.teachers, times: c.times, sel: c.teachers[0]?.id ?? '' });
+    } catch (e) { setErr((e as Error).message || 'Could not load teachers'); }
+    finally { setBusy(''); }
+  };
+  const doTransfer = async () => {
+    if (!xfer || !xfer.sel) return;
+    setXferBusy(true); setErr('');
+    try {
+      const res = await api.teacherTransferRequest(xfer.req.id, xfer.sel);
+      setXfer(null);
+      setErr(`Transferred to ${res.to_teacher}: ${res.matched} matched slot(s), ${res.custom} added as custom time(s).`);
+      reload();
+    } catch (e) { setErr((e as Error).message || 'Transfer failed'); }
+    finally { setXferBusy(false); }
   };
   const decideLeave = async (l: LeaveRow, decision: 'approve' | 'reject') => {
     setBusy(l.id); setErr('');
@@ -314,6 +337,12 @@ export function BookingRequests() {
                           <span style={{ color: '#8b93aa', fontSize: 12.5, fontWeight: 700, marginLeft: 'auto' }}>Tick the accepted slots to book — any accepted slot you leave unticked is declined.</span>
                         </div>
                       )}
+                      {r.status === 'pending' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '0 0 12px' }}>
+                          <button onClick={() => openTransfer(r)} disabled={busy === r.id} style={{ minHeight: 34, padding: '0 14px', borderRadius: 9, border: '1.5px solid #bcd3f7', background: '#fff', color: '#1a5eab', fontSize: 13, fontWeight: 900, cursor: 'pointer' }}>Transfer to another teacher</button>
+                          <span style={{ color: '#8b93aa', fontSize: 12.5, fontWeight: 700 }}>Moves this request (parent, student &amp; times) to another teacher — times they don&apos;t have become custom slots for them.</span>
+                        </div>
+                      )}
                       <div style={{ border: '1px solid #e3eaf6', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.1fr)', gap: 14, alignItems: 'center', padding: '10px 18px', background: '#eef3fb', color: '#6f7890', fontSize: 11, fontWeight: 900, letterSpacing: '.08em', textTransform: 'uppercase' }}>
                           <span></span><span>Day / Time</span><span>Teacher response</span><span>Booking status</span>
@@ -393,6 +422,51 @@ export function BookingRequests() {
           })}
         </div>
       )}
+
+      {xfer && (() => {
+        const sel = xfer.teachers.find(t => t.id === xfer.sel);
+        const openSet = new Set(sel?.open ?? []);
+        const keyOf = (t: { day_of_week: string; start_time: string; end_time: string }) => `${t.day_of_week}|${t.start_time}|${t.end_time}`;
+        const fmt = (s: string) => String(s).slice(0, 5);
+        return (
+          <div onClick={() => !xferBusy && setXfer(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(18,30,60,.34)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 50 }}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 460, maxWidth: '100%', background: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(16,32,64,.3)', overflow: 'hidden' }}>
+              <div style={{ padding: '15px 17px', borderBottom: '1px solid #e3e9f2', position: 'relative' }}>
+                <button onClick={() => !xferBusy && setXfer(null)} style={{ position: 'absolute', top: 13, right: 13, width: 26, height: 26, borderRadius: '50%', border: '1px solid #e3e9f2', background: '#fff', color: '#6b7890', fontWeight: 800, cursor: 'pointer' }}>✕</button>
+                <div style={{ fontWeight: 900, fontSize: 15, color: '#122a52' }}>Transfer request · {xfer.req.student_name || xfer.req.parent_name}</div>
+                <div style={{ fontSize: 12, color: '#6b7890', marginTop: 2 }}>{xfer.req.link_subject || 'Class'} · moves parent, student &amp; requested times</div>
+              </div>
+              <div style={{ padding: '15px 17px' }}>
+                <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: '.05em', textTransform: 'uppercase', color: '#2563d6', marginBottom: 7 }}>Transfer to</div>
+                <select value={xfer.sel} onChange={e => setXfer({ ...xfer, sel: e.target.value })} style={{ width: '100%', border: '1.5px solid #cfdcef', borderRadius: 10, padding: '9px 11px', fontSize: 13.5, marginBottom: 12 }}>
+                  {xfer.teachers.length === 0 && <option value="">No teachers available</option>}
+                  {xfer.teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
+                  {xfer.times.map((t, i) => {
+                    const matched = openSet.has(keyOf(t));
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, border: '1px solid #e3e9f2', borderRadius: 10, padding: '9px 11px' }}>
+                        <span style={{ fontWeight: 800, color: '#30405c' }}>{t.day_of_week} {fmt(t.start_time)}–{fmt(t.end_time)}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, borderRadius: 999, padding: '3px 10px', ...(matched ? { background: '#eafaf1', color: '#0e7a52', border: '1px solid #bfe8d2' } : { background: '#fff7ed', color: '#9a6a12', border: '1px solid #f3d9ae' }) }}>
+                          {matched ? '✓ Matches open slot' : '+ Added as custom time'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: 9, background: '#eef4ff', border: '1px solid #bcd3f7', color: '#13457e', borderRadius: 11, padding: '10px 12px', fontSize: 12, marginBottom: 12 }}>
+                  <span>ℹ️</span><div>The request moves to {sel?.name || 'the teacher'} as <b>Pending</b>. Matched times are bookable on their grid; custom times are added as slots for them to confirm.</div>
+                </div>
+                <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setXfer(null)} disabled={xferBusy} style={{ border: '1px solid #e3e9f2', borderRadius: 10, padding: '9px 14px', fontWeight: 800, fontSize: 13, background: '#fff', cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={doTransfer} disabled={xferBusy || !xfer.sel} style={{ border: 0, borderRadius: 10, padding: '9px 16px', fontWeight: 900, fontSize: 13, background: '#2563d6', color: '#fff', cursor: xfer.sel ? 'pointer' : 'not-allowed', opacity: xferBusy ? 0.6 : 1 }}>{xferBusy ? 'Transferring…' : `Transfer to ${sel?.name?.split(' ')[0] || ''}`}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

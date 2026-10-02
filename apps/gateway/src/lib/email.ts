@@ -14,7 +14,8 @@ export function emailConfigured(cfg: Config): boolean {
   return !!(e.apiKey && (e.from || e.user));
 }
 
-export interface EmailMessage { to: string; subject: string; html: string; text?: string; }
+export interface EmailAttachment { name: string; mime_type: string; content: string; } // content = base64
+export interface EmailMessage { to: string; subject: string; html: string; text?: string; attachments?: EmailAttachment[]; }
 interface MiniLog { info?: (...a: any[]) => void; warn?: (...a: any[]) => void }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +103,9 @@ async function sendViaApi(cfg: Config, from: string, msg: EmailMessage, log?: Mi
         subject: msg.subject,
         htmlbody: msg.html,
         textbody: msg.text ?? htmlToText(msg.html),
+        ...(msg.attachments && msg.attachments.length
+          ? { attachments: msg.attachments.map((a) => ({ name: a.name, mime_type: a.mime_type, content: a.content })) }
+          : {}),
       }),
       signal: ctrl.signal,
     });

@@ -30,6 +30,29 @@ function occurrenceDates(dayOfWeek: string, effectiveFrom: string | null, effect
   return out;
 }
 
+// ---- Calendar invite (.ics) ----------------------------------------------
+// Build a base64 VCALENDAR for a set of booked sessions. Recurring sessions get a weekly RRULE
+// anchored to the next occurrence of their weekday; demo/make-up are single events. TZID uses the
+// slot's IANA zone (no VTIMEZONE block — Google/Apple/Outlook resolve named IANA zones).
+function icsEscape(s: string): string { return String(s || '').replace(/([,;\\])/g, '\\$1').replace(/\r?\n/g, '\\n'); }
+function icsDateTime(date: string, time: string): string { return date.replace(/-/g, '') + 'T' + String(time).replace(/:/g, '').slice(0, 6); }
+type IcsEvent = { uid: string; title: string; desc?: string; date: string; start: string; end: string; tzid: string; recurring: boolean };
+function buildIcsBase64(events: IcsEvent[]): string {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const lines: string[] = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Concept Mastery//TeacherHub//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
+  for (const e of events) {
+    lines.push('BEGIN:VEVENT', `UID:${e.uid}`, `DTSTAMP:${stamp}`,
+      `DTSTART;TZID=${e.tzid}:${icsDateTime(e.date, e.start)}`,
+      `DTEND;TZID=${e.tzid}:${icsDateTime(e.date, e.end)}`);
+    if (e.recurring) lines.push('RRULE:FREQ=WEEKLY');
+    lines.push(`SUMMARY:${icsEscape(e.title)}`);
+    if (e.desc) lines.push(`DESCRIPTION:${icsEscape(e.desc)}`);
+    lines.push('END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return Buffer.from(lines.join('\r\n'), 'utf8').toString('base64');
+}
+
 // Teacher Hub (TeacherHub) admin surface. This site's data lives in a SEPARATE Supabase project
 // ("cm-whiteboard", public.ta_* tables), reached through a dedicated read pool (`teacherDb`, from
 // TEACHER_DATABASE_URL). Every route is gated by requirePermission('teacher.*') AND
@@ -418,7 +441,23 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   function escapeHtml(v: unknown): string {
     return String(v ?? '').replace(/[&<>"']/g, (c) => (({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string));
   }
-  type DecisionSlot = { outcome: string; teacher_name: string; subject: string; day_of_week: string; start_time: string; end_time: string; timezone: string };
+  type DecisionSlot = { outcome: string; teacher_name: string; subject: string; day_of_week: string; start_time: string; end_time: string; timezone: string; slot_id?: string; teacher_id?: string; iana_timezone?: string | null; session_type?: string | null };
+  // Calendar-invite events for the booked sessions in a decision (used for both the parent
+  // attachment and the per-teacher copies).
+  function icsEventsFor(slots: DecisionSlot[], studentName: string | null): IcsEvent[] {
+    const who = studentName || 'your child';
+    return slots.filter((s) => s.outcome === 'approved').map((s) => {
+      const date = occurrenceDates(s.day_of_week, null, null, 1)[0] || new Date().toISOString().slice(0, 10);
+      const recurring = !(s.session_type === 'demo' || s.session_type === 'makeup');
+      return {
+        uid: `${s.slot_id || Math.random().toString(36).slice(2)}@conceptmastery.teacherhub`,
+        title: `${s.subject || 'Class'} — Concept Mastery`,
+        desc: `Concept Mastery ${s.subject || ''} class for ${who} with ${s.teacher_name}.`.trim(),
+        date, start: String(s.start_time), end: String(s.end_time),
+        tzid: s.iana_timezone || 'Asia/Kolkata', recurring,
+      };
+    });
+  }
   async function sendDecisionEmail(log: FastifyBaseLogger, o: {
     decision: string; to: string; parentName: string; studentName: string | null; numClasses: number; reason: string | null; slots: DecisionSlot[];
   }): Promise<void> {
@@ -509,8 +548,53 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
         </table>
       </td></tr></table>
     </body></html>`;
-    try { await sendEmail(cfg, { to: o.to, subject, html }, log); }
+    // Attach a calendar invite for the booked sessions (confirmed bookings only).
+    const icsEvents = (o.decision === 'approved' || o.decision === 'partially_approved') ? icsEventsFor(o.slots, o.studentName) : [];
+    const attachments = icsEvents.length ? [{ name: 'concept-mastery-classes.ics', mime_type: 'text/calendar', content: buildIcsBase64(icsEvents) }] : undefined;
+    try { await sendEmail(cfg, { to: o.to, subject, html, attachments }, log); }
     catch (e) { log?.warn?.({ err: (e as Error).message }, 'decision email failed'); }
+
+    // Teacher copy: notify each teacher of the session(s) booked with them, with the same invite.
+    if (icsEvents.length) { try { await sendTeacherConfirmations(log, o.slots, o.studentName); } catch (e) { log?.warn?.({ err: (e as Error).message }, 'teacher confirmation failed'); } }
+  }
+
+  // Send each teacher a confirmation + calendar invite for the sessions booked with them.
+  async function sendTeacherConfirmations(log: FastifyBaseLogger, slots: DecisionSlot[], studentName: string | null): Promise<void> {
+    const booked = slots.filter((s) => s.outcome === 'approved' && s.teacher_id);
+    if (!booked.length) return;
+    const ids = [...new Set(booked.map((s) => s.teacher_id as string))];
+    const { rows } = await tdb().query('select id, name, email from public.ta_teachers where id = any($1::uuid[])', [ids]);
+    const emailById = new Map<string, { name: string; email: string }>(rows.map((r) => [String(r.id), { name: r.name as string, email: r.email as string }]));
+    const who = escapeHtml(studentName || 'a student');
+    const CM_BLUE = '#1c3f6e';
+    for (const tid of ids) {
+      const t = emailById.get(tid);
+      if (!t || !t.email) continue;
+      const mine = booked.filter((s) => s.teacher_id === tid);
+      const rowsHtml = mine.map((s) => `<tr>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(s.day_of_week)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(String(s.start_time))}–${escapeHtml(String(s.end_time))}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(s.subject || '')}</td></tr>`).join('');
+      const html = `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:'Segoe UI',system-ui,Arial,sans-serif;">
+        <table role="presentation" width="100%" style="border-collapse:collapse;background:#f4f5f7;"><tr><td align="center" style="padding:28px 14px;">
+        <table role="presentation" width="600" style="max-width:600px;width:100%;background:#fff;border:1px solid #eceff2;border-radius:14px;"><tr><td style="padding:34px 40px;">
+        <h2 style="margin:0 0 6px;color:${CM_BLUE};font-size:22px;font-weight:800;text-align:center;">New class booked</h2>
+        <p style="margin:0 0 20px;color:#6b7280;font-size:15px;text-align:center;">A session has been booked with you for ${who}.</p>
+        <p style="margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;">Hello ${escapeHtml(t.name || 'there')},</p>
+        <p style="margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;">The following class${mine.length > 1 ? 'es have' : ' has'} been booked with you for ${who}. A calendar invite is attached.</p>
+        <table role="presentation" width="100%" style="width:100%;border-collapse:collapse;margin:0 0 16px;color:#33415a;font-size:13px;">
+          <tr><th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Day</th>
+          <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Time</th>
+          <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Subject</th></tr>
+          ${rowsHtml}
+        </table>
+        <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.7;">Please keep these times for ${who}. If you cannot take a session, contact the office as soon as possible.</p>
+        </td></tr></table></td></tr></table></body></html>`;
+      const events = icsEventsFor(mine, studentName);
+      const attachments = events.length ? [{ name: 'concept-mastery-classes.ics', mime_type: 'text/calendar', content: buildIcsBase64(events) }] : undefined;
+      try { await sendEmail(cfg, { to: t.email, subject: `New class booked with you — ${studentName || 'Concept Mastery'}`, html, attachments }, log); }
+      catch (e) { log?.warn?.({ err: (e as Error).message, teacher: tid }, 'teacher confirmation send failed'); }
+    }
   }
 
   // Preview: how many available slots a link (these teachers + grade + subject) would surface now.
@@ -771,7 +855,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       const newStatus = approved === 0 ? 'rejected' : (approved === requested.length ? 'approved' : 'partially_approved');
       await client.query(`update public.ta_booking_requests set status = $2, decided_by = $3, decided_at = now() where id = $1`, [reqId, newStatus, req.admin!.adminId]);
       const detail = await client.query(
-        `select rs.slot_id, rs.outcome, s.teacher_name, s.subject, s.day_of_week, s.start_time, s.end_time, s.timezone
+        `select rs.slot_id, rs.outcome, s.teacher_id, s.teacher_name, s.subject, s.day_of_week, s.start_time, s.end_time, s.timezone, s.iana_timezone, coalesce(rs.session_type, s.session_type) as session_type
            from public.ta_booking_request_slots rs join public.ta_slots s on s.id = rs.slot_id where rs.request_id = $1`, [reqId]);
       return { request, newStatus, approved, taken, rejected, slots: detail.rows };
     });
@@ -813,7 +897,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       const stamped = reason ? ((prevNotes && prevNotes.trim()) ? prevNotes + '\n' + stamp : stamp) : prevNotes;
       await client.query(`update public.ta_booking_requests set status = 'rejected', decided_by = $2, decided_at = now(), notes = $3 where id = $1`, [reqId, req.admin!.adminId, stamped]);
       const detail = await client.query(
-        `select rs.slot_id, rs.outcome, s.teacher_name, s.subject, s.day_of_week, s.start_time, s.end_time, s.timezone
+        `select rs.slot_id, rs.outcome, s.teacher_id, s.teacher_name, s.subject, s.day_of_week, s.start_time, s.end_time, s.timezone, s.iana_timezone, coalesce(rs.session_type, s.session_type) as session_type
            from public.ta_booking_request_slots rs join public.ta_slots s on s.id = rs.slot_id where rs.request_id = $1`, [reqId]);
       return { request, slots: detail.rows };
     });
@@ -831,6 +915,118 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       slots: result.slots as DecisionSlot[],
     });
     return { status: 'rejected' };
+  });
+
+  // Transfer a pending request to another teacher (admin picks any teacher). For each requested
+  // time: if the target teacher already has an OPEN slot at that day+time, the request is repointed
+  // to it; otherwise a CUSTOM available slot is created for that teacher carrying the time/subject.
+  // The request returns to pending so the new teacher (or admin) can accept/book it.
+  const transferSchema = z.object({ to_teacher_id: uuid });
+  app.post('/v1/admin/teacher/booking-requests/:id/transfer', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const reqId = (req.params as { id: string }).id;
+    const b = transferSchema.parse(req.body ?? {});
+    const toTeacherId = b.to_teacher_id;
+
+    const result = await withTransaction(tdb(), async (client) => {
+      const rq = await client.query(`select id, status from public.ta_booking_requests where id = $1 for update`, [reqId]);
+      if (rq.rows.length === 0) throw Errors.notFound('Booking request not found');
+      if (rq.rows[0].status !== 'pending') throw Errors.conflict('REQUEST_DECIDED', 'Only a pending request can be transferred');
+
+      const t = await client.query('select id, name from public.ta_teachers where id = $1', [toTeacherId]);
+      if (t.rows.length === 0) throw Errors.notFound('Target teacher not found');
+      const toName = t.rows[0].name as string;
+      const ref = await client.query('select timezone, iana_timezone from public.ta_slots where teacher_id = $1 order by created_at desc nulls last limit 1', [toTeacherId]);
+      const refTz = (ref.rows[0]?.timezone as string) || 'IST';
+      const refIana = (ref.rows[0]?.iana_timezone as string) || 'Asia/Kolkata';
+
+      const cur = await client.query(
+        `select rs.slot_id, rs.session_type as rs_type,
+                s.day_of_week, s.start_time, s.end_time, s.subject, s.grade_min, s.grade_max, s.session_type as s_type
+           from public.ta_booking_request_slots rs
+           join public.ta_slots s on s.id = rs.slot_id
+          where rs.request_id = $1`, [reqId]);
+      if (cur.rows.length === 0) throw Errors.validation('Request has no slots');
+
+      const mapping: Array<{ to: string; kind: 'matched' | 'custom'; label: string }> = [];
+      for (const row of cur.rows) {
+        const m = await client.query(
+          `select id from public.ta_slots
+            where teacher_id = $1 and day_of_week = $2 and start_time = $3 and end_time = $4 and status = 'available'
+            limit 1`, [toTeacherId, row.day_of_week, row.start_time, row.end_time]);
+        let newSlotId: string; let kind: 'matched' | 'custom';
+        if (m.rows.length === 1) {
+          newSlotId = m.rows[0].id as string; kind = 'matched';
+        } else {
+          const ins = await client.query(
+            `insert into public.ta_slots
+               (teacher_id, teacher_name, subject, grade_min, grade_max, day_of_week, start_time, end_time, status, timezone, iana_timezone)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,'available',$9,$10)
+             returning id`,
+            [toTeacherId, toName, row.subject, row.grade_min, row.grade_max, row.day_of_week, row.start_time, row.end_time, refTz, refIana]);
+          newSlotId = ins.rows[0].id as string; kind = 'custom';
+        }
+        await client.query(
+          `update public.ta_booking_request_slots
+              set slot_id = $3, teacher_slot_status = 'pending', outcome = 'pending'
+            where request_id = $1 and slot_id = $2`, [reqId, row.slot_id, newSlotId]);
+        mapping.push({ to: newSlotId, kind, label: `${row.day_of_week} ${row.start_time}–${row.end_time}` });
+      }
+      await client.query(
+        `update public.ta_booking_requests set teacher_status = 'pending', teacher_decided_at = null, status = 'pending' where id = $1`, [reqId]);
+      return { toName, mapping };
+    });
+
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin','teacher.booking_request.transfer','ta_booking_request',$2,$3)`,
+        [req.admin!.adminId, reqId, JSON.stringify({ to_teacher_id: toTeacherId, mapping: result.mapping })]);
+    } catch { /* best-effort */ }
+
+    return {
+      ok: true, to_teacher: result.toName,
+      matched: result.mapping.filter((m) => m.kind === 'matched').length,
+      custom: result.mapping.filter((m) => m.kind === 'custom').length,
+      mapping: result.mapping,
+    };
+  });
+
+  // Candidate teachers for a transfer: all active teachers (admin picks any). Includes a quick
+  // flag for whether each already has an open slot matching the request's requested times.
+  app.get('/v1/admin/teacher/booking-requests/:id/transfer-candidates', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.directory');
+    requireSite(req, 'teacher');
+    const reqId = (req.params as { id: string }).id;
+    const cur = await tdb().query(
+      `select s.day_of_week, s.start_time::text as start_time, s.end_time::text as end_time
+         from public.ta_booking_request_slots rs join public.ta_slots s on s.id = rs.slot_id
+        where rs.request_id = $1`, [reqId]);
+    const times = cur.rows.map((r) => ({ day_of_week: r.day_of_week as string, start_time: r.start_time as string, end_time: r.end_time as string }));
+    const teachers = await tdb().query(
+      `select id, name, coalesce(banned_at is not null, false) as banned from public.ta_teachers order by name asc`);
+    // For each teacher, which of the requested times they already have OPEN (so the UI can preview
+    // matched-vs-custom). Empty request-times → no open map (every time becomes custom).
+    const openByTeacher = new Map<string, Set<string>>();
+    if (times.length) {
+      const open = await tdb().query(
+        `select distinct s.teacher_id, s.day_of_week, s.start_time::text as start_time, s.end_time::text as end_time
+           from public.ta_slots s
+           join jsonb_to_recordset($1::jsonb) as t(day_of_week text, start_time text, end_time text)
+             on t.day_of_week = s.day_of_week and t.start_time = s.start_time::text and t.end_time = s.end_time::text
+          where s.status = 'available'`, [JSON.stringify(times)]);
+      for (const o of open.rows) {
+        const key = `${o.day_of_week}|${o.start_time}|${o.end_time}`;
+        const tid = String(o.teacher_id);
+        if (!openByTeacher.has(tid)) openByTeacher.set(tid, new Set());
+        openByTeacher.get(tid)!.add(key);
+      }
+    }
+    return {
+      times,
+      teachers: teachers.rows.filter((t) => !t.banned).map((t) => ({ id: t.id, name: t.name, open: [...(openByTeacher.get(String(t.id)) ?? [])] })),
+    };
   });
 
   // Accept / decline a request ON BEHALF of the teacher (admin override, when the teacher hasn't
