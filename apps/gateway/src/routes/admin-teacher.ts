@@ -8,6 +8,28 @@ import { withTransaction } from '../db.js';
 import { sendEmail } from '../lib/email.js';
 import { randomBytes } from 'node:crypto';
 
+// Expand a weekly recurring slot into dated occurrences (no rows materialized).
+// Returns YYYY-MM-DD for each weekly occurrence of `dayOfWeek` from today (or
+// effectiveFrom, whichever is later) up to `horizonWeeks`, stopping at effectiveTo.
+const DOW_INDEX: Record<string, number> = { Sunday:0, Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6 };
+function occurrenceDates(dayOfWeek: string, effectiveFrom: string | null, effectiveTo: string | null, horizonWeeks = 16): string[] {
+  const target = DOW_INDEX[dayOfWeek];
+  if (target == null) return [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  let start = new Date(today);
+  if (effectiveFrom) { const f = new Date(effectiveFrom + 'T00:00:00'); if (f > start) start = f; }
+  const first = new Date(start);
+  first.setDate(first.getDate() + ((target - first.getDay() + 7) % 7));
+  const horizon = new Date(today); horizon.setDate(horizon.getDate() + horizonWeeks * 7);
+  const hardEnd = effectiveTo ? new Date(effectiveTo + 'T00:00:00') : null;
+  const out: string[] = [];
+  for (const cur = new Date(first); cur <= horizon; cur.setDate(cur.getDate() + 7)) {
+    if (hardEnd && cur > hardEnd) break;
+    out.push(cur.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
 // Teacher Hub (TeacherHub) admin surface. This site's data lives in a SEPARATE Supabase project
 // ("cm-whiteboard", public.ta_* tables), reached through a dedicated read pool (`teacherDb`, from
 // TEACHER_DATABASE_URL). Every route is gated by requirePermission('teacher.*') AND
@@ -53,7 +75,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (search) { params.push('%' + search.toLowerCase() + '%'); where = 'where lower(t.name) like $1 or lower(t.email) like $1'; }
     params.push(limit);
     const { rows } = await tdb().query(
-      `select t.id, t.name, t.email, t.subjects, t.created_at, t.banned_at,
+      `select t.id, t.name, t.email, t.subjects, t.inactive_subjects, t.profile_approved, t.created_at, t.banned_at,
               (select count(*)::int from public.ta_slots s where s.teacher_id = t.id)                          as slots,
               (select count(*)::int from public.ta_slots s where s.teacher_id = t.id and s.status = 'available') as open_slots
          from public.ta_teachers t
@@ -78,7 +100,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       `select s.id, s.teacher_id, s.teacher_name, s.subject, s.grade, s.grade_min, s.grade_max, s.day_of_week,
               s.start_time, s.end_time, s.status, s.timezone, s.notes,
               s.booked_student, s.booked_note, s.booked_by, s.booked_at,
-              coalesce(brs.session_type, br.session_type) as session_type
+              coalesce(brs.session_type, s.session_type, br.session_type) as session_type
          from public.ta_slots s
          left join public.ta_booking_requests br on br.id = s.booked_request_id
          left join public.ta_booking_request_slots brs on brs.request_id = s.booked_request_id and brs.slot_id = s.id
@@ -102,6 +124,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     status: z.enum(['available', 'booked', 'unavailable']),
     student: z.string().trim().max(120).optional(),
     note: z.string().trim().max(500).optional(),
+    session_type: z.enum(['demo', 'recurring', 'makeup']).optional(),
   }).refine((v) => v.status !== 'booked' || !!(v.student && v.student.length > 0), { message: 'Student name is required to book', path: ['student'] });
 
   app.patch('/v1/admin/teacher/slots/:id', { preHandler: [authenticateAdmin] }, async (req) => {
@@ -121,14 +144,15 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
               booked_student = $3,
               booked_note    = $4,
               booked_by      = $5,
+              session_type   = case when $2 = 'booked' then $6 else null end,
               booked_at      = case when $2 = 'booked' then now() else null end,
               booked_request_id = case when $2 = 'booked' then booked_request_id else null end,
               updated_at     = now()
         where id = $1
         returning id, teacher_id, teacher_name, subject, grade, day_of_week, start_time, end_time,
-                  status, timezone, booked_student, booked_note, booked_by, booked_at`,
+                  status, timezone, session_type, booked_student, booked_note, booked_by, booked_at`,
       // booked_student and booked_by are NOT NULL (default ''); clear them to '' on unbook, never null.
-      [id, b.status, booking ? (b.student ?? '') : '', booking ? (b.note ?? null) : null, booking ? bookedBy : '']);
+      [id, b.status, booking ? (b.student ?? '') : '', booking ? (b.note ?? null) : null, booking ? bookedBy : '', booking ? (b.session_type ?? 'recurring') : null]);
     if (rows.length === 0) throw Errors.notFound('Slot not found');
     // Governance: record in the CCAT audit log. Best-effort — a logging failure must not fail the booking.
     try {
@@ -140,6 +164,56 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return rows[0];
   });
 
+
+  // Create a slot on an empty grid cell (admin). Requires subject + grade range; optionally books it
+  // with a student + session type. Timezone inherits the teacher's existing slots (fallback IST).
+  const createSlotSchema = z.object({
+    teacher_id: z.string().uuid(),
+    day_of_week: z.enum(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']),
+    start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    end_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    subject: z.string().trim().min(1).max(80),
+    grade_min: z.number().int().min(1).max(12),
+    grade_max: z.number().int().min(1).max(12),
+    status: z.enum(['available','booked']).default('available'),
+    student: z.string().trim().max(120).optional(),
+    note: z.string().trim().max(500).optional(),
+    session_type: z.enum(['demo','recurring','makeup']).optional(),
+  }).refine((v) => v.grade_min <= v.grade_max, { message: 'grade_min must be <= grade_max', path: ['grade_max'] })
+    .refine((v) => v.status !== 'booked' || !!(v.student && v.student.length > 0), { message: 'Student name is required to book', path: ['student'] });
+  app.post('/v1/admin/teacher/slots', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const b = createSlotSchema.parse(req.body ?? {});
+    const t = await tdb().query('select name from public.ta_teachers where id = $1', [b.teacher_id]);
+    if (t.rows.length === 0) throw Errors.notFound('Teacher not found');
+    const tz = await tdb().query('select timezone, iana_timezone from public.ta_slots where teacher_id = $1 order by created_at desc limit 1', [b.teacher_id]);
+    const timezone = (tz.rows[0]?.timezone as string) || 'IST';
+    const iana = (tz.rows[0]?.iana_timezone as string) || 'Asia/Kolkata';
+    const booking = b.status === 'booked';
+    let bookedBy = '';
+    if (booking) {
+      const who = await db.query('select display_name, email from ccat.admin_profiles where id=$1', [req.admin!.adminId]);
+      bookedBy = (who.rows[0]?.display_name as string) || (who.rows[0]?.email as string) || 'Admin';
+    }
+    const { rows } = await tdb().query(
+      `insert into public.ta_slots
+         (teacher_id, teacher_name, subject, grade_min, grade_max, day_of_week, start_time, end_time,
+          status, timezone, iana_timezone, session_type, booked_student, booked_note, booked_by, booked_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, case when $9='booked' then now() else null end)
+       returning id, teacher_id, teacher_name, subject, grade_min, grade_max, day_of_week, start_time, end_time,
+                 status, timezone, session_type, booked_student, booked_note, booked_by`,
+      [b.teacher_id, t.rows[0].name, b.subject, b.grade_min, b.grade_max, b.day_of_week, b.start_time, b.end_time,
+       b.status, timezone, iana, booking ? (b.session_type ?? 'recurring') : null,
+       booking ? (b.student ?? '') : '', booking ? (b.note ?? null) : null, booking ? bookedBy : '']);
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin','teacher.slot.create','ta_slot',$2,$3)`,
+        [req.admin!.adminId, rows[0].id, JSON.stringify({ teacher: t.rows[0].name, status: b.status, subject: b.subject })]);
+    } catch { /* audit best-effort */ }
+    return rows[0];
+  });
 
   // Permanently delete a slot (available, booked or unavailable). Cascades ta_booking_request_slots.
   app.delete('/v1/admin/teacher/slots/:id', { preHandler: [authenticateAdmin] }, async (req) => {
@@ -156,6 +230,105 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
         [req.admin!.adminId, id, JSON.stringify({ status: rows[0].status, teacher: rows[0].teacher_name })]);
     } catch { /* audit best-effort */ }
     return { deleted: id };
+  });
+
+  // Occurrences of a booked slot (for the unbook popover's "On date" list). Recurring only;
+  // demo/make-up return a single date. Read-only.
+  app.get('/v1/admin/teacher/slots/:id/occurrences', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.directory');
+    requireSite(req, 'teacher');
+    const id = (req.params as { id: string }).id;
+    const { rows } = await tdb().query(
+      `select s.id, s.teacher_id, s.day_of_week, s.start_time, s.end_time, s.status,
+              s.booked_student, s.effective_from, s.effective_to,
+              coalesce(brs.session_type, s.session_type, br.session_type) as session_type
+         from public.ta_slots s
+         left join public.ta_booking_requests br on br.id = s.booked_request_id
+         left join public.ta_booking_request_slots brs on brs.request_id = s.booked_request_id and brs.slot_id = s.id
+        where s.id = $1`, [id]);
+    if (rows.length === 0) throw Errors.notFound('Slot not found');
+    const s = rows[0] as any;
+    const ef = s.effective_from ? new Date(s.effective_from).toISOString().slice(0,10) : null;
+    const et = s.effective_to  ? new Date(s.effective_to).toISOString().slice(0,10)  : null;
+    const sessionType = (s.session_type as string) || 'recurring';
+    const dates = sessionType === 'recurring' ? occurrenceDates(s.day_of_week, ef, et) : [];
+    return {
+      slot: { id: s.id, day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time,
+              booked_student: s.booked_student, session_type: sessionType, effective_to: et },
+      occurrences: dates,
+    };
+  });
+
+  // Unbook a booked slot. Recurring supports scope (this slot | all of the child's recurring slots with
+  // this teacher) and mode (now = release; end = stop the series on a date or after N occurrences by
+  // setting effective_to). Demo/make-up are one-off: a single release, scope/mode ignored.
+  const unbookSchema = z.object({
+    scope: z.enum(['slot', 'child']).default('slot'),
+    mode: z.enum(['now', 'end']).default('now'),
+    end_mode: z.enum(['date', 'count']).optional(),
+    end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    end_count: z.number().int().positive().max(520).optional(),
+  });
+  app.post('/v1/admin/teacher/slots/:id/unbook', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = (req.params as { id: string }).id;
+    const b = unbookSchema.parse(req.body ?? {});
+    const base = await tdb().query(
+      `select s.id, s.teacher_id, s.day_of_week, s.booked_student, s.effective_from,
+              coalesce(brs.session_type, s.session_type, br.session_type) as session_type
+         from public.ta_slots s
+         left join public.ta_booking_requests br on br.id = s.booked_request_id
+         left join public.ta_booking_request_slots brs on brs.request_id = s.booked_request_id and brs.slot_id = s.id
+        where s.id = $1`, [id]);
+    if (base.rows.length === 0) throw Errors.notFound('Slot not found');
+    const s = base.rows[0] as any;
+    const sessionType = (s.session_type as string) || 'recurring';
+    const recurring = sessionType === 'recurring';
+
+    // Resolve target slot ids.
+    let ids: string[] = [id];
+    if (recurring && b.scope === 'child' && s.booked_student) {
+      const kids = await tdb().query(
+        `select s.id from public.ta_slots s
+           left join public.ta_booking_requests br on br.id = s.booked_request_id
+           left join public.ta_booking_request_slots brs on brs.request_id = s.booked_request_id and brs.slot_id = s.id
+          where s.teacher_id = $1 and s.status = 'booked' and s.booked_student = $2
+            and coalesce(brs.session_type, br.session_type, 'recurring') = 'recurring'`,
+        [s.teacher_id, s.booked_student]);
+      ids = kids.rows.map((r: any) => r.id as string);
+      if (!ids.includes(id)) ids.push(id);
+    }
+
+    let result: Record<string, unknown> = {};
+    if (recurring && b.mode === 'end') {
+      let endDate: string | null = null;
+      if (b.end_mode === 'date' && b.end_date) endDate = b.end_date;
+      else if (b.end_mode === 'count' && b.end_count) {
+        const ef = s.effective_from ? new Date(s.effective_from).toISOString().slice(0,10) : null;
+        const occ = occurrenceDates(s.day_of_week, ef, null, Math.max(16, b.end_count + 2));
+        endDate = occ[Math.min(b.end_count, occ.length) - 1] || null;
+      }
+      if (!endDate) throw Errors.validation('end_date or end_count is required to end the series');
+      const r = await tdb().query(
+        `update public.ta_slots set effective_to = $2, updated_at = now() where id = any($1::uuid[]) returning id`,
+        [ids, endDate]);
+      result = { ended: r.rows.map((x: any) => x.id), effective_to: endDate };
+    } else {
+      const r = await tdb().query(
+        `update public.ta_slots
+            set status = 'available', booked_student = '', booked_note = null, booked_by = '',
+                booked_at = null, booked_request_id = null, updated_at = now()
+          where id = any($1::uuid[]) returning id`, [ids]);
+      result = { unbooked: r.rows.map((x: any) => x.id) };
+    }
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin','teacher.slot.unbook','ta_slot',$2,$3)`,
+        [req.admin!.adminId, id, JSON.stringify({ scope: b.scope, mode: b.mode, session_type: sessionType, ...result })]);
+    } catch { /* audit best-effort */ }
+    return { ok: true, session_type: sessionType, scope: b.scope, ...result };
   });
 
   // ==== TeacherHub settings (global) — Auto Booking toggle ========================================
@@ -733,11 +906,35 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     requirePermission(req, 'teacher.slots.manage');
     requireSite(req, 'teacher');
     const { id, action } = req.params as { id: string; action: string };
-    if (action !== 'ban' && action !== 'unban') throw Errors.validation('Action must be ban or unban');
-    const { rows } = await tdb().query(
-      `update public.ta_teachers set banned_at = ${action === 'ban' ? 'now()' : 'null'} where id = $1 returning id, banned_at`, [id]);
+    if (action === 'ban' || action === 'unban') {
+      const { rows } = await tdb().query(
+        `update public.ta_teachers set banned_at = ${action === 'ban' ? 'now()' : 'null'} where id = $1 returning id, banned_at`, [id]);
+      if (rows.length === 0) throw Errors.notFound('Teacher not found');
+      return { id, banned_at: rows[0].banned_at };
+    }
+    if (action === 'approve' || action === 'unapprove') {
+      const { rows } = await tdb().query(
+        `update public.ta_teachers set profile_approved = $2 where id = $1 returning id, profile_approved`, [id, action === 'approve']);
+      if (rows.length === 0) throw Errors.notFound('Teacher not found');
+      return { id, profile_approved: rows[0].profile_approved };
+    }
+    throw Errors.validation('Action must be ban, unban, approve or unapprove');
+  });
+
+  // Toggle one capability (subject) active/inactive for a teacher. Inactive subjects are kept in
+  // ta_teachers.inactive_subjects; availability/booking logic treats them as switched off.
+  const capabilitySchema = z.object({ subject: z.string().trim().min(1).max(80), active: z.boolean() });
+  app.post('/v1/admin/teacher/teachers/:id/capability', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = (req.params as { id: string }).id;
+    const b = capabilitySchema.parse(req.body ?? {});
+    const sql = b.active
+      ? `update public.ta_teachers set inactive_subjects = array_remove(inactive_subjects, $2) where id = $1 returning id, inactive_subjects`
+      : `update public.ta_teachers set inactive_subjects = (select array(select distinct unnest(coalesce(inactive_subjects,'{}') || array[$2]))) where id = $1 returning id, inactive_subjects`;
+    const { rows } = await tdb().query(sql, [id, b.subject]);
     if (rows.length === 0) throw Errors.notFound('Teacher not found');
-    return { id, banned_at: rows[0].banned_at };
+    return { id, inactive_subjects: rows[0].inactive_subjects };
   });
 
   // Permanently delete a teacher account and all their data. Transactional: clears the leave rows that

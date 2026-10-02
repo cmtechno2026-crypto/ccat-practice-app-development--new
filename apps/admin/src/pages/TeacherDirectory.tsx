@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 // subject+grade offerings, a status-only week of slots (Available / Unavailable / Booked), and the
 // parent booking requests for that teacher. A request the TEACHER has accepted (teacher_status) shows
 // a Book action here; booking writes the slot in the Teacher Hub DB with the child's name.
-interface TeacherRow { id: string; name: string; email: string; subjects: string[]; slots: number; open_slots: number; created_at: string; banned_at?: string | null; }
+interface TeacherRow { id: string; name: string; email: string; subjects: string[]; inactive_subjects?: string[] | null; profile_approved?: boolean; slots: number; open_slots: number; created_at: string; banned_at?: string | null; }
 interface Slot {
   id: string; subject: string; grade: number | null; grade_min?: number | null; grade_max?: number | null; day_of_week: string; start_time: string; end_time: string;
   status: string; timezone: string; notes: string;
@@ -84,6 +84,49 @@ export function TeacherDirectory() {
   const [pStudent, setPStudent] = useState('');
   const [pNote, setPNote] = useState('');
   const [pErr, setPErr] = useState('');
+  const [ubScope, setUbScope] = useState<'slot' | 'child'>('slot');
+  const [ubEnd, setUbEnd] = useState(false);
+  const [ubEndMode, setUbEndMode] = useState<'date' | 'count'>('date');
+  const [ubDate, setUbDate] = useState('');
+  const [ubCount, setUbCount] = useState('');
+  const [occDates, setOccDates] = useState<string[]>([]);
+  const [pType, setPType] = useState<'demo' | 'recurring' | 'makeup'>('recurring');
+  const [createCell, setCreateCell] = useState<{ teacherId: string; day: string; start: string; end: string } | null>(null);
+  const [cSubject, setCSubject] = useState('');
+  const [cGmin, setCGmin] = useState('1');
+  const [cGmax, setCGmax] = useState('12');
+  const [cStatus, setCStatus] = useState<'available' | 'booked'>('available');
+  const [cStudent, setCStudent] = useState('');
+  const [cNote, setCNote] = useState('');
+  const [cType, setCType] = useState<'demo' | 'recurring' | 'makeup'>('recurring');
+  const [cErr, setCErr] = useState('');
+  const [cSaving, setCSaving] = useState(false);
+  const openCreate = (teacherId: string, day: string, range: string) => {
+    const parts = range.split('\u2013'); const start = parts[0]; const end = parts[1] || parts[0];
+    const t = (rows || []).find(r => r.id === teacherId);
+    const subs = t ? groupSubjects(t.subjects).map(g => g.subject) : [];
+    setCreateCell({ teacherId, day, start, end });
+    setCSubject(subs[0] || ''); setCGmin('1'); setCGmax('12');
+    setCStatus('available'); setCStudent(''); setCNote(''); setCType('recurring'); setCErr('');
+  };
+  const doCreate = async () => {
+    if (!createCell) return;
+    if (!cSubject.trim()) { setCErr('Pick a subject.'); return; }
+    const gmin = parseInt(cGmin, 10), gmax = parseInt(cGmax, 10);
+    if (!(gmin >= 1 && gmax <= 12 && gmin <= gmax)) { setCErr('Grades must be 1\u201312 and min \u2264 max.'); return; }
+    if (cStatus === 'booked' && !cStudent.trim()) { setCErr('Student name is required to book.'); return; }
+    setCSaving(true); setCErr('');
+    try {
+      await api.teacherCreateSlot({
+        teacher_id: createCell.teacherId, day_of_week: createCell.day, start_time: createCell.start, end_time: createCell.end,
+        subject: cSubject.trim(), grade_min: gmin, grade_max: gmax, status: cStatus,
+        ...(cStatus === 'booked' ? { student: cStudent.trim(), note: cNote.trim() || undefined, session_type: cType } : {}),
+      });
+      const r = await api.teacherSlots(createCell.teacherId); setSlots(sx => ({ ...sx, [createCell.teacherId]: r.slots || [] }));
+      setCreateCell(null);
+    } catch (e) { setCErr((e as Error).message || 'Could not create slot'); }
+    finally { setCSaving(false); }
+  };
   const [allReqs, setAllReqs] = useState<Req[] | null>(null);
   const [actingReq, setActingReq] = useState<string | null>(null);
   const [reqPick, setReqPick] = useState<Record<string, Set<string>>>({});
@@ -109,6 +152,14 @@ export function TeacherDirectory() {
     if (typed.trim() !== t.name.trim()) { window.alert('Name did not match — nothing was deleted.'); return; }
     setActing(true); setErr('');
     try { await api.teacherDeleteTeacher(t.id); setSelected(null); load(search); } catch (e) { setErr((e as Error).message); } finally { setActing(false); }
+  };
+  const setApproval = async (t: TeacherRow, approved: boolean) => {
+    if (!approved && !window.confirm(`Unapprove ${t.name}'s profile? They stop being bookable until re-approved.`)) return;
+    setActing(true);
+    try { await api.teacherSetApproval(t.id, approved); load(search); } catch (e) { setErr((e as Error).message); } finally { setActing(false); }
+  };
+  const toggleCapability = async (t: TeacherRow, subject: string, active: boolean) => {
+    try { await api.teacherSetCapability(t.id, subject, active); load(search); } catch (e) { setErr((e as Error).message); }
   };
   const loadReqs = () => { api.teacherBookingRequests({ status: 'all' }).then(r => setAllReqs((r.requests || []) as Req[])).catch(() => setAllReqs([])); };
   useEffect(() => { load(''); loadReqs(); }, []);
@@ -136,7 +187,38 @@ export function TeacherDirectory() {
   const reqsForTeacher = (id: string): Req[] => (allReqs || []).filter(r => (r.slots || []).some(s => s.teacher_id === id));
   const reqBadge = (id: string) => reqsForTeacher(id).filter(r => r.teacher_status === 'accepted' && r.status === 'pending').length;
 
-  const openPopover = (slotId: string) => { setPopSlot(slotId); setPStudent(''); setPNote(''); setPErr(''); setTimeout(() => studentRef.current?.focus(), 0); };
+  const openPopover = (slotId: string) => { setPopSlot(slotId); setPStudent(''); setPNote(''); setPErr(''); setPType('recurring'); setTimeout(() => studentRef.current?.focus(), 0); };
+  useEffect(() => {
+    setUbScope('slot'); setUbEnd(false); setUbEndMode('date'); setUbDate(''); setUbCount(''); setOccDates([]);
+    if (!popSlot) return;
+    let sl: Slot | undefined;
+    for (const arr of Object.values(slots)) { const f = arr.find(x => x.id === popSlot); if (f) { sl = f; break; } }
+    if (sl && sl.status === 'booked' && (sl.session_type || 'recurring') === 'recurring') {
+      api.teacherSlotOccurrences(popSlot).then(r => {
+        const occ = r.occurrences || []; setOccDates(occ);
+        if (occ.length) setUbDate(occ[Math.min(2, occ.length - 1)]);
+      }).catch(() => setOccDates([]));
+    }
+  }, [popSlot]);
+  const doUnbook = async (teacherId: string, slot: Slot) => {
+    const recurring = (slot.session_type || 'recurring') === 'recurring';
+    const body: { scope?: 'slot' | 'child'; mode?: 'now' | 'end'; end_mode?: 'date' | 'count'; end_date?: string; end_count?: number } = {};
+    if (recurring) {
+      body.scope = ubScope;
+      if (ubEnd) {
+        body.mode = 'end'; body.end_mode = ubEndMode;
+        if (ubEndMode === 'date') { if (!ubDate) { setSlotErr(m => ({ ...m, [teacherId]: 'Pick an end date.' })); return; } body.end_date = ubDate; }
+        else { const n = parseInt(ubCount, 10); if (!n || n < 1) { setSlotErr(m => ({ ...m, [teacherId]: 'Enter a valid number.' })); return; } body.end_count = n; }
+      } else { body.mode = 'now'; }
+    }
+    setSavingSlot(slot.id);
+    try {
+      await api.teacherUnbookSlot(slot.id, body);
+      const r = await api.teacherSlots(teacherId); setSlots(sx => ({ ...sx, [teacherId]: r.slots || [] }));
+      setPopSlot(null);
+    } catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not unbook' })); }
+    finally { setSavingSlot(null); }
+  };
   const patchLocal = (teacherId: string, slotId: string, next: Partial<Slot>) =>
     setSlots(m => ({ ...m, [teacherId]: (m[teacherId] || []).map(x => x.id === slotId ? { ...x, ...next } : x) }));
 
@@ -144,7 +226,7 @@ export function TeacherDirectory() {
     if (!pStudent.trim()) { setPErr('Student name is required.'); studentRef.current?.focus(); return; }
     setSavingSlot(slot.id); setPErr('');
     try {
-      const u = await api.teacherSetSlotStatus(slot.id, 'booked', { student: pStudent.trim(), note: pNote.trim() });
+      const u = await api.teacherSetSlotStatus(slot.id, 'booked', { student: pStudent.trim(), note: pNote.trim(), session_type: pType });
       patchLocal(teacherId, slot.id, { status: 'booked', booked_student: u.booked_student, booked_note: u.booked_note, booked_by: u.booked_by });
       setPopSlot(null);
     } catch (e) { setPErr((e as Error).message || 'Could not book'); }
@@ -219,23 +301,72 @@ export function TeacherDirectory() {
       <>
         <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 300, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)' }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject}</div>
+          <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'absolute', top: 10, right: 10, width: 26, height: 26, borderRadius: '50%', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer', fontWeight: 800, lineHeight: 1 }}>✕</button>
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject}</div>
           {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{stBadge(s.session_type)}{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
           {hasStudent && s.booked_note && <div className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</div>}
+          {hasStudent && (s.session_type || 'recurring') === 'recurring' && <div style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, padding: 10, display: 'grid', gap: 8, background: 'var(--card2,#f7f9fc)' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--faint,#93a6b3)' }}>Unbook scope</div>
+            <label style={{ display: 'flex', gap: 7, fontSize: 12.5, cursor: 'pointer' }}><input type="radio" checked={ubScope === 'slot'} onChange={() => setUbScope('slot')} />This day &amp; time only</label>
+            <label style={{ display: 'flex', gap: 7, fontSize: 12.5, cursor: 'pointer' }}><input type="radio" checked={ubScope === 'child'} onChange={() => setUbScope('child')} />All of {s.booked_student}'s slots with this teacher</label>
+            <label style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 12.5, cursor: 'pointer', marginTop: 2 }}><input type="checkbox" checked={ubEnd} onChange={e => setUbEnd(e.target.checked)} /><span><b>End the series</b> (otherwise unbook now)</span></label>
+            {ubEnd && <div style={{ display: 'grid', gap: 7 }}>
+              <div style={{ display: 'flex', gap: 14, fontSize: 12.5, fontWeight: 700 }}>
+                <label style={{ display: 'inline-flex', gap: 6, cursor: 'pointer' }}><input type="radio" checked={ubEndMode === 'date'} onChange={() => setUbEndMode('date')} />On date</label>
+                <label style={{ display: 'inline-flex', gap: 6, cursor: 'pointer' }}><input type="radio" checked={ubEndMode === 'count'} onChange={() => setUbEndMode('count')} />After total occurrences</label>
+              </div>
+              {ubEndMode === 'date'
+                ? <select value={ubDate} onChange={e => setUbDate(e.target.value)} style={inp}>{occDates.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                : <input type="number" min={1} value={ubCount} onChange={e => setUbCount(e.target.value)} placeholder="Enter number" style={inp} />}
+            </div>}
+          </div>}
           {isAvail && <>
             <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}
               onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
             <input value={pNote} onChange={e => setPNote(e.target.value)} placeholder="Note (optional)" style={inp}
               onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
+            <select value={pType} onChange={e => setPType(e.target.value as 'demo' | 'recurring' | 'makeup')} style={inp}>
+              <option value="recurring">Recurring</option><option value="makeup">Make-up</option><option value="demo">Demo</option>
+            </select>
             {pErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12 }}>{pErr}</div>}
           </>}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {isAvail && <button onClick={() => book(id, s)} disabled={savingSlot === s.id} style={{ flex: '1 1 100%', fontWeight: 800, padding: '7px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Booking…' : 'Book'}</button>}
-            {!isAvail && <button onClick={() => unbook(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, opacity: savingSlot === s.id ? .6 : 1 }}>{hasStudent ? 'Unbook' : 'Make available'}</button>}
+            {!isAvail && <button onClick={() => (hasStudent ? doUnbook(id, s) : unbook(id, s))} disabled={savingSlot === s.id} style={{ ...slotBtn, flex: '1 1 100%', background: hasStudent ? 'var(--teal,#0f766e)' : 'var(--card,#fff)', color: hasStudent ? '#fff' : 'inherit', border: hasStudent ? 0 : '1px solid var(--line,#d7dce8)', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Working…' : (hasStudent ? (ubEnd ? 'End series' : 'Unbook') : 'Make available')}</button>}
             {s.status !== 'unavailable' && <button onClick={() => setUnavailable(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, color: 'var(--amber,#b45309)', opacity: savingSlot === s.id ? .6 : 1 }}>Make unavailable</button>}
             <button onClick={() => deleteSlot(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, color: 'var(--coral,#c0392b)', opacity: savingSlot === s.id ? .6 : 1 }}>Delete</button>
-            <button onClick={() => setPopSlot(null)} style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer' }}>Esc</button>
           </div>
+        </div>
+      </>
+    );
+  };
+  const renderCreate = () => {
+    if (!createCell) return null;
+    const t = (rows || []).find(r => r.id === createCell.teacherId);
+    const subs = t ? groupSubjects(t.subjects).map(g => g.subject) : [];
+    const lblStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--muted,#64748b)' };
+    return (
+      <>
+        <button aria-label="Close" onClick={() => setCreateCell(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
+        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 320, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
+          <button aria-label="Close" onClick={() => setCreateCell(null)} style={{ position: 'absolute', top: 10, right: 10, width: 26, height: 26, borderRadius: '50%', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer', fontWeight: 800, lineHeight: 1 }}>\u2715</button>
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>New slot · {DAY_ABBR[createCell.day] || createCell.day} · {createCell.start}\u2013{createCell.end}</div>
+          <div><div style={lblStyle}>Subject</div><select value={cSubject} onChange={e => setCSubject(e.target.value)} style={inp}>{subs.length ? subs.map(x => <option key={x} value={x}>{x}</option>) : <option value="">(no subjects)</option>}</select></div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}><div style={lblStyle}>Grade min</div><input type="number" min={1} max={12} value={cGmin} onChange={e => setCGmin(e.target.value)} style={inp} /></div>
+            <div style={{ flex: 1 }}><div style={lblStyle}>Grade max</div><input type="number" min={1} max={12} value={cGmax} onChange={e => setCGmax(e.target.value)} style={inp} /></div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => setCStatus('available')} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: cStatus === 'available' ? '#e6f7f2' : 'var(--card,#fff)', color: cStatus === 'available' ? '#0f766e' : 'inherit', cursor: 'pointer' }}>Available</button>
+            <button onClick={() => setCStatus('booked')} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: cStatus === 'booked' ? '#fbeeda' : 'var(--card,#fff)', color: cStatus === 'booked' ? '#b45309' : 'inherit', cursor: 'pointer' }}>Booked</button>
+          </div>
+          {cStatus === 'booked' && <>
+            <input value={cStudent} onChange={e => setCStudent(e.target.value)} placeholder="Student name" style={inp} />
+            <input value={cNote} onChange={e => setCNote(e.target.value)} placeholder="Note (optional)" style={inp} />
+            <select value={cType} onChange={e => setCType(e.target.value as 'demo' | 'recurring' | 'makeup')} style={inp}><option value="recurring">Recurring</option><option value="makeup">Make-up</option><option value="demo">Demo</option></select>
+          </>}
+          {cErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12 }}>{cErr}</div>}
+          <button onClick={doCreate} disabled={cSaving} style={{ fontWeight: 800, padding: '8px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: cSaving ? .6 : 1 }}>{cSaving ? 'Creating\u2026' : 'Create slot'}</button>
         </div>
       </>
     );
@@ -280,7 +411,7 @@ export function TeacherDirectory() {
                   <td className="cm-wg-tl">{rowMap.get(rk)!.label}{tz ? <span className="cm-wg-tz"> {tzLabel(tz)}</span> : null}</td>
                   {WEEK_FULL.map(d => {
                     const s = cell[d + '|' + rk];
-                    if (!s) return <td key={d}><div className="cm-wg-empty">·</div></td>;
+                    if (!s) return <td key={d}><div className="cm-wg-empty" onClick={canManage ? () => openCreate(id, d, rk) : undefined} title={canManage ? 'Add a slot here' : undefined} style={{ cursor: canManage ? 'pointer' : 'default' }}>{canManage ? '+' : '·'}</div></td>;
                     const hasStudent = s.status === 'booked' && !!(s.booked_student && s.booked_student.trim());
                     const cls = hasStudent ? 'bk' : s.status === 'available' ? 'av' : 'un';
                     const lab = hasStudent ? 'Booked' : s.status === 'available' ? 'Available' : 'Unavailable';
@@ -322,6 +453,7 @@ export function TeacherDirectory() {
         </div>
         <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk" /> Booked<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tzLabel(tz) : ''}</div>
         {renderPopover(id)}
+        {renderCreate()}
       </>
     );
   };
@@ -415,6 +547,8 @@ export function TeacherDirectory() {
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {reqBadge(d.id) > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(d.id)} ready to book</span>}
                     {d.banned_at && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--coral,#c0392b)', background: 'var(--coral-soft,#fdece9)', borderRadius: 999, padding: '2px 10px' }}>Banned</span>}
+                    {d.profile_approved === false && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--amber,#b45309)', background: 'var(--amber-soft,#fbeeda)', borderRadius: 999, padding: '2px 10px' }}>Unapproved</span>}
+                    {canManage && <button onClick={() => setApproval(d, d.profile_approved === false)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.profile_approved === false ? 'Approve' : 'Unapprove'}</button>}
                     {canManage && <button onClick={() => banTeacher(d, !d.banned_at)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.banned_at ? 'Unban' : 'Ban'}</button>}
                     {canManage && <button onClick={() => deleteTeacher(d)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--coral,#c0392b)', opacity: acting ? 0.6 : 1 }}>Delete</button>}
                   </div>
@@ -423,9 +557,10 @@ export function TeacherDirectory() {
                 <div>
                   <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Teaches</h4>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {groupSubjects(d.subjects).map(g => { const c = comboColor(g.subject, 'all'); return (
-                      <span key={g.subject} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 8, background: c.bg, color: c.tx, border: '1px solid ' + c.bd }}>
+                    {groupSubjects(d.subjects).map(g => { const c = comboColor(g.subject, 'all'); const inactive = (d.inactive_subjects || []).includes(g.subject); return (
+                      <span key={g.subject} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 700, padding: '3px 4px 3px 10px', borderRadius: 8, background: c.bg, color: c.tx, border: '1px solid ' + c.bd, opacity: inactive ? 0.55 : 1 }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.tx }} />{g.subject}{g.grades.length ? <span style={{ fontWeight: 800 }}>{' · ' + compressGrades(g.grades)}</span> : null}
+                        {canManage && <button onClick={() => toggleCapability(d, g.subject, inactive)} title={inactive ? 'Activate' : 'Deactivate'} style={{ fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '2px 8px', cursor: 'pointer', border: '1px solid ' + (inactive ? '#f3c9c4' : '#bfe8d4'), background: inactive ? '#fdecea' : '#eafbf1', color: inactive ? '#c0392b' : '#0e7a52' }}>{inactive ? 'Inactive' : 'Active ✓'}</button>}
                       </span>
                     ); })}
                     {groupSubjects(d.subjects).length === 0 && <span className="muted" style={{ fontSize: 12 }}>No subjects listed.</span>}
