@@ -92,9 +92,6 @@ export function TeacherDirectory() {
   const [occDates, setOccDates] = useState<string[]>([]);
   const [pType, setPType] = useState<'demo' | 'recurring' | 'makeup'>('recurring');
   const [createCell, setCreateCell] = useState<{ teacherId: string; day: string; start: string; end: string } | null>(null);
-  const [cSubject, setCSubject] = useState('');
-  const [cGmin, setCGmin] = useState('1');
-  const [cGmax, setCGmax] = useState('12');
   const [cStatus, setCStatus] = useState<'available' | 'booked'>('available');
   const [cStudent, setCStudent] = useState('');
   const [cNote, setCNote] = useState('');
@@ -103,23 +100,18 @@ export function TeacherDirectory() {
   const [cSaving, setCSaving] = useState(false);
   const openCreate = (teacherId: string, day: string, range: string) => {
     const parts = range.split('\u2013'); const start = parts[0]; const end = parts[1] || parts[0];
-    const t = (rows || []).find(r => r.id === teacherId);
-    const subs = t ? groupSubjects(t.subjects).map(g => g.subject) : [];
     setCreateCell({ teacherId, day, start, end });
-    setCSubject(subs[0] || ''); setCGmin('1'); setCGmax('12');
     setCStatus('available'); setCStudent(''); setCNote(''); setCType('recurring'); setCErr('');
   };
   const doCreate = async () => {
     if (!createCell) return;
-    if (!cSubject.trim()) { setCErr('Pick a subject.'); return; }
-    const gmin = parseInt(cGmin, 10), gmax = parseInt(cGmax, 10);
-    if (!(gmin >= 1 && gmax <= 12 && gmin <= gmax)) { setCErr('Grades must be 1\u201312 and min \u2264 max.'); return; }
     if (cStatus === 'booked' && !cStudent.trim()) { setCErr('Student name is required to book.'); return; }
     setCSaving(true); setCErr('');
     try {
+      // Subject & grade are inherited from the teacher's profile by the gateway.
       await api.teacherCreateSlot({
         teacher_id: createCell.teacherId, day_of_week: createCell.day, start_time: createCell.start, end_time: createCell.end,
-        subject: cSubject.trim(), grade_min: gmin, grade_max: gmax, status: cStatus,
+        status: cStatus,
         ...(cStatus === 'booked' ? { student: cStudent.trim(), note: cNote.trim() || undefined, session_type: cType } : {}),
       });
       const r = await api.teacherSlots(createCell.teacherId); setSlots(sx => ({ ...sx, [createCell.teacherId]: r.slots || [] }));
@@ -305,21 +297,29 @@ export function TeacherDirectory() {
           <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject}</div>
           {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{stBadge(s.session_type)}{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
           {hasStudent && s.booked_note && <div className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</div>}
-          {hasStudent && (s.session_type || 'recurring') === 'recurring' && <div style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, padding: 10, display: 'grid', gap: 8, background: 'var(--card2,#f7f9fc)' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--faint,#93a6b3)' }}>Unbook scope</div>
-            <label style={{ display: 'flex', gap: 7, fontSize: 12.5, cursor: 'pointer' }}><input type="radio" checked={ubScope === 'slot'} onChange={() => setUbScope('slot')} />This day &amp; time only</label>
-            <label style={{ display: 'flex', gap: 7, fontSize: 12.5, cursor: 'pointer' }}><input type="radio" checked={ubScope === 'child'} onChange={() => setUbScope('child')} />All of {s.booked_student}'s slots with this teacher</label>
-            <label style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 12.5, cursor: 'pointer', marginTop: 2 }}><input type="checkbox" checked={ubEnd} onChange={e => setUbEnd(e.target.checked)} /><span><b>End the series</b> (otherwise unbook now)</span></label>
-            {ubEnd && <div style={{ display: 'grid', gap: 7 }}>
-              <div style={{ display: 'flex', gap: 14, fontSize: 12.5, fontWeight: 700 }}>
-                <label style={{ display: 'inline-flex', gap: 6, cursor: 'pointer' }}><input type="radio" checked={ubEndMode === 'date'} onChange={() => setUbEndMode('date')} />On date</label>
-                <label style={{ display: 'inline-flex', gap: 6, cursor: 'pointer' }}><input type="radio" checked={ubEndMode === 'count'} onChange={() => setUbEndMode('count')} />After total occurrences</label>
+          {hasStudent && (s.session_type || 'recurring') === 'recurring' && (() => {
+            const segBtn = (on: boolean): React.CSSProperties => ({ flex: 1, border: 0, padding: '9px 8px', fontWeight: 800, fontSize: 12.5, cursor: 'pointer', background: on ? 'var(--navy,#122a52)' : 'var(--card,#fff)', color: on ? '#fff' : 'var(--muted,#44546f)' });
+            return <div style={{ border: '1px solid var(--line,#e6e6ef)', borderRadius: 10, padding: 10, display: 'grid', gap: 9, background: 'var(--card2,#f7f9fc)' }}>
+              <div style={{ fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--faint,#93a6b3)' }}>Unbook scope</div>
+              <div style={{ display: 'flex', border: '1.5px solid var(--line,#d7dce8)', borderRadius: 9, overflow: 'hidden' }}>
+                <button onClick={() => setUbScope('slot')} style={segBtn(ubScope === 'slot')}>This slot</button>
+                <button onClick={() => setUbScope('child')} style={segBtn(ubScope === 'child')}>All of {s.booked_student}'s slots</button>
               </div>
-              {ubEndMode === 'date'
-                ? <select value={ubDate} onChange={e => setUbDate(e.target.value)} style={inp}>{occDates.map(d => <option key={d} value={d}>{d}</option>)}</select>
-                : <input type="number" min={1} value={ubCount} onChange={e => setUbCount(e.target.value)} placeholder="Enter number" style={inp} />}
-            </div>}
-          </div>}
+              <button onClick={() => setUbEnd(!ubEnd)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: '9px 11px', fontSize: 12.5, fontWeight: 700, color: 'var(--muted,#44546f)', background: ubEnd ? '#eef7f3' : 'var(--card,#fff)', cursor: 'pointer' }}>
+                <span>End the series instead of now</span>
+                <span style={{ width: 38, height: 22, borderRadius: 999, background: ubEnd ? 'var(--teal,#0f766e)' : '#cbd5e6', position: 'relative', flex: 'none' }}><span style={{ position: 'absolute', top: 2, left: ubEnd ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: '.15s' }} /></span>
+              </button>
+              {ubEnd && <div style={{ display: 'grid', gap: 7 }}>
+                <div style={{ display: 'flex', gap: 14, fontSize: 12.5, fontWeight: 700 }}>
+                  <label style={{ display: 'inline-flex', gap: 6, cursor: 'pointer' }}><input type="radio" checked={ubEndMode === 'date'} onChange={() => setUbEndMode('date')} />On date</label>
+                  <label style={{ display: 'inline-flex', gap: 6, cursor: 'pointer' }}><input type="radio" checked={ubEndMode === 'count'} onChange={() => setUbEndMode('count')} />After total occurrences</label>
+                </div>
+                {ubEndMode === 'date'
+                  ? <select value={ubDate} onChange={e => setUbDate(e.target.value)} style={inp}>{occDates.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                  : <input type="number" min={1} value={ubCount} onChange={e => setUbCount(e.target.value)} placeholder="Enter number" style={inp} />}
+              </div>}
+            </div>;
+          })()}
           {isAvail && <>
             <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}
               onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
@@ -342,20 +342,13 @@ export function TeacherDirectory() {
   };
   const renderCreate = () => {
     if (!createCell) return null;
-    const t = (rows || []).find(r => r.id === createCell.teacherId);
-    const subs = t ? groupSubjects(t.subjects).map(g => g.subject) : [];
-    const lblStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--muted,#64748b)' };
     return (
       <>
         <button aria-label="Close" onClick={() => setCreateCell(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 320, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
           <button aria-label="Close" onClick={() => setCreateCell(null)} style={{ position: 'absolute', top: 10, right: 10, width: 26, height: 26, borderRadius: '50%', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer', fontWeight: 800, lineHeight: 1 }}>\u2715</button>
           <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>New slot · {DAY_ABBR[createCell.day] || createCell.day} · {createCell.start}\u2013{createCell.end}</div>
-          <div><div style={lblStyle}>Subject</div><select value={cSubject} onChange={e => setCSubject(e.target.value)} style={inp}>{subs.length ? subs.map(x => <option key={x} value={x}>{x}</option>) : <option value="">(no subjects)</option>}</select></div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1 }}><div style={lblStyle}>Grade min</div><input type="number" min={1} max={12} value={cGmin} onChange={e => setCGmin(e.target.value)} style={inp} /></div>
-            <div style={{ flex: 1 }}><div style={lblStyle}>Grade max</div><input type="number" min={1} max={12} value={cGmax} onChange={e => setCGmax(e.target.value)} style={inp} /></div>
-          </div>
+          {cStatus === 'booked' && <div style={{ fontSize: 11.5, color: 'var(--muted,#64748b)' }}>Subject &amp; grade follow the teacher's profile.</div>}
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={() => setCStatus('available')} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: cStatus === 'available' ? '#e6f7f2' : 'var(--card,#fff)', color: cStatus === 'available' ? '#0f766e' : 'inherit', cursor: 'pointer' }}>Available</button>
             <button onClick={() => setCStatus('booked')} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: cStatus === 'booked' ? '#fbeeda' : 'var(--card,#fff)', color: cStatus === 'booked' ? '#b45309' : 'inherit', cursor: 'pointer' }}>Booked</button>

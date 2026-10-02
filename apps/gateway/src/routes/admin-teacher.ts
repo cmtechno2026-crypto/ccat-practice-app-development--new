@@ -195,24 +195,30 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     day_of_week: z.enum(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']),
     start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
     end_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-    subject: z.string().trim().min(1).max(80),
-    grade_min: z.number().int().min(1).max(12),
-    grade_max: z.number().int().min(1).max(12),
+    subject: z.string().trim().min(1).max(80).optional(),      // inherited from teacher/profile when omitted
+    grade_min: z.number().int().min(1).max(12).optional(),
+    grade_max: z.number().int().min(1).max(12).optional(),
     status: z.enum(['available','booked']).default('available'),
     student: z.string().trim().max(120).optional(),
     note: z.string().trim().max(500).optional(),
     session_type: z.enum(['demo','recurring','makeup']).optional(),
-  }).refine((v) => v.grade_min <= v.grade_max, { message: 'grade_min must be <= grade_max', path: ['grade_max'] })
+  }).refine((v) => v.grade_min == null || v.grade_max == null || v.grade_min <= v.grade_max, { message: 'grade_min must be <= grade_max', path: ['grade_max'] })
     .refine((v) => v.status !== 'booked' || !!(v.student && v.student.length > 0), { message: 'Student name is required to book', path: ['student'] });
   app.post('/v1/admin/teacher/slots', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.slots.manage');
     requireSite(req, 'teacher');
     const b = createSlotSchema.parse(req.body ?? {});
-    const t = await tdb().query('select name from public.ta_teachers where id = $1', [b.teacher_id]);
+    const t = await tdb().query('select name, subjects from public.ta_teachers where id = $1', [b.teacher_id]);
     if (t.rows.length === 0) throw Errors.notFound('Teacher not found');
-    const tz = await tdb().query('select timezone, iana_timezone from public.ta_slots where teacher_id = $1 order by created_at desc limit 1', [b.teacher_id]);
-    const timezone = (tz.rows[0]?.timezone as string) || 'IST';
-    const iana = (tz.rows[0]?.iana_timezone as string) || 'Asia/Kolkata';
+    // Timezone, and (when the admin didn't supply them) subject + grade range inherit from the
+    // teacher's most recent slot, falling back to their profile's first subject + grades 1–12.
+    const ref = await tdb().query('select timezone, iana_timezone, subject, grade_min, grade_max from public.ta_slots where teacher_id = $1 order by created_at desc limit 1', [b.teacher_id]);
+    const timezone = (ref.rows[0]?.timezone as string) || 'IST';
+    const iana = (ref.rows[0]?.iana_timezone as string) || 'Asia/Kolkata';
+    const teacherSubjects = (t.rows[0].subjects as string[] | null) || [];
+    const subject = b.subject ?? (ref.rows[0]?.subject as string | undefined) ?? teacherSubjects[0] ?? 'General';
+    const grade_min = b.grade_min ?? (ref.rows[0]?.grade_min as number | undefined) ?? 1;
+    const grade_max = b.grade_max ?? (ref.rows[0]?.grade_max as number | undefined) ?? 12;
     const booking = b.status === 'booked';
     let bookedBy = '';
     if (booking) {
@@ -226,14 +232,14 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, case when $9='booked' then now() else null end)
        returning id, teacher_id, teacher_name, subject, grade_min, grade_max, day_of_week, start_time, end_time,
                  status, timezone, session_type, booked_student, booked_note, booked_by`,
-      [b.teacher_id, t.rows[0].name, b.subject, b.grade_min, b.grade_max, b.day_of_week, b.start_time, b.end_time,
+      [b.teacher_id, t.rows[0].name, subject, grade_min, grade_max, b.day_of_week, b.start_time, b.end_time,
        b.status, timezone, iana, booking ? (b.session_type ?? 'recurring') : null,
        booking ? (b.student ?? '') : '', booking ? (b.note ?? null) : null, booking ? bookedBy : '']);
     try {
       await db.query(
         `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
          values ($1,'admin','teacher.slot.create','ta_slot',$2,$3)`,
-        [req.admin!.adminId, rows[0].id, JSON.stringify({ teacher: t.rows[0].name, status: b.status, subject: b.subject })]);
+        [req.admin!.adminId, rows[0].id, JSON.stringify({ teacher: t.rows[0].name, status: b.status, subject })]);
     } catch { /* audit best-effort */ }
     return rows[0];
   });
