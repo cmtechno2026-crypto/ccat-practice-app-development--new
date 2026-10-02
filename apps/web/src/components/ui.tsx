@@ -88,6 +88,7 @@ export function Figure({ url, blocks, kind, alt }: { url?: string | null; blocks
       className={kind === 'question' ? 'q-figure' : 'opt-figure'}
       src={src}
       loading="lazy"
+      decoding="async"
       alt={imgAlt}
       onError={() => setBroken(true)}
     />

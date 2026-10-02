@@ -6,6 +6,7 @@ import { AnswerBuffer, blocksToText, mmss, remainingSeconds, titleCase } from '@
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { AppBar, Loader, ErrorNote, Card, Figure } from '../components/ui';
+import { resolveAssetUrl } from '../components/Avatar';
 
 const KEYS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
@@ -132,6 +133,34 @@ export function SessionScreen() {
     : (sess?.questions ?? []);
   const q = activeQuestions[idx];
   const total = activeQuestions.length;
+
+  // IMAGE PREFETCH — warm the browser cache for the next few questions (prompt + option images) while the
+  // student reads the current one, so Next is instant. Every image URL is already in the session payload.
+  // Applies to ALL sets in both workspaces (this player is shared). Each URL is fetched at most once.
+  const preloadedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!sess) return;
+    const WINDOW = 3; // current + next 3
+    const urls: string[] = [];
+    for (let i = idx; i <= idx + WINDOW && i < activeQuestions.length; i++) {
+      const qq = activeQuestions[i];
+      if (!qq) continue;
+      const pu = resolveAssetUrl(qq.image_url);
+      if (pu) urls.push(pu);
+      for (const opt of qq.option_blocks) {
+        const ou = resolveAssetUrl((opt as { image_url?: string | null }).image_url);
+        if (ou) urls.push(ou);
+      }
+    }
+    for (const u of urls) {
+      if (preloadedRef.current.has(u)) continue;
+      preloadedRef.current.add(u);
+      const im = new Image();
+      im.decoding = 'async';
+      im.src = u;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sess, idx, examBattery]);
 
   // ---- PRACTICE: per-question attempt with instant feedback (single OR multi "pick all") ----
   async function attempt(selected: string | string[]) {

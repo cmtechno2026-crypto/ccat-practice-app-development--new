@@ -706,17 +706,25 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
       // Auto-approve on set publish (owner decision): admin-authored draft/approved member questions
       // become published (immutable) together with the set — the publishing admin's action is the
       // approval. Already-published members are left untouched.
+      // Promote member questions AND write one audit row per promoted question in a SINGLE round-trip
+      // (data-modifying CTE), instead of a per-question INSERT loop that paid DB latency 20× per publish.
       const promoted = await c.query(
-        `update ccat.question_versions qv set state='published', published_at=now()
-           from ccat.set_version_questions svq
-          where svq.set_version_id=$1 and svq.active=true and svq.question_version_id=qv.id and qv.state in ('draft','approved')
-          returning qv.id`, [id]);
-      for (const r of promoted.rows)
-        await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','content.published','question_version',$2,$3)`,
-          [req.admin!.adminId, r.id, JSON.stringify({ state: 'published', via: 'set_publish' })]);
+        `with promoted as (
+           update ccat.question_versions qv set state='published', published_at=now()
+             from ccat.set_version_questions svq
+            where svq.set_version_id=$1 and svq.active=true and svq.question_version_id=qv.id and qv.state in ('draft','approved')
+            returning qv.id
+         ), logged as (
+           insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value)
+           select $2,'admin','content.published','question_version', id, $3::jsonb from promoted
+           returning 1
+         )
+         select count(*)::int as n from promoted`,
+        [id, req.admin!.adminId, JSON.stringify({ state: 'published', via: 'set_publish' })]);
+      const promotedCount = Number(promoted.rows[0]?.n ?? 0);
       await c.query(`update ccat.question_set_versions set state='published', published_at=now() where id=$1`, [id]);
       await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,old_value,new_value) values ($1,'admin','content.published','set_version',$2,$3,$4)`,
-        [req.admin!.adminId, id, JSON.stringify({ state: cur.rows[0]!.state }), JSON.stringify({ state: 'published', questions_promoted: promoted.rows.length })]);
+        [req.admin!.adminId, id, JSON.stringify({ state: cur.rows[0]!.state }), JSON.stringify({ state: 'published', questions_promoted: promotedCount })]);
     });
     return { state: 'published' };
   });

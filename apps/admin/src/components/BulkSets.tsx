@@ -57,7 +57,7 @@ function assignNumbers(count: number, used: Set<number>): number[] {
 type Ctx = { gradeId: string; catId: string; subId: string; diffId: string; qType: string;
   gradeNumber: number | string; categoryName: string; subcategoryName: string; difficultyLabel: string; diffKey: string;
   maxPerSet: number };
-type Created = { name: string; id: string; count: number; full: boolean };
+type Created = { name: string; id: string; count: number; full: boolean; published?: boolean };
 
 export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }: {
   ctx: Ctx; existingSets: any[]; taxonomy: any; onClose: () => void; onDone: () => void; exam?: boolean;
@@ -240,18 +240,28 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
   };
 
   const publishOne = async (c: Created) => {
-    try { await api.publishSet(c.id); toast(`${c.name} published`); onDone(); }
-    catch (e) { toast(`${c.name}: ${(e as Error).message}`); }
+    try {
+      await api.publishSet(c.id);
+      setCreated(cs => cs.map(x => x.id === c.id ? { ...x, published: true } : x));
+      toast(`${c.name} published`); onDone();
+    } catch (e) { toast(`${c.name}: ${(e as Error).message}`); }
   };
   const publishAll = async () => {
+    const pending = created.filter(c => !c.published);
+    if (!pending.length) return;
     setBusy(true);
-    let ok = 0; const failed: string[] = [];
-    for (const c of created) {
-      try { await api.publishSet(c.id); ok++; } catch (e) { failed.push(`${c.name} (${(e as Error).message})`); }
-    }
+    // Publish concurrently (not one-by-one): the sets are independent, so this cuts the wall-clock
+    // from N×~6s to roughly one publish. The small Render instance handles a few parallel publishes fine.
+    const results = await Promise.all(pending.map(async c => {
+      try { await api.publishSet(c.id); return { id: c.id, ok: true as const }; }
+      catch (e) { return { id: c.id, ok: false as const, name: c.name, msg: (e as Error).message }; }
+    }));
+    const okIds = new Set(results.filter(r => r.ok).map(r => r.id));
+    setCreated(cs => cs.map(x => okIds.has(x.id) ? { ...x, published: true } : x));
+    const failed = results.filter(r => !r.ok).map(r => `${(r as any).name} (${(r as any).msg})`);
     onDone();
     setBusy(false);
-    toast(failed.length ? `Published ${ok}; still draft: ${failed.join('; ')}` : `Published all ${ok} sets`);
+    toast(failed.length ? `Published ${okIds.size}; still draft: ${failed.join('; ')}` : `Published all ${okIds.size} sets`);
   };
 
   const refreshCount = async (id: string) => {
@@ -274,7 +284,7 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
             <button className="btn grow" disabled={busy || !plan || hasNameError} onClick={confirmCreate}>{busy ? (progress || 'Creating…') : `Create ${plan?.chunks.length ?? 0} draft set${(plan?.chunks.length ?? 0) === 1 ? '' : 's'}`}</button></>
         ) : (
           <><button className="btn ghost grow" onClick={onClose}>Done</button>
-            <button className="btn grow" disabled={busy || !created.length} onClick={publishAll}>{busy ? 'Publishing…' : 'Publish all'}</button></>
+            {created.some(c => !c.published) && <button className="btn grow" disabled={busy} onClick={publishAll}>{busy ? 'Publishing…' : (created.some(c => c.published) ? 'Publish remaining' : 'Publish all')}</button>}</>
         )}>
 
         <div className="infobox" style={{ marginBottom: 12 }}>
@@ -396,7 +406,9 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
                   <div><b>{c.name}</b> <span className="tabnum muted" style={{ fontSize: 12 }}>· {c.count} / {perSet}{c.full ? '' : ' (partial)'}</span></div>
                   <div className="rowactions">
                     <button className="btn ghost sm" onClick={() => setEditingId(c.id)}>Open / Edit</button>
-                    <button className="btn sm" disabled={busy} onClick={() => publishOne(c)}>Publish</button>
+                    {c.published
+                      ? <span className="pill" style={{ fontSize: 11.5, color: '#1b7a4b', background: 'rgba(27,122,75,.14)' }}>✓ Published</span>
+                      : <button className="btn sm" disabled={busy} onClick={() => publishOne(c)}>Publish</button>}
                   </div>
                 </div>
               ))}

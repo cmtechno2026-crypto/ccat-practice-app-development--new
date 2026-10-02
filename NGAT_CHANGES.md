@@ -198,3 +198,15 @@ Changed the NGAT access rule from a username allow-list to **plan-based**:
 - The `NGAT_ENABLED_USERNAMES` allow-list is **kept as a manual override** (grants NGAT to a listed account even on the free plan — e.g. a comp/test account). Default is still `user_d`; set `NGAT_ENABLED_USERNAMES=` (empty) to make it purely plan-based.
 
 No web change — the client still gates everything on `profile.ngat_enabled`; the store already snaps a user back to CCAT if the flag turns false (e.g. plan lapses). Gateway-only change → needs a Render redeploy.
+
+---
+
+## 13. Question image prefetch (performance — all sets, both workspaces)
+
+Problem: question images were only requested when a question rendered, so every Next waited on a first-time fetch from Supabase Storage (Seoul region → far for GTA users). Repeat views were already fast (1-year cache-control).
+
+Fix (web-only, shared player — applies to CCAT **and** NGAT, practice and exam):
+- `apps/web/src/screens/SessionScreen.tsx` — added an image-prefetch effect: on load and on each question change it warms the browser cache for the current question + next 3 (prompt image and all option images) via `new Image()`. Every URL is already in the session payload; each is fetched at most once (deduped by a ref Set). Sliding window avoids a request burst.
+- `apps/web/src/components/ui.tsx` — `Figure` `<img>` gains `decoding="async"` so the visible image paints without blocking.
+
+Result: Next is effectively instant after the first question, since the next few are already cached. Web-only change → needs a web redeploy.

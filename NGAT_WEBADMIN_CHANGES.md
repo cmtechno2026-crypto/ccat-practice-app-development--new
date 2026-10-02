@@ -253,3 +253,13 @@ No content exists for Quant/Non-verbal yet, so this was a clean structural chang
 - Fix: the no-subcategory branch now also requires `category_id` to match (`!s.subcategory_id && s.category_id === ctx.catId`); the two rename checks add `&& x.category_id === …`. Subcategory sets are unaffected (a subcategory already implies its battery). No gateway/DB change — set-name uniqueness is client-side only.
 - Files: `apps/admin/src/components/BulkSets.tsx`, `apps/admin/src/components/SetEditor.tsx`, `apps/admin/src/pages/Content.tsx`.
 - Redeploy: `apps/admin` (Vercel).
+
+## 16. Bulk publish — speed + post-publish UI state (2026-10-02)
+Two issues on the Bulk-add "Created" step:
+- **Slow publish (~6s each).** Per publish, the gateway promoted member questions then looped ONE `audit_log` INSERT per question — ~20 sequential DB round-trips inside the transaction, each paying Render↔Supabase latency. And the client `publishAll` ran the sets one-by-one, so 3 sets ≈ 3×6s.
+  - Gateway (`admin-content.ts`, publish handler): promote + all per-question audit rows now run in ONE data-modifying CTE (`with promoted as (update … returning), logged as (insert … select from promoted) select count(*)`), replacing the 20-INSERT loop. `questions_promoted` now comes from that count.
+  - Admin (`BulkSets.tsx`): `publishAll` now publishes the pending sets **concurrently** (`Promise.all`) instead of sequentially.
+- **After publishing, the dialog still showed "Publish all" and per-row Publish.** The created list wasn't marked. Now each `Created` carries `published`; `publishOne`/`publishAll` set it on success → the row shows a green "✓ Published" pill instead of a Publish button, and the footer button hides when nothing is left (label becomes "Publish remaining" while some are still pending).
+- DB: none. Redeploy: `apps/gateway` (Render) + `apps/admin` (Vercel).
+
+> Residual latency after this is mostly the Render instance (cold start on first call, DB round-trip time). If publishes are still slow when warm, the next lever is a keep-warm ping or a larger Render instance — say the word.
