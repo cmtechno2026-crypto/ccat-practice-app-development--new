@@ -77,9 +77,11 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const { rows } = await tdb().query(
       `select s.id, s.teacher_id, s.teacher_name, s.subject, s.grade, s.grade_min, s.grade_max, s.day_of_week,
               s.start_time, s.end_time, s.status, s.timezone, s.notes,
-              s.booked_student, s.booked_note, s.booked_by, s.booked_at, br.session_type
+              s.booked_student, s.booked_note, s.booked_by, s.booked_at,
+              coalesce(brs.session_type, br.session_type) as session_type
          from public.ta_slots s
          left join public.ta_booking_requests br on br.id = s.booked_request_id
+         left join public.ta_booking_request_slots brs on brs.request_id = s.booked_request_id and brs.slot_id = s.id
          ${where}
          order by s.teacher_name,
                   case s.day_of_week
@@ -531,7 +533,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
          join public.ta_booking_links l on l.id = r.link_id
          left join lateral (
            select json_agg(json_build_object(
-             'slot_id', rs.slot_id, 'outcome', rs.outcome, 'teacher_slot_status', rs.teacher_slot_status,
+             'slot_id', rs.slot_id, 'outcome', rs.outcome, 'teacher_slot_status', rs.teacher_slot_status, 'session_type', rs.session_type,
              'teacher_id', s.teacher_id, 'teacher_name', s.teacher_name, 'subject', s.subject,
              'day_of_week', s.day_of_week, 'start_time', s.start_time, 'end_time', s.end_time,
              'status', s.status, 'timezone', s.timezone,

@@ -18,6 +18,7 @@ interface Slot {
   slot_id: string; outcome: string; teacher_slot_status?: string | null;
   teacher_id: string; teacher_name: string; subject: string;
   day_of_week: string; start_time: string; end_time: string; status: string; timezone?: string | null;
+  session_type?: string | null;
 }
 interface RequestRow {
   id: string; parent_name: string; parent_email: string; parent_phone: string | null;
@@ -197,7 +198,7 @@ export function BookingRequests() {
       taken: ['🔒', '#fdf6ea', '#f0dcb0', '#a4701a'], declined: ['⊘', '#f6f8fc', '#e3eaf6', '#8b93aa'],
     };
     const c = m[stt] || m.pending;
-    const st = r.session_type ? SESSION_TYPE[r.session_type] : null;
+    const stKey = s.session_type || r.session_type; const st = stKey ? SESSION_TYPE[stKey] : null;
     return <span key={s.slot_id} style={chip(c[1], c[2], c[3])} title={`${s.day_of_week} ${s.start_time}–${s.end_time} · ${s.teacher_name}`}>{c[0]} {shortDay(s.day_of_week)} {s.start_time}{st ? ` ${st.label}` : ''}</span>;
   };
 
@@ -325,7 +326,7 @@ export function BookingRequests() {
                           return (
                             <div key={s.slot_id} style={{ display: 'grid', gridTemplateColumns: '44px minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.1fr)', gap: 14, alignItems: 'center', padding: '12px 18px', borderTop: '1px solid #f0f4fa', background: bg }}>
                               {actionable && bookable ? <input type="checkbox" checked={checked} onChange={() => toggleSlot(r, s.slot_id)} style={{ width: 18, height: 18, cursor: 'pointer' }} /> : <span />}
-                              <span style={{ fontSize: 14.5, fontWeight: 900 }}>{shortDay(s.day_of_week)} <span style={{ color: '#8b93aa', fontWeight: 800, fontSize: 13 }}>{s.start_time}–{s.end_time}</span></span>
+                              <span style={{ fontSize: 14.5, fontWeight: 900 }}>{shortDay(s.day_of_week)} <span style={{ color: '#8b93aa', fontWeight: 800, fontSize: 13 }}>{s.start_time}–{s.end_time}</span>{(() => { const tk = s.session_type || r.session_type; const mm = tk ? SESSION_TYPE[tk] : null; return mm ? <span style={{ marginLeft: 8, padding: '1px 7px', borderRadius: 999, background: mm.bg, color: mm.fg, fontSize: 10.5, fontWeight: 800 }}>{mm.label}</span> : null; })()}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 900, color: tp.fg }}><span style={{ width: 9, height: 9, borderRadius: 99, background: tp.dot, flex: 'none' }} />{tp.label}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 900, color: ap.fg }}><span style={{ width: 9, height: 9, borderRadius: 99, background: ap.dot, flex: 'none' }} />{ap.label}{tt !== 'accepted' && s.outcome !== 'approved' ? ` · ${tt === 'pending' ? 'teacher hasn’t replied' : 'teacher rejected'}` : ''}</span>
                             </div>
