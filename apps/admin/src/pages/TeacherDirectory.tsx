@@ -13,7 +13,7 @@ interface Slot {
   booked_student?: string | null; booked_note?: string | null; booked_by?: string | null; session_type?: string | null;
 }
 
-const SESSION_TYPE_META: Record<string, [string, string, string]> = { demo: ['Demo', '#e7efff', '#1a4f9e'], recurring: ['Recurring', '#e6f5ec', '#0e7a52'], makeup: ['Make-up', '#fbf1dc', '#a4701a'] };
+const SESSION_TYPE_META: Record<string, [string, string, string]> = { demo: ['Demo', '#ede9fe', '#6d28d9'], recurring: ['Recurring', '#bfdbfe', '#1d4ed8'], makeup: ['Make-up', '#fef3c7', '#92400e'] };
 function stBadge(t?: string | null) { const m = t ? SESSION_TYPE_META[t] : null; return m ? <span style={{ marginLeft: 6, display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: m[1], color: m[2], fontSize: 10.5, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', verticalAlign: 'middle' }}>{m[0]}</span> : null; }
 
 interface Req {
@@ -607,16 +607,16 @@ export function TeacherDirectory() {
         .cm-wg-tl{font-size:11px;color:var(--muted,#64748b);font-weight:700;white-space:nowrap;text-align:right;padding-right:6px}
         .cm-wg-tz{font-size:9px;letter-spacing:.03em}
         .cm-wg-cell{border-radius:10px;padding:8px 6px;font-size:11px;font-weight:800;text-align:center;border:1.5px solid;display:flex;flex-direction:column;gap:2px;align-items:center;justify-content:center;min-height:44px}
-        .cm-wg-cell.av{border-color:#0f766e;background:#e6f7f2;color:#0f766e}
+        .cm-wg-cell.av{border-color:#059669;background:#d1fae5;color:#065f46}
         .cm-wg-cell.bk{border-color:#b45309;color:#b45309;background:repeating-linear-gradient(45deg,#fbeeda,#fbeeda 6px,#fff6e9 6px,#fff6e9 12px)}
-        .cm-wg-cell.un{border-color:#c7ccd6;color:#6b7280;background:repeating-linear-gradient(45deg,#eef1f6,#eef1f6 6px,#f7f9fc 6px,#f7f9fc 12px)}
+        .cm-wg-cell.un{border-color:#cbd0d9;color:#4b5563;background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 6px,#f3f4f6 6px,#f3f4f6 12px)}
         .cm-wg-who{font-size:10px;font-weight:700}
         .cm-wg-empty{border:1.5px dashed var(--line,#e6e6ef);border-radius:10px;color:#c3ccda;text-align:center;padding:8px 6px;min-height:44px;display:flex;align-items:center;justify-content:center}
         .cm-wg-legend{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted,#64748b);margin-top:8px;flex-wrap:wrap}
         .cm-wg-sw{width:12px;height:12px;border-radius:3px;border:1.5px solid;display:inline-block}
-        .cm-wg-sw.av{border-color:#0f766e;background:#e6f7f2}
+        .cm-wg-sw.av{border-color:#059669;background:#d1fae5}
         .cm-wg-sw.bk{border-color:#b45309;background:#fbeeda}
-        .cm-wg-sw.un{border-color:#c7ccd6;background:#eef1f6}
+        .cm-wg-sw.un{border-color:#cbd0d9;background:#e5e7eb}
         .cm-wg-stack{display:none}
         .cm-wg-day{border:1px solid var(--line,#e6e6ef);border-radius:12px;background:var(--card,#fff);margin-bottom:8px;overflow:hidden}
         .cm-wg-day>summary{list-style:none;cursor:pointer;padding:12px 13px;display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:14px}
@@ -625,9 +625,9 @@ export function TeacherDirectory() {
         .cm-wg-srow{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 13px;border:0;border-top:1px solid var(--line,#e6e6ef);background:transparent}
         .cm-wg-stime{font-size:13px;font-weight:700;color:var(--ink,#1a1a2e)}
         .cm-wg-chip{font-size:11px;font-weight:800;border-radius:999px;padding:4px 10px;border:1.5px solid;white-space:nowrap}
-        .cm-wg-chip.av{border-color:#0f766e;background:#e6f7f2;color:#0f766e}
+        .cm-wg-chip.av{border-color:#059669;background:#d1fae5;color:#065f46}
         .cm-wg-chip.bk{border-color:#b45309;background:#fbeeda;color:#b45309}
-        .cm-wg-chip.un{border-color:#c7ccd6;background:#eef1f6;color:#6b7280}
+        .cm-wg-chip.un{border-color:#cbd0d9;background:#e5e7eb;color:#4b5563}
         @media(max-width:640px){ .cm-wg-desk{display:none} .cm-wg-stack{display:block} }
         @media(max-width:640px){ .cm-inline,.cm-inline *{min-width:0;max-width:100%} .cm-inline{overflow:hidden} }
         @media(max-width:920px){

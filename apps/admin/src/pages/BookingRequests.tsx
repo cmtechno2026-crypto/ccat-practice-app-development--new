@@ -64,9 +64,9 @@ const FILTERS: [string, string, string][] = [
 ];
 
 const SESSION_TYPE: Record<string, { label: string; bg: string; fg: string }> = {
-  demo: { label: 'Demo', bg: '#e7efff', fg: '#1a4f9e' },
-  recurring: { label: 'Recurring', bg: '#e6f5ec', fg: '#0e7a52' },
-  makeup: { label: 'Make-up', bg: '#fbf1dc', fg: '#a4701a' },
+  demo: { label: 'Demo', bg: '#ede9fe', fg: '#6d28d9' },
+  recurring: { label: 'Recurring', bg: '#bfdbfe', fg: '#1d4ed8' },
+  makeup: { label: 'Make-up', bg: '#fef3c7', fg: '#92400e' },
 };
 
 
