@@ -847,7 +847,12 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
         const upd = await client.query(
           `update public.ta_slots
               set status = 'booked', booked_student = $2, booked_note = $3, booked_by = $4,
-                  booked_at = now(), booked_request_id = $5, updated_at = now()
+                  booked_at = now(), booked_request_id = $5,
+                  session_type = coalesce(
+                    (select brs.session_type from public.ta_booking_request_slots brs
+                       where brs.request_id = $5 and brs.slot_id = $1),
+                    session_type, 'recurring'),
+                  updated_at = now()
             where id = $1 and status = 'available'
             returning id`, [slotId, student, note, bookedBy, reqId]);
         if (upd.rows.length === 1) {
