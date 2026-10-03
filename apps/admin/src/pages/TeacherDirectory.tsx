@@ -406,7 +406,7 @@ export function TeacherDirectory() {
                     const s = cell[d + '|' + rk];
                     if (!s) return <td key={d}><div className="cm-wg-empty" onClick={canManage ? () => openCreate(id, d, rk) : undefined} title={canManage ? 'Add a slot here' : undefined} style={{ cursor: canManage ? 'pointer' : 'default' }}>{canManage ? '+' : '·'}</div></td>;
                     const hasStudent = s.status === 'booked' && !!(s.booked_student && s.booked_student.trim());
-                    const cls = hasStudent ? 'bk' : s.status === 'available' ? 'av' : 'un';
+                    const cls = hasStudent ? ('bk bk-' + (s.session_type === 'makeup' ? 'mku' : s.session_type === 'demo' ? 'dem' : 'rec')) : s.status === 'available' ? 'av' : 'un';
                     const lab = hasStudent ? 'Booked' : s.status === 'available' ? 'Available' : 'Unavailable';
                     return (
                       <td key={d}>
@@ -431,7 +431,7 @@ export function TeacherDirectory() {
                 <summary><span>{d}</span><span className="cm-wg-daycnt">{daySlots.length} slot{daySlots.length > 1 ? 's' : ''} ›</span></summary>
                 {daySlots.map(s2 => {
                   const hasStudent = s2.status === 'booked' && !!(s2.booked_student && s2.booked_student.trim());
-                  const cls = hasStudent ? 'bk' : s2.status === 'available' ? 'av' : 'un';
+                  const cls = hasStudent ? ('bk bk-' + (s2.session_type === 'makeup' ? 'mku' : s2.session_type === 'demo' ? 'dem' : 'rec')) : s2.status === 'available' ? 'av' : 'un';
                   const lab = hasStudent ? 'Booked' : s2.status === 'available' ? 'Available' : 'Unavailable';
                   return (
                     <button key={s2.id} className="cm-wg-srow" onClick={canManage ? () => openPopover(s2.id) : undefined} style={{ cursor: canManage ? 'pointer' : 'default' }}>
@@ -444,7 +444,7 @@ export function TeacherDirectory() {
             );
           })}
         </div>
-        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk" /> Booked<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tzLabel(tz) : ''}</div>
+        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk-rec" /> Recurring<span className="cm-wg-sw bk-dem" /> Demo<span className="cm-wg-sw bk-mku" /> Make-up<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tzLabel(tz) : ''}</div>
         {renderPopover(id)}
         {renderCreate()}
       </>
@@ -609,6 +609,9 @@ export function TeacherDirectory() {
         .cm-wg-cell{border-radius:10px;padding:8px 6px;font-size:11px;font-weight:800;text-align:center;border:1.5px solid;display:flex;flex-direction:column;gap:2px;align-items:center;justify-content:center;min-height:44px}
         .cm-wg-cell.av{border-color:#059669;background:#d1fae5;color:#065f46}
         .cm-wg-cell.bk{border-color:#b45309;color:#b45309;background:repeating-linear-gradient(45deg,#fbeeda,#fbeeda 6px,#fff6e9 6px,#fff6e9 12px)}
+        .cm-wg-cell.bk-rec{border-color:#1d4ed8;color:#1d4ed8;background:repeating-linear-gradient(45deg,#dbeafe,#dbeafe 6px,#eff6ff 6px,#eff6ff 12px)}
+        .cm-wg-cell.bk-dem{border-color:#6d28d9;color:#6d28d9;background:repeating-linear-gradient(45deg,#ede9fe,#ede9fe 6px,#f5f3ff 6px,#f5f3ff 12px)}
+        .cm-wg-cell.bk-mku{border-color:#92400e;color:#92400e;background:repeating-linear-gradient(45deg,#fef3c7,#fef3c7 6px,#fffbeb 6px,#fffbeb 12px)}
         .cm-wg-cell.un{border-color:#cbd0d9;color:#4b5563;background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 6px,#f3f4f6 6px,#f3f4f6 12px)}
         .cm-wg-who{font-size:10px;font-weight:700}
         .cm-wg-empty{border:1.5px dashed var(--line,#e6e6ef);border-radius:10px;color:#c3ccda;text-align:center;padding:8px 6px;min-height:44px;display:flex;align-items:center;justify-content:center}
@@ -616,6 +619,9 @@ export function TeacherDirectory() {
         .cm-wg-sw{width:12px;height:12px;border-radius:3px;border:1.5px solid;display:inline-block}
         .cm-wg-sw.av{border-color:#059669;background:#d1fae5}
         .cm-wg-sw.bk{border-color:#b45309;background:#fbeeda}
+        .cm-wg-sw.bk-rec{border-color:#1d4ed8;background:#bfdbfe}
+        .cm-wg-sw.bk-dem{border-color:#6d28d9;background:#ede9fe}
+        .cm-wg-sw.bk-mku{border-color:#92400e;background:#fef3c7}
         .cm-wg-sw.un{border-color:#cbd0d9;background:#e5e7eb}
         .cm-wg-stack{display:none}
         .cm-wg-day{border:1px solid var(--line,#e6e6ef);border-radius:12px;background:var(--card,#fff);margin-bottom:8px;overflow:hidden}
@@ -627,6 +633,9 @@ export function TeacherDirectory() {
         .cm-wg-chip{font-size:11px;font-weight:800;border-radius:999px;padding:4px 10px;border:1.5px solid;white-space:nowrap}
         .cm-wg-chip.av{border-color:#059669;background:#d1fae5;color:#065f46}
         .cm-wg-chip.bk{border-color:#b45309;background:#fbeeda;color:#b45309}
+        .cm-wg-chip.bk-rec{border-color:#1d4ed8;background:#bfdbfe;color:#1d4ed8}
+        .cm-wg-chip.bk-dem{border-color:#6d28d9;background:#ede9fe;color:#6d28d9}
+        .cm-wg-chip.bk-mku{border-color:#92400e;background:#fef3c7;color:#92400e}
         .cm-wg-chip.un{border-color:#cbd0d9;background:#e5e7eb;color:#4b5563}
         @media(max-width:640px){ .cm-wg-desk{display:none} .cm-wg-stack{display:block} }
         @media(max-width:640px){ .cm-inline,.cm-inline *{min-width:0;max-width:100%} .cm-inline{overflow:hidden} }
