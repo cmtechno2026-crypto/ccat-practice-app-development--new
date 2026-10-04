@@ -112,16 +112,17 @@ export function BookingRequests() {
   const [xfer, setXfer] = useState<{ req: RequestRow; teachers: XferTeacher[]; times: { day_of_week: string; start_time: string; end_time: string }[]; sel: string } | null>(null);
   const [xferBusy, setXferBusy] = useState(false);
 
-  const reload = () => {
-    setLoading(true); setErr('');
+  const reload = (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
+    setErr('');
     Promise.all([
       api.teacherBookingRequests({ status: 'all' }).then(r => (r.requests as RequestRow[]) || []),
       api.teacherLeaveRequests('all').then(r => (r.requests as LeaveRow[]) || []).catch(() => []),
     ]).then(([rq, lv]) => { setRows(rq); setLeave(lv); setChosen({}); })
       .catch(e => setErr((e as Error).message || 'Failed to load requests'))
-      .finally(() => setLoading(false));
+      .finally(() => { if (!opts?.silent) setLoading(false); });
   };
-  useEffect(reload, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.teacherGetSettings().then(r => setAutoBook(!!r.auto_book)).catch(() => setAutoBook(false)); }, []);
 
   const toggleAuto = async () => {
@@ -144,14 +145,18 @@ export function BookingRequests() {
     const ids = [...chosenFor(r)].filter(id => bookableIds(r).includes(id));
     if (ids.length === 0) { setErr('Tick at least one accepted slot to book, or use Decline for the whole request.'); return; }
     setBusy(r.id); setErr('');
-    try { const res = await api.teacherApproveRequest(r.id, ids); if (res.taken) setErr(`${res.taken} slot(s) were already taken and could not be booked.`); reload(); }
+    try { const res = await api.teacherApproveRequest(r.id, ids); if (res.taken) setErr(`${res.taken} slot(s) were already taken and could not be booked.`); reload({ silent: true }); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
   const reject = async (r: RequestRow) => {
-    const reason = window.prompt('Reason for declining this request? (optional, added to the notes)') ?? undefined;
     setBusy(r.id); setErr('');
-    try { await api.teacherRejectRequest(r.id, reason || undefined); reload(); }
-    catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+    const prev = rows;
+    // Optimistically mark this one declined so it moves out of the active tab instantly,
+    // keeping the rest of the list visible; then refresh silently (no full-screen blank).
+    setRows(rs => rs.map(x => x.id === r.id ? { ...x, status: 'rejected' } : x));
+    try { await api.teacherRejectRequest(r.id); reload({ silent: true }); }
+    catch (e) { setRows(prev); setErr((e as Error).message); }
+    finally { setBusy(''); }
   };
   const openTransfer = async (r: RequestRow) => {
     setBusy(r.id); setErr('');
