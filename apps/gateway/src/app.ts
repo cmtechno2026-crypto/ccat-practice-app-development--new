@@ -10,6 +10,7 @@ import { makeAuthenticateStudent, type StudentContext } from './plugins/auth.js'
 import { registerRegistrationRoutes } from './routes/registration.js';
 import { registerEmailVerifyRoutes } from './routes/email-verify.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerMathRoutes } from './routes/math.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerCatalogRoutes, registerHealthRoutes } from './routes/catalog.js';
 import { registerAssignmentRoutes } from './routes/assignments.js';
@@ -150,6 +151,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerRegistrationRoutes(app, db, cfg);
   registerEmailVerifyRoutes(app, db, cfg);
   registerAuthRoutes(app, db, cfg);
+  registerMathRoutes(app, db, cfg);
   registerRecoveryRoutes(app, db, cfg);
   registerSessionRoutes(app, db, cfg);
   registerRewardsRoutes(app, db);
