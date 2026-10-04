@@ -27,6 +27,7 @@ interface RequestRow {
   link_subject?: string | null; link_grade?: number | null; link_label?: string | null;
   status: string; teacher_status: string; teacher_decided_at: string | null;
   decided_by_name: string | null; decided_at: string | null; created_at: string; slots: Slot[];
+  link_teachers?: { id: string; name: string }[] | null;
 }
 interface LeaveRow {
   id: string; teacher_id: string; teacher_name: string; teacher_email: string;
@@ -87,7 +88,7 @@ const bucketOf = (r: RequestRow) => {
 const slotTeacher = (s: Slot, r: RequestRow): string =>
   s.teacher_slot_status || (r.teacher_status === 'accepted' ? 'accepted' : r.teacher_status === 'declined' ? 'rejected' : 'pending');
 const isBookable = (s: Slot, r: RequestRow) => slotTeacher(s, r) === 'accepted' && s.outcome !== 'approved' && s.outcome !== 'taken';
-const teacherNames = (r: RequestRow) => [...new Set(r.slots.map(s => s.teacher_name).filter(Boolean))];
+const teacherNames = (r: RequestRow) => { const fromSlots = [...new Set(r.slots.map(s => s.teacher_name).filter(Boolean))]; if (fromSlots.length) return fromSlots; return [...new Set((r.link_teachers || []).map(t => t.name).filter(Boolean))]; };
 const teacherLabel = (r: RequestRow) => { const n = teacherNames(r); return n.length === 0 ? '—' : n.length === 1 ? n[0] : `${n[0]} +${n.length - 1}`; };
 const whenParts = (iso: string) => { const d = new Date(iso); return { date: d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), time: d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) }; };
 const fmtLeave = (d: string) => { const dt = new Date(d + (d.length <= 10 ? 'T00:00:00' : '')); return dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); };

@@ -791,9 +791,15 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
               r.student_name, r.notes, r.parent_timezone, r.session_type, r.custom_time_requests, r.status, r.teacher_status, r.teacher_decided_at,
               r.decided_by, r.decided_at, r.created_at,
               l.subject as link_subject, l.grade as link_grade, l.label as link_label,
-              coalesce(js.slots, '[]'::json) as slots
+              coalesce(js.slots, '[]'::json) as slots,
+              coalesce(lt.teachers, '[]'::json) as link_teachers
          from public.ta_booking_requests r
          join public.ta_booking_links l on l.id = r.link_id
+         left join lateral (
+           select json_agg(json_build_object('id', t.id, 'name', t.name) order by t.name) as teachers
+             from public.ta_teachers t
+            where t.id = any(l.teacher_ids)
+         ) lt on true
          left join lateral (
            select json_agg(json_build_object(
              'slot_id', rs.slot_id, 'outcome', rs.outcome, 'teacher_slot_status', rs.teacher_slot_status, 'session_type', rs.session_type,
