@@ -1161,6 +1161,11 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const { rows } = await tdb().query(
       `update public.ta_teachers set ${sets.join(', ')} where id = $1 returning id, name, subjects`, vals);
     if (rows.length === 0) throw Errors.notFound('Teacher not found');
+    // Keep the denormalized slot name in sync so a rename never splits the teacher's
+    // availability across old/new names on the booking page or in emails.
+    if (b.name !== undefined) {
+      try { await tdb().query('update public.ta_slots set teacher_name = $2 where teacher_id = $1', [id, b.name]); } catch { /* best-effort */ }
+    }
     try {
       await db.query(
         `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
