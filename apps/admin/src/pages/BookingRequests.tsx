@@ -67,7 +67,7 @@ const FILTERS: [string, string, string][] = [
 const SESSION_TYPE: Record<string, { label: string; bg: string; fg: string }> = {
   demo: { label: 'Demo', bg: '#ede9fe', fg: '#6d28d9' },
   recurring: { label: 'Recurring', bg: '#bfdbfe', fg: '#1d4ed8' },
-  makeup: { label: 'Make-up', bg: '#fef3c7', fg: '#92400e' },
+  makeup: { label: 'Make-Up / On Demand', bg: '#fef3c7', fg: '#92400e' },
 };
 
 

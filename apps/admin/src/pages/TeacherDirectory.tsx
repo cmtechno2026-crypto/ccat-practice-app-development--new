@@ -13,7 +13,7 @@ interface Slot {
   booked_student?: string | null; booked_note?: string | null; booked_by?: string | null; session_type?: string | null; is_custom?: boolean;
 }
 
-const SESSION_TYPE_META: Record<string, [string, string, string]> = { demo: ['Demo', '#ede9fe', '#6d28d9'], recurring: ['Recurring', '#bfdbfe', '#1d4ed8'], makeup: ['Make-up', '#fef3c7', '#92400e'] };
+const SESSION_TYPE_META: Record<string, [string, string, string]> = { demo: ['Demo', '#ede9fe', '#6d28d9'], recurring: ['Recurring', '#bfdbfe', '#1d4ed8'], makeup: ['Make-Up / On Demand', '#fef3c7', '#92400e'] };
 function stBadge(t?: string | null) { const m = t ? SESSION_TYPE_META[t] : null; return m ? <span style={{ marginLeft: 6, display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: m[1], color: m[2], fontSize: 10.5, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', verticalAlign: 'middle' }}>{m[0]}</span> : null; }
 
 interface Req {
@@ -352,7 +352,7 @@ export function TeacherDirectory() {
             <input value={pNote} onChange={e => setPNote(e.target.value)} placeholder="Note (optional)" style={inp}
               onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
             <select value={pType} onChange={e => setPType(e.target.value as 'demo' | 'recurring' | 'makeup')} style={inp}>
-              <option value="recurring">Recurring</option><option value="makeup">Make-up</option><option value="demo">Demo</option>
+              <option value="recurring">Recurring</option><option value="makeup">Make-Up / On Demand</option><option value="demo">Demo</option>
             </select>
             {pErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12 }}>{pErr}</div>}
           </>}
@@ -382,7 +382,7 @@ export function TeacherDirectory() {
           {cStatus === 'booked' && <>
             <input value={cStudent} onChange={e => setCStudent(e.target.value)} placeholder="Student name" style={inp} />
             <input value={cNote} onChange={e => setCNote(e.target.value)} placeholder="Note (optional)" style={inp} />
-            <select value={cType} onChange={e => setCType(e.target.value as 'demo' | 'recurring' | 'makeup')} style={inp}><option value="recurring">Recurring</option><option value="makeup">Make-up</option><option value="demo">Demo</option></select>
+            <select value={cType} onChange={e => setCType(e.target.value as 'demo' | 'recurring' | 'makeup')} style={inp}><option value="recurring">Recurring</option><option value="makeup">Make-Up / On Demand</option><option value="demo">Demo</option></select>
           </>}
           {cErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12 }}>{cErr}</div>}
           <button onClick={doCreate} disabled={cSaving} style={{ fontWeight: 800, padding: '8px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: cSaving ? .6 : 1 }}>{cSaving ? 'Creating\u2026' : 'Create slot'}</button>
@@ -471,7 +471,7 @@ export function TeacherDirectory() {
             );
           })}
         </div>
-        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk-rec" /> Recurring<span className="cm-wg-sw bk-dem" /> Demo<span className="cm-wg-sw bk-mku" /> Make-up<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tzLabel(tz) : ''}</div>
+        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk-rec" /> Recurring<span className="cm-wg-sw bk-dem" /> Demo<span className="cm-wg-sw bk-mku" /> Make-Up / On Demand<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tzLabel(tz) : ''}</div>
         {renderPopover(id)}
         {renderCreate()}
       </>

@@ -43,7 +43,7 @@ const annWorker = setInterval(() => {
 }, 30_000);
 annWorker.unref();
 
-// Teacher acceptance SLA (12h): remind the teacher ~1h before expiry, then auto-decline still-pending
+// Teacher acceptance SLA (24h): remind the teacher ~1h before expiry, then auto-decline still-pending
 // requested slots and notify teacher / parent / admin. Runs against the TeacherHub ("cm-whiteboard")
 // DB. Every 15 min, so the one-hour reminder always lands inside its window.
 const teacherPool = cfg.teacherDatabaseUrl ? createPool(cfg.teacherDatabaseUrl) : null;

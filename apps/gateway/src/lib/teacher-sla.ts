@@ -2,13 +2,13 @@ import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { sendEmail } from './email.js';
 
-// ---- 12-hour teacher acceptance SLA ----------------------------------------------------------
+// ---- 24-hour teacher acceptance SLA ----------------------------------------------------------
 // A parent's requested slot must be accepted or declined by the teacher within ACCEPT_WINDOW_HOURS
 // of the booking request being created. REMINDER_LEAD_HOURS before the window closes the teacher is
 // reminded; at the window, still-pending slots are auto-declined and teacher / parent / admin are
 // notified. Operates on the TeacherHub ("cm-whiteboard") DB (public.ta_* tables). Idempotent: the
 // reminder is stamped (sla_reminder_at) so it is sent once, and expiry only touches pending slots.
-const ACCEPT_WINDOW_HOURS = 12;
+const ACCEPT_WINDOW_HOURS = 24;
 const REMINDER_LEAD_HOURS = 1;
 
 type MiniLog = { info?: (...a: any[]) => void; warn?: (...a: any[]) => void; error?: (...a: any[]) => void };
@@ -149,7 +149,7 @@ export async function runTeacherSlaTick(teacherDb: DB, cfg: Config, log?: MiniLo
     if (adminTo) {
       const outcome = allDecided ? (anyAccepted ? 'partially accepted; remainder auto-declined' : 'fully auto-declined') : 'some slots auto-declined; others still pending with other teachers';
       const inner = h2('Booking request expired')
-        + preview('A teacher did not respond within 12 hours; the affected slots were auto-declined.')
+        + preview('A teacher did not respond within 24 hours; the affected slots were auto-declined.')
         + `<p style="${P}">Student: <strong>${esc(req.student_name || '')}</strong><br>Parent: ${esc(req.parent_name || '')} — ${esc(req.parent_email || '')}<br>Request ID: ${esc(requestId)}<br>Outcome: ${outcome}</p>`
         + sessions(expiredSlots);
       await sendEmail(cfg, { to: adminTo, subject: `TeacherHub: booking request expired — ${req.student_name || 'student'}`, html: wrap(cfg, inner) }, log);
@@ -173,9 +173,9 @@ export async function runTeacherSlaTick(teacherDb: DB, cfg: Config, log?: MiniLo
     if (!email) continue;
     const teacher = esc(g.teacher_name || (tr.rows[0] as any)?.name || 'there');
     const inner = h2('A booking request expired')
-      + preview('These requested session(s) were auto-declined because they were not answered within 12 hours.')
+      + preview('These requested session(s) were auto-declined because they were not answered within 24 hours.')
       + `<p style="${P}">Hello ${teacher},</p>`
-      + `<p style="${P}">The following requested session(s) have been automatically declined on your behalf because they were not accepted within the 12-hour window. If this was a mistake, please contact the office.</p>`
+      + `<p style="${P}">The following requested session(s) have been automatically declined on your behalf because they were not accepted within the 24-hour window. If this was a mistake, please contact the office.</p>`
       + sessions(g.slots);
     await sendEmail(cfg, { to: email, subject: 'A booking request expired without your response', html: wrap(cfg, inner) }, log);
   }
