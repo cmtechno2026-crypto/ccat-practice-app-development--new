@@ -167,9 +167,11 @@ export function TeacherDirectory() {
   const deleteTeacher = async (t: TeacherRow) => {
     const typed = window.prompt(`Permanently delete ${t.name}? This removes their account, availability, sessions and training progress. This cannot be undone.\n\nType the teacher's name to confirm:`);
     if (typed == null) return;
-    if (typed.trim() !== t.name.trim()) { window.alert('Name did not match — nothing was deleted.'); return; }
+    if (typed.trim().toLowerCase() !== (t.name || '').trim().toLowerCase()) { window.alert(`Name did not match \u2014 nothing was deleted. Type exactly: ${t.name}`); return; }
     setActing(true); setErr('');
-    try { await api.teacherDeleteTeacher(t.id); setSelected(null); load(search); } catch (e) { setErr((e as Error).message); } finally { setActing(false); }
+    try { await api.teacherDeleteTeacher(t.id); setSelected(null); await load(search); window.alert(`${t.name}'s account has been deleted.`); }
+    catch (e) { const m = (e as Error).message || 'Unknown error'; setErr(m); window.alert('Could not delete this teacher: ' + m); }
+    finally { setActing(false); }
   };
   const setApproval = async (t: TeacherRow, approved: boolean) => {
     if (!approved && !window.confirm(`Unapprove ${t.name}'s profile? They stop being bookable until re-approved.`)) return;
