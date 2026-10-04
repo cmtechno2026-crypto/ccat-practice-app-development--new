@@ -6,7 +6,7 @@ import { makeAuthenticateAdmin, requirePermission, requireSite } from '../plugin
 import { AppError, Errors } from '../errors.js';
 import { withTransaction } from '../db.js';
 import { sendEmail } from '../lib/email.js';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, scryptSync } from 'node:crypto';
 
 // Expand a weekly recurring slot into dated occurrences (no rows materialized).
 // Returns YYYY-MM-DD for each weekly occurrence of `dayOfWeek` from today (or
@@ -1142,6 +1142,58 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const { rows } = await tdb().query(sql, [id, b.subject]);
     if (rows.length === 0) throw Errors.notFound('Teacher not found');
     return { id, inactive_subjects: rows[0].inactive_subjects };
+  });
+
+  // Admin edits a teacher's profile: name and/or subjects (each entry "Subject (Grade N)").
+  const teacherProfileSchema = z.object({
+    name: z.string().trim().min(1).max(120).optional(),
+    subjects: z.array(z.string().trim().min(1).max(120)).max(300).optional(),
+  });
+  app.patch('/v1/admin/teacher/teachers/:id/profile', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = (req.params as { id: string }).id;
+    const b = teacherProfileSchema.parse(req.body ?? {});
+    const sets: string[] = []; const vals: unknown[] = [id]; let i = 2;
+    if (b.name !== undefined)     { sets.push(`name = $${i++}`); vals.push(b.name); }
+    if (b.subjects !== undefined) { sets.push(`subjects = $${i++}::text[]`); vals.push(b.subjects); }
+    if (!sets.length) throw Errors.validation('Nothing to update');
+    const { rows } = await tdb().query(
+      `update public.ta_teachers set ${sets.join(', ')} where id = $1 returning id, name, subjects`, vals);
+    if (rows.length === 0) throw Errors.notFound('Teacher not found');
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin','teacher.profile.edit','ta_teacher',$2,$3)`,
+        [req.admin!.adminId, id, JSON.stringify({ name: b.name, subjects: b.subjects })]);
+    } catch { /* best-effort */ }
+    return { id, name: rows[0].name, subjects: rows[0].subjects };
+  });
+
+  // Admin sets a new password for a teacher. Uses scrypt with the same cost TeacherHub targets, so the
+  // stored hash verifies on the teacher's next TeacherHub login.
+  const teacherPwSchema = z.object({ password: z.string().min(8).max(200) });
+  app.post('/v1/admin/teacher/teachers/:id/reset-password', { preHandler: [authenticateAdmin] }, async (req) => {
+    requirePermission(req, 'teacher.slots.manage');
+    requireSite(req, 'teacher');
+    const id = (req.params as { id: string }).id;
+    const b = teacherPwSchema.parse(req.body ?? {});
+    const N = 65536, r = 8, p = 1, keylen = 64;
+    const salt = randomBytes(16).toString('hex');
+    const hash = scryptSync(b.password, salt, keylen, { N, r, p, maxmem: 256 * 1024 * 1024 }).toString('hex');
+    const stored = salt + ':' + hash;
+    const { rows } = await tdb().query(
+      `update public.ta_teachers set pass = $2, pass_algo = 'scrypt', pass_params = $3::jsonb,
+              failed_attempts = 0, locked_until = null where id = $1 returning id`,
+      [id, stored, JSON.stringify({ N, r, p, keylen })]);
+    if (rows.length === 0) throw Errors.notFound('Teacher not found');
+    try {
+      await db.query(
+        `insert into ccat.audit_log(actor_admin_id, actor_kind, event_type, target_kind, target_id, new_value)
+         values ($1,'admin','teacher.password.reset','ta_teacher',$2,$3)`,
+        [req.admin!.adminId, id, JSON.stringify({ reset: true })]);
+    } catch { /* best-effort */ }
+    return { id, ok: true };
   });
 
   // Permanently delete a teacher account and all their data. Transactional: clears the leave rows that

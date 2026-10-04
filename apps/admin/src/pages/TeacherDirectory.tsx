@@ -134,6 +134,32 @@ export function TeacherDirectory() {
 
   const load = (q: string) => { setErr(''); api.teacherTeachers(q).then(r => setRows(r.teachers || [])).catch(e => setErr((e as Error).message || 'Failed to load')); };
   const [acting, setActing] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [epName, setEpName] = useState('');
+  const [epSubs, setEpSubs] = useState<{ subject: string; grades: number[] }[]>([]);
+  const [epNewSub, setEpNewSub] = useState('');
+  const [epPw, setEpPw] = useState('');
+  const [epSaving, setEpSaving] = useState(false);
+  const [epErr, setEpErr] = useState('');
+  const openEditProfile = (d: TeacherRow) => { setEditId(d.id); setEpName(d.name || ''); setEpSubs(groupSubjects(d.subjects)); setEpNewSub(''); setEpPw(''); setEpErr(''); setEpSaving(false); };
+  const epToggleGrade = (si: number, g: number) => setEpSubs(prev => prev.map((row, i) => i !== si ? row : ({ ...row, grades: row.grades.includes(g) ? row.grades.filter(x => x !== g) : [...row.grades, g].sort((a, b) => a - b) })));
+  const epRemoveSub = (si: number) => setEpSubs(prev => prev.filter((_, i) => i !== si));
+  const epAddSub = () => { const nm = epNewSub.trim(); if (!nm) return; if (epSubs.some(r => r.subject.toLowerCase() === nm.toLowerCase())) { setEpNewSub(''); return; } setEpSubs(prev => [...prev, { subject: nm, grades: [] }]); setEpNewSub(''); };
+  const epSerialize = () => { const out: string[] = []; epSubs.forEach(r => { if (r.grades.length) r.grades.forEach(g => out.push(`${r.subject} (Grade ${g})`)); else out.push(r.subject); }); return out; };
+  const saveEditProfile = async () => {
+    if (!editId) return;
+    const nm = epName.trim();
+    if (!nm) { setEpErr('Name cannot be empty.'); return; }
+    const pw = epPw.trim();
+    if (pw && pw.length < 8) { setEpErr('New password must be at least 8 characters.'); return; }
+    setEpSaving(true); setEpErr('');
+    try {
+      await api.teacherEditProfile(editId, { name: nm, subjects: epSerialize() });
+      if (pw) await api.teacherResetPassword(editId, pw);
+      setEditId(null); load(search);
+    } catch (e) { setEpErr((e as Error).message || 'Could not save'); }
+    finally { setEpSaving(false); }
+  };
   const banTeacher = async (t: TeacherRow, banned: boolean) => {
     setActing(true); setErr('');
     try { await api.teacherSetBan(t.id, banned); load(search); } catch (e) { setErr((e as Error).message); } finally { setActing(false); }
@@ -541,6 +567,7 @@ export function TeacherDirectory() {
                     {reqBadge(d.id) > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(d.id)} ready to book</span>}
                     {d.banned_at && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--coral,#c0392b)', background: 'var(--coral-soft,#fdece9)', borderRadius: 999, padding: '2px 10px' }}>Banned</span>}
                     {d.profile_approved === false && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--amber,#b45309)', background: 'var(--amber-soft,#fbeeda)', borderRadius: 999, padding: '2px 10px' }}>Unapproved</span>}
+                    {canManage && <button onClick={() => openEditProfile(d)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--brand,#2563eb)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--brand,#2563eb)', opacity: acting ? 0.6 : 1 }}>✎ Edit profile</button>}
                     {canManage && <button onClick={() => setApproval(d, d.profile_approved === false)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.profile_approved === false ? 'Approve' : 'Unapprove'}</button>}
                     {canManage && <button onClick={() => banTeacher(d, !d.banned_at)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.banned_at ? 'Unban' : 'Ban'}</button>}
                     {canManage && <button onClick={() => deleteTeacher(d)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--coral,#c0392b)', opacity: acting ? 0.6 : 1 }}>Delete</button>}
@@ -588,8 +615,67 @@ export function TeacherDirectory() {
   );
 
 
+  const renderEditModal = () => {
+    if (!editId) return null;
+    const GR = [1,2,3,4,5,6,7,8,9,10,11,12];
+    return (
+      <>
+        <button aria-label="Close" onClick={() => setEditId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.32)', border: 0, zIndex: 60, cursor: 'default' }} />
+        <div role="dialog" aria-modal="true" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 70, width: 500, maxWidth: '94vw', maxHeight: '92vh', overflow: 'auto', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 14, boxShadow: '0 24px 60px rgba(10,28,56,.4)', padding: 18, display: 'grid', gap: 15 }}>
+          <button aria-label="Close" onClick={() => setEditId(null)} style={{ position: 'absolute', top: 12, right: 12, width: 26, height: 26, borderRadius: '50%', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer', fontWeight: 800, lineHeight: 1 }}>✕</button>
+          <div style={{ fontWeight: 800, fontSize: 15, paddingRight: 26 }}>Edit teacher profile</div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)', display: 'block', marginBottom: 5 }}>Full name</label>
+            <input value={epName} onChange={e => setEpName(e.target.value)} maxLength={120} style={inp} />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)', display: 'block', marginBottom: 5 }}>Subjects &amp; grades</label>
+            <div style={{ border: '1px solid var(--line,#e6e9f0)', borderRadius: 10, padding: 10, display: 'grid', gap: 10 }}>
+              {epSubs.map((row, si) => (
+                <div key={si} style={{ borderBottom: si < epSubs.length - 1 ? '1px dashed #eef1f6' : 'none', paddingBottom: si < epSubs.length - 1 ? 9 : 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontWeight: 800, fontSize: 13 }}>{row.subject}</span>
+                    <button onClick={() => epRemoveSub(si)} title="Remove subject" style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, border: '1px solid #f3c9c4', background: '#fdecea', color: '#c0392b', borderRadius: 7, padding: '2px 8px', cursor: 'pointer' }}>Remove</button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {GR.map(g => { const on = row.grades.includes(g); return (
+                      <button key={g} onClick={() => epToggleGrade(si, g)} style={{ fontSize: 11, fontWeight: 700, borderRadius: 7, padding: '3px 9px', cursor: 'pointer', border: '1px solid ' + (on ? '#1d4ed8' : 'var(--line,#d7dce8)'), background: on ? '#1d4ed8' : 'var(--card,#fff)', color: on ? '#fff' : '#374151' }}>G{g}</button>
+                    ); })}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted,#8a93a3)', marginTop: 4 }}>{row.grades.length ? '' : 'No grade selected — saved as all grades.'}</div>
+                </div>
+              ))}
+              {epSubs.length === 0 && <div className="muted" style={{ fontSize: 12 }}>No subjects yet.</div>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input value={epNewSub} onChange={e => setEpNewSub(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); epAddSub(); } }} placeholder="Add subject (e.g. Math)" style={{ ...inp, flex: 1 }} />
+                <button onClick={epAddSub} style={{ fontWeight: 800, fontSize: 12.5, padding: '7px 14px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer' }}>+ Add</button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid #fde68a', background: '#fffbeb', borderRadius: 10, padding: 12 }}>
+            <div style={{ fontWeight: 800, fontSize: 12.5, color: '#92400e', marginBottom: 7 }}>Reset password</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input value={epPw} onChange={e => setEpPw(e.target.value)} type="text" placeholder="New temporary password (leave blank to keep)" style={{ ...inp, flex: 1, minWidth: 180 }} />
+            </div>
+            <div style={{ fontSize: 10.5, color: '#9a7b2e', marginTop: 5 }}>Min 8 characters. The teacher can change it later from TeacherHub.</div>
+          </div>
+
+          {epErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12.5 }}>{epErr}</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+            <button onClick={() => setEditId(null)} style={{ fontWeight: 800, fontSize: 13, padding: '9px 16px', borderRadius: 9, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={saveEditProfile} disabled={epSaving} style={{ fontWeight: 800, fontSize: 13, padding: '9px 18px', borderRadius: 9, border: 0, background: 'var(--brand,#2563eb)', color: '#fff', cursor: 'pointer', opacity: epSaving ? .6 : 1 }}>{epSaving ? 'Saving…' : 'Save changes'}</button>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div>
+      {renderEditModal()}
       <style>{`
         .cm-md{display:grid;grid-template-columns:320px 1fr;gap:14px;align-items:start}
         .cm-av.g1{background:linear-gradient(135deg,#2f6fd0,#1e4e9e)}
