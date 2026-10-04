@@ -10,7 +10,7 @@ interface TeacherRow { id: string; name: string; email: string; subjects: string
 interface Slot {
   id: string; subject: string; grade: number | null; grade_min?: number | null; grade_max?: number | null; day_of_week: string; start_time: string; end_time: string;
   status: string; timezone: string; notes: string;
-  booked_student?: string | null; booked_note?: string | null; booked_by?: string | null; session_type?: string | null;
+  booked_student?: string | null; booked_note?: string | null; booked_by?: string | null; session_type?: string | null; is_custom?: boolean;
 }
 
 const SESSION_TYPE_META: Record<string, [string, string, string]> = { demo: ['Demo', '#ede9fe', '#6d28d9'], recurring: ['Recurring', '#bfdbfe', '#1d4ed8'], makeup: ['Make-up', '#fef3c7', '#92400e'] };
@@ -321,7 +321,7 @@ export function TeacherDirectory() {
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 300, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
           <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'absolute', top: 10, right: 10, width: 26, height: 26, borderRadius: '50%', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer', fontWeight: 800, lineHeight: 1 }}>✕</button>
           <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject}</div>
-          {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{stBadge(s.session_type)}{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
+          {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{stBadge(s.session_type)}{s.is_custom ? <span style={{ marginLeft: 6, display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe', fontSize: 10.5, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', verticalAlign: 'middle' }}>✎ Custom</span> : null}{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
           {hasStudent && s.booked_note && <div className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</div>}
           {hasStudent && (s.session_type || 'recurring') === 'recurring' && (() => {
             const segBtn = (on: boolean): React.CSSProperties => ({ flex: 1, border: 0, padding: '9px 8px', fontWeight: 800, fontSize: 12.5, cursor: 'pointer', background: on ? 'var(--navy,#122a52)' : 'var(--card,#fff)', color: on ? '#fff' : 'var(--muted,#44546f)' });
@@ -436,7 +436,8 @@ export function TeacherDirectory() {
                     const lab = hasStudent ? 'Booked' : s.status === 'available' ? 'Available' : 'Unavailable';
                     return (
                       <td key={d}>
-                        <div className={'cm-wg-cell ' + cls} onClick={canManage ? () => openPopover(s.id) : undefined} title={s.subject + (gradeShort(s) ? ' · ' + gradeShort(s) : '')} style={{ cursor: canManage ? 'pointer' : 'default' }}>
+                        <div className={'cm-wg-cell ' + cls} onClick={canManage ? () => openPopover(s.id) : undefined} title={s.subject + (gradeShort(s) ? ' · ' + gradeShort(s) : '') + (s.is_custom ? ' · Custom time' : '')} style={{ cursor: canManage ? 'pointer' : 'default', position: 'relative' }}>
+                          {s.is_custom && hasStudent && <span title="Custom time" style={{ position: 'absolute', top: 2, right: 4, fontSize: 9, fontWeight: 800, color: '#6b21a8' }}>✎</span>}
                           <span>{lab}</span>
                           {hasStudent && <span className="cm-wg-who">{s.booked_student}</span>}
                         </div>
