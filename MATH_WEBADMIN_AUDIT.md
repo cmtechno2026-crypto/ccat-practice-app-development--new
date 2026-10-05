@@ -21,6 +21,24 @@
 
 ## Change log
 
+### 2026-10-05 (h) — Perf: parallelize hot endpoints (slow load) (Claude / Cowork)
+
+Admin pages were slow because the heaviest endpoints ran many **sequential** DB queries — each one a full round-trip to a far/cold gateway+DB. Collapsed them into single parallel batches (identical output):
+- `routes/admin-students.ts` — `/students/:id/detail` ran ~11 independent reads one-after-another → now ONE `Promise.all` batch (≈2.3s → ~1 round-trip).
+- `routes/admin-dashboard.ts` — `/dashboard` ran ~11 aggregates sequentially → now ONE `Promise.all` batch.
+- `routes/admin.ts` — `/me` (gates every page) now fetches profile + teacher-programs in parallel.
+
+These cut the gateway↔DB latency that dominates page load. (Trade-off: a handful of concurrent queries per request — fine for low-frequency admin pages and the pooled connection.)
+
+**Remaining factor = infrastructure (not code):** the live symptoms (multiple requests each 1.5–2.4s, timelines spanning seconds) point to a **cold / far Render gateway**. The free/starter tier spins down after ~15 min idle, so the first hit after idle cold-starts (tens of seconds). To fix the "slow first load":
+1. Point an uptime monitor (e.g. UptimeRobot / cron) at **`GET https://ccat-gateway-payment.onrender.com/health/live`** every 5–10 min to keep it warm (public, no auth, no DB), **or**
+2. Use a Render plan without spin-down.
+3. Confirm the Render service and the Supabase project are in the **same/nearby region** (the user is in the GTA) — cross-region gateway↔DB round-trips multiply every query's latency.
+
+Syntax-clean. Run `pnpm -w typecheck` + rebuild/redeploy gateway before measuring.
+
+---
+
 ### 2026-10-05 (g) — Teacher accounts: restrict program pills to assigned programs (Claude / Cowork)
 
 A teacher-role account (`is_teacher`) must only see/switch the programs assigned to it on the Teachers page (`ccat.teacher_programs`), not all three.

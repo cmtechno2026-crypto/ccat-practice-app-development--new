@@ -104,10 +104,7 @@ const BASE_RAIL: RailItem[] = [
   // Content's Practice-sets/Exam-papers toggle is rendered in-page as pills (mockup), not as a top strip.
   { to: '/content', label: 'Content', ic: '📚', match: '/content' },
   { to: '/students', label: 'Students', ic: '🧒', match: '/students' },
-  // Gamification's Achievements/Avatars/Themes toggle is rendered in-page as pills (mockup).
-  { to: '/gamification/achievements', label: 'Gamification', ic: '🏆', match: '/gamification' },
   { to: '/teachers', label: 'Teachers', ic: '👩‍🏫', match: '/teachers', perm: 'teacher.students.manage' },
-  { to: '/support', label: 'Support', ic: '💬', match: '/support' },
   { to: '/announcements', label: 'Announcements', ic: '📣', match: '/announcements' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
 ];
@@ -140,6 +137,10 @@ const TEACHER_ONLY_RAIL: RailItem[] = [
   { to: '/teacher-exam', label: 'Exam', ic: '📝', match: '/teacher-exam' },
 ];
 
+// Support is MATH OLYMPIAD only — injected into the active rail solely when the Math program is selected
+// (both admins and teacher accounts). Teachers see Support for their assigned students; admins for all.
+const SUPPORT_ITEM: RailItem = { to: '/support', label: 'Support', ic: '💬', match: '/support' };
+
 function sectionFor(path: string, rail: RailItem[]): RailItem | undefined {
   // longest match wins so '/' doesn't swallow everything
   return [...rail].filter(r => (r.match === '/' ? path === '/' : path.startsWith(r.match)))
@@ -150,7 +151,12 @@ export function Layout() {
   const { me, logout, can, sites, activeSite, switchSite, program } = useAuth();
   const loc = useLocation();
   const [siteMenu, setSiteMenu] = useState(false);
-  const RAIL_ACTIVE = me?.is_teacher ? TEACHER_ONLY_RAIL : railForSite(activeSite);
+  const baseRail = me?.is_teacher ? TEACHER_ONLY_RAIL : railForSite(activeSite);
+  const RAIL_ACTIVE = (program === 'math' && activeSite !== 'teacher')
+    ? (me?.is_teacher
+        ? [...baseRail, SUPPORT_ITEM]
+        : (() => { const i = baseRail.findIndex(r => r.to === '/teachers'); return i >= 0 ? [...baseRail.slice(0, i + 1), SUPPORT_ITEM, ...baseRail.slice(i + 1)] : [...baseRail, SUPPORT_ITEM]; })())
+    : baseRail;
   // Keep the active site in sync with the URL so a hard refresh / deep-link to a /teacher/* page shows
   // the TeacherHub chrome (rail, header, switcher) instead of falling back to CCAT. URL is the source
   // of truth for which workspace is shown; teacher-role accounts keep their own dedicated rail.

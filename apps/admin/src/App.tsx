@@ -223,6 +223,8 @@ export function App() {
           {/* Teachers can browse & preview published Practice / Exam content (grade-selectable). */}
           <Route path="/teacher-practice" element={<TeacherPractice />} />
           <Route path="/teacher-exam" element={<TeacherExam />} />
+          {/* Math Olympiad Support — a teacher sees only their assigned students (server-enforced). */}
+          <Route path="/support" element={<Support />} />
           <Route path="*" element={<Navigate to="/students" replace />} />
         </Route>
       </Routes>
@@ -244,14 +246,6 @@ export function App() {
         <Route path="/content/import" element={<ImportQuestions />} />
         <Route path="/content/sets" element={<Navigate to="/content" replace />} />
         <Route path="/content/plans" element={<LearningPlans />} />
-        {/* Gamification */}
-        <Route path="/gamification" element={<Navigate to="/gamification/achievements" replace />} />
-        <Route path="/gamification/achievements" element={<Achievements />} />
-        <Route path="/gamification/customization" element={<Customization />} />
-        <Route path="/gamification/themes" element={<Customization />} />
-        <Route path="/gamification/economy" element={<CoinsXp />} />
-        <Route path="/rewards/achievements" element={<Navigate to="/gamification/achievements" replace />} />
-        <Route path="/rewards/customization" element={<Navigate to="/gamification/customization" replace />} />
         {/* Communications */}
         <Route path="/announcements" element={<Announcements />} />
         <Route path="/comms/announcements" element={<Navigate to="/announcements" replace />} />

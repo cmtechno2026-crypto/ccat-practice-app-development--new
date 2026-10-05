@@ -360,6 +360,19 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     );
     return rows[0];
   });
+  app.patch('/v1/math/notes/:id', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const id = (req.params as { id: string }).id;
+    const b = noteSchema.parse(req.body);
+    const { rows } = await db.query(
+      `update ccat.student_notes set title=$3, body=$4, updated_at=now()
+         where id=$1 and student_id=$2
+       returning id, notebook, title, body, accent, to_char(updated_at,'YYYY-MM-DD') as updated_at`,
+      [id, sid, b.title, b.body ?? ''],
+    );
+    if (!rows[0]) throw Errors.notFound('Note not found');
+    return rows[0];
+  });
   app.delete('/v1/math/notes/:id', authed, async (req, reply) => {
     const sid = req.student!.studentId;
     const id = (req.params as { id: string }).id;

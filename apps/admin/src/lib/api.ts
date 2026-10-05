@@ -361,11 +361,12 @@ export const api = {
   mathDeleteFolder: (id: string) => req<{ deleted: boolean }>('DELETE', `/v1/admin/math/folders/${id}`),
   mathDeleteSubfolder: (id: string) => req<{ deleted: boolean }>('DELETE', `/v1/admin/math/subfolders/${id}`),
   mathCreateSet: (b: { track: 'curriculum' | 'quiz' | 'test'; grade_id: string; category_id: string; subcategory_id?: string | null; name: string }) => req<{ id: string; state: string }>('POST', '/v1/admin/math/sets', b),
-  // ---- Support console (scoped to the active workspace via X-Admin-Site) ----
-  supportCases: (state?: 'open' | 'closed') => req<{ items: any[] }>('GET', `/v1/admin/support/cases${state ? '?state=' + state : ''}`),
-  supportCase: (id: string) => req<any>('GET', `/v1/admin/support/cases/${id}`),
-  supportReply: (id: string, body: string) => req<any>('POST', `/v1/admin/support/cases/${id}/messages`, { body }),
-  supportSetState: (id: string, state: 'open' | 'closed' | 'resolved') => req<{ state: string }>('POST', `/v1/admin/support/cases/${id}/state`, { state }),
+  // ---- Support console (Math Olympiad only). Lists STUDENTS (all, or a teacher's assigned); staff can
+  // message anyone. Thread + send are keyed by student id; a case is created on the first staff message. ----
+  supportStudents: () => req<{ items: any[] }>('GET', '/v1/admin/support/students'),
+  supportThread: (studentId: string) => req<any>('GET', `/v1/admin/support/students/${studentId}/thread`),
+  supportSend: (studentId: string, body: string) => req<{ case_id: string; message: any }>('POST', `/v1/admin/support/students/${studentId}/messages`, { body }),
+  supportSetState: (studentId: string, state: 'open' | 'closed' | 'resolved') => req<{ state: string }>('POST', `/v1/admin/support/students/${studentId}/state`, { state }),
   // ---- Teacher <-> program membership (CCAT / NGAT / Math) ----
   accountPrograms: (id: string) => req<{ programs: string[] }>('GET', `/v1/admin/accounts/${id}/programs`),
   setAccountPrograms: (id: string, programs: string[]) => req<{ programs: string[] }>('PUT', `/v1/admin/accounts/${id}/programs`, { programs }),

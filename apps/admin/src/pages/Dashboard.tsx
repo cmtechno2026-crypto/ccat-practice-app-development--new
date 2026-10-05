@@ -162,7 +162,6 @@ export function Dashboard() {
 function SuperControls({ d }: { d: any }) {
   const nav = useNavigate();
   const rows = [
-    { to: '/gamification/economy', ico: '⚙️', title: 'Coins, XP & readiness bands', sub: 'Reward economy config + integrity' },
     { to: '/config/flags', ico: '🚩', title: 'Feature flags & app_config', sub: 'Versioned runtime configuration' },
     { to: '/admins', ico: '➕', title: 'Create a new admin', sub: 'Issue an ID and temporary password' },
   ];
