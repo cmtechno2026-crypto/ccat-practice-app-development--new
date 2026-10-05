@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { api, setToken, setRefresh, getToken, getRefresh, setAdminSite } from './api';
 
-export interface Me { id: string; role: 'admin' | 'super_admin'; email: string; display_name: string; permissions: string[]; is_teacher?: boolean; }
+export interface Me { id: string; role: 'admin' | 'super_admin'; email: string; display_name: string; permissions: string[]; is_teacher?: boolean; programs?: string[]; }
 interface AuthState {
   me: Me | null; ready: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -9,6 +9,7 @@ interface AuthState {
   can: (perm: string) => boolean;
   sites: string[]; activeSite: string; switchSite: (site: string) => void;
   program: 'ccat' | 'ngat' | 'math'; setProgram: (p: 'ccat' | 'ngat' | 'math') => void;
+  allowedPrograms: ('ccat' | 'ngat' | 'math')[];
 }
 const Ctx = createContext<AuthState | null>(null);
 
@@ -58,6 +59,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // separate pool (site_id='math'); CCAT+NGAT share the 'ccat' pool. The TeacherHub workspace keeps its
   // own site. So: teacher workspace -> 'teacher'; else program 'math' -> 'math'; else 'ccat'.
   useEffect(() => { setAdminSite(activeSite === 'teacher' ? 'teacher' : program === 'math' ? 'math' : 'ccat'); }, [activeSite, program]);
-  return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite, program, setProgram }}>{children}</Ctx.Provider>;
+
+  // Which PROGRAMS this account may switch between. A TEACHER account is limited to the programs assigned
+  // to it on the Teachers page (me.programs, from ccat.teacher_programs); a teacher with none defaults to
+  // CCAT. Every non-teacher admin sees all three.
+  const ALL: ('ccat' | 'ngat' | 'math')[] = ['ccat', 'ngat', 'math'];
+  const allowedPrograms = useMemo<('ccat' | 'ngat' | 'math')[]>(() => {
+    if (me?.is_teacher) {
+      const ap = (me.programs || []).filter((x): x is 'ccat' | 'ngat' | 'math' => x === 'ccat' || x === 'ngat' || x === 'math');
+      return ap.length ? ap : ['ccat'];
+    }
+    return ALL;
+  }, [me]);
+  // Clamp the active program to one the account is allowed (after auth resolves) — e.g. a teacher whose
+  // remembered program is 'math' but who is only assigned CCAT lands on CCAT.
+  useEffect(() => { if (ready && !allowedPrograms.includes(program)) setProgram(allowedPrograms[0]!); }, [ready, allowedPrograms, program, setProgram]);
+
+  return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite, program, setProgram, allowedPrograms }}>{children}</Ctx.Provider>;
 }
 export function useAuth() { const v = useContext(Ctx); if (!v) throw new Error('useAuth outside provider'); return v; }

@@ -21,6 +21,19 @@
 
 ## Change log
 
+### 2026-10-05 (f) — Fix: Students showed all CCAT under Math; remove in-page program switcher (Claude / Cowork)
+
+**Bug (Students showed the full CCAT pool under the Math program):** root cause was a frontend timing bug, not the scoping SQL (which was correct). The API client seeded `adminSite` (the `X-Admin-Site` pool signal) from the *site* key (`ccat_admin_site` = 'ccat'), not the program, so the first Students fetch on a fresh load/navigation went out as `ccat` before the auth effect could correct it — returning all CCAT students. **No student data touched** (CCAT accounts are a live paid service — read/scoping only).
+- `lib/api.ts` — `adminSite` now seeded synchronously from the program (`ccat_admin_program === 'math' → 'math'`; TeacherHub → `teacher`), so the first request already carries the right pool.
+- `lib/auth.tsx` — `setProgram` updates `adminSite` **synchronously** on switch (no reliance on effect ordering).
+- `components/Layout.tsx` — page `<Outlet>` keyed by `activeSite:program`, so switching the program pill **remounts and refetches** the current page with the new pool.
+
+**Content page — removed the in-page program switcher** (redundant with the global top-bar PROGRAM pill): `pages/Content.tsx`, `pages/ExamPapers.tsx`, `pages/ImportQuestions.tsx` (removed `<ProgramPills/>` + imports; the top-bar pill in `Layout` remains).
+
+**Verify after deploy:** if Math still shows the CCAT pool after redeploying the **admin** app, confirm the **Render gateway** actually deployed commit `0bb26ac` (the `site_id` filter lives there). Both apps must be on that commit. Syntax-clean; run `pnpm -w typecheck` locally before deploy.
+
+---
+
 ### 2026-10-05 (e) — Math as PROGRAM (not workspace) — D5 reversed (Claude / Cowork)
 
 User: Math should be a program pill in the Practice workspace (CCAT / NGAT / Math Olympiad), not a separate workspace. All programs share dashboard/Teacher/Audit/etc.; Discount is CCAT+NGAT only.

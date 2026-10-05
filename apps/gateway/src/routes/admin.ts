@@ -149,7 +149,12 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   app.get('/v1/admin/me', { preHandler: [authenticateAdmin] }, async (req) => {
     const a = req.admin!;
     const p = await db.query('select email, display_name from ccat.admin_profiles where id=$1', [a.adminId]);
-    return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions], is_teacher: a.isTeacher };
+    // Program membership (CCAT / NGAT / Math). Restricts the PROGRAM pills a TEACHER account can use to
+    // the ones assigned on the Teachers page (ccat.teacher_programs). Non-teacher admins are unrestricted
+    // (they always see all programs), so this is consumed by the client only when is_teacher is true.
+    const pr = await db.query('select program from ccat.teacher_programs where teacher_admin_id=$1 order by program', [a.adminId]);
+    const programs = pr.rows.map((r) => r.program as string);
+    return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions], is_teacher: a.isTeacher, programs };
   });
 
   // GET /v1/admin/students — directory: computed Age + raw guardian PII for authorized users (§24).

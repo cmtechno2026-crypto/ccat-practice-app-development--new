@@ -12,10 +12,12 @@ const OPTS: { k: Prog; label: string; dot: string }[] = [
 ];
 
 export function ProgramPills({ style }: { style?: React.CSSProperties }) {
-  const { program, setProgram } = useAuth();
+  const { program, setProgram, allowedPrograms } = useAuth();
+  const opts = OPTS.filter(o => allowedPrograms.includes(o.k));
+  if (opts.length <= 1) return null; // nothing to switch between (e.g. a single-program teacher)
   return (
     <div role="tablist" aria-label="Program" style={{ display: 'inline-flex', background: 'var(--card2,#eef2f7)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: 3, gap: 3, ...style }}>
-      {OPTS.map(o => {
+      {opts.map(o => {
         const on = program === o.k;
         return (
           <button key={o.k} role="tab" aria-selected={on} onClick={() => { if (program !== o.k) setProgram(o.k); }}
