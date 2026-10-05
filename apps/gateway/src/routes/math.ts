@@ -398,17 +398,48 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     return rows;
   });
 
-  // ---- Support chat (student_id used as the conversation key; messages in ccat.support_messages) ----
+  // ---- Support chat — SHARED model with the admin Support console. ----
+  // Both the student app and the admin console read/write the SAME ccat.support_cases row
+  // (one Math case per student, site='math') + ccat.support_messages. Previously the student
+  // side keyed messages on the raw student_id while the admin keyed on support_cases.id, so the
+  // two threads never met. Now the case is get-or-created from either side and both use case_id.
+  async function mathSupportRef(): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+      const { rows } = await db.query(`select 'SUP-' || upper(substr(md5(gen_random_uuid()::text), 1, 6)) as ref`);
+      const ref = rows[0]!.ref as string;
+      const clash = await db.query('select 1 from ccat.support_cases where reference=$1', [ref]);
+      if (clash.rows.length === 0) return ref;
+    }
+    throw new Error('Could not allocate a unique support reference');
+  }
+  async function mathCaseId(studentId: string, create: boolean): Promise<string | null> {
+    const ex = await db.query(
+      `select id from ccat.support_cases where student_id=$1 and site_id=$2 order by created_at desc limit 1`,
+      [studentId, SITE],
+    );
+    if (ex.rows.length > 0) return ex.rows[0]!.id as string;
+    if (!create) return null;
+    const ref = await mathSupportRef();
+    const cr = await db.query(
+      `insert into ccat.support_cases (student_id, opened_by, reference, summary, state, site_id)
+       values ($1, null, $2, 'Student-initiated conversation', 'open', $3) returning id`,
+      [studentId, ref, SITE],
+    );
+    return cr.rows[0]!.id as string;
+  }
+
   app.get('/v1/math/support/threads', authed, async (req) => {
     const sid = req.student!.studentId;
     return [{ id: sid, name: 'Relationship Manager', preview: 'Ask a question any time.', time: '' }];
   });
   app.get('/v1/math/support/threads/:id/messages', authed, async (req) => {
     const sid = req.student!.studentId;
+    const caseId = await mathCaseId(sid, false);
+    if (!caseId) return [] as unknown[];
     const { rows } = await db.query(
       `select id, (sender='student') as me, body as text, to_char(created_at,'HH24:MI') as at
          from ccat.support_messages where case_id=$1 order by created_at asc`,
-      [sid],
+      [caseId],
     );
     return rows;
   });
@@ -416,10 +447,12 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   app.post('/v1/math/support/threads/:id/messages', authed, async (req) => {
     const sid = req.student!.studentId;
     const b = msgSchema.parse(req.body);
+    const caseId = (await mathCaseId(sid, true))!;
+    await db.query(`update ccat.support_cases set updated_at = now() where id = $1`, [caseId]);
     const { rows } = await db.query(
       `insert into ccat.support_messages(case_id, sender, body) values ($1,'student',$2)
        returning id, (sender='student') as me, body as text, to_char(created_at,'HH24:MI') as at`,
-      [sid, b.text],
+      [caseId, b.text],
     );
     return rows[0];
   });

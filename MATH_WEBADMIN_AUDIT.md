@@ -21,6 +21,30 @@
 
 ## Change log
 
+### 2026-10-05 (l) — FIX: student web app showed "No teacher assigned yet" despite admin assignment (Claude / Cowork)
+
+🔴 **Bug:** on `math-olympiad-web` (student app), the **Support & 1-on-1** page always showed *"No teacher assigned yet"* even when a teacher was assigned to that student in Web Admin.
+
+**Root cause:** the student-facing endpoint `GET /v1/math/teachers` in `apps/gateway/src/routes/math.ts` was a **hardcoded stub**: `app.get('/v1/math/teachers', authed, async () => [] as unknown[])`. It returned an empty array for every student unconditionally — the UI was correct, the backend never returned data.
+
+**Fix (gateway only):** wired the endpoint to the real assignment source — `ccat.teacher_students` (teacher↔student, managed on the Teachers page in Web Admin) joined to `ccat.admin_profiles` where `is_teacher=true`, filtered to the authenticated `req.student.studentId`. Returns `{ id, name }` matching the client `Teacher` type.
+
+```sql
+select p.id, p.display_name as name
+  from ccat.teacher_students ts
+  join ccat.admin_profiles p on p.id = ts.teacher_admin_id
+ where ts.student_id = $1 and p.is_teacher = true
+ order by p.display_name
+```
+
+**Decision (user, 2026-10-05):** show **ALL** assigned teachers regardless of account status — **no `status='active'` filter**. So a student whose only assigned teacher is `disabled` (e.g. Anaaya → Shweta Ma'am) still sees that teacher.
+
+**⚠️ CORRECTION (entry m, same day):** the data-model note originally here was wrong — it was run against the **wrong Supabase project** (`wazutprwrhnabjfggghp`, the `ap-northeast-1` project, which has no Math migrations and no `support_messages`). **The LIVE database both apps use is `cqzpzhdleqyrmedymypg`** ("cm-whiteboard", `ap-northeast-2` Seoul — see entry j). Against the LIVE DB: `ccat.students` **does** have a `site_id` column; Child A **exists** (`7c16ad36-77c5-43cd-a71c-24ffc382bbce`, `site_id='math'`) and is assigned **Jyoti Ma'am** (active). The teacher-list fix is correct and is **confirmed working in production** (student app now shows Jyoti Ma'am). Always use project **`cqzpzhdleqyrmedymypg`** for SQL/migrations on these apps (also recorded in memory `topics/supabase.md`).
+
+Syntax-clean. **One file changed:** `apps/gateway/src/routes/math.ts`. No DB/migration change. **Deploy the gateway (Render).**
+
+---
+
 ### 2026-10-05 (k) — Math Content page restyled to the mockup (Claude / Cowork)
 
 `pages/MathContent.tsx` rebuilt to match `Content-Page-standalone.html` as closely as possible, keeping the admin-managed folder/set model (backend unchanged — `mathGrades`/`mathTree`/`mathCreateFolder`/`mathCreateSet`):
