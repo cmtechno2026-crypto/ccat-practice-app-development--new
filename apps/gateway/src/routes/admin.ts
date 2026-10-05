@@ -179,7 +179,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const regTo = regToRaw && /^\d{4}-\d{2}-\d{2}$/.test(regToRaw) ? regToRaw + 'T23:59:59.999' : regToRaw;
     // TEACHER SCOPE: a teacher account only ever sees students assigned to it (super_admin/non-teacher = null = all).
     const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
-    const site = req.admin?.activeSite === 'math' ? 'math' : 'ccat';
+    const site = String(req.headers['x-admin-site'] || '').toLowerCase() === 'math' ? 'math' : 'ccat';
 
     const { rows } = await db.query(
       `select s.id, s.display_name, s.username_normalized::text as username, s.status, s.version,
@@ -289,7 +289,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const search = q.q && q.q.trim() ? `%${q.q.trim()}%` : null;
     const limit = Math.min(Math.max(Number(q.limit ?? 1000), 1), 2000);
     const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
-    const site = req.admin?.activeSite === 'math' ? 'math' : 'ccat';
+    const site = String(req.headers['x-admin-site'] || '').toLowerCase() === 'math' ? 'math' : 'ccat';
     const { rows } = await db.query(
       `select s.id, s.display_name, s.username_normalized::text as username, g.grade_number
          from ccat.students s
@@ -314,7 +314,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     requirePermission(req, 'student.directory');
     // TEACHER SCOPE: KPI cards (total, practised-today, status counts) count only the teacher's assigned students.
     const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
-    const site = req.admin?.activeSite === 'math' ? 'math' : 'ccat';
+    const site = String(req.headers['x-admin-site'] || '').toLowerCase() === 'math' ? 'math' : 'ccat';
     const { rows } = await db.query(
       `select
          count(*) as total,

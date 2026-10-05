@@ -8,7 +8,7 @@ interface AuthState {
   logout: () => void;
   can: (perm: string) => boolean;
   sites: string[]; activeSite: string; switchSite: (site: string) => void;
-  program: 'ccat' | 'ngat' | 'math'; setProgram: (p: 'ccat' | 'ngat') => void;
+  program: 'ccat' | 'ngat' | 'math'; setProgram: (p: 'ccat' | 'ngat' | 'math') => void;
 }
 const Ctx = createContext<AuthState | null>(null);
 
@@ -19,8 +19,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [activeSite, setActiveSite] = useState<string>(() => { try { return localStorage.getItem('ccat_admin_site') || 'ccat'; } catch { return 'ccat'; } });
   const switchSite = useCallback((site: string) => { setActiveSite(site); setAdminSite(site); try { localStorage.setItem('ccat_admin_site', site); } catch { /* ignore */ } }, []);
   // Program (CCAT / NGAT) — the content/teacher workspace dimension, independent of activeSite. Persisted per-admin.
-  const [program, setProgramState] = useState<'ccat' | 'ngat'>(() => { try { return (localStorage.getItem('ccat_admin_program') as 'ccat' | 'ngat') || 'ccat'; } catch { return 'ccat'; } });
-  const setProgram = useCallback((p: 'ccat' | 'ngat') => { setProgramState(p); try { localStorage.setItem('ccat_admin_program', p); } catch { /* ignore */ } }, []);
+  const [program, setProgramState] = useState<'ccat' | 'ngat' | 'math'>(() => { try { return (localStorage.getItem('ccat_admin_program') as 'ccat' | 'ngat' | 'math') || 'ccat'; } catch { return 'ccat'; } });
+  const setProgram = useCallback((p: 'ccat' | 'ngat' | 'math') => { setProgramState(p); try { localStorage.setItem('ccat_admin_program', p); } catch { /* ignore */ } }, []);
 
   useEffect(() => {
     (async () => {
@@ -46,7 +46,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sites this admin can see: CCAT always; Teacher Hub when super_admin or holding any teacher.* permission.
   const sites = useMemo(() => {
     const out = ['ccat'];
-    if (me && me.role === 'super_admin') out.push('math'); // Math Olympiad workspace (super-admins; D7)
     if (me && (me.role === 'super_admin' || (me.permissions || []).some((p) => p.startsWith('teacher.')))) out.push('teacher');
     return out;
   }, [me]);
@@ -55,10 +54,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // resetting then would wipe a remembered 'teacher' site on every hard refresh (chrome/URL mismatch).
   useEffect(() => { if (ready && !sites.includes(activeSite)) setActiveSite('ccat'); }, [ready, sites, activeSite]);
 
-  // The Math workspace pins the content program to 'math'; otherwise the CCAT/NGAT program pill governs.
-  const effectiveProgram: 'ccat' | 'ngat' | 'math' = activeSite === 'math' ? 'math' : program;
-  // Keep the API client's X-Admin-Site in sync with the chosen workspace (also on first mount / refresh).
-  useEffect(() => { setAdminSite(activeSite); }, [activeSite]);
-  return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite, program: effectiveProgram, setProgram }}>{children}</Ctx.Provider>;
+  // X-Admin-Site is the STUDENT-POOL signal. Math is a PROGRAM (not a workspace), but its students are a
+  // separate pool (site_id='math'); CCAT+NGAT share the 'ccat' pool. The TeacherHub workspace keeps its
+  // own site. So: teacher workspace -> 'teacher'; else program 'math' -> 'math'; else 'ccat'.
+  useEffect(() => { setAdminSite(activeSite === 'teacher' ? 'teacher' : program === 'math' ? 'math' : 'ccat'); }, [activeSite, program]);
+  return <Ctx.Provider value={{ me, ready, login, logout, can, sites, activeSite, switchSite, program, setProgram }}>{children}</Ctx.Provider>;
 }
 export function useAuth() { const v = useContext(Ctx); if (!v) throw new Error('useAuth outside provider'); return v; }

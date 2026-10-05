@@ -4,7 +4,7 @@ import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
 import { Errors } from '../errors.js';
-import { makeAuthenticateAdmin, requirePermission, requireSite } from '../plugins/adminAuth.js';
+import { makeAuthenticateAdmin, requirePermission } from '../plugins/adminAuth.js';
 
 // Math Olympiad — ADMIN-MANAGED content taxonomy (D2). Math content is its own program ('math')
 // AND site ('math'); every row here is created with program='math', site_id='math', so it is
@@ -31,7 +31,8 @@ async function audit(db: DB, req: any, event: string, kind: string, id: string, 
 export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
   const guard = { preHandler: [authenticateAdmin] };
-  const gate = (req: any) => { requireSite(req, SITE); requirePermission(req, 'content.create'); };
+  // Math is a PROGRAM (like NGAT): gated by the content permission, no per-site grant required.
+  const gate = (req: any) => { requirePermission(req, 'content.create'); };
 
   // Grades available to Math (shared grade table).
   app.get('/v1/admin/math/grades', guard, async (req) => {

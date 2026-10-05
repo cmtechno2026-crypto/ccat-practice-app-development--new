@@ -15,7 +15,7 @@ export function registerAdminSupportRoutes(app: FastifyInstance, db: DB, cfg: Co
   const authenticateAdmin = makeAuthenticateAdmin(db, cfg.hmacSecret);
   const guard = { preHandler: [authenticateAdmin] };
 
-  const site = (req: any): string => (req.admin?.activeSite === 'math' ? 'math' : 'ccat');
+  const site = (req: any): string => (String(req.headers['x-admin-site'] || '').toLowerCase() === 'math' ? 'math' : 'ccat');
 
   // List cases for the active site, newest first, with student + latest-message preview + unread count.
   app.get('/v1/admin/support/cases', guard, async (req) => {

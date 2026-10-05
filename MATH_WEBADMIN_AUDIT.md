@@ -9,7 +9,9 @@
 
 ## Current project status
 
-🟢 **Feature built end-to-end 2026-10-05.** Decisions D1–D7 locked. **Migrations 0059–0064 applied to prod.** Gateway: `program='math'` accepted (CCAT/NGAT unchanged), Math content API (admin-managed folders/sets), Support console, teacher-programs API, student list/create site-scoped. Admin UI: Math workspace switch + Content page + Support page + Teachers program chips. **All issues I1–I7 resolved.**
+🟢 **Feature built end-to-end 2026-10-05.** Decisions D1–D4,D6,D7 locked; **D5 REVERSED** (see below). **Migrations 0059–0064 applied to prod.** Gateway: `program='math'` accepted (CCAT/NGAT unchanged), Math content API (admin-managed folders/sets), Support console, teacher-programs API, student list/create pool-scoped. Admin UI: **Math is a PROGRAM pill in the Practice workspace** (CCAT / NGAT / Math Olympiad) — Content page switches to the Math folder/track manager when Math is selected; Support page; Teachers program chips; Discount hidden for Math. **All issues I1–I7 resolved.**
+
+> **D5 REVERSED (2026-10-05, user request):** Math is **NOT** a separate workspace. It is a **third PROGRAM** shown in the `ProgramPills` switcher inside the **Practice** workspace, alongside CCAT and NGAT. All programs share the Practice rail (Dashboard, Content, Students, Teachers, Support, Announcements, Audit); **Discount is CCAT+NGAT only** (hidden when Math is selected). The student-pool split still holds (Math students `site_id='math'`; CCAT+NGAT share `site_id='ccat'`) and is now driven by the program pill via the `X-Admin-Site` header, independent of site grants — so any Practice admin with `content.create` can manage Math (like NGAT, no allow-list).
 
 ⚠️ **Must do before deploy:** the device's `node_modules` has no installed deps, so **no full typecheck/build could run here**. All 21 changed files are **syntax-clean** (compiler transpile pass) and imports/types were manually verified, but run `pnpm install && pnpm -w typecheck` (or the gateway/admin build) locally before deploying. Math taxonomy is now **admin-created in the UI** (no seed needed).
 
@@ -18,6 +20,31 @@
 ---
 
 ## Change log
+
+### 2026-10-05 (d) — Admin-managed taxonomy + full frontend pass (Claude / Cowork)
+
+**Decision refinement (Math taxonomy):** NOT seeded. Admin creates the tree in the UI — three **tracks** (Curriculum / Quiz / Test), and per **grade**, **folders** (categories) + **subfolders** (subcategories) + **sets**.
+
+**DB:** `0064_math_category_tracks.sql` applied — nullable `track` + `grade_id` on `categories` (Math-only; CCAT/NGAT rows NULL). CHECK `track in (curriculum,quiz,test)`.
+
+**Gateway (new/edited):**
+- **New** `routes/admin-math-content.ts` — Math taxonomy API: grades, tree(track,grade), create/rename/delete folder + subfolder, create set. All `program='math'`,`site_id='math'`; gated `requireSite('math')`+`content.create`. Registered in `app.ts`.
+- `routes/admin.ts` — students **list/lite/stats** scoped by workspace (`site_id`); non-Math workspaces map to `'ccat'` (CCAT/TeacherHub unchanged), Math → `'math'`.
+- `routes/admin-students.ts` — new students created with `site_id = activeSite` (math workspace → math).
+- `routes/admin-support.ts` — site helper mapped to `math`-or-`ccat`.
+
+**Admin frontend (new/edited):**
+- `lib/api.ts` — sends `X-Admin-Site` header (`setAdminSite`); Math/support/teacher-program methods; `program` type widened to include `'math'`.
+- `lib/auth.tsx` — Math site for super-admins (D7); `program` pinned to `'math'` on the Math workspace; `setAdminSite` synced.
+- `components/Layout.tsx` — `SITE_NAMES['math']='Math Olympiad'`, `MATH_RAIL`, `railForSite`, switcher → `/math/content`, URL→site sync.
+- `App.tsx` — routes `/math/content`, `/support`.
+- **New** `pages/MathContent.tsx` — track tabs + grade selector + folder tree + add folder/subfolder/set (Content mockup).
+- **New** `pages/Support.tsx` — two-pane student-messaging console (Support mockup).
+- `pages/Teachers.tsx` — Programs column with CCAT/NGAT/Math chips (D3).
+
+**Verification:** 21 files syntax-clean via `ts.transpileModule`; imports/usage manually cross-checked; the `X-Admin-Site` regression risk (TeacherHub student list) closed by the non-Math→ccat mapping. **Full tsc/build NOT run** (no deps on device) — run locally before deploy.
+
+---
 
 ### 2026-10-05 (c) — Backend build: migrations applied + gateway wired (Claude / Cowork)
 

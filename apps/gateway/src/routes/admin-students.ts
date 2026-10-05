@@ -58,7 +58,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const pinHash = await hashSecret(b.pin, cfg.pinPepper);
     try {
       const out = await withTransaction(db, async (c) => {
-        const st = await c.query(`insert into ccat.students(username_normalized, display_name, grade_id, birth_month, birth_year, site_id) values ($1,$2,$3,$4,$5,$6) returning id`, [b.username, b.display_name, b.grade_id, birthMonth, birthYear, (req.admin?.activeSite === 'math' ? 'math' : 'ccat')]);
+        const st = await c.query(`insert into ccat.students(username_normalized, display_name, grade_id, birth_month, birth_year, site_id) values ($1,$2,$3,$4,$5,$6) returning id`, [b.username, b.display_name, b.grade_id, birthMonth, birthYear, (String(req.headers['x-admin-site'] || '').toLowerCase() === 'math' ? 'math' : 'ccat')]);
         const id = st.rows[0]!.id as string;
         await c.query(`insert into ccat.student_credentials(student_id, pin_hash) values ($1,$2)`, [id, pinHash]);
         await c.query(`insert into ccat.analytics_identities(student_id) values ($1)`, [id]);

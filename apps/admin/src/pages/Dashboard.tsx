@@ -29,7 +29,7 @@ function Delta({ pct, pts }: { pct?: number | null; pts?: number | null }) {
 }
 
 export function Dashboard() {
-  const { me } = useAuth();
+  const { me, program } = useAuth();
   const nav = useNavigate();
   const [window, setWindow] = useState<number>(() => {
     try { return Number(localStorage.getItem('ccat_dash_window')) || 7; } catch { return 7; }
@@ -107,7 +107,7 @@ export function Dashboard() {
       <div className="dashcols">
         {/* LEFT column: (super only) Discount, then students preview, then Super-Admin controls */}
         <div className="dashcol">
-          {isSuper && <DiscountControl />}
+          {isSuper && program !== 'math' && <DiscountControl />}
           <div className="panel">
             <div className="panelhead"><h3>Students</h3><Link to="/students">View all →</Link></div>
             <p className="muted" style={{ fontSize: 13, marginTop: -4, marginBottom: 6 }}>Most recently active · click a name for the full record</p>

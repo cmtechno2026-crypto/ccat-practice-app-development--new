@@ -201,6 +201,13 @@ function LoadingSplash() {
   );
 }
 
+// Content is program-aware: the Math program shows the admin-managed folder/track manager; CCAT/NGAT
+// show the standard set browser. Driven by the program pill (useAuth().program).
+function ContentSwitch() {
+  const { program } = useAuth();
+  return program === 'math' ? <MathContent /> : <Content />;
+}
+
 export function App() {
   const { me, ready } = useAuth();
   if (!ready) return <LoadingSplash />;
@@ -230,7 +237,7 @@ export function App() {
         <Route path="/teacher-practice" element={<TeacherPractice />} />
         <Route path="/teacher-exam" element={<TeacherExam />} />
         {/* Content: set browser (category tree + difficulty tabs) is the home; exam papers 2nd tab. */}
-        <Route path="/content" element={<Content />} />
+        <Route path="/content" element={<ContentSwitch />} />
         <Route path="/content/exams" element={<ExamPapers />} />
         {/* Question pool removed from the UI — redirect any old link back to Content. */}
         <Route path="/content/questions" element={<Navigate to="/content" replace />} />
@@ -268,10 +275,7 @@ export function App() {
         <Route path="/teacherhub/training/modules" element={<TrainingAdmin />} />
         <Route path="/teacherhub/training/roleplays" element={<RolePlayAdmin />} />
         <Route path="/teacherhub/training/progress" element={<TeacherProgress />} />
-        {/* Math Olympiad workspace (super-admins; D7). Content manager + Support console. Students
-            and Teachers reuse the existing directory routes, re-scoped to Math via X-Admin-Site. */}
-        <Route path="/math" element={<Navigate to="/math/content" replace />} />
-        <Route path="/math/content" element={<MathContent />} />
+        {/* Support console (program-scoped via the program pill). */}
         <Route path="/support" element={<Support />} />
         {/* Legacy /teacher* → /teacherhub* (renamed route) */}
         <Route path="/teacher" element={<Navigate to="/teacherhub" replace />} />
