@@ -380,6 +380,24 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     reply.code(204); return null;
   });
 
+  // ---- Assigned teachers ----
+  // Returns the teachers assigned to THIS student from the admin's assignment
+  // table (ccat.teacher_students -> ccat.admin_profiles where is_teacher=true).
+  // Assignments are made on the Teachers page in Web Admin. Shape matches the
+  // client Teacher type { id, name }.
+  app.get('/v1/math/teachers', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const { rows } = await db.query(
+      `select p.id, p.display_name as name
+         from ccat.teacher_students ts
+         join ccat.admin_profiles p on p.id = ts.teacher_admin_id
+        where ts.student_id = $1 and p.is_teacher = true
+        order by p.display_name`,
+      [sid],
+    );
+    return rows;
+  });
+
   // ---- Support chat (student_id used as the conversation key; messages in ccat.support_messages) ----
   app.get('/v1/math/support/threads', authed, async (req) => {
     const sid = req.student!.studentId;

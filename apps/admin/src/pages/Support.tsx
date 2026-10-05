@@ -40,6 +40,7 @@ export function Support() {
   useEffect(() => { loadList(); }, []);
 
   const openStudent = (sid: string) => {
+    if (sid === selId) return; // already open/loading — don't refire the request
     setSelId(sid); setDetail(null);
     api.supportThread(sid)
       .then(d => { setDetail(d); setTimeout(() => threadRef.current?.scrollTo(0, 1e9), 50); })

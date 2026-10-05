@@ -58,32 +58,35 @@ export function registerAdminSupportRoutes(app: FastifyInstance, db: DB, cfg: Co
     return { items: rows.rows };
   });
 
-  // ---- One student's thread (student info + their Math case, if any, + messages). No create on read ----
+  // ---- One student's thread (student + their Math case + messages) in ONE query (one DB round-trip,
+  // which matters because the DB is far from the gateway). No create on read. ----
   app.get('/v1/admin/support/students/:studentId/thread', guard, async (req) => {
     requirePermission(req, 'student.directory');
     const studentId = (req.params as any).studentId;
     await assertStudentVisible(db, req, studentId);
-    const sr = await db.query(
+    const r = await db.query(
       `select st.id student_id, st.display_name student_name, st.username_normalized username,
-              st.grade_id, g.grade_number, st.status student_status, st.site_id
-         from ccat.students st join ccat.grades g on g.id = st.grade_id where st.id = $1`,
-      [studentId],
-    );
-    if (sr.rows.length === 0 || sr.rows[0]!.site_id !== SITE) throw Errors.notFound('Student not found');
-    const cr = await db.query(
-      `select id case_id, state, reference, created_at from ccat.support_cases
-        where student_id = $1 and site_id = $2 order by created_at desc limit 1`,
+              st.grade_id, g.grade_number, st.status student_status,
+              c.id case_id, c.state,
+              coalesce((
+                select json_agg(json_build_object('id', m.id, 'sender', m.sender, 'body', m.body, 'created_at', m.created_at)
+                               order by m.created_at asc, m.id asc)
+                  from ccat.support_messages m where m.case_id = c.id), '[]'::json) messages
+         from ccat.students st
+         join ccat.grades g on g.id = st.grade_id
+         left join lateral (
+            select id, state from ccat.support_cases sc
+             where sc.student_id = st.id and sc.site_id = $2 order by sc.created_at desc limit 1) c on true
+        where st.id = $1 and st.site_id = $2`,
       [studentId, SITE],
     );
-    const caseRow = cr.rows[0] ?? null;
-    const messages = caseRow
-      ? (await db.query(
-          `select id, sender, body, created_at from ccat.support_messages where case_id = $1 order by created_at asc, id asc`,
-          [caseRow.case_id],
-        )).rows
-      : [];
-    const { site_id, ...student } = sr.rows[0]!;
-    return { ...student, case_id: caseRow?.case_id ?? null, state: caseRow?.state ?? null, messages };
+    if (r.rows.length === 0) throw Errors.notFound('Student not found');
+    const row = r.rows[0]!;
+    return {
+      student_id: row.student_id, student_name: row.student_name, username: row.username,
+      grade_id: row.grade_id, grade_number: row.grade_number, student_status: row.student_status,
+      case_id: row.case_id ?? null, state: row.state ?? null, messages: row.messages ?? [],
+    };
   });
 
   // ---- Staff message. Creates the student's Math case on first contact, then appends a 'staff' message ----

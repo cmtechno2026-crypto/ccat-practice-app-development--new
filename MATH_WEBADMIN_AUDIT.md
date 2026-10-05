@@ -21,6 +21,57 @@
 
 ## Change log
 
+### 2026-10-05 (k) — Math Content page restyled to the mockup (Claude / Cowork)
+
+`pages/MathContent.tsx` rebuilt to match `Content-Page-standalone.html` as closely as possible, keeping the admin-managed folder/set model (backend unchanged — `mathGrades`/`mathTree`/`mathCreateFolder`/`mathCreateSet`):
+- White **tabs card** (Curriculum / Quiz / Test with line icons) + a rounded **GRADE pill dropdown** (custom popover), exact mockup styling/colors.
+- Row of **stat cards** (SETS · PUBLISHED · IN PROGRESS · FOLDERS).
+- **Sets table** card: header title/subtitle + **Upload set** (blue) and **+ Add folder** buttons; columns `SET · GRADE · ITEMS · UPDATED · STATE` with the mockup's state badges (Published/In review/Scheduled/Draft/Retired). Folder (and subfolder) shown as the set's subtitle.
+- Sets are flattened from the folder tree for the table; creating a set uses a small modal (pick/〈+ New〉 folder, optional subfolder, name); Add folder uses a modal.
+
+Syntax-clean. No gateway/DB change. Deploy admin.
+
+---
+
+### 2026-10-05 (j) — ROOT CAUSE of slowness: DB is in Seoul; + Support thread one-query (Claude / Cowork)
+
+🔴 **Root cause of the slow admin, confirmed:** the Supabase project `cqzpzhdleqyrmedymypg` (name "cm-whiteboard") is in region **`ap-northeast-2` (Seoul, South Korea)**. Users + the Render gateway are in Canada (GTA). Every DB query is a **trans-Pacific round-trip (~180–250ms each)**, so any endpoint running several queries takes ~1–2s even when warm. This is why every page is slow, not a cold start.
+
+**The real fix is infrastructure (user action — I can't move a project's region):**
+1. **Move the database to a region near the users** — `ca-central-1` (Montréal) or `us-east-1`. Supabase can't change an existing project's region, so: create a new project in that region, migrate the schema + data (dump/restore), repoint the gateway's `DATABASE_URL`, and cut over. (This is a bigger migration than the earlier wazut→cqzp move but the same shape.)
+2. **Host the Render gateway in the same region as the DB** — co-locating gateway+DB removes the multiplier (the gateway makes many queries per request; each one currently crosses the Pacific).
+3. Until then, the parallelization + single-query work below is the only in-code mitigation; it cannot beat physics.
+
+**Code mitigation this round:**
+- `routes/admin-support.ts` — the thread read (`/support/students/:id/thread`) was 3 sequential queries → now **ONE query** (student + case + messages via `json_agg` lateral). Saves ~2 trans-Pacific round-trips per open.
+- `pages/Support.tsx` — guard so clicking the same student doesn't re-fire the (slow) thread request (the latency was provoking repeat clicks → multiple `thread` calls).
+
+Syntax-clean. The big win is the region move; the code changes only trim round-trips.
+
+---
+
+### 2026-10-05 (i) — Support redesign (message-anyone) + Math-only + remove Gamification (Claude / Cowork)
+
+Decisions confirmed with user before building: list = **all/assigned students (message anyone)**; **Math Olympiad only**; keep **unread badges**, drop quick-action chips + INC tag; teachers see **assigned students only**.
+
+**Gateway — `routes/admin-support.ts` rewritten** (now student-centric, Math-only):
+- `GET /v1/admin/support/students` — lists Math students (`site_id='math'`); super-admin/admin → all, **teacher → only assigned** (`teacher_students`). Each row: last message, sender, time, and **unread** (= student messages since the last staff reply).
+- `GET /…/students/:id/thread` — student + their Math case (if any) + messages; `assertStudentVisible` enforces teacher scope; no create on read.
+- `POST /…/students/:id/messages` — staff message; **creates the case on first contact** (get-or-create), then appends. Lets staff message anyone.
+- `POST /…/students/:id/state` — open/closed (kept; UI doesn't surface it).
+- Gated `student.directory` + per-student `assertStudentVisible` (so teachers can reply to their assigned students). Scope hardcoded to `SITE='math'`.
+
+**Admin frontend:**
+- `pages/Support.tsx` — rebuilt to the mockup (image 3): left = searchable student list with avatar, name, `Grade · Math Olympiad`, last-message preview, time, **unread badge**; right = chat thread (student/staff bubbles) + `Message the student…` + Send + Open profile. No chips, no INC tag.
+- `lib/api.ts` — support methods replaced: `supportStudents`, `supportThread`, `supportSend`, `supportSetState(studentId,…)`.
+- `components/Layout.tsx` — **removed Gamification** from the rail; **Support injected only when the Math program is selected** (admins: after Teachers; teachers: appended). Not shown under CCAT/NGAT or TeacherHub.
+- `App.tsx` — removed all `/gamification/*` + `/rewards/*` routes; added `/support` to the **teacher-role** route block.
+- `pages/Dashboard.tsx` — removed the Super-Admin control link to `/gamification/economy` (the one reachable dead link).
+
+All changed files syntax-clean. Run `pnpm -w typecheck` + rebuild/redeploy gateway + admin before testing. (Gamification page files remain in the repo but are unrouted/unreachable.)
+
+---
+
 ### 2026-10-05 (h) — Perf: parallelize hot endpoints (slow load) (Claude / Cowork)
 
 Admin pages were slow because the heaviest endpoints ran many **sequential** DB queries — each one a full round-trip to a far/cold gateway+DB. Collapsed them into single parallel batches (identical output):
