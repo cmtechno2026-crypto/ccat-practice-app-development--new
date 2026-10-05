@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ProgramPills } from '../components/ProgramPills';
 import { Loading, ErrorBox, useToast } from '../components/ui';
 import { CreateSet } from '../components/SetsView';
 import { SetEditor } from '../components/SetEditor';
@@ -141,7 +140,6 @@ export function Content({ mode = 'practice' }: { mode?: 'practice' | 'exam' }) {
           )}
         </div>
         <div className="row" style={{ margin: 0, gap: 8, alignItems: 'center' }}>
-          <ProgramPills />
           {!isExam && can('content.create') && <button className="btn ghost" onClick={() => { if (!sub) { toast('Pick a subcategory on the left first'); return; } setBulkSets(true); }}>⤓ Bulk add sets</button>}
           {can('content.create') && <button className="btn" onClick={() => setNewSet(true)}>+ New {isExam ? 'exam set' : 'set'}</button>}
         </div>

@@ -25,7 +25,14 @@ export function getRefresh() { return refreshToken; }
 // Active workspace/site (CCAT Practice | Math Olympiad | TeacherHub). Sent as X-Admin-Site on every
 // request so the gateway scopes site-aware surfaces (e.g. Support) to the chosen workspace. Kept in a
 // module var mirrored from the auth context; defaults to the persisted value.
-let adminSite: string = (() => { try { return localStorage.getItem('ccat_admin_site') || 'ccat'; } catch { return 'ccat'; } })();
+let adminSite: string = (() => {
+  // Pool signal: TeacherHub workspace -> 'teacher'; else the program pill ('math' -> 'math', else 'ccat').
+  // Seeded synchronously at module load so the FIRST request already carries the right pool.
+  try {
+    if ((localStorage.getItem('ccat_admin_site') || 'ccat') === 'teacher') return 'teacher';
+    return localStorage.getItem('ccat_admin_program') === 'math' ? 'math' : 'ccat';
+  } catch { return 'ccat'; }
+})();
 export function setAdminSite(site: string) { adminSite = site || 'ccat'; }
 export function getAdminSite() { return adminSite; }
 

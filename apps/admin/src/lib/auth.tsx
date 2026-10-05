@@ -20,7 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const switchSite = useCallback((site: string) => { setActiveSite(site); setAdminSite(site); try { localStorage.setItem('ccat_admin_site', site); } catch { /* ignore */ } }, []);
   // Program (CCAT / NGAT) — the content/teacher workspace dimension, independent of activeSite. Persisted per-admin.
   const [program, setProgramState] = useState<'ccat' | 'ngat' | 'math'>(() => { try { return (localStorage.getItem('ccat_admin_program') as 'ccat' | 'ngat' | 'math') || 'ccat'; } catch { return 'ccat'; } });
-  const setProgram = useCallback((p: 'ccat' | 'ngat' | 'math') => { setProgramState(p); try { localStorage.setItem('ccat_admin_program', p); } catch { /* ignore */ } }, []);
+  const setProgram = useCallback((p: 'ccat' | 'ngat' | 'math') => { setProgramState(p); setAdminSite(p === 'math' ? 'math' : 'ccat'); try { localStorage.setItem('ccat_admin_program', p); } catch { /* ignore */ } }, []);
 
   useEffect(() => {
     (async () => {

@@ -147,7 +147,7 @@ function sectionFor(path: string, rail: RailItem[]): RailItem | undefined {
 }
 
 export function Layout() {
-  const { me, logout, can, sites, activeSite, switchSite } = useAuth();
+  const { me, logout, can, sites, activeSite, switchSite, program } = useAuth();
   const loc = useLocation();
   const [siteMenu, setSiteMenu] = useState(false);
   const RAIL_ACTIVE = me?.is_teacher ? TEACHER_ONLY_RAIL : railForSite(activeSite);
@@ -305,7 +305,7 @@ export function Layout() {
             ))}
           </div>
         )}
-        <div className="page"><Outlet /></div>
+        <div className="page" key={activeSite + ':' + program}><Outlet /></div>
       </div>
     </div>
   );

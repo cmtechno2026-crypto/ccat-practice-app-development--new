@@ -2,7 +2,6 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ProgramPills } from '../components/ProgramPills';
 import { useToast } from '../components/ui';
 import { parseScopedQuestionsCsv, scopedRowToImport, SCOPED_CSV_TEMPLATE, type ScopedImportRow } from '../lib/csv';
 
@@ -78,7 +77,7 @@ export function ImportQuestions() {
           <h2 style={{ fontSize: 22 }}>Bulk import practice questions</h2>
           <p className="lead" style={{ marginBottom: 0 }}>Each row carries its scope — <b>grade</b>, <b>battery</b>, <b>category</b>, <b>difficulty</b> — plus the question. Paste or upload a CSV, review &amp; fix, then import. Rows land in <b>draft</b> sets grouped by scope; publish each in Content to reach students.</p>
         </div>
-        <div className="row" style={{ margin: 0, gap: 8, alignItems: 'center' }}><ProgramPills /><Link className="btn ghost" to="/content/questions">← Questions</Link></div>
+        <div className="row" style={{ margin: 0, gap: 8, alignItems: 'center' }}><Link className="btn ghost" to="/content/questions">← Questions</Link></div>
       </div>
 
       {!manage ? <div className="empty">You need content authoring permission to import questions.</div> : (

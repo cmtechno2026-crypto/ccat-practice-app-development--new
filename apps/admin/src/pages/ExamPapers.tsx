@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ProgramPills } from '../components/ProgramPills';
 import { Loading, ErrorBox, Modal, useToast } from '../components/ui';
 import { ContentTabs } from './Content';
 import { BulkSets } from '../components/BulkSets';
@@ -68,7 +67,6 @@ export function ExamPapers() {
           <p className="lead" style={{ marginBottom: 0 }}>Exam papers are single-battery timed sets. Pick a battery, add sets, then publish.</p>
         </div>
         <div className="row" style={{ margin: 0, gap: 8, alignItems: 'center' }}>
-          <ProgramPills />
           {manage && <button className="btn ghost" onClick={() => { if (!catIdFor(battery)) { toast('Pick a battery first'); return; } setBulk(true); }}>⤓ Bulk add sets</button>}
           {manage && <button className="btn" onClick={() => setCreating(true)}>+ New exam set</button>}
         </div>

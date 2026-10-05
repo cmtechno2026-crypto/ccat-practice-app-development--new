@@ -21,6 +21,25 @@
 
 ## Change log
 
+### 2026-10-05 (e) — Math as PROGRAM (not workspace) — D5 reversed (Claude / Cowork)
+
+User: Math should be a program pill in the Practice workspace (CCAT / NGAT / Math Olympiad), not a separate workspace. All programs share dashboard/Teacher/Audit/etc.; Discount is CCAT+NGAT only.
+
+**Admin frontend:**
+- `components/ProgramPills.tsx` — now 3 options (CCAT / NGAT / **Math Olympiad**), status dot per option.
+- `lib/auth.tsx` — `program` state is `ccat|ngat|math`; **removed Math from the site switcher** (no Math workspace). `X-Admin-Site` now derived from the program (Math→`math`, else `ccat`; TeacherHub keeps `teacher`), so the student/support pool follows the program pill.
+- `components/Layout.tsx` — removed `MATH_RAIL`/Math workspace; **added Support to the Practice rail**; render a labelled **PROGRAM** pill row in the Practice top bar (non-teacher admins).
+- `App.tsx` — `/content` → `ContentSwitch` (Math program ⇒ `MathContent`, else `Content`); removed `/math*` routes; kept `/support`.
+- `pages/Dashboard.tsx` — Discount control hidden when program = Math.
+
+**Gateway:**
+- `routes/admin-math-content.ts` — dropped `requireSite('math')`; gated by `content.create` only (Math is a program like NGAT, no site grant needed).
+- `routes/admin.ts`, `admin-students.ts`, `admin-support.ts` — student/support **pool derived from the raw `X-Admin-Site` header** (`math` vs `ccat`), independent of site grants — fixes non-super admins (who lack a `math` site grant) seeing the wrong pool.
+
+**Verification:** all changed files syntax-clean (`ts.transpileModule`). Still no full tsc (no deps on device) — run locally before deploy. No new migration (0059–0064 unchanged; the `math` row in `ccat.sites` is retained only as the FK target for `site_id='math'`).
+
+---
+
 ### 2026-10-05 (d) — Admin-managed taxonomy + full frontend pass (Claude / Cowork)
 
 **Decision refinement (Math taxonomy):** NOT seeded. Admin creates the tree in the UI — three **tracks** (Curriculum / Quiz / Test), and per **grade**, **folders** (categories) + **subfolders** (subcategories) + **sets**.
