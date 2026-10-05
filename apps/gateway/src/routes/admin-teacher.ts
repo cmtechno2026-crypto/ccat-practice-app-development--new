@@ -579,8 +579,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       const mine = booked.filter((s) => s.teacher_id === tid);
       const rowsHtml = mine.map((s) => `<tr>
         <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(s.day_of_week)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(String(s.start_time))}–${escapeHtml(String(s.end_time))}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(s.subject || '')}</td></tr>`).join('');
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(String(s.start_time))}–${escapeHtml(String(s.end_time))}</td></tr>`).join('');
       const html = `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:'Segoe UI',system-ui,Arial,sans-serif;">
         <table role="presentation" width="100%" style="border-collapse:collapse;background:#f4f5f7;"><tr><td align="center" style="padding:28px 14px;">
         <table role="presentation" width="600" style="max-width:600px;width:100%;background:#fff;border:1px solid #eceff2;border-radius:14px;"><tr><td style="padding:34px 40px;">
@@ -590,8 +589,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
         <p style="margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;">The following class${mine.length > 1 ? 'es have' : ' has'} been booked with you for ${who}. A calendar invite is attached.</p>
         <table role="presentation" width="100%" style="width:100%;border-collapse:collapse;margin:0 0 16px;color:#33415a;font-size:13px;">
           <tr><th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Day</th>
-          <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Time</th>
-          <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Subject</th></tr>
+          <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Time</th></tr>
           ${rowsHtml}
         </table>
         <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.7;">Please keep these times for ${who}. If you cannot take a session, contact the office as soon as possible.</p>
