@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseProgram } from '../lib/program.js';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
 import { deriveAgeYears } from '../lib/age.js';
@@ -57,7 +58,7 @@ export function registerCatalogRoutes(app: FastifyInstance, db: DB, cfg: Config)
   app.get('/v1/catalog', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
     // NGAT workspace: scope the catalog to one program. Defaults to 'ccat' so existing clients are unaffected.
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     // Close out any fully-timed-out exam papers first so their catalog status reflects "done" (→ Retake).
     await finalizeTimedOutExams(db, sid);
     const { rows } = await db.query(

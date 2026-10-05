@@ -33,10 +33,10 @@ export function Teachers() {
       {loading ? <Loading /> : error ? <ErrorBox e={error} /> : (
         <div className="panel" style={{ padding: 0, marginTop: 12 }}>
           <div className="tablewrap"><table>
-            <thead><tr><th>Teacher</th><th>Login</th><th>Students</th><th>Access</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Teacher</th><th>Login</th><th>Students</th><th>Programs</th><th>Access</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {teachers.length === 0 ? (
-                <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>No teachers yet — add one to give read-only student access.</td></tr>
+                <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>No teachers yet — add one to give read-only student access.</td></tr>
               ) : teachers.map((t: any) => {
                 const on = selected?.id === t.id;
                 return (
@@ -44,6 +44,7 @@ export function Teachers() {
                   <td><b>{t.display_name}</b>{on && <span className="tag" style={{ marginLeft: 8 }}>selected</span>}</td>
                   <td className="muted">{t.email}</td>
                   <td className="tabnum">{t.student_count}</td>
+                  <td onClick={e => e.stopPropagation()}><ProgramChips teacherId={t.id} /></td>
                   <td><span className="tag">View only</span></td>
                   <td><StatusPill status={t.status} /></td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
@@ -196,5 +197,39 @@ function AddStudentsPanel({ teacher, onClose, onSaved, toast }: { teacher: { id:
         </div>
       </aside>
     </>
+  );
+}
+
+// Teacher <-> program membership chips (CCAT / NGAT / Math). Lazy-loads the teacher's programs and
+// toggles them via the admin accounts API. One teacher can belong to several programs (no duplication).
+const ALL_PROGRAMS: { k: string; label: string; color: string }[] = [
+  { k: 'ccat', label: 'CCAT', color: '#2f6fd0' },
+  { k: 'ngat', label: 'NGAT', color: '#e0a030' },
+  { k: 'math', label: 'Math', color: '#1A5EAB' },
+];
+function ProgramChips({ teacherId }: { teacherId: string }) {
+  const [progs, setProgs] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { let a = true; api.accountPrograms(teacherId).then(r => { if (a) setProgs(r.programs || []); }).catch(() => { if (a) setProgs([]); }); return () => { a = false; }; }, [teacherId]);
+  const toggle = async (k: string) => {
+    if (!progs || busy) return;
+    const next = progs.includes(k) ? progs.filter(x => x !== k) : [...progs, k];
+    setBusy(true);
+    try { const r = await api.setAccountPrograms(teacherId, next); setProgs(r.programs || next); }
+    catch { /* revert on failure */ } finally { setBusy(false); }
+  };
+  if (progs === null) return <span className="muted" style={{ fontSize: 11 }}>…</span>;
+  return (
+    <span style={{ display: 'inline-flex', gap: 4 }}>
+      {ALL_PROGRAMS.map(pr => {
+        const on = progs.includes(pr.k);
+        return (
+          <button key={pr.k} onClick={() => toggle(pr.k)} disabled={busy} title={on ? `Remove ${pr.label}` : `Add ${pr.label}`}
+            style={{ border: `1px solid ${on ? pr.color : 'var(--line,#e6eaf2)'}`, background: on ? pr.color : 'transparent', color: on ? '#fff' : 'var(--muted,#8a90a6)', fontWeight: 700, fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: busy ? 'default' : 'pointer' }}>
+            {pr.label}
+          </button>
+        );
+      })}
+    </span>
   );
 }

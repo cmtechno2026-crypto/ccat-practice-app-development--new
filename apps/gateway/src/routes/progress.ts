@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseProgram, type Program } from '../lib/program.js';
 import type { DB } from '../db.js';
 import { seededShuffle } from '../lib/shuffle.js';
 
@@ -55,7 +56,7 @@ const CAT_ORDER = ['verbal', 'quantitative', 'non_verbal'] as const;
 
 export interface Range { from?: string; to?: string }
 // NGAT workspace: which program a progress request is scoped to. Defaults to 'ccat'.
-export function progOf(q: any): 'ccat' | 'ngat' { return q?.program === 'ngat' ? 'ngat' : 'ccat'; }
+export function progOf(q: any): Program { return parseProgram(q); }
 export function pickRange(q: any): Range {
   const r: Range = {};
   if (typeof q?.from === 'string' && q.from.trim()) r.from = q.from.trim();
@@ -78,7 +79,7 @@ function daysAgoLabel(isoDay: string | null, todayIso: string): string {
 
 // Per-set row from the "most recent finished attempt per set" window. Shared by /summary and /sets.
 // Returns raw rows (rn=1), ordered category → subcategory → set creation → set id.
-async function finishedSetRows(db: DB, sid: string, r: Range, program: 'ccat' | 'ngat' = 'ccat') {
+async function finishedSetRows(db: DB, sid: string, r: Range, program: Program = 'ccat') {
   const p: any[] = [sid];
   const extra: string[] = [];
   if (r.from) { p.push(r.from); extra.push(`s.terminal_at >= $${p.length}`); }
@@ -146,7 +147,7 @@ export async function progressCardTotals(
 // ---- Shared compute functions (student id passed explicitly) --------------------------------------
 
 // GET /v1/progress/summary — per-battery sets-done/total, subcategory accuracy, practice time, exam done/total.
-export async function computeProgressSummary(db: DB, sid: string, r: Range, program: 'ccat' | 'ngat' = 'ccat') {
+export async function computeProgressSummary(db: DB, sid: string, r: Range, program: Program = 'ccat') {
   const tzRow = await db.query('select timezone from ccat.students where id=$1', [sid]);
   const tz = (tzRow.rows[0]?.timezone as string) || 'UTC';
 
@@ -312,7 +313,7 @@ export async function computeProgressSummary(db: DB, sid: string, r: Range, prog
 
 // GET /v1/progress/sets — per-set rows for one battery (most recent finished attempt per set),
 // optionally filtered to a subcategory. Reconciles with /summary batteries.
-export async function computeProgressSets(db: DB, sid: string, battery: string, sub: string | null, r: Range, program: 'ccat' | 'ngat' = 'ccat') {
+export async function computeProgressSets(db: DB, sid: string, battery: string, sub: string | null, r: Range, program: Program = 'ccat') {
   if (!battery) return [] as any[];
   const rows = await finishedSetRows(db, sid, r, program);
   return rows
@@ -400,7 +401,7 @@ export async function computeSetReview(db: DB, sid: string, setId: string) {
 }
 
 // GET /v1/progress/breakdown — per category, with nested topics (subcategories).
-export async function computeBreakdown(db: DB, sid: string, r: Range, program: 'ccat' | 'ngat' = 'ccat') {
+export async function computeBreakdown(db: DB, sid: string, r: Range, program: Program = 'ccat') {
   const meta = await db.query('select grade_id, timezone from ccat.students where id=$1', [sid]);
   const gradeId = meta.rows[0]?.grade_id as string | undefined;
   const tz = (meta.rows[0]?.timezone as string) || 'UTC';

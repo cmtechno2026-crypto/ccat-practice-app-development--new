@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseProgram } from '../lib/program.js';
 import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from '../db.js';
@@ -441,7 +442,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
 
   // Taxonomy (for pickers)
   app.get('/v1/admin/content/taxonomy', guard, async (req) => {
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const cats = await db.query("select id,key,name from ccat.categories where active and program = $1 order by display_order", [program]);
     const subs = await db.query('select s.id,s.category_id,s.key,s.name,coalesce(s.max_questions_per_set,15) as max_questions_per_set from ccat.subcategories s join ccat.categories c on c.id=s.category_id and c.program=$1 where s.active order by s.display_order', [program]);
     const diffs = await db.query('select id,key,name,weight from ccat.difficulties order by display_order');
@@ -469,7 +470,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
           and ($3::uuid is null or lq.category_id = $3)
           and cat.program = $5
         order by qv.created_at desc limit $4`,
-      [q.state ?? null, q.grade_id ?? null, q.category_id ?? null, limit, ((q as any).program === 'ngat' ? 'ngat' : 'ccat')],
+      [q.state ?? null, q.grade_id ?? null, q.category_id ?? null, limit, parseProgram(q)],
     );
     return { items: rows.rows.map(r => ({ ...r, preview: preview(r.prompt_blocks) })) };
   });
@@ -548,7 +549,7 @@ export function registerAdminContentRoutes(app: FastifyInstance, db: DB, cfg: Co
   // Sets list + publish
   app.get('/v1/admin/content/sets', guard, async (req) => {
     requirePermission(req, 'content.create');
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const rows = await db.query(`select sv.id, qs.id set_id, qs.name, g.grade_number, cat.name category, qs.category_id,
         sub.name subcategory, qs.subcategory_id, d.key difficulty_key, sv.difficulty_id, sv.version_number,
         sv.question_count, sv.duration_minutes, sv.state, sv.allowed_practice, sv.allowed_exam, sv.published_at,

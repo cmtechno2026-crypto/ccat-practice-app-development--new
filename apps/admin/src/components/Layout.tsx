@@ -128,8 +128,17 @@ const TEACHER_RAIL: RailItem[] = [
   { to: '/teacherhub/training/progress', label: 'Teacher Progress', ic: '📈', match: '/teacherhub/training/progress', perm: 'teacher.directory' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
 ];
-const SITE_NAMES: Record<string, string> = { ccat: 'Practice Web', teacher: 'TeacherHub' };
-function railForSite(site: string): RailItem[] { return site === 'teacher' ? TEACHER_RAIL : RAIL; }
+const SITE_NAMES: Record<string, string> = { ccat: 'Practice Web', teacher: 'TeacherHub', math: 'Math Olympiad' };
+// Math Olympiad workspace rail (super-admins; D7). Content is the home; Students/Teachers reuse the
+// existing directory pages re-scoped to Math; Support is the Math student-messaging console.
+const MATH_RAIL: RailItem[] = [
+  { to: '/math/content', label: 'Content', ic: '📚', match: '/math/content' },
+  { to: '/students', label: 'Students', ic: '🧒', match: '/students' },
+  { to: '/teachers', label: 'Teachers', ic: '👩‍🏫', match: '/teachers', perm: 'teacher.students.manage' },
+  { to: '/support', label: 'Support', ic: '💬', match: '/support' },
+  { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
+];
+function railForSite(site: string): RailItem[] { return site === 'teacher' ? TEACHER_RAIL : site === 'math' ? MATH_RAIL : RAIL; }
 
 // Teacher accounts see ONLY the student directory — every other admin feature is locked away (both the
 // rail here and the routes in App.tsx). Their student reads are scoped to assigned students server-side.
@@ -157,10 +166,12 @@ export function Layout() {
     if (me?.is_teacher) return;
     const onTeacherHub = loc.pathname === '/teacherhub' || loc.pathname.startsWith('/teacherhub/'); // not /teacher-practice|/teacher-exam (CCAT)
     if (onTeacherHub && sites.includes('teacher') && activeSite !== 'teacher') switchSite('teacher');
+    const onMath = loc.pathname.startsWith('/math/') || loc.pathname === '/support';
+    if (onMath && sites.includes('math') && activeSite !== 'math') switchSite('math');
   }, [loc.pathname, sites, activeSite, me, switchSite]);
   // Home path for the active site: the brand logo and the back-link go here, so from TeacherHub they
   // land on the Teacher dashboard, not the CCAT one.
-  const homePath = me?.is_teacher ? '/students' : (activeSite === 'teacher' ? '/teacherhub' : '/');
+  const homePath = me?.is_teacher ? '/students' : (activeSite === 'teacher' ? '/teacherhub' : activeSite === 'math' ? '/math/content' : '/');
   const nav = useNavigate();
   // Sign out AND reset the URL to the default route, so the stale protected page can't be replayed on the
   // next sign-in (the router unmounts once logged out; without this the address bar keeps the old path).
@@ -239,7 +250,7 @@ export function Layout() {
                 const on = sid === activeSite;
                 return (
                   <button key={sid} className={`dm-opt ${on ? 'on' : ''}`}
-                    onClick={() => { if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacherhub' : '/', { replace: true }); } setDrawer(false); }}>
+                    onClick={() => { if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacherhub' : sid === 'math' ? '/math/content' : '/', { replace: true }); } setDrawer(false); }}>
                     <span className="dm-dot" style={{ background: sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />
                     {SITE_NAMES[sid] || sid}
                   </button>
@@ -275,7 +286,7 @@ export function Layout() {
                   const on = sid === activeSite;
                   return (
                     <button key={sid} role="tab" aria-selected={on}
-                      onClick={() => { if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacherhub' : '/', { replace: true }); } }}
+                      onClick={() => { if (sid !== activeSite) { switchSite(sid); nav(sid === 'teacher' ? '/teacherhub' : sid === 'math' ? '/math/content' : '/', { replace: true }); } }}
                       style={{ border: 0, background: on ? 'var(--card,#fff)' : 'transparent', color: on ? (sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--brand,#2f6fd0)') : 'var(--muted,#647089)', fontWeight: 800, fontSize: 12.5, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, boxShadow: on ? '0 1px 3px rgba(0,0,0,.10)' : 'none' }}>
                       {on && <span style={{ width: 7, height: 7, borderRadius: '50%', background: sid === 'teacher' ? 'var(--teal,#0f766e)' : 'var(--amber,#e0a030)' }} />}
                       {SITE_NAMES[sid] || sid}

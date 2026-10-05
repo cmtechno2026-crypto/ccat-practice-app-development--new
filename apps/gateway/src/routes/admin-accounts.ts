@@ -288,4 +288,32 @@ export function registerAdminAccountsRoutes(app: FastifyInstance, db: DB, cfg: C
     });
     return setMode ? { mode: 'set' as const } : { mode: 'generated' as const, password };
   });
+  // ---- Teacher <-> program membership (D3). One teacher (admin_profiles.is_teacher) can belong to
+  // CCAT, NGAT, Math, or several — without duplicating the teacher. Backing table ccat.teacher_programs
+  // (0062). Existing teachers were backfilled to {ccat}. Gated on admin.manage. ----
+  app.get('/v1/admin/accounts/:id/programs', guard, async (req) => {
+    requirePermission(req, 'admin.manage');
+    const id = (req.params as any).id;
+    const r = await db.query('select program from ccat.teacher_programs where teacher_admin_id=$1 order by program', [id]);
+    return { programs: r.rows.map((x) => x.program as string) };
+  });
+
+  const programsSchema = z.object({ programs: z.array(z.enum(['ccat', 'ngat', 'math'])).max(3) });
+  app.put('/v1/admin/accounts/:id/programs', guard, async (req) => {
+    requirePermission(req, 'admin.manage');
+    const id = (req.params as any).id;
+    const b = programsSchema.parse(req.body);
+    const exists = await db.query('select 1 from ccat.admin_profiles where id=$1', [id]);
+    if (exists.rows.length === 0) throw Errors.notFound('Account not found');
+    const unique = Array.from(new Set(b.programs));
+    await withTransaction(db, async (c) => {
+      await c.query('delete from ccat.teacher_programs where teacher_admin_id=$1', [id]);
+      for (const pr of unique) {
+        await c.query('insert into ccat.teacher_programs(teacher_admin_id, program) values ($1,$2) on conflict do nothing', [id, pr]);
+      }
+      await c.query(`insert into ccat.audit_log(actor_admin_id,actor_kind,event_type,target_kind,target_id,new_value) values ($1,'admin','teacher.programs.updated','admin',$2,$3)`,
+        [req.admin!.adminId, id, JSON.stringify({ programs: unique })]);
+    });
+    return { programs: unique };
+  });
 }

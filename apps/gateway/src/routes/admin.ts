@@ -179,6 +179,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const regTo = regToRaw && /^\d{4}-\d{2}-\d{2}$/.test(regToRaw) ? regToRaw + 'T23:59:59.999' : regToRaw;
     // TEACHER SCOPE: a teacher account only ever sees students assigned to it (super_admin/non-teacher = null = all).
     const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
+    const site = req.admin?.activeSite === 'math' ? 'math' : 'ccat';
 
     const { rows } = await db.query(
       `select s.id, s.display_name, s.username_normalized::text as username, s.status, s.version,
@@ -218,9 +219,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           and ($4::timestamptz is null or s.created_at >= $4::timestamptz)
           and ($5::timestamptz is null or s.created_at <= $5::timestamptz)
           and ($8::uuid is null or s.id in (select ts.student_id from ccat.teacher_students ts where ts.teacher_admin_id = $8::uuid))
+          and s.site_id = $9
         order by (s.status = 'purged') asc, ${sortCol} ${dir} nulls last, s.created_at desc
         limit $6 offset $7`,
-      [status, band, search, regFrom, regTo, limit, offset, teacherId],
+      [status, band, search, regFrom, regTo, limit, offset, teacherId, site],
     );
     const matched = rows.length ? Number(rows[0]!.matched) : 0;
 
@@ -287,6 +289,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const search = q.q && q.q.trim() ? `%${q.q.trim()}%` : null;
     const limit = Math.min(Math.max(Number(q.limit ?? 1000), 1), 2000);
     const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
+    const site = req.admin?.activeSite === 'math' ? 'math' : 'ccat';
     const { rows } = await db.query(
       `select s.id, s.display_name, s.username_normalized::text as username, g.grade_number
          from ccat.students s
@@ -297,9 +300,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
           and ($1::text is null or s.username_normalized::text ilike $1
                or s.display_name ilike $1 or gc.email ilike $1 or coalesce(gc.phone,'') ilike $1)
           and ($3::uuid is null or s.id in (select ts.student_id from ccat.teacher_students ts where ts.teacher_admin_id = $3::uuid))
+          and s.site_id = $4
         order by s.display_name asc
         limit $2`,
-      [search, limit, teacherId],
+      [search, limit, teacherId, site],
     );
     return { items: rows.map((r) => ({ id: r.id, display_name: r.display_name, username: r.username, grade_number: r.grade_number })) };
   });
@@ -310,6 +314,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     requirePermission(req, 'student.directory');
     // TEACHER SCOPE: KPI cards (total, practised-today, status counts) count only the teacher's assigned students.
     const teacherId = (req.admin!.isTeacher && req.admin!.role !== 'super_admin') ? req.admin!.adminId : null;
+    const site = req.admin?.activeSite === 'math' ? 'math' : 'ccat';
     const { rows } = await db.query(
       `select
          count(*) as total,
@@ -319,11 +324,13 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
          count(*) filter (where status='pending_deletion') as pending_deletion,
          (select count(distinct se.student_id) from ccat.sessions se
             where se.started_at >= date_trunc('day', now())
+              and se.student_id in (select id from ccat.students where site_id = $2)
               and ($1::uuid is null or se.student_id in (select ts.student_id from ccat.teacher_students ts where ts.teacher_admin_id = $1::uuid))) as practised_today
        from ccat.students s
        where s.status <> 'purged'
+         and s.site_id = $2
          and ($1::uuid is null or s.id in (select ts.student_id from ccat.teacher_students ts where ts.teacher_admin_id = $1::uuid))`,
-      [teacherId],
+      [teacherId, site],
     );
     const r = rows[0]!;
     return {

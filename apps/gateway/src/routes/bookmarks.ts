@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseProgram } from '../lib/program.js';
 import { z } from 'zod';
 import type { DB } from '../db.js';
 import { Errors } from '../errors.js';
@@ -11,7 +12,7 @@ export function registerBookmarkRoutes(app: FastifyInstance, db: DB) {
   // client can render filters and a rich card (§32.4). Data-only; no answer key here.
   app.get('/v1/bookmarks', { preHandler: [app.authenticateStudent] }, async (req) => {
     // NGAT workspace: scope the bookmark list to one program. Defaults to 'ccat'.
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const { rows } = await db.query(
       `select b.logical_question_id, b.note, b.created_at,
               cat.key as category_key, sub.name as subcategory,

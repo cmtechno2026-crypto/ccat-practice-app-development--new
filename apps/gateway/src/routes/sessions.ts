@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseProgram, type Program } from '../lib/program.js';
 import { z } from 'zod';
 import type { DB } from '../db.js';
 import type { Config } from '../config.js';
@@ -66,7 +67,7 @@ function seedFrom(...parts: string[]): number {
 // per-battery breakdown. Same shape as GET /v1/exams/history. Used read-only by the admin Student Detail
 // Exam Progress panel (no finalize side-effects there). The student route below still owns its own copy
 // with finalize; this function takes the student id explicitly so admin can pass the target student.
-export async function computeExamHistory(db: DB, sid: string, range: { from?: string; to?: string } = {}, program: 'ccat' | 'ngat' = 'ccat') {
+export async function computeExamHistory(db: DB, sid: string, range: { from?: string; to?: string } = {}, program: Program = 'ccat') {
   const params: any[] = [sid];
   const cond: string[] = [
     "s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')",
@@ -527,7 +528,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
   app.get('/v1/exams/history', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
     // NGAT workspace: scope exam history to one program. Defaults to 'ccat'.
-    const program = (req.query as { program?: string }).program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     // Close out any fully-timed-out exams first so a just-ended paper appears here immediately.
     await finalizeTimedOutExams(db, sid);
     const q = req.query as { from?: string; to?: string };

@@ -5,7 +5,26 @@
 **Feature:** Manage the **Math Olympiad** platform (Content, Students, Teachers, Support) from the existing Web Admin, alongside CCAT and NGAT.
 **Companion docs:** `NGAT_WEBADMIN_WORKFLOW.md` (the NGAT precedent — read it; this doc deliberately mirrors it), `MATH_OLYMPIAD_WORKFLOW.md` (student-web plan, lives in the Math Olympiad Web repo), `MATH_WEBADMIN_AUDIT.md` (the as-built audit file — created alongside this doc).
 **Author:** Claude (Cowork) · **Date:** 2026-10-05
-**Status:** 🟡 **DRAFT for Ankita's review.** No admin/gateway implementation code has been written. Build starts only after the decisions in §14 are answered.
+**Status:** 🟢 **Decisions locked 2026-10-05 — build in progress.** Migration 0059 (RLS fix) applied to prod. See the locked-decisions table below.
+
+---
+
+## Decisions locked — 2026-10-05 (Ankita's answers)
+
+| # | Decision | Answer | Effect |
+|---|----------|--------|--------|
+| **D1** | Student identity | **A** — keep Math accounts **separate** (`site_id='math'`); multi-program = CCAT+NGAT share one account; add admin **linked-people view** (match by guardian email/phone) | No student-login rewrite; no `student_programs` table (M5 dropped) |
+| **D2** | Math content scoping | **B** — scope content by **`site_id`** on content tables (not `program='math'`) | Migration 0060 adds `site_id` to content tables; **gateway content queries must also filter `site_id`** (paired code change) |
+| **D3** | Teacher membership | **Yes** — new `ccat.teacher_programs` (CCAT/NGAT/Math), existing teachers backfilled to `{ccat}` | Migration 0062 |
+| **D4** | Students/Teachers UI | **Reuse** existing Web Admin pages, re-scoped | No new Student/Teacher mockups needed |
+| **D5** | Math = workspace vs program | **Workspace** (third site, `activeSite='math'`) — implied by D1/D2 + mockups | Site switcher + Math rail |
+| **D6** | Apply RLS fix now | **Proceed** | Migration **0059 applied to prod 2026-10-05** ✅ |
+| **D7** | Admin grants | **All super-admins** | Super-admins already reach every active site via bypass → **no `admin_sites` rows needed**; Math workspace is super-admin-only for now |
+
+**Ground-truth corrections found during build (vs the Phase-0 draft):**
+- **M6 is already done** — `students.site_id` is live as `text NOT NULL default 'ccat'`, backfilled (86 `ccat`, 1 `math` test account). Dropped from the plan.
+- **No `ccat_gateway` role exists** in this project. The draft's RLS policy (`to ccat_gateway`) would have errored. Migration 0059 instead mirrors the real live pattern: **RLS enabled + forced, no policy, grants revoked from anon/authenticated** (identical to `ccat.students`/`bookmarks`/`support_cases`). The gateway connects as a BYPASSRLS role and is unaffected.
+- Migration files live in `packages/contracts/migrations/NNNN_name.sql`; latest was `0058`, so the Math series is **0059–0062**. (Note: `public.ccat_schema_migrations` tracking is stale — last row `0044` — the team applies by file; do not trust that table for "what's applied".)
 
 ---
 

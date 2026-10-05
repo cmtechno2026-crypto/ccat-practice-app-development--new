@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseProgram } from '../lib/program.js';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import type { DB } from '../db.js';
@@ -386,7 +387,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
   app.post('/v1/admin/content/import', guard, async (req) => {
     requirePermission(req, 'content.create');
     const b = importSchema.parse(req.body);
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const norm = (s: string) => String(s ?? '').trim().toLowerCase();
     const key = (s: string) => norm(s).replace(/[\s-]+/g, '_'); // "Non-verbal" -> "non_verbal"
     const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -479,7 +480,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
   app.post('/v1/admin/content/exam-papers/scaffold', guard, async (req) => {
     requirePermission(req, 'content.create');
     const b = z.object({ grade_id: z.string().uuid() }).parse(req.body);
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const created = await withTransaction(db, async (c) => {
       const grade = await c.query('select id from ccat.grades where id=$1 and active and retired_at is null', [b.grade_id]);
       if (grade.rows.length === 0) throw Errors.notFound('Grade not found');

@@ -30,6 +30,8 @@ import { TrainingAdmin } from './pages/TrainingAdmin';
 import { TeacherProgress } from './pages/TeacherProgress';
 import { TrainingHome } from './pages/TrainingHome';
 import { RolePlayAdmin } from './pages/RolePlayAdmin';
+import { MathContent } from './pages/MathContent';
+import { Support } from './pages/Support';
 import { PAYMENTS_ENABLED } from './lib/payments';
 
 function Login() {
@@ -266,6 +268,11 @@ export function App() {
         <Route path="/teacherhub/training/modules" element={<TrainingAdmin />} />
         <Route path="/teacherhub/training/roleplays" element={<RolePlayAdmin />} />
         <Route path="/teacherhub/training/progress" element={<TeacherProgress />} />
+        {/* Math Olympiad workspace (super-admins; D7). Content manager + Support console. Students
+            and Teachers reuse the existing directory routes, re-scoped to Math via X-Admin-Site. */}
+        <Route path="/math" element={<Navigate to="/math/content" replace />} />
+        <Route path="/math/content" element={<MathContent />} />
+        <Route path="/support" element={<Support />} />
         {/* Legacy /teacher* → /teacherhub* (renamed route) */}
         <Route path="/teacher" element={<Navigate to="/teacherhub" replace />} />
         <Route path="/teacher/teachers" element={<Navigate to="/teacherhub/teachers" replace />} />

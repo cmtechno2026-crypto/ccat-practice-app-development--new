@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseProgram } from '../lib/program.js';
 import type { DB } from '../db.js';
 
 // STUDENT-FACING assignments (read-only). The teacher/admin creates assignments via
@@ -11,7 +12,7 @@ export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
   app.get('/v1/assignments', { preHandler: [app.authenticateStudent] }, async (req) => {
     const sid = req.student!.studentId;
     // NGAT workspace: show only assignments whose set belongs to this program. Defaults to 'ccat'.
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const { rows } = await db.query(
       `select a.id, a.set_version_id, a.assigned_at,
               qs.id as question_set_id, qs.name,

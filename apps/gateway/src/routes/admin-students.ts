@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseProgram } from '../lib/program.js';
 import { resolveEntitlement } from '../lib/entitlements.js';
 import { z } from 'zod';
 import type { DB } from '../db.js';
@@ -57,7 +58,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     const pinHash = await hashSecret(b.pin, cfg.pinPepper);
     try {
       const out = await withTransaction(db, async (c) => {
-        const st = await c.query(`insert into ccat.students(username_normalized, display_name, grade_id, birth_month, birth_year) values ($1,$2,$3,$4,$5) returning id`, [b.username, b.display_name, b.grade_id, birthMonth, birthYear]);
+        const st = await c.query(`insert into ccat.students(username_normalized, display_name, grade_id, birth_month, birth_year, site_id) values ($1,$2,$3,$4,$5,$6) returning id`, [b.username, b.display_name, b.grade_id, birthMonth, birthYear, (req.admin?.activeSite === 'math' ? 'math' : 'ccat')]);
         const id = st.rows[0]!.id as string;
         await c.query(`insert into ccat.student_credentials(student_id, pin_hash) values ($1,$2)`, [id, pinHash]);
         await c.query(`insert into ccat.analytics_identities(student_id) values ($1)`, [id]);
@@ -181,7 +182,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
     await assertStudentVisible(db, req, id);
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const { rows } = await db.query(
       `select a.id, a.set_version_id, a.assigned_at,
               qs.id as question_set_id, qs.name,
@@ -251,7 +252,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     requirePermission(req, 'student.directory');
     const id = (req.params as any).id;
     await assertStudentVisible(db, req, id);
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name,
               cat.key as category_key, cat.name as category_name,
@@ -428,7 +429,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
   app.get('/v1/admin/teacher/catalog', guard, async (req) => {
     const gradeId = String((req.query as any)?.grade_id ?? '').trim();
     if (!gradeId) throw Errors.validation('grade_id is required');
-    const program = (req.query as { program?: string } | undefined)?.program === 'ngat' ? 'ngat' : 'ccat';
+    const program = parseProgram(req.query);
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name, cat.key as category_key, cat.name as category_name,
               sub.name as subcategory, sub.key as subcategory_key,
