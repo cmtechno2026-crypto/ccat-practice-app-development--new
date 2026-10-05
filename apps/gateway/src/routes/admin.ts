@@ -148,11 +148,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   // GET /v1/admin/me — current admin + permissions
   app.get('/v1/admin/me', { preHandler: [authenticateAdmin] }, async (req) => {
     const a = req.admin!;
-    const p = await db.query('select email, display_name from ccat.admin_profiles where id=$1', [a.adminId]);
-    // Program membership (CCAT / NGAT / Math). Restricts the PROGRAM pills a TEACHER account can use to
-    // the ones assigned on the Teachers page (ccat.teacher_programs). Non-teacher admins are unrestricted
-    // (they always see all programs), so this is consumed by the client only when is_teacher is true.
-    const pr = await db.query('select program from ccat.teacher_programs where teacher_admin_id=$1 order by program', [a.adminId]);
+    // PERF: the profile row and the program membership are independent — fetch them in parallel.
+    const [p, pr] = await Promise.all([
+      db.query('select email, display_name from ccat.admin_profiles where id=$1', [a.adminId]),
+      db.query('select program from ccat.teacher_programs where teacher_admin_id=$1 order by program', [a.adminId]),
+    ]);
     const programs = pr.rows.map((r) => r.program as string);
     return { id: a.adminId, role: a.role, email: p.rows[0]!.email, display_name: p.rows[0]!.display_name, permissions: [...a.permissions], is_teacher: a.isTeacher, programs };
   });

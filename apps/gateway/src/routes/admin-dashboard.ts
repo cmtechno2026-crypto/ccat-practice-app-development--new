@@ -17,55 +17,53 @@ export function registerAdminDashboardRoutes(app: FastifyInstance, db: DB, cfg: 
     const q = async (sql: string, params: any[] = []) => (await db.query(sql, params)).rows[0]!;
     const pct = (cur: number, prev: number): number | null => prev === 0 ? (cur > 0 ? 100 : null) : Math.round(((cur - prev) / prev) * 1000) / 10;
 
-    // hero: active students (distinct with a session), current vs previous window
-    const act = await q(
-      `select
+    // PERF: every tile below is an independent aggregate — run them as ONE parallel batch instead of
+    // ~11 sequential round-trips. On a far/cold gateway this cuts the Dashboard load from seconds to
+    // one round-trip. Output is identical.
+    const [act, scored, readHead, readWin, students, sessions, content, incidents, rewards, flags, recent] = await Promise.all([
+      q(`select
          count(distinct student_id) filter (where started_at >= now() - make_interval(days => $1))::int cur,
          count(distinct student_id) filter (where started_at >= now() - make_interval(days => 2*$1) and started_at < now() - make_interval(days => $1))::int prev
-       from ccat.sessions where student_id not in (select id from ccat.students where is_preview)`, [w]);
-    // hero: sessions scored (terminal ok) + success rate + dead-letter (non-scored terminals)
-    const scored = await q(
-      `select
+       from ccat.sessions where student_id not in (select id from ccat.students where is_preview)`, [w]),
+      q(`select
          count(*) filter (where created_at >= now() - make_interval(days => $1) and terminal_state in ('SUBMITTED','AUTO_SUBMITTED'))::int cur,
          count(*) filter (where created_at >= now() - make_interval(days => 2*$1) and created_at < now() - make_interval(days => $1) and terminal_state in ('SUBMITTED','AUTO_SUBMITTED'))::int prev,
          count(*) filter (where created_at >= now() - make_interval(days => $1))::int cur_total,
          count(*) filter (where created_at >= now() - make_interval(days => $1) and terminal_state not in ('SUBMITTED','AUTO_SUBMITTED'))::int dead_letter
-       from ccat.session_results where session_id in (select id from ccat.sessions where student_id not in (select id from ccat.students where is_preview))`, [w]);
-    const successPct = scored.cur_total > 0 ? Math.round((1000 * scored.cur) / scored.cur_total) / 10 : null;
-    // hero: avg readiness (latest per student, non-insufficient) + delta from windowed averages
-    const readHead = await q(`select round(avg(readiness_pct))::int v from (
+       from ccat.session_results where session_id in (select id from ccat.sessions where student_id not in (select id from ccat.students where is_preview))`, [w]),
+      q(`select round(avg(readiness_pct))::int v from (
         select distinct on (student_id) readiness_pct, insufficient_data
-        from ccat.readiness_snapshots order by student_id, computed_at desc) t where not insufficient_data`);
-    const readWin = await q(
-      `select
+        from ccat.readiness_snapshots order by student_id, computed_at desc) t where not insufficient_data`),
+      q(`select
          avg(readiness_pct) filter (where computed_at >= now() - make_interval(days => $1))::float cur,
          avg(readiness_pct) filter (where computed_at >= now() - make_interval(days => 2*$1) and computed_at < now() - make_interval(days => $1))::float prev
-       from ccat.readiness_snapshots where not insufficient_data`, [w]);
-    const readDelta = (readWin.cur != null && readWin.prev != null) ? Math.round(readWin.cur - readWin.prev) : null;
-
-    const students = await q(`select
+       from ccat.readiness_snapshots where not insufficient_data`, [w]),
+      q(`select
         count(*)::int total,
         count(*) filter (where status='active')::int active,
         count(*) filter (where status='suspended')::int suspended,
         count(*) filter (where status='banned')::int banned,
         count(*) filter (where status='pending_deletion')::int pending_deletion,
         count(*) filter (where created_at > now() - make_interval(days => $1))::int new_in_window
-      from ccat.students where status <> 'purged' and is_preview = false`, [w]);
-    const sessions = await q(`select
+      from ccat.students where status <> 'purged' and is_preview = false`, [w]),
+      q(`select
         count(*) filter (where state='IN_PROGRESS')::int in_progress,
         count(*) filter (where state in ('SUBMITTED','AUTO_SUBMITTED') and terminal_at > now() - interval '24 hours')::int completed_24h
-      from ccat.sessions where student_id not in (select id from ccat.students where is_preview)`);
-    const content = await q(`select
+      from ccat.sessions where student_id not in (select id from ccat.students where is_preview)`),
+      q(`select
         (select count(*) from ccat.question_versions where state='published')::int published_questions,
         (select count(*) from ccat.question_versions where state in ('draft','automated_checks','expert_review'))::int pending_questions,
-        (select count(*) from ccat.question_set_versions where state='published')::int published_sets`);
-    const incidents = await q(`select count(*) filter (where state<>'resolved')::int open from ccat.incident_records`);
-    const rewards = await q(`select coalesce(sum(delta),0)::bigint xp_all from ccat.xp_transactions where student_id not in (select id from ccat.students where is_preview)`);
-    const flags = await db.query(`select key, value from ccat.global_flags where value = true`);
-    const recent = await db.query(
+        (select count(*) from ccat.question_set_versions where state='published')::int published_sets`),
+      q(`select count(*) filter (where state<>'resolved')::int open from ccat.incident_records`),
+      q(`select coalesce(sum(delta),0)::bigint xp_all from ccat.xp_transactions where student_id not in (select id from ccat.students where is_preview)`),
+      db.query(`select key, value from ccat.global_flags where value = true`),
+      db.query(
       `select event_type, target_kind, reason, created_at, request_id,
               (select display_name from ccat.admin_profiles ap where ap.id = a.actor_admin_id) as actor
-         from ccat.audit_log a order by created_at desc limit 8`);
+         from ccat.audit_log a order by created_at desc limit 8`),
+    ]);
+    const successPct = scored.cur_total > 0 ? Math.round((1000 * scored.cur) / scored.cur_total) / 10 : null;
+    const readDelta = (readWin.cur != null && readWin.prev != null) ? Math.round(readWin.cur - readWin.prev) : null;
 
     // platform state (§30 emergency flags + §27 health). Truthful precedence.
     const flagKeys = flags.rows.map((r) => r.key as string);

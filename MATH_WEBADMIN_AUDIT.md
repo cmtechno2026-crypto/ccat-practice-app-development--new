@@ -21,6 +21,17 @@
 
 ## Change log
 
+### 2026-10-05 (g) — Teacher accounts: restrict program pills to assigned programs (Claude / Cowork)
+
+A teacher-role account (`is_teacher`) must only see/switch the programs assigned to it on the Teachers page (`ccat.teacher_programs`), not all three.
+- `routes/admin.ts` — `/v1/admin/me` now returns `programs` (the account's `teacher_programs`).
+- `lib/auth.tsx` — `Me.programs`; new `allowedPrograms` (teacher → assigned, default `['ccat']`; non-teacher → all three); the active program is **clamped** to an allowed one after auth resolves (a teacher whose remembered program isn't assigned lands on their first allowed program).
+- `components/ProgramPills.tsx` — renders only `allowedPrograms`; hides entirely for a single-program teacher (nothing to switch). Non-teacher admins unchanged (all three).
+
+Syntax-clean. Run `pnpm -w typecheck` + rebuild admin before deploy.
+
+---
+
 ### 2026-10-05 (f) — Fix: Students showed all CCAT under Math; remove in-page program switcher (Claude / Cowork)
 
 **Bug (Students showed the full CCAT pool under the Math program):** root cause was a frontend timing bug, not the scoping SQL (which was correct). The API client seeded `adminSite` (the `X-Admin-Site` pool signal) from the *site* key (`ccat_admin_site` = 'ccat'), not the program, so the first Students fetch on a fresh load/navigation went out as `ccat` before the auth effect could correct it — returning all CCAT students. **No student data touched** (CCAT accounts are a live paid service — read/scoping only).
