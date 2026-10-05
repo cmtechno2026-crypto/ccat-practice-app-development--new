@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 // subject+grade offerings, a status-only week of slots (Available / Unavailable / Booked), and the
 // parent booking requests for that teacher. A request the TEACHER has accepted (teacher_status) shows
 // a Book action here; booking writes the slot in the Teacher Hub DB with the child's name.
-interface TeacherRow { id: string; name: string; email: string; subjects: string[]; inactive_subjects?: string[] | null; profile_approved?: boolean; slots: number; open_slots: number; created_at: string; banned_at?: string | null; }
+interface TeacherRow { id: string; name: string; email: string; subjects: string[]; inactive_subjects?: string[] | null; profile_approved?: boolean; slots: number; open_slots: number; created_at: string; banned_at?: string | null; photo_url?: string | null; }
 interface Slot {
   id: string; subject: string; grade: number | null; grade_min?: number | null; grade_max?: number | null; day_of_week: string; start_time: string; end_time: string;
   status: string; timezone: string; notes: string;
@@ -307,6 +307,12 @@ export function TeacherDirectory() {
 
   const copyLink = async (url: string) => { try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ } };
   const initials = (n: string) => (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  // Profile photo when the teacher uploaded one (ta_teachers.photo_url), else the gradient initials avatar.
+  const avatar = (t: TeacherRow, size: number, fontSize: number, gradIdx: number) => {
+    const p = (t.photo_url || '').trim();
+    if (p) return <img src={p} alt={t.name} title={t.name} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flex: 'none', background: '#e6ecf5' }} />;
+    return <span className={'cm-av ' + GRADS[gradIdx % GRADS.length]} style={{ width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize, flex: 'none' }}>{initials(t.name)}</span>;
+  };
   const inp = { padding: '7px 9px', border: '1px solid var(--line,#d7dce8)', borderRadius: 8, background: 'var(--card2,#f7f9fc)', color: 'inherit', width: '100%' } as React.CSSProperties;
 
   const slotById = (id: string, sid: string) => (slots[id] || []).find(x => x.id === sid) || null;
@@ -564,7 +570,7 @@ export function TeacherDirectory() {
   const renderDetail = (d: TeacherRow) => (
     <div style={{ display: 'grid', gap: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <span className={'cm-av ' + GRADS[(filteredRows.findIndex(t => t.id === d.id)) % GRADS.length]} style={{ width: 44, height: 44, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flex: 'none' }}>{initials(d.name)}</span>
+                  {avatar(d, 44, 15, filteredRows.findIndex(t => t.id === d.id))}
                   <div><div style={{ fontWeight: 800, fontSize: 17 }}>{d.name}</div><div className="muted" style={{ fontSize: 12 }}>{d.email}</div></div>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {reqBadge(d.id) > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(d.id)} ready to book</span>}
@@ -765,7 +771,7 @@ export function TeacherDirectory() {
                   <button onClick={() => { if (isMobile) { if (selected === t.id) { setSelected(null); setPopSlot(null); } else selectTeacher(t.id); } else selectTeacher(t.id); }}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', padding: 10, borderRadius: (isMobile && on) ? '12px 12px 0 0' : 12, cursor: 'pointer',
                       border: '1px solid ' + (on ? 'var(--brand,#2f6fd0)' : 'var(--line,#e6e6ef)'), background: on ? 'var(--brand-soft,#e7f0fc)' : 'var(--card,#fff)', color: 'inherit' }}>
-                    <span className={'cm-av ' + GRADS[i % GRADS.length]} style={{ width: 38, height: 38, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 13, flex: 'none' }}>{initials(t.name)}</span>
+                    {avatar(t, 38, 13, i)}
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ fontWeight: 800, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
                       <span className="muted" style={{ fontSize: 11.5 }}>{t.slots} slots · {t.open_slots} open{t.banned_at ? <span style={{ color: 'var(--coral,#c0392b)', fontWeight: 700 }}> · Banned</span> : ''}</span>

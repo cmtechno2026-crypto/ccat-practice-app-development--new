@@ -98,7 +98,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (search) { params.push('%' + search.toLowerCase() + '%'); where = 'where lower(t.name) like $1 or lower(t.email) like $1'; }
     params.push(limit);
     const { rows } = await tdb().query(
-      `select t.id, t.name, t.email, t.subjects, t.inactive_subjects, t.profile_approved, t.created_at, t.banned_at,
+      `select t.id, t.name, t.email, t.subjects, t.inactive_subjects, t.profile_approved, t.created_at, t.banned_at, t.photo_url,
               (select count(*)::int from public.ta_slots s where s.teacher_id = t.id)                          as slots,
               (select count(*)::int from public.ta_slots s where s.teacher_id = t.id and s.status = 'available') as open_slots
          from public.ta_teachers t
