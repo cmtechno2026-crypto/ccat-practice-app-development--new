@@ -21,6 +21,17 @@
 
 ## Change log
 
+### 2026-10-06 (s) — Math Content: Publish button blue + bulk Publish-all/Done confirmed (Claude / Cowork)
+
+- **Publish action button is now blue** (`#1A5EAB` filled), distinct from **Retire** which stays amber (`components` row actions in `MathContent.tsx`). Added a `primary` variant to the row's `actBtn`; the button uses `primary` when the set is draft (Publish) and `warn` when published (Retire). Matches the CCAT content row (image 2).
+- **Bulk "Publish all / Done" screen:** no change needed — the reused shared `BulkSets` component already ends with the "Created N draft sets" screen (per-set Publish + Publish all + Done), identical to CCAT (image 1). It appears whenever the bulk create succeeds.
+
+Syntax-clean. Frontend only, no gateway/DB change. **Deploy admin (Vercel).**
+
+**Flagged (not changed, per "don't break CCAT/NGAT"):** the generic `POST /v1/admin/content/sets` (used by BulkSets) doesn't set `site_id`, so bulk-created Math sets get the column default `'ccat'` while their `category_id` is a Math category. They still appear correctly in the Math tree and student catalog (both join by **category** program/site, not the set's `site_id`) — it's a cosmetic mislabel only. One-line fix if wanted: in that handler derive `site_id` from the category (`select site_id from ccat.categories where id=$1`) and pass it into the `question_sets`/`question_set_versions` inserts — CCAT/NGAT categories resolve to `'ccat'` so they're unchanged.
+
+---
+
 ### 2026-10-06 (r) — Math Content: folder-add moved to FOLDERS panel icon + Bulk add sets (CCAT parity) (Claude / Cowork)
 
 User request on the Math Content page: remove the top-right **+ Add folder**, add an **add icon** in the FOLDERS panel to create folders, and put **Bulk add sets** where Add folder was (same as CCAT's bulk).

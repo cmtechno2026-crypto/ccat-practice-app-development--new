@@ -55,13 +55,14 @@ export function MathContent() {
     api.taxonomy('math').then(setTax).catch(() => {});
   }, []);
 
-  const loadTree = useCallback(() => {
+  const loadTree = useCallback((silent = false) => {
     if (!gradeId) return;
-    setLoading(true); setErr('');
+    if (!silent) setLoading(true);
+    setErr('');
     api.mathTree(track, gradeId).then(r => {
       const fs = r.folders || []; setFolders(fs);
       setFolderId(cur => (cur && fs.some((f: any) => f.id === cur)) ? cur : (fs[0]?.id || ''));
-    }).catch(e => setErr((e as Error).message)).finally(() => setLoading(false));
+    }).catch(e => setErr((e as Error).message)).finally(() => { if (!silent) setLoading(false); });
   }, [track, gradeId]);
   useEffect(() => { loadTree(); }, [loadTree]);
 
@@ -84,7 +85,7 @@ export function MathContent() {
   const act = async (fn: () => Promise<any>, id: string, confirmMsg?: string) => {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
     setBusyId(id); setErr('');
-    try { await fn(); loadTree(); }
+    try { await fn(); loadTree(true); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusyId(''); }
   };
@@ -213,13 +214,12 @@ export function MathContent() {
                   </span>
                   <span><span style={badgeStyle(s.state)}>{(BADGE[s.state] || BADGE.draft).label}</span></span>
                   <span style={{ fontSize: 13.5, color: muted }}>{s.updated_at ? new Date(s.updated_at).toLocaleDateString() : '—'}</span>
-                  <span style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                     {actBtn('Edit', () => setEditId(s.set_version_id), 'default', busy || !tax)}
                     {actBtn(published ? 'Retire' : 'Publish',
                       () => act(() => published ? api.retireSet(s.set_version_id) : api.publishSet(s.set_version_id), s.set_version_id,
                         published ? `Retire "${s.name}"? It will be removed from the student catalog.` : undefined),
                       published ? 'warn' : 'primary', busy)}
-                    {actBtn('Copy', () => act(() => api.copySet(s.set_version_id), s.set_version_id), 'default', busy)}
                     {actBtn('Delete', () => act(() => api.deleteSet(s.set_version_id), s.set_version_id, `Delete "${s.name}"? This cannot be undone.`), 'danger', busy)}
                   </span>
                 </div>
