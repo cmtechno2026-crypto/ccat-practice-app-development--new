@@ -21,6 +21,17 @@
 
 ## Change log
 
+### 2026-10-06 (ff) — FIX: Test Prep list showed 100 min instead of admin's 30 (Claude / Cowork)
+
+The Test Prep list card showed "100 questions · 100 min" — `TestPrep.tsx` computed the shown limit as `question_count` (1 min/question), ignoring the set's `duration_minutes`. (The in-run timer was already fixed in (bb)/(cc); this was only the list display, which reads the catalog, not the session.) Fixes:
+- **Gateway `math.ts`** — `GET /v1/math/catalog` now selects and returns `sv.duration_minutes` per set.
+- **Student type (`.../lib/types.ts`)** — `CatalogSet.duration_minutes?: number | null`.
+- **`.../screens/TestPrep.tsx`** — card minutes = `duration_minutes` when set, else 30 (matching the admin default and the runner fallback), instead of question count.
+
+With duration backfilled to 30 (cc), the card now reads "100 questions · 30 min". `tsc` clean (gateway + student). Note: an in-progress Resume session started before the gateway change keeps its old `started_at`; since the clock is now 30 min, a long-idle resume may auto-submit — Restart gives a fresh 30:00. **Deploy gateway (Render) + student site (Vercel).** No admin/DB change this entry.
+
+---
+
 ### 2026-10-06 (ee) — HOTFIX: (dd) broke the admin build (App.tsx ContentSwitch) (Claude / Cowork)
 
 `pnpm --filter @ccat/admin build` failed with `esbuild … App.tsx: Unexpected "}"`. The (dd) edit that added `CcatContentOnly` accidentally replaced the whole `ContentSwitch` function (not just appended after it), deleting its body and leaving a stray `}`. Restored `ContentSwitch` (`const { program } = useAuth(); return program === 'math' ? <MathContent /> : <Content />;`) above `CcatContentOnly`. Verified with `tsc --noEmit` (0 errors) **and** a direct `esbuild App.tsx` transform (the same step that failed) — both clean. (The vite "cannot find module" seen when building inside the Linux device VM is just missing `node_modules` there; the Windows checkout builds fine.) All (dd) behaviour unchanged. **Deploy admin (Vercel).**

@@ -93,26 +93,26 @@ function NotificationBell() {
 }
 
 interface Tab { to: string; label: string; perm?: string; }
-interface RailItem { to: string; label: string; ic: React.ReactNode; perm?: string; match: string; tabs?: Tab[]; badge?: number; }
+interface RailItem { to: string; label: string; ic: React.ReactNode; perm?: string; match: string; tabs?: Tab[]; badge?: number; svg?: string; tone?: string; }
 
 // Rail matches the CCAT Admin Web mockup EXACTLY: 7 items, identical for both roles (Admin and
 // Super-Admin see the same rail; pages enforce RBAC server-side). Service Health, Coins & XP,
 // Feature flags, and Create-admin are NOT rail items — they are reached from the Super-Admin
 // dashboard controls panel and from in-page tabs. Icons use the mockup's emoji glyphs.
 const BASE_RAIL: RailItem[] = [
-  { to: '/', label: 'Dashboard', ic: '📊', match: '/' },
+  { to: '/', label: 'Dashboard', ic: '📊', match: '/', svg: 'M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z', tone: '#2FA86A' },
   // Content's Practice-sets/Exam-papers toggle is rendered in-page as pills (mockup), not as a top strip.
-  { to: '/content', label: 'Content', ic: '📚', match: '/content' },
-  { to: '/students', label: 'Students', ic: '🧒', match: '/students' },
-  { to: '/teachers', label: 'Teachers', ic: '👩‍🏫', match: '/teachers', perm: 'teacher.students.manage' },
-  { to: '/announcements', label: 'Announcements', ic: '📣', match: '/announcements' },
-  { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
+  { to: '/content', label: 'Content', ic: '📚', match: '/content', svg: 'M5 3h14v18H5zM8 8h8M8 12h8M8 16h5', tone: '#1A5EAB' },
+  { to: '/students', label: 'Students', ic: '🧒', match: '/students', svg: 'M12 11a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0', tone: '#E8A020' },
+  { to: '/teachers', label: 'Teachers', ic: '👩‍🏫', match: '/teachers', perm: 'teacher.students.manage', svg: 'M12 3l9 5-9 5-9-5zM7 11v5c0 1.7 2.2 3 5 3s5-1.3 5-3v-5', tone: '#D4620E' },
+  { to: '/announcements', label: 'Announcements', ic: '📣', match: '/announcements', svg: 'M3 11l15-7v16L3 13zM7 13v6', tone: '#E8A020' },
+  { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit', svg: 'M7 3h10v18H7zM10 8h4M10 12h4M10 16h3', tone: '#9A8CE0' },
 ];
 
 // Payments Phase 2 — the Membership grant is a Super-Admin control shown ONLY when the flag is on.
 // When off, RAIL === BASE_RAIL, so the rail is identical to today.
 const RAIL: RailItem[] = PAYMENTS_ENABLED
-  ? [...BASE_RAIL, { to: '/config/membership', label: 'Membership', ic: '💳', match: '/config/membership', perm: 'config.global' }]
+  ? [...BASE_RAIL, { to: '/config/membership', label: 'Membership', ic: '💳', match: '/config/membership', perm: 'config.global', svg: 'M2 6h20v12H2zM2 10h20M6 14h4', tone: '#2FA86A' }]
   : BASE_RAIL;
 
 // TeacherHub rail (multi-site admin). Shown when the active site is 'teacher'. Items gate on
@@ -139,7 +139,7 @@ const TEACHER_ONLY_RAIL: RailItem[] = [
 
 // Support is MATH OLYMPIAD only — injected into the active rail solely when the Math program is selected
 // (both admins and teacher accounts). Teachers see Support for their assigned students; admins for all.
-const SUPPORT_ITEM: RailItem = { to: '/support', label: 'Support', ic: '💬', match: '/support' };
+const SUPPORT_ITEM: RailItem = { to: '/support', label: 'Support', ic: '💬', match: '/support', svg: 'M21 12a9 9 0 11-3.2-6.9L21 4M8 10h8M8 14h5', tone: '#4FA3E3' };
 
 function sectionFor(path: string, rail: RailItem[]): RailItem | undefined {
   // longest match wins so '/' doesn't swallow everything
@@ -222,7 +222,11 @@ export function Layout() {
             className={() => `railitem ${section?.match === r.match ? 'active' : ''}`}
             aria-label={r.label}
           >
-            <span className="ricon" aria-hidden>{r.ic}</span>
+            <span className="ricon" aria-hidden>
+              {r.svg && r.tone
+                ? <span className="rchip" style={{ background: r.tone }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d={r.svg} /></svg></span>
+                : r.ic}
+            </span>
             <span className="rlabel">{r.label}</span>
             {r.to === '/teacherhub/requests' && pendingReq > 0 && (
               <span className="railbadge" aria-label={`${pendingReq} pending`}>{pendingReq > 99 ? '99+' : pendingReq}</span>
