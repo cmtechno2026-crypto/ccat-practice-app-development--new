@@ -21,6 +21,24 @@
 
 ## Change log
 
+### 2026-10-06 (q) — FIX grade order (all programs) + Math Content page redesigned to the admin mockup (Claude / Cowork)
+
+**1) Grade dropdown order wrong (Grade 1 after Grade 2) — all programs + teacher admin.**
+🔴 Root cause: **data, not code.** `ccat.grades.display_order` was wrong — Grade 2 = `0`, Grade 1 = `1`, Grade 3 = `1`. Every admin content grade dropdown orders by `display_order`, so it rendered 2,1,3,4… everywhere. Fix (one-time data update on LIVE DB `cqzpzhdleqyrmedymypg`): `update ccat.grades set display_order = grade_number`. Now 1→12 across all programs and teacher admin. **No code change, no deploy — just refresh.**
+
+**2) Math Content page rebuilt to `Content-Page-Admin_standalone.html`** (`apps/admin/src/pages/MathContent.tsx`, frontend only):
+- Tabs relabeled **Curriculum / Tests / Quiz Arena** (tracks curriculum/test/quiz) with amber active underline.
+- **GRADE pill** kept (fixed scrollable dropdown from entry o).
+- **FOLDERS tree (left panel)** from `mathTree` — folders with per-folder set counts, selectable (active = blue), plus an "All folders" row. Breadcrumb `{track} → {folder}`.
+- **Sets table** columns **SET · QUESTIONS · STATUS · UPDATED · ACTIONS**: set name (blue) + folder/subfolder subtitle; QUESTIONS as `{count} / 100` with an amber progress bar; status badge; updated date.
+- **Actions wired to the existing program-agnostic set endpoints:** Edit → reuses the shared `components/SetEditor` with the **Math taxonomy** (`api.taxonomy('math')`) to author questions; Publish/Retire → `api.publishSet` / `api.retireSet` (label flips on state, Retire confirms); Copy → `api.copySet`; Delete → `api.deleteSet` (confirms). `+ Add folder` / `Upload set` modals unchanged. Stat-cards row dropped to match the mockup.
+
+✅ **This also closes the gap flagged in entry (p):** there is now an in-page path to **author + publish** a Math set — create set → **Edit** (add questions via SetEditor) → **Publish**. Combined with (p)'s published-only catalog, published Math sets will now appear in the student app.
+
+Syntax-clean; omitted `SetEditor` props are all optional. **Deploy admin (Vercel).** No gateway/DB change for part 2.
+
+---
+
 ### 2026-10-06 (p) — FIX: admin Math content (folders/sets) never showed in the student web app (Claude / Cowork)
 
 🔴 **Bug:** folders/sets created in Web Admin → Practice → Math → Content did not appear in `math-olympiad-web` (student) for Curriculum or Test.

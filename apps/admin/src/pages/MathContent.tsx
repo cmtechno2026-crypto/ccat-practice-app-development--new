@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { SetEditor } from '../components/SetEditor';
+import { BulkSets, PER_SET_CEILING } from '../components/BulkSets';
 
 // Math Olympiad — admin-managed content, styled to the Content-Page-Admin mockup: a tabs + GRADE card,
 // a FOLDERS tree (left), and a sets table (SET · QUESTIONS · STATUS · UPDATED · ACTIONS) for the chosen
@@ -37,6 +38,7 @@ export function MathContent() {
   const [editId, setEditId] = useState<string>('');
   const [newSet, setNewSet] = useState(false);
   const [addFolder, setAddFolder] = useState(false);
+  const [bulk, setBulk] = useState(false);
 
   const [gradeOpen, setGradeOpen] = useState(false);
   const gradeBtnRef = useRef<HTMLButtonElement>(null);
@@ -146,7 +148,13 @@ export function MathContent() {
       {/* Folders (left) + sets (right) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
         <div style={{ ...card, flex: '1 1 260px', minWidth: 240, maxWidth: 300, padding: 12, maxHeight: 'calc(100vh - 230px)', overflowY: 'auto' }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '1px', color: '#98A2B6', padding: '8px 12px 10px' }}>FOLDERS</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px 10px 12px' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '1px', color: '#98A2B6' }}>FOLDERS</span>
+            <button onClick={() => setAddFolder(true)} title="Add folder" aria-label="Add folder"
+              style={{ width: 28, height: 28, flex: 'none', border: '1px solid var(--line,#E6EAF2)', borderRadius: 8, background: 'var(--card,#fff)', color: 'var(--primary,#1A5EAB)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+          </div>
           {folders.length === 0 && <div className="muted" style={{ padding: '6px 12px', fontSize: 13 }}>No folders yet.</div>}
           {folders.length > 0 && (
             <button onClick={() => setFolderId('')}
@@ -173,7 +181,7 @@ export function MathContent() {
             <div style={{ flex: 1, minWidth: 200, fontSize: 15, color: muted }}>
               {trackLabel} <span style={{ color: '#C8D0DE' }}>→</span> <span style={{ color: 'var(--ink,#15233D)', fontWeight: 800 }}>{curFolder ? curFolder.name : 'All folders'}</span>
             </div>
-            <button onClick={() => setAddFolder(true)} style={{ height: 40, padding: '0 18px', flex: 'none', border: '1px solid var(--line,#D7DEEA)', borderRadius: 999, background: 'var(--card,#fff)', fontSize: 13.5, fontWeight: 700, color: 'var(--ink,#15233D)', cursor: 'pointer' }}>+ Add folder</button>
+            <button onClick={() => { if (folderId && tax) setBulk(true); }} disabled={!folderId || !tax} title={!folderId ? 'Select a folder first' : undefined} style={{ height: 40, padding: '0 18px', flex: 'none', border: '1px solid var(--line,#D7DEEA)', borderRadius: 999, background: 'var(--card,#fff)', fontSize: 13.5, fontWeight: 700, color: (!folderId || !tax) ? '#98A2B6' : 'var(--ink,#15233D)', cursor: (!folderId || !tax) ? 'not-allowed' : 'pointer', opacity: (!folderId || !tax) ? .6 : 1 }}>⤓ Bulk add sets</button>
             <button onClick={() => { if (!folders.length) { setAddFolder(true); return; } setNewSet(true); }} style={{ height: 40, padding: '0 20px', flex: 'none', border: 0, borderRadius: 10, background: '#1A5EAB', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Upload set</button>
           </div>
           {err && <div className="err" style={{ marginBottom: 12 }}>{err}</div>}
@@ -221,6 +229,22 @@ export function MathContent() {
       </div>
 
       {editId && tax && <SetEditor taxonomy={tax} setId={editId} onClose={() => setEditId('')} onSaved={() => { setEditId(''); loadTree(); }} />}
+      {bulk && tax && curFolder && (() => {
+        const med = (tax.difficulties || []).find((d: any) => d.key === 'medium') || (tax.difficulties || [])[0];
+        const taxCat = (tax.categories || []).find((c: any) => c.id === folderId);
+        if (!curGrade || !med || !taxCat) return null;
+        return (
+          <BulkSets
+            ctx={{
+              gradeId: curGrade.id, catId: folderId, subId: '', diffId: med.id, qType: 'math',
+              gradeNumber: curGrade.grade_number, categoryName: taxCat.name, subcategoryName: 'All sets',
+              difficultyLabel: med.name || 'Medium', diffKey: med.key || 'medium', maxPerSet: PER_SET_CEILING,
+            }}
+            existingSets={rows} taxonomy={tax}
+            onClose={() => setBulk(false)} onDone={() => { setBulk(false); loadTree(); }}
+          />
+        );
+      })()}
       {addFolder && <AddFolderModal track={track} gradeId={gradeId} onClose={() => setAddFolder(false)} onDone={() => { setAddFolder(false); loadTree(); }} />}
       {newSet && <NewSetModal track={track} gradeId={gradeId} folders={folders} onClose={() => setNewSet(false)} onDone={() => { setNewSet(false); loadTree(); }} onNeedFolder={() => { setNewSet(false); setAddFolder(true); }} />}
     </div>
