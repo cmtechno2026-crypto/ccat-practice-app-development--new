@@ -1,34 +1,43 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { api } from '../lib/api';
+import { SetEditor } from '../components/SetEditor';
 
-// Math Olympiad — admin-managed content, styled to match the Content mockup: a tabs+grade card, stat
-// cards, and a sets table (SET · GRADE · ITEMS · UPDATED · STATE). Three TRACKS (Curriculum / Quiz /
-// Test); pick a GRADE; build FOLDERS (categories) + SETS. Everything is program='math', site_id='math'.
-type Track = 'curriculum' | 'quiz' | 'test';
+// Math Olympiad — admin-managed content, styled to the Content-Page-Admin mockup: a tabs + GRADE card,
+// a FOLDERS tree (left), and a sets table (SET · QUESTIONS · STATUS · UPDATED · ACTIONS) for the chosen
+// folder. Three TRACKS (Curriculum / Tests / Quiz Arena). Everything is program='math', site_id='math'.
+type Track = 'curriculum' | 'test' | 'quiz';
 const TRACKS: { k: Track; label: string; icon: string }[] = [
-  { k: 'curriculum', label: 'Curriculum', icon: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z' },
-  { k: 'quiz', label: 'Quiz', icon: 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z' },
-  { k: 'test', label: 'Test', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4' },
+  { k: 'curriculum', label: 'Curriculum', icon: 'M5 3h14v18H5zM8 8h8M8 12h8M8 16h5' },
+  { k: 'test', label: 'Tests', icon: 'M8 3h8v3H8zM6 6h12v15H6zM9 11h6M9 15h4' },
+  { k: 'quiz', label: 'Quiz Arena', icon: 'M12 3l2.5 5.2 5.5.8-4 3.9 1 5.6-5-2.7-5 2.7 1-5.6-4-3.9 5.5-.8z' },
 ];
 const BADGE: Record<string, { bg: string; fg: string; label: string }> = {
-  published: { bg: '#E7F6EC', fg: '#1B8A4B', label: 'Published' },
-  approved:  { bg: '#EAF2FF', fg: '#2F6FD0', label: 'In review' },
-  scheduled: { bg: '#FFF3E0', fg: '#B7791F', label: 'Scheduled' },
-  draft:     { bg: '#EEF1F6', fg: '#647089', label: 'Draft' },
-  retired:   { bg: '#FDEAEA', fg: '#C0392B', label: 'Retired' },
+  published: { bg: '#E6F4EC', fg: '#1E7A4C', label: 'Published' },
+  approved:  { bg: '#EAF1FB', fg: '#1A5EAB', label: 'In review' },
+  scheduled: { bg: '#EAF1FB', fg: '#1A5EAB', label: 'Scheduled' },
+  draft:     { bg: '#F1F4FA', fg: '#64718A', label: 'Draft' },
+  retired:   { bg: '#FDF0E6', fg: '#B2460B', label: 'Retired' },
 };
 const badgeStyle = (state: string): React.CSSProperties => {
   const b = BADGE[state] || BADGE.draft;
-  return { background: b.bg, color: b.fg, fontWeight: 700, fontSize: 12, padding: '4px 11px', borderRadius: 999, display: 'inline-block' };
+  return { background: b.bg, color: b.fg, fontWeight: 700, fontSize: 11.5, padding: '6px 11px', borderRadius: 999, display: 'inline-block', whiteSpace: 'nowrap' };
 };
+const COLS = 'minmax(150px,1.3fr) 150px 120px 100px minmax(250px,1.15fr)';
 
 export function MathContent() {
   const [grades, setGrades] = useState<any[]>([]);
   const [gradeId, setGradeId] = useState('');
   const [track, setTrack] = useState<Track>('curriculum');
   const [folders, setFolders] = useState<any[]>([]);
+  const [folderId, setFolderId] = useState<string>(''); // '' = all folders
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [busyId, setBusyId] = useState('');
+  const [tax, setTax] = useState<any>(null);
+  const [editId, setEditId] = useState<string>('');
+  const [newSet, setNewSet] = useState(false);
+  const [addFolder, setAddFolder] = useState(false);
+
   const [gradeOpen, setGradeOpen] = useState(false);
   const gradeBtnRef = useRef<HTMLButtonElement>(null);
   const [gradePos, setGradePos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
@@ -37,64 +46,76 @@ export function MathContent() {
     if (r) setGradePos({ top: Math.round(r.bottom + 6), right: Math.round(window.innerWidth - r.right) });
     setGradeOpen(o => !o);
   };
-  const [newSet, setNewSet] = useState(false);
-  const [addFolder, setAddFolder] = useState(false);
 
   useEffect(() => {
     api.mathGrades().then(r => { setGrades(r.grades || []); if (r.grades?.length) setGradeId(g => g || r.grades[0].id); })
       .catch(e => setErr((e as Error).message));
+    api.taxonomy('math').then(setTax).catch(() => {});
   }, []);
 
   const loadTree = useCallback(() => {
     if (!gradeId) return;
     setLoading(true); setErr('');
-    api.mathTree(track, gradeId).then(r => setFolders(r.folders || []))
-      .catch(e => setErr((e as Error).message)).finally(() => setLoading(false));
+    api.mathTree(track, gradeId).then(r => {
+      const fs = r.folders || []; setFolders(fs);
+      setFolderId(cur => (cur && fs.some((f: any) => f.id === cur)) ? cur : (fs[0]?.id || ''));
+    }).catch(e => setErr((e as Error).message)).finally(() => setLoading(false));
   }, [track, gradeId]);
   useEffect(() => { loadTree(); }, [loadTree]);
 
   const gradeLabel = (g: any) => g?.name || (g ? `Grade ${g.grade_number}` : '');
   const curGrade = grades.find(g => g.id === gradeId);
+  const curFolder = folders.find(f => f.id === folderId);
 
-  // Flatten folders → one sets list (folder/subfolder name shown as the set's topic subtitle).
-  const sets = useMemo(() => {
+  // Rows for the chosen folder (or all folders when none selected).
+  const rows = useMemo(() => {
     const out: any[] = [];
-    for (const f of folders) {
+    const list = folderId ? folders.filter(f => f.id === folderId) : folders;
+    for (const f of list) {
       const subName: Record<string, string> = {};
       for (const sf of (f.subfolders || [])) subName[sf.id] = sf.name;
-      for (const s of (f.sets || [])) {
-        out.push({ ...s, folder: f.name, subfolder: s.subcategory_id ? subName[s.subcategory_id] : null });
-      }
+      for (const s of (f.sets || [])) out.push({ ...s, folder: f.name, subfolder: s.subcategory_id ? subName[s.subcategory_id] : null });
     }
     return out;
-  }, [folders]);
+  }, [folders, folderId]);
 
-  const stats = useMemo(() => {
-    const total = sets.length;
-    const published = sets.filter(s => s.state === 'published').length;
-    const drafts = sets.filter(s => s.state === 'draft' || s.state === 'approved').length;
-    return [
-      { label: 'SETS', value: total, note: `${TRACKS.find(t => t.k === track)?.label} · ${gradeLabel(curGrade)}` },
-      { label: 'PUBLISHED', value: published, note: 'Live for students' },
-      { label: 'IN PROGRESS', value: drafts, note: 'Draft / in review' },
-      { label: 'FOLDERS', value: folders.length, note: 'Topics in this grade' },
-    ];
-  }, [sets, folders, track, curGrade]);
+  const act = async (fn: () => Promise<any>, id: string, confirmMsg?: string) => {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusyId(id); setErr('');
+    try { await fn(); loadTree(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusyId(''); }
+  };
 
   const card: React.CSSProperties = { background: 'var(--card,#fff)', border: '1px solid var(--line,#E6EAF2)', borderRadius: 16 };
   const muted = 'var(--muted,#64718A)';
+  const trackLabel = TRACKS.find(t => t.k === track)?.label;
+
+  const actBtn = (label: string, onClick: () => void, variant: 'default' | 'warn' | 'danger', disabled = false): React.ReactNode => {
+    const styles: Record<string, React.CSSProperties> = {
+      default: { border: '1px solid var(--line,#D7DEEA)', background: 'var(--card,#fff)', color: 'var(--ink,#15233D)' },
+      warn: { border: '1px solid #F0D3AE', background: '#FFF6E8', color: '#B4540C' },
+      danger: { border: 0, background: '#B4231B', color: '#fff' },
+    };
+    return (
+      <button key={label} disabled={disabled} onClick={onClick}
+        style={{ height: 32, padding: '0 13px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? .5 : 1, ...styles[variant] }}>
+        {label}
+      </button>
+    );
+  };
 
   return (
     <div style={{ padding: '2px' }}>
       {/* Tabs + Grade card */}
-      <div style={{ ...card, padding: '0 0 0 6px', marginBottom: 20, display: 'flex', alignItems: 'stretch', gap: 10, overflow: 'hidden' }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'stretch', gap: 6, overflowX: 'auto', padding: '0 6px' }}>
+      <div style={{ ...card, padding: '0 0 0 6px', marginBottom: 20, display: 'flex', alignItems: 'stretch', gap: 10, overflow: 'visible', position: 'relative', zIndex: 15 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'stretch', gap: 18, overflowX: 'auto', padding: '0 10px' }}>
           {TRACKS.map(t => {
             const on = t.k === track;
             return (
               <button key={t.k} onClick={() => setTrack(t.k)}
-                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '16px 16px', border: 0, borderBottom: on ? '3px solid var(--primary,#1A5EAB)' : '3px solid transparent', background: 'transparent', cursor: 'pointer', color: on ? 'var(--primary,#1A5EAB)' : muted, fontWeight: 800, fontSize: 14 }}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={on ? 'var(--primary,#1A5EAB)' : muted} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={t.icon} /></svg>
+                style={{ display: 'flex', alignItems: 'center', gap: 9, height: 56, padding: '0 4px', border: 0, borderBottom: on ? '3px solid #E8A020' : '3px solid transparent', background: 'transparent', cursor: 'pointer', color: on ? 'var(--ink,#15233D)' : muted, fontWeight: on ? 800 : 500, fontSize: 14.5, whiteSpace: 'nowrap' }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={on ? 'var(--primary,#1A5EAB)' : '#8E99AE'} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={t.icon} /></svg>
                 <span>{t.label}</span>
               </button>
             );
@@ -102,17 +123,17 @@ export function MathContent() {
         </div>
         <div style={{ flex: 'none', display: 'flex', alignItems: 'center', borderLeft: '1px solid var(--line,#EEF1F7)', padding: '10px 14px', background: 'var(--card2,#FAFBFE)', position: 'relative' }}>
           <button ref={gradeBtnRef} onClick={openGrade} aria-haspopup="listbox" aria-expanded={gradeOpen}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, height: 42, padding: '0 16px', border: '1px solid var(--line,#E6EAF2)', borderRadius: 999, background: 'var(--card,#fff)', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(15,27,51,.05)' }}>
-            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--ink,#15233D)' }}>{gradeLabel(curGrade) || 'Select grade'}</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+            style={{ display: 'flex', alignItems: 'center', gap: 12, height: 44, padding: '0 20px', border: '1px solid var(--line,#E6EAF2)', borderRadius: 999, background: 'var(--card,#fff)', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(15,27,51,.05)' }}>
+            <span style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--ink,#15233D)' }}>{gradeLabel(curGrade) || 'Select grade'}</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
           </button>
           {gradeOpen && (
             <>
               <button onClick={() => setGradeOpen(false)} aria-label="Close" style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 39, cursor: 'default' }} />
-              <div role="listbox" style={{ position: 'fixed', top: gradePos.top, right: gradePos.right, zIndex: 40, width: 200, maxHeight: 'min(60vh, 360px)', overflowY: 'auto', background: 'var(--card,#fff)', border: '1px solid var(--line,#E6EAF2)', borderRadius: 14, boxShadow: '0 18px 40px rgba(15,27,51,.16)', padding: 6 }}>
+              <div role="listbox" style={{ position: 'fixed', top: gradePos.top, right: gradePos.right, zIndex: 40, width: 220, maxHeight: 'min(60vh, 360px)', overflowY: 'auto', background: 'var(--card,#fff)', border: '1px solid var(--line,#E6EAF2)', borderRadius: 12, boxShadow: '0 18px 44px rgba(15,27,51,.18)', padding: 8 }}>
                 {grades.map(g => (
                   <button key={g.id} onClick={() => { setGradeId(g.id); setGradeOpen(false); }}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderRadius: 9, background: g.id === gradeId ? 'var(--card2,#EEF2F7)' : 'transparent', color: 'var(--ink,#15233D)', fontWeight: g.id === gradeId ? 800 : 600, fontSize: 14, cursor: 'pointer' }}>
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 14px', border: 0, borderRadius: 8, background: g.id === gradeId ? 'var(--card2,#F1F3F7)' : 'transparent', color: 'var(--ink,#15233D)', fontWeight: g.id === gradeId ? 800 : 500, fontSize: 15, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                     {gradeLabel(g)}
                   </button>
                 ))}
@@ -122,50 +143,84 @@ export function MathContent() {
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 18, marginBottom: 20 }}>
-        {stats.map(c => (
-          <div key={c.label} style={{ ...card, padding: 20 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '.6px', color: muted, marginBottom: 10 }}>{c.label}</div>
-            <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-.8px', color: 'var(--ink,#15233D)' }}>{c.value}</div>
-            <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>{c.note}</div>
-          </div>
-        ))}
-      </div>
+      {/* Folders (left) + sets (right) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+        <div style={{ ...card, flex: '1 1 260px', minWidth: 240, maxWidth: 300, padding: 12, maxHeight: 'calc(100vh - 230px)', overflowY: 'auto' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '1px', color: '#98A2B6', padding: '8px 12px 10px' }}>FOLDERS</div>
+          {folders.length === 0 && <div className="muted" style={{ padding: '6px 12px', fontSize: 13 }}>No folders yet.</div>}
+          {folders.length > 0 && (
+            <button onClick={() => setFolderId('')}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '11px 12px', marginBottom: 3, border: 0, borderRadius: 10, cursor: 'pointer', fontSize: 14, background: folderId === '' ? '#1A5EAB' : 'transparent', color: folderId === '' ? '#fff' : '#44506A', fontWeight: folderId === '' ? 800 : 500 }}>
+              <span style={{ flex: 1 }}>All folders</span>
+              <span style={{ fontSize: 12.5, color: folderId === '' ? '#CFE0F5' : '#98A2B6' }}>{folders.reduce((n, f) => n + (f.sets?.length || 0), 0)} sets</span>
+            </button>
+          )}
+          {folders.map(f => {
+            const on = f.id === folderId;
+            return (
+              <button key={f.id} onClick={() => setFolderId(f.id)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '11px 12px', marginBottom: 3, border: 0, borderRadius: 10, cursor: 'pointer', fontSize: 14, background: on ? '#1A5EAB' : 'transparent', color: on ? '#fff' : '#44506A', fontWeight: on ? 800 : 500 }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="M3 7l4-3h5l2 2h7v14H3z" /></svg>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                <span style={{ flex: 'none', fontSize: 12.5, color: on ? '#CFE0F5' : '#98A2B6' }}>{(f.sets?.length || 0)} sets</span>
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Sets table */}
-      <div style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--line,#EEF1F7)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink,#15233D)' }}>{TRACKS.find(t => t.k === track)?.label} sets</div>
-            <div style={{ fontSize: 13, color: muted, marginTop: 3 }}>{gradeLabel(curGrade)} · {sets.length} set{sets.length === 1 ? '' : 's'} across {folders.length} folder{folders.length === 1 ? '' : 's'}</div>
+        <div style={{ flex: '999 1 560px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+            <div style={{ flex: 1, minWidth: 200, fontSize: 15, color: muted }}>
+              {trackLabel} <span style={{ color: '#C8D0DE' }}>→</span> <span style={{ color: 'var(--ink,#15233D)', fontWeight: 800 }}>{curFolder ? curFolder.name : 'All folders'}</span>
+            </div>
+            <button onClick={() => setAddFolder(true)} style={{ height: 40, padding: '0 18px', flex: 'none', border: '1px solid var(--line,#D7DEEA)', borderRadius: 999, background: 'var(--card,#fff)', fontSize: 13.5, fontWeight: 700, color: 'var(--ink,#15233D)', cursor: 'pointer' }}>+ Add folder</button>
+            <button onClick={() => { if (!folders.length) { setAddFolder(true); return; } setNewSet(true); }} style={{ height: 40, padding: '0 20px', flex: 'none', border: 0, borderRadius: 10, background: '#1A5EAB', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Upload set</button>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setAddFolder(true)} style={{ height: 40, padding: '0 16px', border: '1px solid var(--line,#E6EAF2)', borderRadius: 10, background: 'var(--card,#fff)', color: 'var(--ink,#15233D)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>+ Add folder</button>
-            <button onClick={() => { if (!folders.length) { setAddFolder(true); return; } setNewSet(true); }} style={{ height: 40, padding: '0 18px', border: 0, borderRadius: 10, background: '#1A5EAB', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Upload set</button>
+          {err && <div className="err" style={{ marginBottom: 12 }}>{err}</div>}
+          <div style={{ ...card, overflowX: 'auto' }}>
+            <div style={{ minWidth: 760, display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '13px 20px', background: 'var(--card2,#F4F7FC)', fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: muted }}>
+              <span>SET</span><span>QUESTIONS</span><span>STATUS</span><span>UPDATED</span><span style={{ textAlign: 'right' }}>ACTIONS</span>
+            </div>
+            {loading ? (
+              <div className="muted" style={{ padding: 22 }}>Loading…</div>
+            ) : rows.length === 0 ? (
+              <div className="muted" style={{ padding: 28, textAlign: 'center' }}>No sets yet for {trackLabel} · {gradeLabel(curGrade)}{curFolder ? ` · ${curFolder.name}` : ''}. Add a folder, then upload a set.</div>
+            ) : rows.map((s, i) => {
+              const q = s.question_count ?? 0;
+              const pct = Math.max(2, Math.min(100, q)) + '%';
+              const published = s.state === 'published';
+              const busy = busyId === s.set_version_id;
+              return (
+                <div key={s.set_version_id} style={{ minWidth: 760, display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '15px 20px', borderBottom: '1px solid var(--line,#F3F5FA)', alignItems: 'center', background: i % 2 ? 'var(--card2,#FBFCFE)' : 'var(--card,#fff)' }}>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: '#1A5EAB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                    </span>
+                    <span style={{ display: 'block', fontSize: 12, color: '#98A2B6', marginTop: 3 }}>{s.folder}{s.subfolder ? ` · ${s.subfolder}` : ''}</span>
+                  </span>
+                  <span>
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: '#D4620E' }}>{q} / 100</span>
+                    <span style={{ display: 'block', height: 6, borderRadius: 999, background: '#E3E8F0', marginTop: 6, overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: pct, borderRadius: 999, background: '#E8A020' }} /></span>
+                  </span>
+                  <span><span style={badgeStyle(s.state)}>{(BADGE[s.state] || BADGE.draft).label}</span></span>
+                  <span style={{ fontSize: 13.5, color: muted }}>{s.updated_at ? new Date(s.updated_at).toLocaleDateString() : '—'}</span>
+                  <span style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    {actBtn('Edit', () => setEditId(s.set_version_id), 'default', busy || !tax)}
+                    {actBtn(published ? 'Retire' : 'Publish',
+                      () => act(() => published ? api.retireSet(s.set_version_id) : api.publishSet(s.set_version_id), s.set_version_id,
+                        published ? `Retire "${s.name}"? It will be removed from the student catalog.` : undefined),
+                      'warn', busy)}
+                    {actBtn('Copy', () => act(() => api.copySet(s.set_version_id), s.set_version_id), 'default', busy)}
+                    {actBtn('Delete', () => act(() => api.deleteSet(s.set_version_id), s.set_version_id, `Delete "${s.name}"? This cannot be undone.`), 'danger', busy)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 110px 110px 130px 110px', gap: 12, padding: '12px 22px', background: 'var(--card2,#F4F7FC)', fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: muted }}>
-          <span>SET</span><span>GRADE</span><span>ITEMS</span><span>UPDATED</span><span style={{ textAlign: 'right' }}>STATE</span>
-        </div>
-        {err && <div className="err" style={{ padding: '10px 22px' }}>{err}</div>}
-        {loading ? (
-          <div className="muted" style={{ padding: 22 }}>Loading…</div>
-        ) : sets.length === 0 ? (
-          <div className="muted" style={{ padding: 28, textAlign: 'center' }}>No sets yet for {TRACKS.find(t => t.k === track)?.label} · {gradeLabel(curGrade)}. Add a folder, then upload a set.</div>
-        ) : sets.map(s => (
-          <div key={s.set_version_id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 110px 110px 130px 110px', gap: 12, padding: '15px 22px', borderBottom: '1px solid var(--line,#F3F5FA)', fontSize: 14, alignItems: 'center' }}>
-            <span style={{ fontWeight: 700, minWidth: 0, color: 'var(--ink,#15233D)' }}>{s.name}
-              <div style={{ fontSize: 12, color: '#98A2B6', fontWeight: 400, marginTop: 2 }}>{s.folder}{s.subfolder ? ` · ${s.subfolder}` : ''}</div>
-            </span>
-            <span style={{ color: muted }}>{gradeLabel(curGrade)}</span>
-            <span style={{ color: muted }}>{s.question_count ?? 0}</span>
-            <span style={{ color: muted }}>{s.updated_at ? new Date(s.updated_at).toLocaleDateString() : '—'}</span>
-            <span style={{ textAlign: 'right' }}><span style={badgeStyle(s.state)}>{(BADGE[s.state] || BADGE.draft).label}</span></span>
-          </div>
-        ))}
       </div>
 
+      {editId && tax && <SetEditor taxonomy={tax} setId={editId} onClose={() => setEditId('')} onSaved={() => { setEditId(''); loadTree(); }} />}
       {addFolder && <AddFolderModal track={track} gradeId={gradeId} onClose={() => setAddFolder(false)} onDone={() => { setAddFolder(false); loadTree(); }} />}
       {newSet && <NewSetModal track={track} gradeId={gradeId} folders={folders} onClose={() => setNewSet(false)} onDone={() => { setNewSet(false); loadTree(); }} onNeedFolder={() => { setNewSet(false); setAddFolder(true); }} />}
     </div>

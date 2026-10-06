@@ -326,7 +326,45 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
 
   // Content-dependent reads — empty until Math content is authored.
   app.get('/v1/math/assignments', authed, async () => [] as unknown[]);
-  app.get('/v1/math/catalog', authed, async () => [] as unknown[]);
+  // Student content catalog — published Math sets for the student's grade, filtered by TRACK
+  // (curriculum | quiz | test). Mirrors the CCAT catalog's publish gate: only state='published'
+  // sets that actually have active questions are returned, so students never see empty/draft sets.
+  // Grouping by `category` (folder) is done client-side, so only folders that contain a published
+  // set appear. program='math', site_id='math' keep this fully separate from CCAT/NGAT.
+  app.get('/v1/math/catalog', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const q = req.query as { track?: string };
+    const track = (['curriculum', 'quiz', 'test'] as const).includes((q.track ?? '') as any) ? q.track! : 'curriculum';
+    const { rows } = await db.query(
+      `select sv.id as set_version_id, qs.name as title,
+              cat.name as category, coalesce(sub.name, '') as subcategory,
+              coalesce(d.key, '') as difficulty, sv.question_count
+         from ccat.students st
+         join ccat.question_sets qs on qs.grade_id = st.grade_id
+         join ccat.categories cat on cat.id = qs.category_id
+              and cat.program = 'math' and cat.site_id = 'math' and cat.track = $2 and cat.active
+         left join ccat.subcategories sub on sub.id = qs.subcategory_id
+         join ccat.question_set_versions sv on sv.question_set_id = qs.id
+              and sv.state = 'published'
+              and exists (select 1 from ccat.set_version_questions svq
+                           where svq.set_version_id = sv.id and svq.active = true)
+         left join ccat.difficulties d on d.id = sv.difficulty_id
+        where st.id = $1
+        order by cat.display_order, cat.name, sub.display_order nulls first, sv.created_at asc`,
+      [sid, track],
+    );
+    return rows.map((r: any) => ({
+      set_version_id: r.set_version_id,
+      title: r.title,
+      category: r.category,
+      subcategory: r.subcategory,
+      difficulty: r.difficulty,
+      question_count: r.question_count ?? 0,
+      progress_pct: 0,
+      progress_label: 'Not started',
+      cta: 'Start',
+    }));
+  });
   app.get('/v1/math/leaderboard', authed, async () => [] as unknown[]);
   app.get('/v1/math/activity', authed, async () => [] as unknown[]);
   app.get('/v1/math/activity/heatmap', authed, async () => [] as number[]);

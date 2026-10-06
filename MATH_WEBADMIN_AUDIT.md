@@ -21,6 +21,45 @@
 
 ## Change log
 
+### 2026-10-06 (p) — FIX: admin Math content (folders/sets) never showed in the student web app (Claude / Cowork)
+
+🔴 **Bug:** folders/sets created in Web Admin → Practice → Math → Content did not appear in `math-olympiad-web` (student) for Curriculum or Test.
+
+**Diagnosis (admin side works; the student READ path was broken in 5 layers):**
+1. `GET /v1/math/catalog` was a **hardcoded stub returning `[]`** — Curriculum & Quiz Arena always empty.
+2. `catalog()` took **no track param** — Curriculum / Quiz / Test couldn't be separated; they'd show identical content.
+3. Student Curriculum renders **sets grouped by folder**, so an **empty folder shows nothing** (the user's "Number System" folder, Grade 2, had 0 sets).
+4. Admin sets are created `state='draft'`, `question_count=0`; the student catalog (like CCAT) shows **published only** → a fresh set won't show until authored + published.
+5. **`TestPrep.tsx` was a static "coming soon" page** — made no API call, so Test could never show content.
+
+**Decision (user):** show **only folders that contain published sets** → **published-only** (hide drafts & empty folders).
+
+**Fix:**
+- **Gateway `apps/gateway/src/routes/math.ts`:** implemented `GET /v1/math/catalog?track=curriculum|quiz|test`. Returns the student's-grade, `program='math'`/`site_id='math'`, `cat.track=<track>` sets where `sv.state='published'` **and** the version has active questions (mirrors the CCAT catalog publish gate). Maps to the client `CatalogSet` shape. Grouping by `category` client-side ⇒ only folders with ≥1 published set appear.
+- **Student `Math Olympiad Web`:** `api.catalog(track?)` now sends `?track=`; `Curriculum.tsx` → `catalog('curriculum')`, `QuizArena.tsx` → `catalog('quiz')`; **`TestPrep.tsx` rewritten** to fetch `catalog('test')` and render folders/sets like Curriculum (with its empty state).
+
+All syntax-clean. **DB:** no change. **Deploy:** gateway (Render) + the student site (Vercel).
+
+**⚠️ To actually SEE content (published-only):** a folder alone is not enough. The admin must (1) add a **set** to the folder, (2) **author questions** into it, (3) **publish** it (`publishSet` → `POST /v1/admin/content/sets/:id/publish`, which exists and is program-agnostic). The user's empty "Number System" folder correctly stays hidden until it has a published set. **Open UX gap (not built, not requested):** the Math Content page (`MathContent.tsx`) only creates folders + empty draft sets — it does not yet expose question authoring or a publish button for Math. Until that's wired (or the generic Content editor is used for Math sets), there's no in-page way to author+publish a Math set. Offer to build Math authoring/publish next.
+
+---
+
+### 2026-10-06 (o) — FIX: Math Content GRADE dropdown clipped (no scroll) + "Grade Grade 2" label (Claude / Cowork)
+
+🔴 **Bugs (Web Admin → Practice → Math → Content):** (1) opening the GRADE pill showed a dropdown that **couldn't scroll** — only the top was visible; (2) the pill read **"GRADE Grade 2"** (duplicated "Grade").
+
+**Root causes:** (1) the dropdown was `position: absolute` inside the tabs+grade card, which has `overflow: hidden` — the ancestor **clipped** the popover, so its `maxHeight/overflowY` never took effect and the list (12 grades) was cut off. (2) `ccat.grades.name` is already "Grade 2" … "Grade 12", and the pill also prepended a "GRADE" caption → "GRADE Grade 2".
+
+**Fix (`apps/admin/src/pages/MathContent.tsx`, frontend only):**
+- Dropdown now renders with **`position: fixed`**, anchored to the trigger via `getBoundingClientRect()` (new `gradeBtnRef` + `gradePos` state, computed in an `openGrade()` handler). Fixed positioning escapes the card's `overflow:hidden`, so the full list scrolls (`maxHeight: min(60vh,360px)`, `overflowY:auto`). Backdrop closes it; closes on window resize.
+- Removed the redundant "GRADE" caption from the trigger → shows just **"Grade 2"**. Placeholder "Select grade" when none chosen. Added `aria-haspopup/expanded/role=listbox`.
+
+Syntax-clean. No gateway/DB change. **Redeploy admin (Vercel).**
+
+**Samples:** delivered `grade-dropdown-samples.html` (3 interactive variants — Sample 1 = clean pill "Grade 2" (implemented); Sample 2 = labelled "GRADE 2"; Sample 3 = 4×3 grade grid, no scroll). Awaiting user's pick; will swap to 2 or 3 if preferred.
+
+---
+
 ### 2026-10-05 (n) — FIX: support chat didn't update without a manual refresh (live polling) (Claude / Cowork)
 
 🔴 **Bug:** after (m) connected the threads, new messages only appeared after a page refresh on **both** apps — no live update.
