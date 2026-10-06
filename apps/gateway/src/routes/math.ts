@@ -411,6 +411,157 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     }));
   });
 
+  // ---- Math practice sessions (Curriculum: Start/Resume/Redo, single-attempt reveal, DB-persisted) ----
+  // Separate from CCAT: backed by ccat.math_practice_sessions / math_practice_answers.
+  const bt = (b: unknown): string => Array.isArray(b)
+    ? b.map((x: any) => (x && typeof x.value === 'string' ? x.value : '')).join(' ').trim() : '';
+
+  // Grade-gated, published, active questions of a math set the student can access.
+  async function mathSetQuestions(studentId: string, setVersionId: string) {
+    const { rows } = await db.query(
+      `select qv.id as question_version_id, qv.prompt_blocks, qv.option_blocks,
+              qv.correct_option_ids, qv.explanation_blocks
+         from ccat.students st
+         join ccat.question_sets qs on qs.grade_id = st.grade_id
+         join ccat.categories cat on cat.id = qs.category_id
+              and cat.program = 'math' and cat.site_id = 'math' and cat.active
+         join ccat.question_set_versions sv on sv.question_set_id = qs.id and sv.state = 'published'
+         join ccat.set_version_questions svq on svq.set_version_id = sv.id and svq.active = true
+         join ccat.question_versions qv on qv.id = svq.question_version_id
+        where st.id = $1 and sv.id = $2
+        order by svq.position asc`,
+      [studentId, setVersionId],
+    );
+    return rows as any[];
+  }
+
+  // Per-set progress for the Curriculum set list (latest session per set).
+  app.get('/v1/math/practice/progress', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const { rows } = await db.query(
+      `select distinct on (s.set_version_id)
+              s.set_version_id, s.id as session_id, s.state, s.total, s.score,
+              (select count(*)::int from ccat.math_practice_answers a where a.session_id = s.id) as answered
+         from ccat.math_practice_sessions s
+        where s.student_id = $1
+        order by s.set_version_id, s.started_at desc`,
+      [sid],
+    );
+    return rows.map((r: any) => ({
+      set_version_id: r.set_version_id, state: r.state,
+      total: r.total ?? 0, score: r.score ?? 0, answered: Number(r.answered) || 0,
+    }));
+  });
+
+  const startSchema = z.object({ set_version_id: z.string().uuid(), restart: z.boolean().optional() });
+  app.post('/v1/math/practice/start', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const b = startSchema.parse(req.body);
+    const qrows = await mathSetQuestions(sid, b.set_version_id);
+    if (qrows.length === 0) throw Errors.notFound('Set not found');
+
+    if (b.restart) {
+      await db.query(
+        `update ccat.math_practice_sessions set state='abandoned'
+          where student_id=$1 and set_version_id=$2 and state='in_progress'`,
+        [sid, b.set_version_id],
+      );
+    }
+    let session: any;
+    if (!b.restart) {
+      const ex = await db.query(
+        `select id, total, score, state from ccat.math_practice_sessions
+          where student_id=$1 and set_version_id=$2 and state='in_progress'
+          order by started_at desc limit 1`,
+        [sid, b.set_version_id],
+      );
+      session = ex.rows[0];
+    }
+    if (!session) {
+      const ins = await db.query(
+        `insert into ccat.math_practice_sessions (student_id, set_version_id, total)
+         values ($1,$2,$3) returning id, total, score, state`,
+        [sid, b.set_version_id, qrows.length],
+      );
+      session = ins.rows[0];
+    }
+    const ans = await db.query(
+      `select question_version_id, selected_option_id, is_correct
+         from ccat.math_practice_answers where session_id=$1`,
+      [session.id],
+    );
+    const byQ = new Map<string, any>(ans.rows.map((a: any) => [a.question_version_id, a]));
+    const questions = qrows.map((r: any) => {
+      const saved = byQ.get(r.question_version_id);
+      return {
+        question_version_id: r.question_version_id,
+        prompt: bt(r.prompt_blocks),
+        options: (Array.isArray(r.option_blocks) ? r.option_blocks : []).map((o: any, i: number) => ({
+          id: o.option_id ?? String(i), key: 'ABCDEFGH'[i] ?? String(i + 1), text: bt(o.content),
+        })),
+        // Reveal (answers) only for already-answered questions (resume); unanswered never leak.
+        answered: saved ? {
+          selected_option_id: saved.selected_option_id,
+          correct: saved.is_correct,
+          correct_option_ids: Array.isArray(r.correct_option_ids) ? r.correct_option_ids : [],
+          explanation: bt(r.explanation_blocks),
+        } : null,
+      };
+    });
+    return { session_id: session.id, state: session.state, score: session.score, total: session.total, questions };
+  });
+
+  const answerSchema = z.object({ question_version_id: z.string().uuid(), selected_option_id: z.string().min(1) });
+  app.post('/v1/math/practice/:id/answer', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const sessionId = (req.params as { id: string }).id;
+    const b = answerSchema.parse(req.body);
+    const sres = await db.query(
+      `select set_version_id, state from ccat.math_practice_sessions where id=$1 and student_id=$2`,
+      [sessionId, sid],
+    );
+    if (!sres.rows[0]) throw Errors.notFound('Session not found');
+    if (sres.rows[0].state !== 'in_progress') throw Errors.forbidden('SESSION_DONE', 'Session is not in progress');
+    const qres = await db.query(
+      `select qv.correct_option_ids, qv.explanation_blocks
+         from ccat.set_version_questions svq
+         join ccat.question_versions qv on qv.id = svq.question_version_id
+        where svq.set_version_id = $1 and qv.id = $2 and svq.active = true`,
+      [sres.rows[0].set_version_id, b.question_version_id],
+    );
+    if (!qres.rows[0]) throw Errors.notFound('Question not in set');
+    const correctIds: string[] = Array.isArray(qres.rows[0].correct_option_ids) ? qres.rows[0].correct_option_ids : [];
+    const explanation = bt(qres.rows[0].explanation_blocks);
+    // Single attempt: if already answered, return stored verdict (locked).
+    const ex = await db.query(
+      `select is_correct from ccat.math_practice_answers where session_id=$1 and question_version_id=$2`,
+      [sessionId, b.question_version_id],
+    );
+    if (ex.rows[0]) return { correct: ex.rows[0].is_correct, correct_option_ids: correctIds, explanation };
+    const correct = correctIds.includes(b.selected_option_id);
+    await db.query(
+      `insert into ccat.math_practice_answers (session_id, question_version_id, selected_option_id, is_correct)
+       values ($1,$2,$3,$4) on conflict (session_id, question_version_id) do nothing`,
+      [sessionId, b.question_version_id, b.selected_option_id, correct],
+    );
+    if (correct) await db.query(`update ccat.math_practice_sessions set score = score + 1 where id=$1`, [sessionId]);
+    return { correct, correct_option_ids: correctIds, explanation };
+  });
+
+  app.post('/v1/math/practice/:id/submit', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const sessionId = (req.params as { id: string }).id;
+    const upd = await db.query(
+      `update ccat.math_practice_sessions set state='completed', completed_at=now()
+        where id=$1 and student_id=$2 and state='in_progress' returning score, total`,
+      [sessionId, sid],
+    );
+    if (upd.rows[0]) return { score: upd.rows[0].score, total: upd.rows[0].total };
+    const r = await db.query(`select score, total from ccat.math_practice_sessions where id=$1 and student_id=$2`, [sessionId, sid]);
+    if (!r.rows[0]) throw Errors.notFound('Session not found');
+    return { score: r.rows[0].score, total: r.rows[0].total };
+  });
+
   // Bookmarks — kept empty/no-op for v1 (no content to bookmark yet).
   app.get('/v1/math/bookmarks', authed, async () => [] as unknown[]);
   app.delete('/v1/math/bookmarks', authed, async (_req, reply) => { reply.code(204); return null; });
