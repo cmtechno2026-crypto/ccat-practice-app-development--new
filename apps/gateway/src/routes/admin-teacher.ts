@@ -6,6 +6,7 @@ import { makeAuthenticateAdmin, requirePermission, requireSite } from '../plugin
 import { AppError, Errors } from '../errors.js';
 import { withTransaction } from '../db.js';
 import { sendEmail } from '../lib/email.js';
+import { releasePastOneTimeBookings } from '../lib/teacher-sla.js';
 import { randomBytes, scryptSync } from 'node:crypto';
 
 // Expand a weekly recurring slot into dated occurrences (no rows materialized).
@@ -114,6 +115,9 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
   app.get('/v1/admin/teacher/slots', { preHandler: [authenticateAdmin] }, async (req) => {
     requirePermission(req, 'teacher.directory');
     requireSite(req, 'teacher');
+    // Free up one-time (demo/make-up) bookings whose session already passed, so the grid shows them
+    // as available rather than permanently booked. Best-effort; never blocks the read.
+    try { await releasePastOneTimeBookings(tdb()); } catch { /* best-effort */ }
     const q = req.query as { teacher_id?: string };
     const teacherId = (q.teacher_id ?? '').trim();
     const params: any[] = [];

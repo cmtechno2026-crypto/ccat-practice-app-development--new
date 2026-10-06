@@ -182,3 +182,51 @@ export async function runTeacherSlaTick(teacherDb: DB, cfg: Config, log?: MiniLo
 
   return { reminded, expired };
 }
+
+// Auto-release past one-time (demo / make-up) bookings. Recurring bookings are permanent; demo and
+// make-up are a single occurrence, so once that occurrence's end time has passed the slot must free
+// up again (status back to 'available'), exactly like a manual "release now". The occurrence is the
+// first date on/after the booking date — in the teacher's own timezone — whose weekday matches the
+// slot's day_of_week; if that end instant is before booked_at (slot booked later that same weekday)
+// the following week's occurrence is used. Postgres `at time zone` keeps this DST-correct. Idempotent.
+export async function releasePastOneTimeBookings(teacherDb: DB, log?: MiniLog): Promise<number> {
+  const r = await teacherDb.query(
+    `with cand as (
+       select s.id,
+              coalesce(nullif(s.iana_timezone, ''), 'Asia/Kolkata') as tz,
+              s.booked_at, s.end_time,
+              case s.day_of_week
+                when 'Sunday' then 0 when 'Monday' then 1 when 'Tuesday' then 2 when 'Wednesday' then 3
+                when 'Thursday' then 4 when 'Friday' then 5 when 'Saturday' then 6 end as target_dow
+         from public.ta_slots s
+        where s.status = 'booked'
+          and coalesce(s.session_type, 'recurring') in ('demo','makeup')
+          and s.booked_at is not null
+          and s.end_time ~ '^[0-9]{1,2}:[0-9]{2}'
+     ),
+     occ as (
+       select c.id, c.tz, c.booked_at, c.end_time,
+              ((c.booked_at at time zone c.tz)::date
+                + (((c.target_dow - extract(dow from (c.booked_at at time zone c.tz))::int) % 7 + 7) % 7)) as occ_date
+         from cand c
+        where c.target_dow is not null
+     ),
+     occ2 as (
+       select o.id, o.booked_at,
+              ((o.occ_date::text || ' ' || o.end_time)::timestamp at time zone o.tz) as occ_end
+         from occ o
+     ),
+     due as (
+       select id from occ2
+        where (case when occ_end < booked_at then occ_end + interval '7 days' else occ_end end) < now()
+     )
+     update public.ta_slots s
+        set status = 'available', booked_student = '', booked_note = null, booked_by = '',
+            booked_at = null, booked_request_id = null, updated_at = now()
+       from due
+      where s.id = due.id
+     returning s.id`);
+  const n = r.rows.length;
+  if (n > 0) log?.info?.({ released: n }, 'auto-released past one-time (demo/make-up) bookings');
+  return n;
+}

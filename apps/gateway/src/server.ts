@@ -6,7 +6,7 @@ import { finalizeOverdueSessions } from './lib/finalize.js';
 import { reconcileStreaks } from './lib/streaks.js';
 import { publishScheduledAnnouncements } from './lib/comms.js';
 import { recordJobRun } from './lib/ops.js';
-import { runTeacherSlaTick } from './lib/teacher-sla.js';
+import { runTeacherSlaTick, releasePastOneTimeBookings } from './lib/teacher-sla.js';
 
 loadEnv(); // populate process.env from .env before any config is read
 const cfg = loadConfig();
@@ -55,6 +55,14 @@ if (teacherPool) {
   slaTick();
   const slaWorker = setInterval(slaTick, SLA_INTERVAL_MS);
   slaWorker.unref();
+
+  // Auto-release past one-time (demo / make-up) bookings on the same cadence, so a one-off session
+  // frees its slot once its date/time has passed instead of staying booked like a recurring class.
+  const releaseTick = () => releasePastOneTimeBookings(teacherPool!, app.log)
+    .catch((err) => app.log.error({ err }, 'one-time booking auto-release failed'));
+  releaseTick();
+  const releaseWorker = setInterval(releaseTick, SLA_INTERVAL_MS);
+  releaseWorker.unref();
 }
 
 app
