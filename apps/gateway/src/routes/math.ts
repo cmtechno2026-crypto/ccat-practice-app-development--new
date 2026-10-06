@@ -435,6 +435,22 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     return rows as any[];
   }
 
+  // Track of the set behind a set_version ('curriculum' | 'quiz' | 'test').
+  // 'test' sets run as timed exams: answers are changeable, nothing is revealed
+  // until submit. Everything else runs as single-attempt practice with instant reveal.
+  async function mathSetTrack(setVersionId: string): Promise<string> {
+    const { rows } = await db.query(
+      `select cat.track
+         from ccat.question_set_versions sv
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+         join ccat.categories cat on cat.id = qs.category_id
+        where sv.id = $1 limit 1`,
+      [setVersionId],
+    );
+    return (rows[0]?.track as string) ?? 'curriculum';
+  }
+  const isExamTrack = (track: string) => track === 'test';
+
   // Per-set progress for the Curriculum set list (latest session per set).
   app.get('/v1/math/practice/progress', authed, async (req) => {
     const sid = req.student!.studentId;
@@ -459,6 +475,9 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const b = startSchema.parse(req.body);
     const qrows = await mathSetQuestions(sid, b.set_version_id);
     if (qrows.length === 0) throw Errors.notFound('Set not found');
+    const track = await mathSetTrack(b.set_version_id);
+    const exam = isExamTrack(track);
+    const mode = exam ? 'exam' : 'practice';
 
     if (b.restart) {
       await db.query(
@@ -470,7 +489,7 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     let session: any;
     if (!b.restart) {
       const ex = await db.query(
-        `select id, total, score, state from ccat.math_practice_sessions
+        `select id, total, score, state, started_at from ccat.math_practice_sessions
           where student_id=$1 and set_version_id=$2 and state='in_progress'
           order by started_at desc limit 1`,
         [sid, b.set_version_id],
@@ -480,7 +499,7 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     if (!session) {
       const ins = await db.query(
         `insert into ccat.math_practice_sessions (student_id, set_version_id, total)
-         values ($1,$2,$3) returning id, total, score, state`,
+         values ($1,$2,$3) returning id, total, score, state, started_at`,
         [sid, b.set_version_id, qrows.length],
       );
       session = ins.rows[0];
@@ -499,16 +518,25 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
         options: (Array.isArray(r.option_blocks) ? r.option_blocks : []).map((o: any, i: number) => ({
           id: o.option_id ?? String(i), key: 'ABCDEFGH'[i] ?? String(i + 1), text: bt(o.content),
         })),
-        // Reveal (answers) only for already-answered questions (resume); unanswered never leak.
-        answered: saved ? {
+        // Practice resume reveals the stored verdict; exam resume restores only the
+        // picked option (no correctness/explanation) so a timed paper never leaks answers.
+        answered: saved ? (exam ? {
+          selected_option_id: saved.selected_option_id,
+          correct: false,
+          correct_option_ids: [] as string[],
+          explanation: '',
+        } : {
           selected_option_id: saved.selected_option_id,
           correct: saved.is_correct,
           correct_option_ids: Array.isArray(r.correct_option_ids) ? r.correct_option_ids : [],
           explanation: bt(r.explanation_blocks),
-        } : null,
+        }) : null,
       };
     });
-    return { session_id: session.id, state: session.state, score: session.score, total: session.total, questions };
+    return {
+      session_id: session.id, state: session.state, score: session.score, total: session.total,
+      mode, started_at: session.started_at, questions,
+    };
   });
 
   const answerSchema = z.object({ question_version_id: z.string().uuid(), selected_option_id: z.string().min(1) });
@@ -532,13 +560,29 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     if (!qres.rows[0]) throw Errors.notFound('Question not in set');
     const correctIds: string[] = Array.isArray(qres.rows[0].correct_option_ids) ? qres.rows[0].correct_option_ids : [];
     const explanation = bt(qres.rows[0].explanation_blocks);
-    // Single attempt: if already answered, return stored verdict (locked).
+    const correct = correctIds.includes(b.selected_option_id);
+    const exam = isExamTrack(await mathSetTrack(sres.rows[0].set_version_id));
+
+    if (exam) {
+      // Exam: the pick can change until submit, and nothing is revealed. Running
+      // score is NOT maintained here; it is computed fresh at submit from the
+      // final answers, so changing a pick never double-counts.
+      await db.query(
+        `insert into ccat.math_practice_answers (session_id, question_version_id, selected_option_id, is_correct)
+         values ($1,$2,$3,$4)
+         on conflict (session_id, question_version_id)
+         do update set selected_option_id = excluded.selected_option_id, is_correct = excluded.is_correct`,
+        [sessionId, b.question_version_id, b.selected_option_id, correct],
+      );
+      return { recorded: true };
+    }
+
+    // Practice: single attempt. If already answered, return the stored verdict (locked).
     const ex = await db.query(
       `select is_correct from ccat.math_practice_answers where session_id=$1 and question_version_id=$2`,
       [sessionId, b.question_version_id],
     );
     if (ex.rows[0]) return { correct: ex.rows[0].is_correct, correct_option_ids: correctIds, explanation };
-    const correct = correctIds.includes(b.selected_option_id);
     await db.query(
       `insert into ccat.math_practice_answers (session_id, question_version_id, selected_option_id, is_correct)
        values ($1,$2,$3,$4) on conflict (session_id, question_version_id) do nothing`,
@@ -551,15 +595,53 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   app.post('/v1/math/practice/:id/submit', authed, async (req) => {
     const sid = req.student!.studentId;
     const sessionId = (req.params as { id: string }).id;
+    const sres = await db.query(
+      `select set_version_id, score, total, state from ccat.math_practice_sessions where id=$1 and student_id=$2`,
+      [sessionId, sid],
+    );
+    if (!sres.rows[0]) throw Errors.notFound('Session not found');
+    const setVersionId = sres.rows[0].set_version_id as string;
+    const exam = isExamTrack(await mathSetTrack(setVersionId));
+
+    if (exam) {
+      // Exam: compute the final score from the recorded answers, then reveal
+      // everything (correct options + explanation + what the student picked).
+      const qrows = await mathSetQuestions(sid, setVersionId);
+      const ans = await db.query(
+        `select question_version_id, selected_option_id, is_correct
+           from ccat.math_practice_answers where session_id=$1`,
+        [sessionId],
+      );
+      const byQ = new Map<string, any>(ans.rows.map((a: any) => [a.question_version_id, a]));
+      let score = 0;
+      const review = qrows.map((r: any) => {
+        const saved = byQ.get(r.question_version_id);
+        if (saved?.is_correct) score += 1;
+        return {
+          question_version_id: r.question_version_id,
+          selected_option_id: saved?.selected_option_id ?? null,
+          correct: !!saved?.is_correct,
+          correct_option_ids: Array.isArray(r.correct_option_ids) ? r.correct_option_ids : [],
+          explanation: bt(r.explanation_blocks),
+        };
+      });
+      await db.query(
+        `update ccat.math_practice_sessions
+            set score=$2, state='completed', completed_at=now()
+          where id=$1 and state='in_progress'`,
+        [sessionId, score],
+      );
+      return { score, total: sres.rows[0].total, review };
+    }
+
+    // Practice: score was accumulated per-answer; just close the session.
     const upd = await db.query(
       `update ccat.math_practice_sessions set state='completed', completed_at=now()
         where id=$1 and student_id=$2 and state='in_progress' returning score, total`,
       [sessionId, sid],
     );
     if (upd.rows[0]) return { score: upd.rows[0].score, total: upd.rows[0].total };
-    const r = await db.query(`select score, total from ccat.math_practice_sessions where id=$1 and student_id=$2`, [sessionId, sid]);
-    if (!r.rows[0]) throw Errors.notFound('Session not found');
-    return { score: r.rows[0].score, total: r.rows[0].total };
+    return { score: sres.rows[0].score, total: sres.rows[0].total };
   });
 
   // Bookmarks — kept empty/no-op for v1 (no content to bookmark yet).

@@ -21,6 +21,12 @@
 
 ## Change log
 
+### 2026-10-06 (z) — FIX: Math bulk closed before showing Publish all / Done (Claude / Cowork)
+
+The "Created N draft sets → Publish all / Done" screen was never visible in Math's bulk importer even though the shared `BulkSets` component renders it. Cause: `MathContent.tsx` passed `onDone={() => { setBulk(false); … }}`, but `BulkSets` calls `onDone()` immediately after creating the sets — so the modal closed before the created step could show. `onDone` is a refresh hook, not a close hook (CCAT's `Content.tsx` passes `onDone={load}`). Fixed to match CCAT: `onClose={() => { setBulk(false); reloadFresh(); }}` (the modal's own Done/Cancel closes + refreshes) and `onDone={reloadFresh}` (refresh only, no close). Per-row Publish, Publish all, and Done now appear for Math exactly as in CCAT. `MathContent.tsx` only; `tsc` clean. **Deploy admin (Vercel).** No gateway/DB change.
+
+---
+
 ### 2026-10-06 (y) — Math Content: performance — tree SWR cache, parallel queries, request cancel (Claude / Cowork)
 
 Fixed "too many requests / revisiting a grade reloads all its sets, too slow." Three changes (A+B+C of the proposed set):

@@ -28,6 +28,29 @@ const COLS = 'minmax(150px,1.3fr) 150px 120px 100px minmax(250px,1.15fr)';
 // grade paints instantly from cache while a fresh copy loads in the background. Invalidated on mutations.
 const treeCache = new Map<string, any[]>();
 
+// Per-set exam time limit editor (Tests track only): number input + ±5 steppers, persists via patchSet.
+function TimeLimitCell({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
+  const [v, setV] = useState(String(value));
+  useEffect(() => { setV(String(value)); }, [value]);
+  const clamp = (n: number) => Math.max(1, Math.min(180, Math.round(n || 1)));
+  const commit = (raw: number) => { const c = clamp(raw); setV(String(c)); if (c !== value) onCommit(c); };
+  const cur = Number(v) || value;
+  const stepBtn: React.CSSProperties = { border: '1px solid var(--line,#D7DEEA)', background: 'var(--card,#fff)', cursor: 'pointer', width: 26, height: 17, lineHeight: '13px', fontSize: 9, color: '#44506A', padding: 0 };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <input value={v} inputMode="numeric" pattern="[0-9]*"
+        onChange={e => setV(e.target.value.replace(/\D/g, ''))}
+        onBlur={() => commit(Number(v) || value)}
+        onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+        style={{ width: 54, height: 36, textAlign: 'center', border: '1px solid var(--line,#D7DEEA)', borderRadius: 8, fontWeight: 700, fontSize: 14, background: 'var(--card,#fff)', color: 'var(--ink,#15233D)' }} />
+      <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
+        <button type="button" aria-label="Increase time limit" style={{ ...stepBtn, borderRadius: '6px 6px 0 0', borderBottom: 0 }} onClick={() => commit(cur + 5)}>▲</button>
+        <button type="button" aria-label="Decrease time limit" style={{ ...stepBtn, borderRadius: '0 0 6px 6px' }} onClick={() => commit(cur - 5)}>▼</button>
+      </span>
+    </span>
+  );
+}
+
 export function MathContent() {
   const [grades, setGrades] = useState<any[]>([]);
   const [gradeId, setGradeId] = useState('');
@@ -118,6 +141,21 @@ export function MathContent() {
   const trackLabel = TRACKS.find(t => t.k === track)?.label;
   const showFolders = track === 'curriculum';
   const crumbChild = track === 'curriculum' ? (curFolder ? curFolder.name : 'All folders') : (track === 'test' ? 'All test papers' : 'All quizzes');
+  const isTest = track === 'test';
+  const cols = isTest ? 'minmax(150px,1.3fr) 150px 120px 100px 150px minmax(220px,1.1fr)' : COLS;
+  const tableMinWidth = isTest ? 920 : 760;
+  // Persist a per-set time limit optimistically (update folders + SWR cache, then PATCH).
+  const commitDuration = (svId: string, n: number) => {
+    const patch = (d: number | null) => {
+      const upd = (fs: any[]) => fs.map(f => ({ ...f, sets: (f.sets || []).map((s: any) => s.set_version_id === svId ? { ...s, duration_minutes: d } : s) }));
+      setFolders(upd);
+      const key = `${track}:${gradeId}`; const cached = treeCache.get(key); if (cached) treeCache.set(key, upd(cached));
+    };
+    let prev: number | null = null;
+    for (const f of folders) for (const s of (f.sets || [])) if (s.set_version_id === svId) prev = s.duration_minutes ?? null;
+    patch(n);
+    api.patchSet(svId, { duration_minutes: n }).catch(e => { patch(prev); setErr((e as Error).message); });
+  };
 
   const actBtn = (label: string, onClick: () => void, variant: 'default' | 'primary' | 'warn' | 'danger', disabled = false): React.ReactNode => {
     const styles: Record<string, React.CSSProperties> = {
@@ -224,8 +262,8 @@ export function MathContent() {
           </div>
           {err && <div className="err" style={{ marginBottom: 12 }}>{err}</div>}
           <div style={{ ...card, overflowX: 'auto' }}>
-            <div style={{ minWidth: 760, display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '13px 20px', background: 'var(--card2,#F4F7FC)', fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: muted }}>
-              <span>SET</span><span>QUESTIONS</span><span>STATUS</span><span>UPDATED</span><span style={{ textAlign: 'right' }}>ACTIONS</span>
+            <div style={{ minWidth: tableMinWidth, display: 'grid', gridTemplateColumns: cols, gap: 12, padding: '13px 20px', background: 'var(--card2,#F4F7FC)', fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: muted }}>
+              <span>SET</span><span>QUESTIONS</span><span>STATUS</span><span>UPDATED</span>{isTest && <span>TIME LIMIT (MIN)</span>}<span style={{ textAlign: 'right' }}>ACTIONS</span>
             </div>
             {loading ? (
               <div className="muted" style={{ padding: 22 }}>Loading…</div>
@@ -237,7 +275,7 @@ export function MathContent() {
               const published = s.state === 'published';
               const busy = busyId === s.set_version_id;
               return (
-                <div key={s.set_version_id} style={{ minWidth: 760, display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '15px 20px', borderBottom: '1px solid var(--line,#F3F5FA)', alignItems: 'center', background: i % 2 ? 'var(--card2,#FBFCFE)' : 'var(--card,#fff)' }}>
+                <div key={s.set_version_id} style={{ minWidth: tableMinWidth, display: 'grid', gridTemplateColumns: cols, gap: 12, padding: '15px 20px', borderBottom: '1px solid var(--line,#F3F5FA)', alignItems: 'center', background: i % 2 ? 'var(--card2,#FBFCFE)' : 'var(--card,#fff)' }}>
                   <span style={{ minWidth: 0 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 800, color: '#1A5EAB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
@@ -250,6 +288,9 @@ export function MathContent() {
                   </span>
                   <span><span style={badgeStyle(s.state)}>{(BADGE[s.state] || BADGE.draft).label}</span></span>
                   <span style={{ fontSize: 13.5, color: muted }}>{s.updated_at ? new Date(s.updated_at).toLocaleDateString() : '—'}</span>
+                  {isTest && (
+                    <span><TimeLimitCell value={s.duration_minutes ?? 30} onCommit={(n) => commitDuration(s.set_version_id, n)} /></span>
+                  )}
                   <span style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                     {actBtn('Edit', () => setEditId(s.set_version_id), 'default', busy || !tax)}
                     {actBtn(published ? 'Retire' : 'Publish',

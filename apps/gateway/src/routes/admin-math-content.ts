@@ -87,7 +87,7 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
       ),
       db.query(
         `select sv.id set_version_id, qs.id set_id, qs.name, qs.category_id, qs.subcategory_id,
-                sv.state, sv.question_count, sv.allowed_practice, sv.allowed_exam,
+                sv.state, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.duration_minutes,
                 coalesce(sv.published_at, sv.created_at) updated_at
            from ccat.question_sets qs
            join ccat.question_set_versions sv on sv.question_set_id = qs.id
