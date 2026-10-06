@@ -95,6 +95,8 @@ export function MathContent() {
   const card: React.CSSProperties = { background: 'var(--card,#fff)', border: '1px solid var(--line,#E6EAF2)', borderRadius: 16 };
   const muted = 'var(--muted,#64718A)';
   const trackLabel = TRACKS.find(t => t.k === track)?.label;
+  const showFolders = track === 'curriculum';
+  const crumbChild = track === 'curriculum' ? (curFolder ? curFolder.name : 'All folders') : (track === 'test' ? 'All test papers' : 'All quizzes');
 
   const actBtn = (label: string, onClick: () => void, variant: 'default' | 'primary' | 'warn' | 'danger', disabled = false): React.ReactNode => {
     const styles: Record<string, React.CSSProperties> = {
@@ -149,8 +151,9 @@ export function MathContent() {
         </div>
       </div>
 
-      {/* Folders (left) + sets (right) */}
+      {/* Folders (left, Curriculum only) + sets (right) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+        {showFolders && (
         <div style={{ ...card, flex: '1 1 260px', minWidth: 240, maxWidth: 300, padding: 12, maxHeight: 'calc(100vh - 230px)', overflowY: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px 10px 12px' }}>
             <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '1px', color: '#98A2B6' }}>FOLDERS</span>
@@ -179,11 +182,12 @@ export function MathContent() {
             );
           })}
         </div>
+        )}
 
         <div style={{ flex: '999 1 560px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <div style={{ flex: 1, minWidth: 200, fontSize: 15, color: muted }}>
-              {trackLabel} <span style={{ color: '#C8D0DE' }}>→</span> <span style={{ color: 'var(--ink,#15233D)', fontWeight: 800 }}>{curFolder ? curFolder.name : 'All folders'}</span>
+              {trackLabel} <span style={{ color: '#C8D0DE' }}>→</span> <span style={{ color: 'var(--ink,#15233D)', fontWeight: 800 }}>{crumbChild}</span>
             </div>
             <span title="Remembered default — pre-fills Questions per set in Bulk add sets" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flex: 'none', background: 'var(--card2,#F7F9FD)', border: '1px solid var(--line,#E6EAF2)', borderRadius: 12, padding: '5px 10px' }}>
               <span className="muted" style={{ fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', fontWeight: 700 }}>Default per set</span>
@@ -205,7 +209,7 @@ export function MathContent() {
             {loading ? (
               <div className="muted" style={{ padding: 22 }}>Loading…</div>
             ) : rows.length === 0 ? (
-              <div className="muted" style={{ padding: 28, textAlign: 'center' }}>No sets yet for {trackLabel} · {gradeLabel(curGrade)}{curFolder ? ` · ${curFolder.name}` : ''}. Add a folder, then upload a set.</div>
+              <div className="muted" style={{ padding: 28, textAlign: 'center' }}>No sets yet for {trackLabel} · {gradeLabel(curGrade)}{showFolders && curFolder ? ` · ${curFolder.name}` : ''}. {showFolders ? 'Add a folder, then upload a set.' : 'Use Bulk add sets or Upload set to get started.'}</div>
             ) : rows.map((s, i) => {
               const q = s.question_count ?? 0;
               const pct = Math.max(2, Math.min(100, q)) + '%';

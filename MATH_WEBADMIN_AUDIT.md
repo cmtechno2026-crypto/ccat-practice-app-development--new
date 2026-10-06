@@ -21,6 +21,12 @@
 
 ## Change log
 
+### 2026-10-06 (w) — Math Content: "Default per set" stepper added by Bulk add sets (Claude / Cowork)
+
+Added the **DEFAULT PER SET** stepper (−/value/+) to the breadcrumb line, left of **Bulk add sets**, matching CCAT. Uses the same persisted helpers from `components/BulkSets` (`loadDefaultPerSet`/`saveDefaultPerSet`, clamped 1…`PER_SET_CEILING`=100, ±5 steps). The value is remembered (localStorage) and pre-fills "Questions per set" when the Math bulk importer opens. `MathContent.tsx` only. Syntax-clean, no gateway/DB change. **Deploy admin (Vercel).**
+
+---
+
 ### 2026-10-06 (v) — Math Content: Delete / Retire are now one-click (removed confirm dialogs) (Claude / Cowork)
 
 User request: remove the browser confirm prompts on Delete and Retire — act on one click. Removed the `window.confirm` messages passed to `act()` for both the **Retire** and **Delete** row actions in `MathContent.tsx` (the `confirmMsg` param remains in `act` but is no longer used). Publish/Copy were already one-click. Syntax-clean. Frontend only, no gateway/DB change. **Deploy admin (Vercel).**

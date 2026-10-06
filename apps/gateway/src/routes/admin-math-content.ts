@@ -49,6 +49,22 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
     const q = req.query as { track?: string; grade_id?: string };
     const track = (TRACKS as readonly string[]).includes(q.track ?? '') ? q.track! : 'curriculum';
     const gradeId = q.grade_id ?? null;
+    // Tests & Quiz are FLAT in the admin (no folder panel): ensure one default
+    // category per grade so Bulk add / Upload always have a target. Curriculum keeps real folders.
+    if (gradeId && (track === 'test' || track === 'quiz')) {
+      const defName = track === 'test' ? 'All test papers' : 'All quizzes';
+      const existing = await db.query(
+        `select 1 from ccat.categories where program=$1 and site_id=$2 and track=$3 and grade_id=$4 and active limit 1`,
+        [PROGRAM, SITE, track, gradeId],
+      );
+      if (existing.rows.length === 0) {
+        await db.query(
+          `insert into ccat.categories (key, name, program, site_id, track, grade_id, display_order, active)
+           values ($1,$2,$3,$4,$5,$6,0,true)`,
+          [`math-${track}-all-${gradeId}`, defName, PROGRAM, SITE, track, gradeId],
+        );
+      }
+    }
     const cats = await db.query(
       `select c.id, c.name, c.display_order,
               (select count(*) from ccat.subcategories s where s.category_id = c.id and s.active)::int subfolder_count
