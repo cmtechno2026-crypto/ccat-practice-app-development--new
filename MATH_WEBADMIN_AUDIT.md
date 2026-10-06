@@ -21,6 +21,35 @@
 
 ## Change log
 
+### 2026-10-06 (v) — Math Content: Delete / Retire are now one-click (removed confirm dialogs) (Claude / Cowork)
+
+User request: remove the browser confirm prompts on Delete and Retire — act on one click. Removed the `window.confirm` messages passed to `act()` for both the **Retire** and **Delete** row actions in `MathContent.tsx` (the `confirmMsg` param remains in `act` but is no longer used). Publish/Copy were already one-click. Syntax-clean. Frontend only, no gateway/DB change. **Deploy admin (Vercel).**
+
+---
+
+### 2026-10-06 (u) — FIX: Requests/notifications dropdown rendered behind Math Content cards (z-index) (Claude / Cowork)
+
+🔴 **Bug:** on the Math Content page, opening the header **Requests** (notifications) dropdown rendered it **behind** the Content cards (grade pill / folders).
+**Root cause:** `theme.css` `.topbar` is `position: sticky; z-index: 5`, which caps the whole header — including the notifications dropdown — at stacking level 5. The Math Content tabs card (added in entry o) used `position: relative; zIndex: 15`, creating a stacking context **above** the topbar, so the Math content painted over the dropdown. CCAT/NGAT pages are unaffected (their content sets no z-index above 5).
+**Fix (`MathContent.tsx`):** removed `position: relative; zIndex: 15` from the tabs+grade card (kept `overflow: visible`). The grade dropdown is `position: fixed` (viewport-positioned via `getBoundingClientRect`), so it still floats above the table/topbar without the card being a stacking context. Scoped to Math only; no shared CSS touched, no change to CCAT/NGAT.
+
+Syntax-clean. Frontend only, no gateway/DB change. **Deploy admin (Vercel).**
+
+---
+
+### 2026-10-06 (t) — FIX: Publish blanked the table; removed Copy; actions on one line (Claude / Cowork)
+
+🔴 **Bug: clicking a row's Publish "blanked the screen" then published.**
+**Diagnosis (complete):** the per-row action handler `act()` called `loadTree()`, which sets the page `loading` flag → the **entire sets table** is replaced by a single "Loading…" line. Publish is **slow** — the gateway publish route validates every member question inside a transaction, over the trans-Pacific link to the **Seoul DB** (the user's Network tab showed the `publish` request at **3.02s**). So the table stayed blanked for ~3s+ (publish + tree refetch) before the row flipped to Published. Not a crash (no error boundary exists, and the set did publish) — it was the `loading` wipe over a slow request. The 3s latency itself is the DB-region issue (standing infra fix).
+
+**Fix (`apps/admin/src/pages/MathContent.tsx`, frontend only):**
+- `loadTree(silent?)` added; row actions (`act`) now call `loadTree(true)` — **silent refetch that does NOT toggle the page loading state**, so the full table stays visible. Only the clicked row shows busy (disabled buttons) during the call. No more blank.
+- **Removed the Copy action.** Row actions are now **Edit · Publish/Retire · Delete**, and the actions cell is `flexWrap: nowrap` so they stay on one line (was wrapping Delete to a second line).
+
+Syntax-clean. No gateway/DB change. **Deploy admin (Vercel).** (Publish will still take ~3s until the DB moves to a NA region — that's latency, not the blank.)
+
+---
+
 ### 2026-10-06 (s) — Math Content: Publish button blue + bulk Publish-all/Done confirmed (Claude / Cowork)
 
 - **Publish action button is now blue** (`#1A5EAB` filled), distinct from **Retire** which stays amber (`components` row actions in `MathContent.tsx`). Added a `primary` variant to the row's `actBtn`; the button uses `primary` when the set is draft (Publish) and `warn` when published (Retire). Matches the CCAT content row (image 2).

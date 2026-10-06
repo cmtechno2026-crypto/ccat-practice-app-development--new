@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { SetEditor } from '../components/SetEditor';
-import { BulkSets, PER_SET_CEILING } from '../components/BulkSets';
+import { BulkSets, PER_SET_CEILING, loadDefaultPerSet, saveDefaultPerSet } from '../components/BulkSets';
 
 // Math Olympiad — admin-managed content, styled to the Content-Page-Admin mockup: a tabs + GRADE card,
 // a FOLDERS tree (left), and a sets table (SET · QUESTIONS · STATUS · UPDATED · ACTIONS) for the chosen
@@ -39,6 +39,8 @@ export function MathContent() {
   const [newSet, setNewSet] = useState(false);
   const [addFolder, setAddFolder] = useState(false);
   const [bulk, setBulk] = useState(false);
+  const [defPerSet, setDefPerSet] = useState<number>(loadDefaultPerSet);
+  const setDefault = (n: number) => { const v = Math.min(PER_SET_CEILING, Math.max(1, Math.round(n || 1))); setDefPerSet(v); saveDefaultPerSet(v); };
 
   const [gradeOpen, setGradeOpen] = useState(false);
   const gradeBtnRef = useRef<HTMLButtonElement>(null);
@@ -112,7 +114,7 @@ export function MathContent() {
   return (
     <div style={{ padding: '2px' }}>
       {/* Tabs + Grade card */}
-      <div style={{ ...card, padding: '0 0 0 6px', marginBottom: 20, display: 'flex', alignItems: 'stretch', gap: 10, overflow: 'visible', position: 'relative', zIndex: 15 }}>
+      <div style={{ ...card, padding: '0 0 0 6px', marginBottom: 20, display: 'flex', alignItems: 'stretch', gap: 10, overflow: 'visible' }}>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'stretch', gap: 18, overflowX: 'auto', padding: '0 10px' }}>
           {TRACKS.map(t => {
             const on = t.k === track;
@@ -183,6 +185,15 @@ export function MathContent() {
             <div style={{ flex: 1, minWidth: 200, fontSize: 15, color: muted }}>
               {trackLabel} <span style={{ color: '#C8D0DE' }}>→</span> <span style={{ color: 'var(--ink,#15233D)', fontWeight: 800 }}>{curFolder ? curFolder.name : 'All folders'}</span>
             </div>
+            <span title="Remembered default — pre-fills Questions per set in Bulk add sets" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flex: 'none', background: 'var(--card2,#F7F9FD)', border: '1px solid var(--line,#E6EAF2)', borderRadius: 12, padding: '5px 10px' }}>
+              <span className="muted" style={{ fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', fontWeight: 700 }}>Default per set</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', border: '1.5px solid var(--line,#E6EAF2)', borderRadius: 9, overflow: 'hidden', background: 'var(--card,#fff)' }}>
+                <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 30 }} disabled={defPerSet <= 1} onClick={() => setDefault(defPerSet - 5)}>−</button>
+                <input type="text" inputMode="numeric" pattern="[0-9]*" value={defPerSet} onChange={e => setDefault(Number(e.target.value.replace(/\D/g, '')))}
+                  style={{ width: 56, textAlign: 'center', border: 0, borderLeft: '1px solid var(--line,#E6EAF2)', borderRight: '1px solid var(--line,#E6EAF2)', borderRadius: 0, fontWeight: 700, fontSize: 14 }} />
+                <button type="button" className="btn ghost sm" style={{ border: 0, borderRadius: 0, width: 30 }} disabled={defPerSet >= PER_SET_CEILING} onClick={() => setDefault(defPerSet + 5)}>+</button>
+              </span>
+            </span>
             <button onClick={() => { if (folderId && tax) setBulk(true); }} disabled={!folderId || !tax} title={!folderId ? 'Select a folder first' : undefined} style={{ height: 40, padding: '0 18px', flex: 'none', border: '1px solid var(--line,#D7DEEA)', borderRadius: 999, background: 'var(--card,#fff)', fontSize: 13.5, fontWeight: 700, color: (!folderId || !tax) ? '#98A2B6' : 'var(--ink,#15233D)', cursor: (!folderId || !tax) ? 'not-allowed' : 'pointer', opacity: (!folderId || !tax) ? .6 : 1 }}>⤓ Bulk add sets</button>
             <button onClick={() => { if (!folders.length) { setAddFolder(true); return; } setNewSet(true); }} style={{ height: 40, padding: '0 20px', flex: 'none', border: 0, borderRadius: 10, background: '#1A5EAB', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Upload set</button>
           </div>
@@ -217,10 +228,9 @@ export function MathContent() {
                   <span style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                     {actBtn('Edit', () => setEditId(s.set_version_id), 'default', busy || !tax)}
                     {actBtn(published ? 'Retire' : 'Publish',
-                      () => act(() => published ? api.retireSet(s.set_version_id) : api.publishSet(s.set_version_id), s.set_version_id,
-                        published ? `Retire "${s.name}"? It will be removed from the student catalog.` : undefined),
+                      () => act(() => published ? api.retireSet(s.set_version_id) : api.publishSet(s.set_version_id), s.set_version_id),
                       published ? 'warn' : 'primary', busy)}
-                    {actBtn('Delete', () => act(() => api.deleteSet(s.set_version_id), s.set_version_id, `Delete "${s.name}"? This cannot be undone.`), 'danger', busy)}
+                    {actBtn('Delete', () => act(() => api.deleteSet(s.set_version_id), s.set_version_id), 'danger', busy)}
                   </span>
                 </div>
               );

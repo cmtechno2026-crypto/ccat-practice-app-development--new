@@ -373,6 +373,44 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
   app.post('/v1/math/sessions/start', authed, async () => ({ sessionId: '', questions: [] as unknown[] }));
   app.get('/v1/math/sessions/:id/result', authed, async () => { throw Errors.notFound('No result'); });
 
+  // Practice questions for a Curriculum set (inline runner). Returns the active,
+  // published questions of a set the student's grade can access, with options,
+  // correct option id(s) and explanation for immediate practice feedback.
+  // PRACTICE ONLY — it intentionally returns answers; an exam runner would use a
+  // separate endpoint that withholds correct_option_ids.
+  app.get('/v1/math/sets/:id/questions', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const setVersionId = (req.params as { id: string }).id;
+    const { rows } = await db.query(
+      `select qv.id as question_version_id, qv.prompt_blocks, qv.option_blocks,
+              qv.correct_option_ids, qv.explanation_blocks
+         from ccat.students st
+         join ccat.question_sets qs on qs.grade_id = st.grade_id
+         join ccat.categories cat on cat.id = qs.category_id
+              and cat.program = 'math' and cat.site_id = 'math' and cat.active
+         join ccat.question_set_versions sv on sv.question_set_id = qs.id and sv.state = 'published'
+         join ccat.set_version_questions svq on svq.set_version_id = sv.id and svq.active = true
+         join ccat.question_versions qv on qv.id = svq.question_version_id
+        where st.id = $1 and sv.id = $2
+        order by svq.position asc`,
+      [sid, setVersionId],
+    );
+    const blocksText = (b: unknown): string => Array.isArray(b)
+      ? b.map((x: any) => (x && typeof x.value === 'string' ? x.value : '')).join(' ').trim()
+      : '';
+    return rows.map((r: any, _i: number) => ({
+      question_version_id: r.question_version_id,
+      prompt: blocksText(r.prompt_blocks),
+      options: (Array.isArray(r.option_blocks) ? r.option_blocks : []).map((o: any, i: number) => ({
+        id: o.option_id ?? String(i),
+        key: 'ABCDEFGH'[i] ?? String(i + 1),
+        text: blocksText(o.content),
+      })),
+      correct_option_ids: Array.isArray(r.correct_option_ids) ? r.correct_option_ids : [],
+      explanation: blocksText(r.explanation_blocks),
+    }));
+  });
+
   // Bookmarks — kept empty/no-op for v1 (no content to bookmark yet).
   app.get('/v1/math/bookmarks', authed, async () => [] as unknown[]);
   app.delete('/v1/math/bookmarks', authed, async (_req, reply) => { reply.code(204); return null; });
