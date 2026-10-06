@@ -500,10 +500,13 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
         [sid, b.set_version_id],
       );
     }
-    // Quiz timer stored on the session (paused remaining). Exam sessions keep it null
-    // (they run on a wall-clock from started_at). On a fresh start/redo, seed it from
-    // the picker; on resume, the stored value is kept and returned.
-    const freshTimer = exam ? null : (b.timer_sec ?? null);
+    // Timer stored on the session as a paused remaining (seconds). Quiz: seed from the
+    // student's picker. Exam: seed from the admin duration (minutes → seconds; 30 min
+    // fallback). On a fresh start/redo it's seeded; on resume the stored value is kept.
+    // Either way it's rewritten when the student leaves, so Resume continues from here.
+    const freshTimer = exam
+      ? (durationMinutes && durationMinutes > 0 ? durationMinutes : 30) * 60
+      : (b.timer_sec ?? null);
     let session: any;
     if (!b.restart) {
       const ex = await db.query(
@@ -554,7 +557,7 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     return {
       session_id: session.id, state: session.state, score: session.score, total: session.total,
       mode, started_at: session.started_at, duration_minutes: durationMinutes,
-      timer_remaining_sec: exam ? null : (session.timer_remaining_sec ?? null),
+      timer_remaining_sec: session.timer_remaining_sec ?? null,
       questions,
     };
   });
