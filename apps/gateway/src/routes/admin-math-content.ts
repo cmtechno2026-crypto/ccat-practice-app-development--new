@@ -65,36 +65,39 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
         );
       }
     }
-    const cats = await db.query(
-      `select c.id, c.name, c.display_order,
-              (select count(*) from ccat.subcategories s where s.category_id = c.id and s.active)::int subfolder_count
-         from ccat.categories c
-        where c.program = $1 and c.site_id = $2 and c.track = $3 and c.active
-          and ($4::uuid is null or c.grade_id = $4)
-        order by c.display_order, c.name`,
-      [PROGRAM, SITE, track, gradeId],
-    );
-    const subs = await db.query(
-      `select s.id, s.category_id, s.name, s.display_order
-         from ccat.subcategories s
-         join ccat.categories c on c.id = s.category_id
-        where c.program = $1 and c.site_id = $2 and c.track = $3 and s.active
-          and ($4::uuid is null or c.grade_id = $4)
-        order by s.display_order, s.name`,
-      [PROGRAM, SITE, track, gradeId],
-    );
-    const sets = await db.query(
-      `select sv.id set_version_id, qs.id set_id, qs.name, qs.category_id, qs.subcategory_id,
-              sv.state, sv.question_count, sv.allowed_practice, sv.allowed_exam,
-              coalesce(sv.published_at, sv.created_at) updated_at
-         from ccat.question_sets qs
-         join ccat.question_set_versions sv on sv.question_set_id = qs.id
-         join ccat.categories c on c.id = qs.category_id
-        where c.program = $1 and c.site_id = $2 and c.track = $3
-          and ($4::uuid is null or qs.grade_id = $4)
-        order by (sv.state = 'retired'), sv.created_at asc`,
-      [PROGRAM, SITE, track, gradeId],
-    );
+    // Run the three tree reads in parallel — one trans-Pacific round trip instead of three serial ones.
+    const [cats, subs, sets] = await Promise.all([
+      db.query(
+        `select c.id, c.name, c.display_order,
+                (select count(*) from ccat.subcategories s where s.category_id = c.id and s.active)::int subfolder_count
+           from ccat.categories c
+          where c.program = $1 and c.site_id = $2 and c.track = $3 and c.active
+            and ($4::uuid is null or c.grade_id = $4)
+          order by c.display_order, c.name`,
+        [PROGRAM, SITE, track, gradeId],
+      ),
+      db.query(
+        `select s.id, s.category_id, s.name, s.display_order
+           from ccat.subcategories s
+           join ccat.categories c on c.id = s.category_id
+          where c.program = $1 and c.site_id = $2 and c.track = $3 and s.active
+            and ($4::uuid is null or c.grade_id = $4)
+          order by s.display_order, s.name`,
+        [PROGRAM, SITE, track, gradeId],
+      ),
+      db.query(
+        `select sv.id set_version_id, qs.id set_id, qs.name, qs.category_id, qs.subcategory_id,
+                sv.state, sv.question_count, sv.allowed_practice, sv.allowed_exam,
+                coalesce(sv.published_at, sv.created_at) updated_at
+           from ccat.question_sets qs
+           join ccat.question_set_versions sv on sv.question_set_id = qs.id
+           join ccat.categories c on c.id = qs.category_id
+          where c.program = $1 and c.site_id = $2 and c.track = $3
+            and ($4::uuid is null or qs.grade_id = $4)
+          order by (sv.state = 'retired'), sv.created_at asc`,
+        [PROGRAM, SITE, track, gradeId],
+      ),
+    ]);
     const subsByCat: Record<string, any[]> = {};
     for (const s of subs.rows) (subsByCat[s.category_id] ??= []).push(s);
     const setsByCat: Record<string, any[]> = {};

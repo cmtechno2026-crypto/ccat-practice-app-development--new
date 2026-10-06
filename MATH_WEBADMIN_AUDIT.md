@@ -21,6 +21,28 @@
 
 ## Change log
 
+### 2026-10-06 (y) — Math Content: performance — tree SWR cache, parallel queries, request cancel (Claude / Cowork)
+
+Fixed "too many requests / revisiting a grade reloads all its sets, too slow." Three changes (A+B+C of the proposed set):
+
+- **A — client SWR cache (`MathContent.tsx`).** Module-level `treeCache` keyed by `track:gradeId`. On revisit the view paints instantly from cache (no full-screen spinner) while a fresh copy loads in the background and updates. Invalidated on every mutation (`act` row actions, SetEditor save, Bulk/AddFolder/NewSet `onDone` → new `reloadFresh()`), so data stays correct.
+- **B — parallel gateway queries (`admin-math-content.ts`).** The tree's categories + subcategories + sets reads now run in one `Promise.all` instead of three serial `await`s — one trans-Pacific round trip instead of three (~2.1s → ~0.7s per fresh load). Ensure-default-folder step still runs before it.
+- **C — request cancellation (`api.ts` + `MathContent.tsx`).** `req()` and `api.mathTree()` take an optional `AbortSignal`; `loadTree` aborts the previous in-flight tree fetch on each track/grade switch and on unmount, and only applies the response if it's still the current request. Removes the stacked/duplicate `tree?track=…` calls and fixes stale-overwrite races. `AbortError` is swallowed.
+
+Not touched (standing/optional): default-folder SELECT still on the test/quiz hot path (D); `question_sets(category_id,grade_id)` index (E); **Seoul DB region (F) remains the absolute-latency ceiling — each remaining round trip is still ~200ms; only a NA-region move fixes that.** `tsc --noEmit` clean for admin + gateway. CCAT/NGAT unaffected. **Deploy gateway (Render) + admin (Vercel).**
+
+---
+
+### 2026-10-06 (x) — Math Content: Tests & Quiz Arena rebuilt flat to match mockups (Claude / Cowork)
+
+Made the **Tests** and **Quiz Arena** tabs match `Tests-Page-standalone.html` / `Quiz-Arena-Page-standalone.html`: the left **FOLDERS** panel is hidden (Curriculum keeps it), the sets list goes full-width, and the breadcrumb reads **Tests → All test papers** / **Quiz Arena → All quizzes** instead of a folder name. Empty-state copy for these tabs now says "Use Bulk add sets or Upload set to get started" (no "add a folder").
+
+Decision (asked, per standing rule): **Auto default folder**. Because the backend still requires a category per set, the gateway `GET /v1/admin/math/tree` now auto-creates/reuses **one** hidden default category per grade for `track='test'|'quiz'` (named "All test papers" / "All quizzes", key `math-<track>-all-<gradeId>`, idempotent existence-check before insert). So Bulk add / Upload "just work" with no folder picker, and the student catalog joins by category as before. Curriculum is untouched (real topic folders).
+
+Files: `apps/admin/src/pages/MathContent.tsx` (derived `showFolders`/`crumbChild`, panel wrapped in `{showFolders && …}`), `apps/gateway/src/routes/admin-math-content.ts` (ensure-default block in the tree handler). DB verified live (`cqzpzhdleqyrmedymypg`): Math had folders only for Curriculum; Test/Quiz had zero — the default folders are created lazily on first view. `tsc --noEmit` clean for admin + gateway. **Deploy gateway (Render) and admin (Vercel).** CCAT/NGAT unaffected.
+
+---
+
 ### 2026-10-06 (w) — Math Content: "Default per set" stepper added by Bulk add sets (Claude / Cowork)
 
 Added the **DEFAULT PER SET** stepper (−/value/+) to the breadcrumb line, left of **Bulk add sets**, matching CCAT. Uses the same persisted helpers from `components/BulkSets` (`loadDefaultPerSet`/`saveDefaultPerSet`, clamped 1…`PER_SET_CEILING`=100, ±5 steps). The value is remembered (localStorage) and pre-fills "Questions per set" when the Math bulk importer opens. `MathContent.tsx` only. Syntax-clean, no gateway/DB change. **Deploy admin (Vercel).**

@@ -24,6 +24,9 @@ const badgeStyle = (state: string): React.CSSProperties => {
   return { background: b.bg, color: b.fg, fontWeight: 700, fontSize: 11.5, padding: '6px 11px', borderRadius: 999, display: 'inline-block', whiteSpace: 'nowrap' };
 };
 const COLS = 'minmax(150px,1.3fr) 150px 120px 100px minmax(250px,1.15fr)';
+// SWR cache for the Math tree, keyed by `track:gradeId`. Survives tab/grade switches so revisiting a
+// grade paints instantly from cache while a fresh copy loads in the background. Invalidated on mutations.
+const treeCache = new Map<string, any[]>();
 
 export function MathContent() {
   const [grades, setGrades] = useState<any[]>([]);
@@ -57,16 +60,34 @@ export function MathContent() {
     api.taxonomy('math').then(setTax).catch(() => {});
   }, []);
 
+  const abortRef = useRef<AbortController | null>(null);
+  const applyTree = (fs: any[]) => {
+    setFolders(fs);
+    setFolderId(cur => (cur && fs.some((f: any) => f.id === cur)) ? cur : (fs[0]?.id || ''));
+  };
   const loadTree = useCallback((silent = false) => {
     if (!gradeId) return;
-    if (!silent) setLoading(true);
+    const key = `${track}:${gradeId}`;
+    const cached = treeCache.get(key);
+    if (cached) applyTree(cached);              // instant paint from cache, no spinner
+    if (!cached && !silent) setLoading(true);
     setErr('');
-    api.mathTree(track, gradeId).then(r => {
-      const fs = r.folders || []; setFolders(fs);
-      setFolderId(cur => (cur && fs.some((f: any) => f.id === cur)) ? cur : (fs[0]?.id || ''));
-    }).catch(e => setErr((e as Error).message)).finally(() => { if (!silent) setLoading(false); });
+    abortRef.current?.abort();                  // cancel any in-flight tree fetch (C)
+    const ac = new AbortController();
+    abortRef.current = ac;
+    api.mathTree(track, gradeId, ac.signal).then(r => {
+      const fs = r.folders || [];
+      treeCache.set(key, fs);
+      if (abortRef.current === ac) applyTree(fs); // only apply if still the current request
+    }).catch(e => {
+      if ((e as any)?.name === 'AbortError') return;
+      setErr((e as Error).message);
+    }).finally(() => { if (abortRef.current === ac && !cached && !silent) setLoading(false); });
   }, [track, gradeId]);
   useEffect(() => { loadTree(); }, [loadTree]);
+  useEffect(() => () => abortRef.current?.abort(), []); // abort on unmount
+  // After a mutation, drop the cached copy for this view so the reload shows fresh data.
+  const reloadFresh = useCallback(() => { treeCache.delete(`${track}:${gradeId}`); loadTree(true); }, [track, gradeId, loadTree]);
 
   const gradeLabel = (g: any) => g?.name || (g ? `Grade ${g.grade_number}` : '');
   const curGrade = grades.find(g => g.id === gradeId);
@@ -87,7 +108,7 @@ export function MathContent() {
   const act = async (fn: () => Promise<any>, id: string, confirmMsg?: string) => {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
     setBusyId(id); setErr('');
-    try { await fn(); loadTree(true); }
+    try { await fn(); treeCache.delete(`${track}:${gradeId}`); loadTree(true); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusyId(''); }
   };
@@ -243,7 +264,7 @@ export function MathContent() {
         </div>
       </div>
 
-      {editId && tax && <SetEditor taxonomy={tax} setId={editId} onClose={() => setEditId('')} onSaved={() => { setEditId(''); loadTree(); }} />}
+      {editId && tax && <SetEditor taxonomy={tax} setId={editId} onClose={() => setEditId('')} onSaved={() => { setEditId(''); reloadFresh(); }} />}
       {bulk && tax && curFolder && (() => {
         const med = (tax.difficulties || []).find((d: any) => d.key === 'medium') || (tax.difficulties || [])[0];
         const taxCat = (tax.categories || []).find((c: any) => c.id === folderId);
@@ -256,12 +277,12 @@ export function MathContent() {
               difficultyLabel: med.name || 'Medium', diffKey: med.key || 'medium', maxPerSet: PER_SET_CEILING,
             }}
             existingSets={rows} taxonomy={tax}
-            onClose={() => setBulk(false)} onDone={() => { setBulk(false); loadTree(); }}
+            onClose={() => { setBulk(false); reloadFresh(); }} onDone={reloadFresh}
           />
         );
       })()}
-      {addFolder && <AddFolderModal track={track} gradeId={gradeId} onClose={() => setAddFolder(false)} onDone={() => { setAddFolder(false); loadTree(); }} />}
-      {newSet && <NewSetModal track={track} gradeId={gradeId} folders={folders} onClose={() => setNewSet(false)} onDone={() => { setNewSet(false); loadTree(); }} onNeedFolder={() => { setNewSet(false); setAddFolder(true); }} />}
+      {addFolder && <AddFolderModal track={track} gradeId={gradeId} onClose={() => setAddFolder(false)} onDone={() => { setAddFolder(false); reloadFresh(); }} />}
+      {newSet && <NewSetModal track={track} gradeId={gradeId} folders={folders} onClose={() => setNewSet(false)} onDone={() => { setNewSet(false); reloadFresh(); }} onNeedFolder={() => { setNewSet(false); setAddFolder(true); }} />}
     </div>
   );
 }

@@ -60,19 +60,19 @@ function refreshOnce(): Promise<boolean> {
 }
 export function refreshSession() { return refreshOnce(); }
 
-async function req<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>, retried = false): Promise<T> {
+async function req<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>, retried = false, signal?: AbortSignal): Promise<T> {
   const h: Record<string, string> = { ...(headers || {}) };
   if (token) h['authorization'] = `Bearer ${token}`;
   h['x-admin-site'] = adminSite;
   if (body !== undefined) h['content-type'] = 'application/json';
-  const res = await fetch(GATEWAY + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await fetch(GATEWAY + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body), signal });
   const text = await res.text();
   const json = text ? JSON.parse(text) : null;
   if (!res.ok) {
     // Transparent refresh on the first 401, then replay once. Skip for the auth endpoints themselves so
     // this never recurses. On refresh failure, drop the dead tokens and surface the 401 (routes to login).
     if (res.status === 401 && !retried && !path.startsWith('/v1/admin/auth/')) {
-      if (await refreshOnce()) return req<T>(method, path, body, headers, true);
+      if (await refreshOnce()) return req<T>(method, path, body, headers, true, signal);
       setToken(null); setRefresh(null);
     }
     const e = json?.error || {}; throw new ApiError(res.status, e.code || 'UNKNOWN', e.message || res.statusText, e.details);
@@ -350,9 +350,9 @@ export const api = {
 
   // ---- Math Olympiad: admin-managed taxonomy (folders/subfolders/sets) + support console ----
   mathGrades: () => req<{ grades: any[] }>('GET', '/v1/admin/math/grades'),
-  mathTree: (track: 'curriculum' | 'quiz' | 'test', grade_id?: string) => {
+  mathTree: (track: 'curriculum' | 'quiz' | 'test', grade_id?: string, signal?: AbortSignal) => {
     const p = new URLSearchParams(); p.set('track', track); if (grade_id) p.set('grade_id', grade_id);
-    return req<{ track: string; grade_id: string | null; folders: any[] }>('GET', `/v1/admin/math/tree?${p.toString()}`);
+    return req<{ track: string; grade_id: string | null; folders: any[] }>('GET', `/v1/admin/math/tree?${p.toString()}`, undefined, undefined, false, signal);
   },
   mathCreateFolder: (b: { track: 'curriculum' | 'quiz' | 'test'; grade_id: string; name: string }) => req<{ id: string; name: string }>('POST', '/v1/admin/math/folders', b),
   mathCreateSubfolder: (categoryId: string, name: string) => req<{ id: string; name: string; category_id: string }>('POST', `/v1/admin/math/folders/${categoryId}/subfolders`, { name }),
