@@ -338,7 +338,7 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const { rows } = await db.query(
       `select sv.id as set_version_id, qs.name as title,
               cat.name as category, coalesce(sub.name, '') as subcategory,
-              coalesce(d.key, '') as difficulty, sv.question_count
+              coalesce(d.key, '') as difficulty, sv.question_count, sv.duration_minutes
          from ccat.students st
          join ccat.question_sets qs on qs.grade_id = st.grade_id
          join ccat.categories cat on cat.id = qs.category_id
@@ -360,6 +360,7 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
       subcategory: r.subcategory,
       difficulty: r.difficulty,
       question_count: r.question_count ?? 0,
+      duration_minutes: r.duration_minutes ?? null,
       progress_pct: 0,
       progress_label: 'Not started',
       cta: 'Start',

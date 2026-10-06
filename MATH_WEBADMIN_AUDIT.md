@@ -21,6 +21,12 @@
 
 ## Change log
 
+### 2026-10-06 (ee) — HOTFIX: (dd) broke the admin build (App.tsx ContentSwitch) (Claude / Cowork)
+
+`pnpm --filter @ccat/admin build` failed with `esbuild … App.tsx: Unexpected "}"`. The (dd) edit that added `CcatContentOnly` accidentally replaced the whole `ContentSwitch` function (not just appended after it), deleting its body and leaving a stray `}`. Restored `ContentSwitch` (`const { program } = useAuth(); return program === 'math' ? <MathContent /> : <Content />;`) above `CcatContentOnly`. Verified with `tsc --noEmit` (0 errors) **and** a direct `esbuild App.tsx` transform (the same step that failed) — both clean. (The vite "cannot find module" seen when building inside the Linux device VM is just missing `node_modules` there; the Windows checkout builds fine.) All (dd) behaviour unchanged. **Deploy admin (Vercel).**
+
+---
+
 ### 2026-10-06 (dd) — FIX: Math program showing CCAT UI at /content/exams; set name now opens editor (Claude / Cowork)
 
 Two issues, admin-only (`App.tsx`, `MathContent.tsx`), no gateway/DB change.
