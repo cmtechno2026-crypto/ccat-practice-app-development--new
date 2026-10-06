@@ -21,6 +21,18 @@
 
 ## Change log
 
+### 2026-10-06 (dd) — FIX: Math program showing CCAT UI at /content/exams; set name now opens editor (Claude / Cowork)
+
+Two issues, admin-only (`App.tsx`, `MathContent.tsx`), no gateway/DB change.
+
+1. **Math program sometimes showed CCAT content UI.** `/content` is program-aware (`ContentSwitch` → `MathContent` for Math, else `Content`), but the CCAT-only content subroutes rendered unconditionally — so landing on **`/content/exams`** (CCAT "Exam papers") while the Math program was selected showed the CCAT batteries UI; clicking into `/content` then re-rendered the switch and showed Math. Fix: new `CcatContentOnly` wrapper redirects Math → `/content` for `/content/exams`, `/content/import`, and `/content/plans` (pages with no Math equivalent). Switching the program pill to Math while on one of those routes now auto-redirects too. CCAT/NGAT see those pages exactly as before.
+
+2. **Clicking a set name now opens it for view/edit.** In the Math sets table the set name was static; it now opens the same `SetEditor` as the Edit button (`onClick → setEditId`, pointer cursor + hover underline, disabled until taxonomy loads).
+
+`tsc` clean (admin). **Deploy admin (Vercel).**
+
+---
+
 ### 2026-10-06 (cc) — FIX: student test showed 100 min while admin showed 30 (Claude / Cowork)
 
 Admin TIME LIMIT column showed **30** but the student paper ran **99:50 (~100 min)**. Cause: the 6 existing Math test sets predate (bb), so their `duration_minutes` was **null** in the DB — the admin "30" is only a display default (`s.duration_minutes ?? 30`) and was never saved; the student clock then hit the 1-min/question fallback (100 questions → 100 min). Also the gateway change from (bb) that returns `duration_minutes` must be live for the student to receive it.

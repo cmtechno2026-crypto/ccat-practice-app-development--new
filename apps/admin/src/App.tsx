@@ -203,6 +203,9 @@ function LoadingSplash() {
 
 // Content is program-aware: the Math program shows the admin-managed folder/track manager; CCAT/NGAT
 // show the standard set browser. Driven by the program pill (useAuth().program).
+function ContentSwitch() {
+  const { program } = useAuth();
+  return program === 'math' ? <MathContent /> : <Content />;
 }
 
 // CCAT/NGAT-only content subpages (exam papers, import, learning plans). The Math program has no
