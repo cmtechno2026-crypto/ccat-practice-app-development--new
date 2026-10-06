@@ -21,6 +21,14 @@
 
 ## Change log
 
+### 2026-10-06 (aa) — Math Content: editable TIME LIMIT (MIN) column, Tests track only (Claude / Cowork)
+
+Added a **TIME LIMIT (MIN)** column to the sets table that shows **only on the Tests tab** (Curriculum/Quiz unchanged). Per-row editor = number input + ▲/▼ steppers (±5, clamped 1–180, defaults to 30 when unset). Edits persist via the existing program-agnostic `api.patchSet(setVersionId, { duration_minutes })` (PATCH `/v1/admin/content/sets/:id`), applied optimistically to `folders` + the SWR tree cache, reverting on error. Gateway `GET /v1/admin/math/tree` now returns `sv.duration_minutes` in each set row. `MathContent.tsx` (new `TimeLimitCell`, `isTest`/`cols`/`tableMinWidth`, `commitDuration`) + `admin-math-content.ts` (one column added to the sets select). `tsc` clean for admin + gateway.
+
+**Known gap (flagged, not changed — standing "ask me" rule):** Math test sets are currently created as **untimed practice** sets (`allowed_exam=false`, `allowed_timers=['untimed']`) and the student **Test** screen (`Math Olympiad Web/src/screens/TestPrep.tsx`) has **no timer**. So the time limit is stored/editable in admin but **not yet enforced for students**. Making it real needs: (1) Math bulk/upload to create test sets as timed exams, and (2) the student Test screen to honor `duration_minutes`. Awaiting the user's go-ahead before wiring enforcement. **Deploy gateway (Render) + admin (Vercel).** CCAT/NGAT unaffected.
+
+---
+
 ### 2026-10-06 (z) — FIX: Math bulk closed before showing Publish all / Done (Claude / Cowork)
 
 The "Created N draft sets → Publish all / Done" screen was never visible in Math's bulk importer even though the shared `BulkSets` component renders it. Cause: `MathContent.tsx` passed `onDone={() => { setBulk(false); … }}`, but `BulkSets` calls `onDone()` immediately after creating the sets — so the modal closed before the created step could show. `onDone` is a refresh hook, not a close hook (CCAT's `Content.tsx` passes `onDone={load}`). Fixed to match CCAT: `onClose={() => { setBulk(false); reloadFresh(); }}` (the modal's own Done/Cancel closes + refreshes) and `onDone={reloadFresh}` (refresh only, no close). Per-row Publish, Publish all, and Done now appear for Math exactly as in CCAT. `MathContent.tsx` only; `tsc` clean. **Deploy admin (Vercel).** No gateway/DB change.

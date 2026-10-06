@@ -478,6 +478,12 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const track = await mathSetTrack(b.set_version_id);
     const exam = isExamTrack(track);
     const mode = exam ? 'exam' : 'practice';
+    // Exam time limit: the admin-set per-paper duration (minutes); null -> runner falls back to 1 min/question.
+    let durationMinutes: number | null = null;
+    if (exam) {
+      const dr = await db.query(`select duration_minutes from ccat.question_set_versions where id=$1`, [b.set_version_id]);
+      durationMinutes = dr.rows[0]?.duration_minutes ?? null;
+    }
 
     if (b.restart) {
       await db.query(
@@ -535,7 +541,7 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     });
     return {
       session_id: session.id, state: session.state, score: session.score, total: session.total,
-      mode, started_at: session.started_at, questions,
+      mode, started_at: session.started_at, duration_minutes: durationMinutes, questions,
     };
   });
 

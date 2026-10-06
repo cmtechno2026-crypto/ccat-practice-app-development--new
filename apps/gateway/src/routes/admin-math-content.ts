@@ -228,8 +228,9 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
         `insert into ccat.question_set_versions
            (question_set_id, version_number, difficulty_id, allowed_practice, allowed_exam, allowed_timers,
             question_count, duration_minutes, state, created_by, site_id)
-         values ($1, 1, null, $2, $3, '[]'::jsonb, 0, null, 'draft', $4, $5) returning id`,
-        [qs.rows[0]!.id, !isExam, isExam, req.admin!.adminId, SITE]);
+         values ($1, 1, null, $2, $3, $4::jsonb, 0, $5, 'draft', $6, $7) returning id`,
+        [qs.rows[0]!.id, !isExam, isExam, JSON.stringify(isExam ? ['timed'] : ['untimed']),
+         isExam ? 30 : null, req.admin!.adminId, SITE]);
       return sv.rows[0]!.id as string;
     });
     await audit(db, req, 'math.set.created', 'set_version', newId, `${b.track}/${b.name}`);

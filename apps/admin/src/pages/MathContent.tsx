@@ -317,7 +317,7 @@ export function MathContent() {
               gradeNumber: curGrade.grade_number, categoryName: taxCat.name, subcategoryName: 'All sets',
               difficultyLabel: med.name || 'Medium', diffKey: med.key || 'medium', maxPerSet: PER_SET_CEILING,
             }}
-            existingSets={rows} taxonomy={tax}
+            existingSets={rows} taxonomy={tax} exam={track === 'test'}
             onClose={() => { setBulk(false); reloadFresh(); }} onDone={reloadFresh}
           />
         );
