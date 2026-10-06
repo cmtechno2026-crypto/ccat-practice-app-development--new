@@ -21,6 +21,22 @@
 
 ## Change log
 
+### 2026-10-06 (r) — Math Content: folder-add moved to FOLDERS panel icon + Bulk add sets (CCAT parity) (Claude / Cowork)
+
+User request on the Math Content page: remove the top-right **+ Add folder**, add an **add icon** in the FOLDERS panel to create folders, and put **Bulk add sets** where Add folder was (same as CCAT's bulk).
+
+**Changes (`apps/admin/src/pages/MathContent.tsx`, frontend only):**
+- FOLDERS panel header now has a **＋ icon** (right of the "FOLDERS" label) that opens the Add-folder modal. The top-right **+ Add folder** button is removed.
+- Top-right now shows **⤓ Bulk add sets** (next to Upload set). It reuses the shared **`components/BulkSets`** — the exact CCAT bulk importer (same `parseImportText`, same split-into-sets flow).
+- **Bulk context for Math:** `catId` = the selected folder, `subId` = '' (cat-only mode, no subfolder required), `qType` = `'math'` (free-text column, no constraint — verified), `maxPerSet` = `PER_SET_CEILING`. Button is disabled until a specific folder is selected (tooltip "Select a folder first"); "All folders" is not a valid bulk target.
+- **Difficulty decision (user): default to Medium.** No difficulty picker added to Math; the bulk importer tags every created set/question with the **Medium** difficulty from `api.taxonomy('math')` (falls back to the first difficulty if 'medium' is absent). Keeps the Math UI clean; all Math content is one difficulty.
+
+Syntax-clean. No gateway/DB change. **Deploy admin (Vercel).**
+
+**⚠️ Smoke-test after deploy:** BulkSets was built for CCAT — confirm a Math bulk run (paste questions → Parse & check → Preview split → create) actually creates sets under the chosen Math folder and that they appear in the Math tree (sets are created via the generic content pipeline; they attach to the math category, so the Math tree — which joins by category program/site, not set.site_id — should list them). If created sets don't show, check that the generic `createSet` sets `site_id`/track consistently for the math category.
+
+---
+
 ### 2026-10-06 (q) — FIX grade order (all programs) + Math Content page redesigned to the admin mockup (Claude / Cowork)
 
 **1) Grade dropdown order wrong (Grade 1 after Grade 2) — all programs + teacher admin.**

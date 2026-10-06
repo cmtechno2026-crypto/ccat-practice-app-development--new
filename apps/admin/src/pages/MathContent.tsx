@@ -93,9 +93,10 @@ export function MathContent() {
   const muted = 'var(--muted,#64718A)';
   const trackLabel = TRACKS.find(t => t.k === track)?.label;
 
-  const actBtn = (label: string, onClick: () => void, variant: 'default' | 'warn' | 'danger', disabled = false): React.ReactNode => {
+  const actBtn = (label: string, onClick: () => void, variant: 'default' | 'primary' | 'warn' | 'danger', disabled = false): React.ReactNode => {
     const styles: Record<string, React.CSSProperties> = {
       default: { border: '1px solid var(--line,#D7DEEA)', background: 'var(--card,#fff)', color: 'var(--ink,#15233D)' },
+      primary: { border: 0, background: '#1A5EAB', color: '#fff' },
       warn: { border: '1px solid #F0D3AE', background: '#FFF6E8', color: '#B4540C' },
       danger: { border: 0, background: '#B4231B', color: '#fff' },
     };
@@ -217,7 +218,7 @@ export function MathContent() {
                     {actBtn(published ? 'Retire' : 'Publish',
                       () => act(() => published ? api.retireSet(s.set_version_id) : api.publishSet(s.set_version_id), s.set_version_id,
                         published ? `Retire "${s.name}"? It will be removed from the student catalog.` : undefined),
-                      'warn', busy)}
+                      published ? 'warn' : 'primary', busy)}
                     {actBtn('Copy', () => act(() => api.copySet(s.set_version_id), s.set_version_id), 'default', busy)}
                     {actBtn('Delete', () => act(() => api.deleteSet(s.set_version_id), s.set_version_id, `Delete "${s.name}"? This cannot be undone.`), 'danger', busy)}
                   </span>
