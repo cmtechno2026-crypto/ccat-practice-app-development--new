@@ -270,6 +270,9 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
         where st.id = $1
           and not exists (select 1 from ccat.student_assignments a where a.student_id = st.id and a.set_version_id = sv.id)
         order by cat.display_order, sub.display_order, sv.created_at asc, sv.id asc`, [id, program]);
+    // Exam-paper assignment is gated by the student's effective entitlement (Plus/Premium have exam).
+    // When payments is OFF the gateway unlocks everything, so exam is assignable to all (matches app).
+    const examAccess = cfg.paymentsEnabled ? (await resolveEntitlement(db, id)).capabilities.exam : true;
     return rows.map((r: any) => ({
       set_version_id: r.set_version_id,
       name: r.name,
@@ -278,6 +281,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
       question_count: r.question_count ?? null,
       duration_minutes: r.duration_minutes ?? null,
       allowed_modes: BATTERY_MODES(r.allowed_practice && r.grade_practice_enabled !== false, r.allowed_exam),
+      exam_access: examAccess,
     }));
   });
 

@@ -642,6 +642,10 @@ function timeAgo(iso?: string | null): string {
   return d.toLocaleDateString();
 }
 
+
+// ---- Assignment Panel: flat table (image-3 layout). Columns: Set · subcategory / Practice·Exam /
+// Score / Status / View set. In-progress shows answered/total + mini bar; "View set" active only when
+// Done (opens the shared set-review drawer). Assigned rows can be removed inline. Newest first.
 function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSet: (setId: string, label: string) => void }) {
   const { program } = useAuth();
   const [tick, setTick] = useState(0);
@@ -658,91 +662,119 @@ function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSe
   return (
     <>
       <style>{`
-        .asgp-h{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:800;color:var(--blue,#2f6fd0);margin:22px 0 10px}
-        .asgp-h .count{background:var(--sky,#eef4fd);color:var(--blue,#2f6fd0);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:800}
-        .asgp-h .btn{margin-left:auto}
-        .asgp-card{background:var(--sd-card,#fff);border:1px solid var(--sd-line,#e7e8f2);border-radius:14px;padding:14px 16px;margin-bottom:10px}
-        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .asgp-card{background:#1c1e2b;border-color:#2b2e40}}
-        :root[data-theme="dark"] .asgp-card{background:#1c1e2b;border-color:#2b2e40}
-        .asgp-top{display:flex;align-items:flex-start;gap:12px}
-        .asgp-nm{font-weight:800;font-size:14.5px}
-        .asgp-meta{font-size:12.5px;color:var(--muted,#6b6f8a);margin-top:3px}
-        .asgp-chip{display:inline-block;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:800;margin-right:6px}
-        .asgp-sub{display:inline-block;background:var(--sky,#eef2f9);color:#475569;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;margin-right:6px}
-        .asgp-status{margin-left:auto;font-size:12px;font-weight:800;border-radius:999px;padding:5px 12px;white-space:nowrap}
-        .st-assigned{background:#efeaff;color:#7c5cff}
-        .st-progress{background:#fdf3e2;color:#b7791f}
-        .st-done{background:#e5f5ec;color:#0f9d58}
-        .asgp-bar{height:7px;border-radius:6px;background:#eef2f9;overflow:hidden;width:170px;margin-top:9px}
-        .asgp-bar i{display:block;height:100%;background:var(--blue,#2f6fd0)}
-        .asgp-res{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;margin-top:11px;padding-top:11px;border-top:1px dashed var(--sd-line,#e7e8f2)}
-        .asgp-res .rv{font-size:12.5px;color:var(--muted,#6b6f8a)}
-        .asgp-res .rv b{color:var(--ink,#0f172a);font-weight:800}
-        .asgp-link{color:var(--blue,#2f6fd0);font-weight:800;font-size:12.5px;background:none;border:none;cursor:pointer;padding:0}
-        .asgp-x{background:none;border:none;color:var(--muted,#9aa1b4);cursor:pointer;font-size:15px;line-height:1;padding:2px 4px}
+        .asgt-h{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:800;color:var(--blue,#2f6fd0);margin:22px 0 10px}
+        .asgt-h .count{background:var(--sky,#eef4fd);color:var(--blue,#2f6fd0);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:800}
+        .asgt-wrap{border:1px solid var(--sd-line,#e7e8f2);border-radius:14px;overflow:hidden;background:var(--sd-card,#fff)}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .asgt-wrap{background:#1c1e2b;border-color:#2b2e40}}
+        :root[data-theme="dark"] .asgt-wrap{background:#1c1e2b;border-color:#2b2e40}
+        table.asgt{width:100%;border-collapse:collapse;font-size:13px}
+        table.asgt th{text-align:left;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8a90a6);font-weight:800;padding:11px 14px;border-bottom:1px solid var(--sd-line,#e7e8f2);background:var(--sky,#f6f8fc)}
+        @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.asgt th{background:#191b27}}
+        :root[data-theme="dark"] table.asgt th{background:#191b27}
+        table.asgt td{padding:12px 14px;border-bottom:1px solid var(--sd-line,#eef1f7);vertical-align:middle}
+        table.asgt tr:last-child td{border-bottom:none}
+        .asgt-nm{font-weight:800;font-size:13.5px}
+        .asgt-subt{font-size:11.5px;color:var(--muted,#6b6f8a);margin-top:2px}
+        .asgt-chip{display:inline-block;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:800}
+        .asgt-st{display:inline-block;font-size:11.5px;font-weight:800;border-radius:999px;padding:4px 11px;white-space:nowrap}
+        .asgt .st-assigned{background:#efeaff;color:#7c5cff}
+        .asgt .st-progress{background:#fdf3e2;color:#b7791f}
+        .asgt .st-done{background:#e5f5ec;color:#0f9d58}
+        .asgt-bar{height:6px;border-radius:6px;background:#eef2f9;overflow:hidden;width:120px;margin-top:5px}
+        .asgt-bar i{display:block;height:100%;background:var(--blue,#2f6fd0)}
+        .asgt-link{color:var(--blue,#2f6fd0);font-weight:800;font-size:12.5px;background:none;border:none;cursor:pointer;padding:0}
+        .asgt-x{background:none;border:none;color:var(--muted,#9aa1b4);cursor:pointer;font-size:12.5px;font-weight:700;padding:0}
+        .asgt-mut{color:var(--muted,#9aa1b4);font-size:12.5px}
       `}</style>
-      <div className="asgp-h">Assignments {items.length > 0 && <span className="count">{items.length}</span>}
+      <div className="asgt-h">Assignments {items.length > 0 && <span className="count">{items.length}</span>}
         <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAssignOpen(true)}>+ Assign set</button>
       </div>
       {loading ? <Loading /> : error ? <ErrorBox e={error} /> : items.length === 0 ? (
-        <div className="asgp-card"><span className="muted">No sets assigned yet. Use “Assign set” to give this student practice or exam papers.</span></div>
-      ) : items.map((a: any) => {
-        const ch = bChip(a.category_key, a.is_exam);
-        const acc = a.result?.accuracyPct;
-        const accCol = acc == null ? 'inherit' : acc >= 70 ? '#0f9d58' : acc >= 45 ? '#b7791f' : '#e4574f';
-        const pctW = a.progress && a.progress.total > 0 ? Math.min(100, Math.round((100 * a.progress.answered) / a.progress.total)) : 0;
-        return (
-          <div className="asgp-card" key={a.id}>
-            <div className="asgp-top">
-              <div style={{ minWidth: 0 }}>
-                <div className="asgp-nm">{a.name}</div>
-                <div className="asgp-meta">
-                  <span className="asgp-chip" style={{ background: ch.bg, color: ch.fg }}>{ch.label}</span>
-                  {a.subcategory && <span className="asgp-sub">{a.subcategory}</span>}
-                  {a.is_exam && a.duration_minutes ? <span className="asgp-sub">{a.duration_minutes} min</span> : null}
-                  {a.question_count != null ? `· ${a.question_count} question${a.question_count === 1 ? '' : 's'} ` : ''}
-                  · assigned {timeAgo(a.assigned_at)}{a.assigned_by_name ? ` by ${a.assigned_by_name}` : ''}
-                </div>
-              </div>
-              <span className={`asgp-status ${a.status === 'done' ? 'st-done' : a.status === 'in_progress' ? 'st-progress' : 'st-assigned'}`}>
-                {a.status === 'done' ? 'Done' : a.status === 'in_progress' ? 'In progress' : 'Assigned'}
-              </span>
-              {a.status === 'assigned' && <button className="asgp-x" title="Remove assignment" onClick={() => remove(a.id)}>✕</button>}
-            </div>
-            {a.status === 'in_progress' && <div className="asgp-bar"><i style={{ width: `${pctW}%` }} /></div>}
-            {a.status === 'done' && a.result && (
-              <div className="asgp-res">
-                <span className="rv">Score <b>{a.result.score.correct}/{a.result.score.total}</b></span>
-                <span className="rv">Accuracy <b style={{ color: accCol }}>{acc != null ? `${acc}%` : '—'}</b></span>
-                <span className="rv">Avg time/q <b>{a.result.avgSecondsPerQuestion != null ? `${a.result.avgSecondsPerQuestion}s` : '—'}</b></span>
-                <span className="rv">Finished <b>{timeAgo(a.result.finishedAt)}</b></span>
-                <button className="asgp-link" style={{ marginLeft: 'auto' }} onClick={() => onOpenSet(a.question_set_id, a.name)}>View set →</button>
-              </div>
-            )}
-          </div>
-        );
-      })}
+        <div className="asgt-wrap" style={{ padding: 16 }}><span className="muted">No sets assigned yet. Use “Assign set” to give this student practice or exam papers.</span></div>
+      ) : (
+        <div className="asgt-wrap">
+          <table className="asgt">
+            <thead><tr>
+              <th style={{ width: '40%' }}>Set</th>
+              <th>Practice / Exam</th>
+              <th>Score</th>
+              <th>Status</th>
+              <th style={{ textAlign: 'right' }}>View set</th>
+            </tr></thead>
+            <tbody>
+              {items.map((a: any) => {
+                const ch = bChip(a.category_key, a.is_exam);
+                const acc = a.result?.accuracyPct;
+                const accCol = acc == null ? 'inherit' : acc >= 70 ? '#0f9d58' : acc >= 45 ? '#b7791f' : '#e4574f';
+                const pctW = a.progress && a.progress.total > 0 ? Math.min(100, Math.round((100 * a.progress.answered) / a.progress.total)) : 0;
+                const stCls = a.status === 'done' ? 'st-done' : a.status === 'in_progress' ? 'st-progress' : 'st-assigned';
+                return (
+                  <tr key={a.id}>
+                    <td>
+                      <div className="asgt-nm">{a.name}</div>
+                      <div className="asgt-subt">
+                        {a.subcategory ? a.subcategory : (a.is_exam ? 'Exam paper' : '—')}
+                        {a.is_exam && a.duration_minutes ? ` · ${a.duration_minutes} min` : ''}
+                        {a.question_count != null ? ` · ${a.question_count} q` : ''}
+                        {` · assigned ${timeAgo(a.assigned_at)}`}
+                      </div>
+                    </td>
+                    <td><span className="asgt-chip" style={{ background: ch.bg, color: ch.fg }}>{a.is_exam ? 'Exam' : ch.label}</span></td>
+                    <td>
+                      {a.status === 'done' && a.result ? (
+                        <span><b style={{ fontWeight: 800 }}>{a.result.score.correct}/{a.result.score.total}</b> <span style={{ color: accCol, fontWeight: 700 }}>{acc != null ? `(${acc}%)` : ''}</span></span>
+                      ) : a.status === 'in_progress' ? (
+                        <span className="asgt-mut">{a.progress?.answered ?? 0}/{a.progress?.total ?? 0}<div className="asgt-bar"><i style={{ width: `${pctW}%` }} /></div></span>
+                      ) : <span className="asgt-mut">—</span>}
+                    </td>
+                    <td><span className={`asgt-st ${stCls}`}>{a.status === 'done' ? 'Done' : a.status === 'in_progress' ? 'In progress' : 'Assigned'}</span></td>
+                    <td style={{ textAlign: 'right' }}>
+                      {a.status === 'done' ? (
+                        <button className="asgt-link" onClick={() => onOpenSet(a.question_set_id, a.name)}>View set →</button>
+                      ) : a.status === 'assigned' ? (
+                        <button className="asgt-x" title="Remove assignment" onClick={() => remove(a.id)}>✕ Remove</button>
+                      ) : <span className="asgt-mut">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
       {assignOpen && <AssignModal studentId={studentId} onClose={() => setAssignOpen(false)} onAssigned={() => { setAssignOpen(false); setTick(t => t + 1); }} />}
     </>
   );
 }
 
+// ---- Assign-sets modal (mockup layout). Practice | Exam segmented toggle in the header; the Exam tab is
+// locked unless the student's plan grants exam access (Plus/Premium, from catalog.exam_access). Battery +
+// Subcategory filters (Subcategory hidden in Exam mode — exam papers have no subcategory). Already-assigned
+// sets are excluded server-side. A set that allows both modes appears under both tabs.
 function AssignModal({ studentId, onClose, onAssigned }: { studentId: string; onClose: () => void; onAssigned: () => void }) {
   const { program } = useAuth();
   const { data, loading, error } = useAsync(() => api.getStudentAssignmentsCatalog(studentId, program), [studentId, program]);
   const catalog: any[] = data ?? [];
+  // exam_access rides on each catalog row (server-computed, honours the payments flag). Undefined on an
+  // older gateway → treat as accessible; the real exam gate is still enforced at session start.
+  const examAccess: boolean = catalog.length === 0 ? true : (catalog[0]?.exam_access ?? true);
+
+  const [mode, setMode] = useState<'practice' | 'exam'>('practice');
   const [battery, setBattery] = useState<string>('');
   const [sub, setSub] = useState<string>('all');
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
-  const batteries = Array.from(new Set(catalog.map((c: any) => c.category_key)));
-  const activeBattery = battery || batteries[0] || '';
-  const subs = Array.from(new Set(catalog.filter((c: any) => c.category_key === activeBattery && c.subcategory).map((c: any) => c.subcategory)));
-  const shown = catalog.filter((c: any) => c.category_key === activeBattery && (sub === 'all' || c.subcategory === sub));
+  const modeRows = catalog.filter((c: any) => (c.allowed_modes || []).includes(mode));
+  const batteries = Array.from(new Set(modeRows.map((c: any) => c.category_key)));
+  const activeBattery = batteries.includes(battery) ? battery : (batteries[0] || '');
+  const subs = mode === 'exam' ? [] : Array.from(new Set(modeRows.filter((c: any) => c.category_key === activeBattery && c.subcategory).map((c: any) => c.subcategory)));
+  const activeSub = mode === 'exam' ? 'all' : sub;
+  const shown = modeRows.filter((c: any) => c.category_key === activeBattery && (mode === 'exam' || activeSub === 'all' || c.subcategory === activeSub));
   const count = Object.values(picked).filter(Boolean).length;
 
+  const goMode = (m: 'practice' | 'exam') => { if (m === 'exam' && !examAccess) return; setMode(m); setSub('all'); };
   const toggle = (svid: string) => setPicked(p => ({ ...p, [svid]: !p[svid] }));
   const assign = async () => {
     const ids = Object.keys(picked).filter(k => picked[k]);
@@ -752,8 +784,28 @@ function AssignModal({ studentId, onClose, onAssigned }: { studentId: string; on
     catch (e) { toast((e as Error).message); } finally { setBusy(false); }
   };
 
+  const segBtn = (on: boolean, clickable: boolean): React.CSSProperties => ({
+    height: 34, padding: '0 20px', border: 0, borderRadius: 7,
+    cursor: clickable ? (on ? 'default' : 'pointer') : 'not-allowed',
+    fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap',
+    background: on ? 'var(--sd-card,#fff)' : 'transparent',
+    color: on ? 'var(--blue,#2f6fd0)' : 'var(--muted,#64718a)',
+    boxShadow: on ? '0 1px 3px rgba(15,27,51,.14)' : 'none',
+    opacity: clickable ? 1 : 0.6,
+  });
+  const seg = (
+    <div style={{ display: 'flex', padding: 4, borderRadius: 9, background: 'var(--sky,#e8ecf3)' }}>
+      <button style={segBtn(mode === 'practice', true)} onClick={() => goMode('practice')}>Practice</button>
+      <button style={segBtn(mode === 'exam', examAccess)} title={examAccess ? '' : 'Exam papers require a Plus or Premium plan'} onClick={() => goMode('exam')}>
+        {examAccess ? 'Exam' : '🔒 Exam'}
+      </button>
+    </div>
+  );
+
+  const selStyle: React.CSSProperties = { display: 'block', marginTop: 5, border: '1px solid var(--line,#e4e9f2)', borderRadius: 9, padding: '8px 11px', fontWeight: 700, fontSize: 13, minWidth: 190, background: 'var(--sd-card,#fff)', color: 'var(--ink,#0f172a)' };
+
   return (
-    <Modal title="Assign sets" wide onClose={onClose}
+    <Modal title="Assign sets" wide onClose={onClose} headerRight={seg}
       footer={<>
         <span className="muted" style={{ marginRight: 'auto', fontSize: 12.5 }}>{count} selected · already-assigned sets are hidden</span>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
@@ -763,32 +815,44 @@ function AssignModal({ studentId, onClose, onAssigned }: { studentId: string; on
         <div className="muted">No unassigned published sets for this student’s grade.</div>
       ) : (
         <div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-            <label style={{ fontSize: 12.5, fontWeight: 700 }}>Battery
-              <select value={activeBattery} onChange={e => { setBattery(e.target.value); setSub('all'); }}
-                style={{ display: 'block', marginTop: 5, border: '1px solid var(--line,#e4e9f2)', borderRadius: 9, padding: '7px 10px', fontWeight: 600 }}>
-                {batteries.map((b: string) => <option key={b} value={b}>{bChip(b, false).label}</option>)}
+          {!examAccess && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted,#6b6f8a)', background: 'var(--sky,#f3f6fc)', border: '1px solid var(--line,#e4e9f2)', borderRadius: 9, padding: '9px 12px', marginBottom: 14 }}>
+              🔒 This student’s plan is Free/Standard — exam papers need Plus or Premium. Practice sets can still be assigned.
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 800 }}>Battery
+              <select value={activeBattery} onChange={e => { setBattery(e.target.value); setSub('all'); }} style={selStyle}>
+                {batteries.length === 0 ? <option value="">—</option> : batteries.map((b: string) => <option key={b} value={b}>{bChip(b, false).label}</option>)}
               </select>
             </label>
-            <label style={{ fontSize: 12.5, fontWeight: 700 }}>Subcategory
-              <select value={sub} onChange={e => setSub(e.target.value)}
-                style={{ display: 'block', marginTop: 5, border: '1px solid var(--line,#e4e9f2)', borderRadius: 9, padding: '7px 10px', fontWeight: 600 }}>
-                <option value="all">All subcategories</option>
-                {subs.map((sName: string) => <option key={sName} value={sName}>{sName}</option>)}
-              </select>
-            </label>
-          </div>
-          <div style={{ border: '1px solid var(--line,#e4e9f2)', borderRadius: 12, maxHeight: 300, overflow: 'auto' }}>
-            {shown.length === 0 ? <div className="muted" style={{ padding: 14 }}>Nothing here.</div> : shown.map((c: any) => (
-              <label key={c.set_version_id}
-                style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderBottom: '1px solid var(--line,#eef1f7)', cursor: 'pointer', background: picked[c.set_version_id] ? 'var(--sky,#eef4fd)' : 'transparent' }}>
-                <input type="checkbox" checked={!!picked[c.set_version_id]} onChange={() => toggle(c.set_version_id)} style={{ width: 16, height: 16 }} />
-                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.name}</span>
-                {c.subcategory && <span className="tag" style={{ fontSize: 11 }}>{c.subcategory}</span>}
-                {c.allowed_modes?.includes('exam') && <span className="tag" style={{ fontSize: 11, background: '#fdf3e2', color: '#b7791f' }}>Exam</span>}
-                <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted,#6b6f8a)' }}>{c.question_count} q{c.duration_minutes ? ` · ${c.duration_minutes}m` : ''}</span>
+            {mode !== 'exam' && (
+              <label style={{ fontSize: 12.5, fontWeight: 800 }}>Subcategory
+                <select value={activeSub} onChange={e => setSub(e.target.value)} style={selStyle}>
+                  <option value="all">All subcategories</option>
+                  {subs.map((sName: string) => <option key={sName} value={sName}>{sName}</option>)}
+                </select>
               </label>
-            ))}
+            )}
+          </div>
+          <div style={{ border: '1px solid var(--line,#e4e9f2)', borderRadius: 12, overflow: 'hidden', maxHeight: 320, overflowY: 'auto' }}>
+            {shown.length === 0 ? (
+              <div className="muted" style={{ padding: 14 }}>{mode === 'exam' ? 'No exam papers available for this student’s grade.' : 'Nothing here.'}</div>
+            ) : shown.map((c: any) => {
+              const on = !!picked[c.set_version_id];
+              return (
+                <div key={c.set_version_id} onClick={() => toggle(c.set_version_id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderBottom: '1px solid var(--line,#eef1f7)', cursor: 'pointer', background: on ? 'var(--sky,#eaf1fb)' : 'transparent' }}>
+                  <span style={{ width: 24, height: 24, flex: 'none', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', border: on ? '0' : '1.5px solid #b8c2d2', background: on ? 'var(--blue,#1a3f8f)' : 'transparent', color: '#fff', fontSize: 14, fontWeight: 900 }}>{on ? '✓' : ''}</span>
+                  <span style={{ fontWeight: 800, fontSize: 14, flex: 'none' }}>{c.name}</span>
+                  {mode === 'exam'
+                    ? <span className="tag" style={{ fontSize: 11, background: '#fdf3e2', color: '#b7791f' }}>Exam</span>
+                    : (c.subcategory && <span className="tag" style={{ fontSize: 11 }}>{c.subcategory}</span>)}
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontSize: 12, color: 'var(--muted,#8e99ae)', flex: 'none' }}>{c.question_count} q{c.duration_minutes ? ` · ${c.duration_minutes}m` : ''}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
