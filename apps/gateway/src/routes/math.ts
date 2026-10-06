@@ -456,7 +456,7 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const sid = req.student!.studentId;
     const { rows } = await db.query(
       `select distinct on (s.set_version_id)
-              s.set_version_id, s.id as session_id, s.state, s.total, s.score,
+              s.set_version_id, s.id as session_id, s.state, s.total, s.score, s.timer_remaining_sec,
               (select count(*)::int from ccat.math_practice_answers a where a.session_id = s.id) as answered
          from ccat.math_practice_sessions s
         where s.student_id = $1
@@ -466,10 +466,17 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     return rows.map((r: any) => ({
       set_version_id: r.set_version_id, state: r.state,
       total: r.total ?? 0, score: r.score ?? 0, answered: Number(r.answered) || 0,
+      timer_remaining_sec: r.timer_remaining_sec ?? null,
     }));
   });
 
-  const startSchema = z.object({ set_version_id: z.string().uuid(), restart: z.boolean().optional() });
+  const startSchema = z.object({
+    set_version_id: z.string().uuid(),
+    restart: z.boolean().optional(),
+    // Quiz Arena: the student's picked timer in seconds (0 = Off). Stored on a fresh
+    // start/redo so Resume continues from the paused remaining; ignored on resume.
+    timer_sec: z.number().int().min(0).max(36000).optional(),
+  });
   app.post('/v1/math/practice/start', authed, async (req) => {
     const sid = req.student!.studentId;
     const b = startSchema.parse(req.body);
@@ -492,10 +499,14 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
         [sid, b.set_version_id],
       );
     }
+    // Quiz timer stored on the session (paused remaining). Exam sessions keep it null
+    // (they run on a wall-clock from started_at). On a fresh start/redo, seed it from
+    // the picker; on resume, the stored value is kept and returned.
+    const freshTimer = exam ? null : (b.timer_sec ?? null);
     let session: any;
     if (!b.restart) {
       const ex = await db.query(
-        `select id, total, score, state, started_at from ccat.math_practice_sessions
+        `select id, total, score, state, started_at, timer_remaining_sec from ccat.math_practice_sessions
           where student_id=$1 and set_version_id=$2 and state='in_progress'
           order by started_at desc limit 1`,
         [sid, b.set_version_id],
@@ -504,9 +515,9 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     }
     if (!session) {
       const ins = await db.query(
-        `insert into ccat.math_practice_sessions (student_id, set_version_id, total)
-         values ($1,$2,$3) returning id, total, score, state, started_at`,
-        [sid, b.set_version_id, qrows.length],
+        `insert into ccat.math_practice_sessions (student_id, set_version_id, total, timer_remaining_sec)
+         values ($1,$2,$3,$4) returning id, total, score, state, started_at, timer_remaining_sec`,
+        [sid, b.set_version_id, qrows.length, freshTimer],
       );
       session = ins.rows[0];
     }
@@ -541,8 +552,25 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     });
     return {
       session_id: session.id, state: session.state, score: session.score, total: session.total,
-      mode, started_at: session.started_at, duration_minutes: durationMinutes, questions,
+      mode, started_at: session.started_at, duration_minutes: durationMinutes,
+      timer_remaining_sec: exam ? null : (session.timer_remaining_sec ?? null),
+      questions,
     };
+  });
+
+  // Quiz Arena: pause the timer when the student leaves the run (Save & leave, Back,
+  // sidebar nav, sign out). Rewrites the stored remaining so Resume continues from here.
+  const timerSchema = z.object({ remaining_sec: z.number().int().min(0).max(36000) });
+  app.post('/v1/math/practice/:id/timer', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const sessionId = (req.params as { id: string }).id;
+    const b = timerSchema.parse(req.body);
+    await db.query(
+      `update ccat.math_practice_sessions set timer_remaining_sec=$3
+        where id=$1 and student_id=$2 and state='in_progress'`,
+      [sessionId, sid, b.remaining_sec],
+    );
+    return { ok: true };
   });
 
   const answerSchema = z.object({ question_version_id: z.string().uuid(), selected_option_id: z.string().min(1) });
