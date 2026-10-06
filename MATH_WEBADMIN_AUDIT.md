@@ -21,6 +21,21 @@
 
 ## Change log
 
+### 2026-10-06 (bb) — Tests: time limit now ENFORCED for students (Claude / Cowork)
+
+Made the admin-set per-paper time limit real end-to-end (follow-up to (aa)). Correction to (aa)'s flag: Math test sets **already ran as timed exams** — `SetRunner.tsx` has a countdown + auto-submit, and exam mode is driven by the category's `track='test'` (`isExamTrack` in `math.ts`), not the `allowed_exam` flag. The only gap was the clock used a hardcoded **60s/question** instead of the admin's `duration_minutes`.
+
+Changes:
+- **Student runner (`Math Olympiad Web/src/components/SetRunner.tsx`)** — exam deadline now = `started_at + duration_minutes·60s`, falling back to 1 min/question when unset (back-compat; identical to old behaviour for the existing null-duration sets). Still anchored to server `started_at`, so it survives reloads and auto-submits at zero.
+- **Student type (`.../src/lib/types.ts`)** — `PracticeSession.duration_minutes?: number | null`.
+- **Gateway `math.ts`** — `POST /v1/math/practice/start` looks up the set version's `duration_minutes` for exam sets and returns it in the session payload.
+- **Gateway `admin-math-content.ts`** — Upload-created test sets are now proper timed exams: `allowed_timers=['timed']` (was `'[]'`) and `duration_minutes` defaults to **30** (was null).
+- **Admin `MathContent.tsx`** — bulk importer gets `exam={track === 'test'}`, so Bulk add sets on the Tests tab creates timed exam sets (with the importer's per-paper minutes, default 25) instead of untimed practice.
+
+Flow: admin sets/edits each paper's limit in the (aa) TIME LIMIT column (persists via `patchSet`) → student's timed run uses exactly that. Existing 6 test sets (duration null) keep the 1-min/question fallback until the admin sets a limit in the column — no destructive migration. `tsc` clean for admin, gateway, and the student app. **Deploy gateway (Render) + admin (Vercel) + student site (Vercel).** CCAT/NGAT unaffected.
+
+---
+
 ### 2026-10-06 (aa) — Math Content: editable TIME LIMIT (MIN) column, Tests track only (Claude / Cowork)
 
 Added a **TIME LIMIT (MIN)** column to the sets table that shows **only on the Tests tab** (Curriculum/Quiz unchanged). Per-row editor = number input + ▲/▼ steppers (±5, clamped 1–180, defaults to 30 when unset). Edits persist via the existing program-agnostic `api.patchSet(setVersionId, { duration_minutes })` (PATCH `/v1/admin/content/sets/:id`), applied optimistically to `folders` + the SWR tree cache, reverting on error. Gateway `GET /v1/admin/math/tree` now returns `sv.duration_minutes` in each set row. `MathContent.tsx` (new `TimeLimitCell`, `isTest`/`cols`/`tableMinWidth`, `commitDuration`) + `admin-math-content.ts` (one column added to the sets select). `tsc` clean for admin + gateway.
