@@ -39,6 +39,16 @@ export function Support() {
   };
   useEffect(() => { loadList(); }, []);
 
+  // Live refresh: poll the student list (unread badges / last message) and the open thread every 5s,
+  // so staff see new student messages without a manual refresh. Skip the thread poll while sending.
+  useEffect(() => {
+    const id = setInterval(() => {
+      loadList();
+      if (selId && !busy) api.supportThread(selId).then(setDetail).catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, [selId, busy]);
+
   const openStudent = (sid: string) => {
     if (sid === selId) return; // already open/loading — don't refire the request
     setSelId(sid); setDetail(null);

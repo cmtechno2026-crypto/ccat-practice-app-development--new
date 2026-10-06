@@ -30,6 +30,13 @@ export function MathContent() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [gradeOpen, setGradeOpen] = useState(false);
+  const gradeBtnRef = useRef<HTMLButtonElement>(null);
+  const [gradePos, setGradePos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+  const openGrade = () => {
+    const r = gradeBtnRef.current?.getBoundingClientRect();
+    if (r) setGradePos({ top: Math.round(r.bottom + 6), right: Math.round(window.innerWidth - r.right) });
+    setGradeOpen(o => !o);
+  };
   const [newSet, setNewSet] = useState(false);
   const [addFolder, setAddFolder] = useState(false);
 
@@ -94,16 +101,15 @@ export function MathContent() {
           })}
         </div>
         <div style={{ flex: 'none', display: 'flex', alignItems: 'center', borderLeft: '1px solid var(--line,#EEF1F7)', padding: '10px 14px', background: 'var(--card2,#FAFBFE)', position: 'relative' }}>
-          <button onClick={() => setGradeOpen(o => !o)}
-            style={{ display: 'flex', alignItems: 'center', gap: 12, height: 42, padding: '0 16px', border: '1px solid var(--line,#E6EAF2)', borderRadius: 999, background: 'var(--card,#fff)', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(15,27,51,.05)' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: 1, color: '#98A2B6' }}>GRADE</span>
-            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--ink,#15233D)' }}>{gradeLabel(curGrade) || '—'}</span>
+          <button ref={gradeBtnRef} onClick={openGrade} aria-haspopup="listbox" aria-expanded={gradeOpen}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, height: 42, padding: '0 16px', border: '1px solid var(--line,#E6EAF2)', borderRadius: 999, background: 'var(--card,#fff)', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(15,27,51,.05)' }}>
+            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--ink,#15233D)' }}>{gradeLabel(curGrade) || 'Select grade'}</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
           </button>
           {gradeOpen && (
             <>
               <button onClick={() => setGradeOpen(false)} aria-label="Close" style={{ position: 'fixed', inset: 0, background: 'transparent', border: 0, zIndex: 39, cursor: 'default' }} />
-              <div style={{ position: 'absolute', top: 58, right: 14, zIndex: 40, width: 190, maxHeight: 300, overflowY: 'auto', background: 'var(--card,#fff)', border: '1px solid var(--line,#E6EAF2)', borderRadius: 14, boxShadow: '0 18px 40px rgba(15,27,51,.16)', padding: 6 }}>
+              <div role="listbox" style={{ position: 'fixed', top: gradePos.top, right: gradePos.right, zIndex: 40, width: 200, maxHeight: 'min(60vh, 360px)', overflowY: 'auto', background: 'var(--card,#fff)', border: '1px solid var(--line,#E6EAF2)', borderRadius: 14, boxShadow: '0 18px 40px rgba(15,27,51,.16)', padding: 6 }}>
                 {grades.map(g => (
                   <button key={g.id} onClick={() => { setGradeId(g.id); setGradeOpen(false); }}
                     style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderRadius: 9, background: g.id === gradeId ? 'var(--card2,#EEF2F7)' : 'transparent', color: 'var(--ink,#15233D)', fontWeight: g.id === gradeId ? 800 : 600, fontSize: 14, cursor: 'pointer' }}>

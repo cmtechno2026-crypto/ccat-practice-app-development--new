@@ -21,6 +21,44 @@
 
 ## Change log
 
+### 2026-10-05 (n) — FIX: support chat didn't update without a manual refresh (live polling) (Claude / Cowork)
+
+🔴 **Bug:** after (m) connected the threads, new messages only appeared after a page refresh on **both** apps — no live update.
+
+**Root cause:** neither Support UI polled. Student app (`Math Olympiad Web/src/screens/Support.tsx`) fetched messages once when the thread opened; admin (`apps/admin/src/pages/Support.tsx`) fetched the thread only on open and after sending. The clients talk to the Fastify gateway, not Supabase directly (the RLS pattern revokes `anon`/`authenticated`), so Supabase **Realtime is not available to them** — polling is the right mechanism.
+
+**Fix (frontend only, no gateway/DB change):** poll every **5s** while the Support view is open (user choice; trades responsiveness vs load on the Seoul DB).
+- **Student app:** the messages effect now loads on open + `setInterval(load, 5000)`, cleaned up on unmount/thread-change (guarded with an `alive` flag). Auto-scroll changed to fire **only when the message count grows** (via a `prevLen` ref), so a poll doesn't yank the view while the student reads history.
+- **Admin app:** added a 5s interval that refreshes the student list (unread badges / last-message) **and** the open thread (`supportThread(selId)`), skipping the thread poll while a send is in flight (`!busy`), cleaned up on unmount. No forced scroll on poll.
+
+**Note:** polling frequency interacts with the latency issue in (m) — each poll is a trans-Pacific round-trip. Fine at today's volume; after the DB region move, 5s is comfortable. If load becomes a concern before then, raise the interval or add a cheap "any messages since <ts>?" head-check endpoint.
+
+**Changed:** `Math Olympiad Web/src/screens/Support.tsx`, `apps/admin/src/pages/Support.tsx`. Both syntax-clean. **Redeploy both frontends** (Vercel): the student site (`math-olympiad-web`) and the admin app.
+
+---
+
+### 2026-10-05 (m) — FIX: student ↔ admin support chat not connected + perf diagnosis (Claude / Cowork)
+
+🔴 **Bug:** messages sent by the student (math web app) and by staff (admin Support console) did **not** appear to each other — two disconnected threads. Proven in live DB: student `"Hello Ma'am"` was stored with `case_id = student_id` (`7c16ad36…`), staff `"hi"` with `case_id = support_cases.id` (`098600d9…`).
+
+**Root cause:** the student math support endpoints in `apps/gateway/src/routes/math.ts` keyed `ccat.support_messages` on the **raw `student_id`**, while `apps/gateway/src/routes/admin-support.ts` keys on the **get-or-created `ccat.support_cases.id`** (site='math'). Different keys ⇒ never the same thread.
+
+**Fix (gateway code):** rewrote the three student support endpoints to use the **same shared model** as admin — one Math `support_cases` row per student (`site_id='math'`), get-or-created from either side; both read/write `support_messages` by `case_id`. Mirrors the existing `support.ts` pattern (student-filed cases, `opened_by=null`). Helpers added: `mathSupportRef()` (collision-checked `SUP-xxxxxx`), `mathCaseId(studentId, create)`. `GET …/messages` resolves the case (no create, returns `[]` if none); `POST …/messages` get-or-creates then inserts `sender='student'`. Shape unchanged (`{id, me, text, at}`). One file: `math.ts`, syntax-clean.
+
+**Fix (one-time data repoint, applied to LIVE DB `cqzpzhdleqyrmedymypg`):** moved orphaned student-keyed messages onto the student's Math case. Only **1** orphan existed (Child A's `"Hello Ma'am"`); now both messages share case `098600d9…`. Verified 0 orphans remain. SQL: create a math case for any orphan math student lacking one (none needed), then `update support_messages set case_id = <student's latest math case> where case_id is a math student_id and not an existing case`.
+
+> **⚠️ Deploy ordering:** the data repoint + the code change must go live together. The **old deployed** gateway reads the student thread by `student_id`; since the orphan moved to the case id, the student app shows the thread **empty until the gateway is redeployed**. After redeploy both sides show both messages.
+
+**🔎 Performance / speed diagnosis (asked by user):**
+- **Primary cause (confirmed): DB region.** Live Supabase project `cqzpzhdleqyrmedymypg` is in **`ap-northeast-2` (Seoul)**. Users + the Render gateway are in North America (GTA). Every query is a **trans-Pacific round-trip** (~150–250ms each — general-knowledge estimate, unverified for this link). Endpoints that run several sequential queries therefore take ~1–2s even when warm. This dominates everything else.
+- **Gateway region / plan (unverified — I can't query Render):** if the Render service is on a free/starter tier it **spins down when idle**, adding a multi-second cold-start to the first request. Check the Render plan and region. Co-locate the gateway in the **same NA region** as the DB.
+- **Indexes (secondary, not the current bottleneck):** Supabase perf advisor reports 91 unindexed foreign keys, incl. `support_cases.student_id` (the new support lookup filters on `student_id`+`site_id`). At today's data volume (hundreds of students, ~1 support case) these are **negligible** — not worth changing now. `support_messages.case_id` is already indexed, so the thread read is fine. Revisit indexes only after the region move, at scale.
+- **The real fix is infrastructure (user action — cannot be done from the repo):** move the Supabase project to a **North-American region** (`ca-central-1` or `us-east-1`). Region can't be changed in place — either create a new project in the NA region and migrate data, or add a read replica there. Then co-locate the Render gateway in that same region. Expected effect: per-query latency drops from ~150–250ms to single-digit ms; multi-query pages go from ~1–2s to ~100–300ms. **No amount of code/index tuning substitutes for this.**
+
+**Changed:** `apps/gateway/src/routes/math.ts` (support chat). **DB:** one-time data repoint on `cqzpzhdleqyrmedymypg` (no schema change, no migration). **Deploy the gateway (Render).**
+
+---
+
 ### 2026-10-05 (l) — FIX: student web app showed "No teacher assigned yet" despite admin assignment (Claude / Cowork)
 
 🔴 **Bug:** on `math-olympiad-web` (student app), the **Support & 1-on-1** page always showed *"No teacher assigned yet"* even when a teacher was assigned to that student in Web Admin.
