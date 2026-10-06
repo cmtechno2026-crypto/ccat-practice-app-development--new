@@ -278,7 +278,7 @@ export function MathContent() {
                 <div key={s.set_version_id} style={{ minWidth: tableMinWidth, display: 'grid', gridTemplateColumns: cols, gap: 12, padding: '15px 20px', borderBottom: '1px solid var(--line,#F3F5FA)', alignItems: 'center', background: i % 2 ? 'var(--card2,#FBFCFE)' : 'var(--card,#fff)' }}>
                   <span style={{ minWidth: 0 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 15, fontWeight: 800, color: '#1A5EAB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                      <span onClick={() => { if (tax) setEditId(s.set_version_id); }} title="Open to view / edit" style={{ fontSize: 15, fontWeight: 800, color: '#1A5EAB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: tax ? 'pointer' : 'default' }} onMouseEnter={e => { (e.currentTarget as HTMLElement).style.textDecoration = 'underline'; }} onMouseLeave={e => { (e.currentTarget as HTMLElement).style.textDecoration = 'none'; }}>{s.name}</span>
                     </span>
                     <span style={{ display: 'block', fontSize: 12, color: '#98A2B6', marginTop: 3 }}>{s.folder}{s.subfolder ? ` · ${s.subfolder}` : ''}</span>
                   </span>

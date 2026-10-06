@@ -203,9 +203,14 @@ function LoadingSplash() {
 
 // Content is program-aware: the Math program shows the admin-managed folder/track manager; CCAT/NGAT
 // show the standard set browser. Driven by the program pill (useAuth().program).
-function ContentSwitch() {
+}
+
+// CCAT/NGAT-only content subpages (exam papers, import, learning plans). The Math program has no
+// equivalent — its folder/track manager lives entirely at /content — so route Math back there instead
+// of rendering the CCAT UI (e.g. landing on /content/exams while the Math program is selected).
+function CcatContentOnly({ el }: { el: JSX.Element }) {
   const { program } = useAuth();
-  return program === 'math' ? <MathContent /> : <Content />;
+  return program === 'math' ? <Navigate to="/content" replace /> : el;
 }
 
 export function App() {
@@ -240,12 +245,12 @@ export function App() {
         <Route path="/teacher-exam" element={<TeacherExam />} />
         {/* Content: set browser (category tree + difficulty tabs) is the home; exam papers 2nd tab. */}
         <Route path="/content" element={<ContentSwitch />} />
-        <Route path="/content/exams" element={<ExamPapers />} />
+        <Route path="/content/exams" element={<CcatContentOnly el={<ExamPapers />} />} />
         {/* Question pool removed from the UI — redirect any old link back to Content. */}
         <Route path="/content/questions" element={<Navigate to="/content" replace />} />
-        <Route path="/content/import" element={<ImportQuestions />} />
+        <Route path="/content/import" element={<CcatContentOnly el={<ImportQuestions />} />} />
         <Route path="/content/sets" element={<Navigate to="/content" replace />} />
-        <Route path="/content/plans" element={<LearningPlans />} />
+        <Route path="/content/plans" element={<CcatContentOnly el={<LearningPlans />} />} />
         {/* Communications */}
         <Route path="/announcements" element={<Announcements />} />
         <Route path="/comms/announcements" element={<Navigate to="/announcements" replace />} />

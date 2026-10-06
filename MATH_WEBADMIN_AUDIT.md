@@ -21,6 +21,18 @@
 
 ## Change log
 
+### 2026-10-06 (cc) — FIX: student test showed 100 min while admin showed 30 (Claude / Cowork)
+
+Admin TIME LIMIT column showed **30** but the student paper ran **99:50 (~100 min)**. Cause: the 6 existing Math test sets predate (bb), so their `duration_minutes` was **null** in the DB — the admin "30" is only a display default (`s.duration_minutes ?? 30`) and was never saved; the student clock then hit the 1-min/question fallback (100 questions → 100 min). Also the gateway change from (bb) that returns `duration_minutes` must be live for the student to receive it.
+
+Fixes:
+- **Data backfill (live DB `cqzpzhdleqyrmedymypg`)**: `update ccat.question_set_versions set duration_minutes=30` for all Math `track='test'` versions where null — the 6 Set 1–6 rows now hold 30, matching the admin display. Non-destructive (only filled nulls).
+- **Student fallback (`Math Olympiad Web/src/components/SetRunner.tsx`)**: exam fallback when `duration_minutes` is unset changed from `questions.length` (1 min/q) to a flat **30 min**, matching the admin default — so an unset value can never again diverge to 100.
+
+After this, with the (bb) gateway live, `practice/start` returns 30 and the student paper runs 30:00. New sets already default to a stored limit (Upload 30 / bulk examDur), so nulls shouldn't recur. `tsc` clean (student app). **Required deploys to make the 30 show up: gateway (Render) — the (bb) change returning `duration_minutes` — and student site (Vercel) for the fallback.** No admin/schema change this entry. CCAT/NGAT unaffected.
+
+---
+
 ### 2026-10-06 (bb) — Tests: time limit now ENFORCED for students (Claude / Cowork)
 
 Made the admin-set per-paper time limit real end-to-end (follow-up to (aa)). Correction to (aa)'s flag: Math test sets **already ran as timed exams** — `SetRunner.tsx` has a countdown + auto-submit, and exam mode is driven by the category's `track='test'` (`isExamTrack` in `math.ts`), not the `allowed_exam` flag. The only gap was the clock used a hardcoded **60s/question** instead of the admin's `duration_minutes`.
