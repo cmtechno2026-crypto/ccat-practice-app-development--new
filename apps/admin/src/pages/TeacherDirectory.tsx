@@ -167,9 +167,7 @@ export function TeacherDirectory() {
     try { await api.teacherSetBan(t.id, banned); load(search); } catch (e) { setErr((e as Error).message); } finally { setActing(false); }
   };
   const deleteTeacher = async (t: TeacherRow) => {
-    const typed = window.prompt(`Permanently delete ${t.name}? This removes their account, availability, sessions and training progress. This cannot be undone.\n\nType the teacher's name to confirm:`);
-    if (typed == null) return;
-    if (typed.trim().toLowerCase() !== (t.name || '').trim().toLowerCase()) { window.alert(`Name did not match \u2014 nothing was deleted. Type exactly: ${t.name}`); return; }
+    if (!window.confirm(`Permanently delete ${t.name}? This removes their account, availability, sessions and training progress. This cannot be undone.`)) return;
     setActing(true); setErr('');
     try { await api.teacherDeleteTeacher(t.id); setSelected(null); await load(search); window.alert(`${t.name}'s account has been deleted.`); }
     catch (e) { const m = (e as Error).message || 'Unknown error'; setErr(m); window.alert('Could not delete this teacher: ' + m); }

@@ -10,6 +10,7 @@ import { sendEmail } from './email.js';
 // reminder is stamped (sla_reminder_at) so it is sent once, and expiry only touches pending slots.
 const ACCEPT_WINDOW_HOURS = 24;
 const REMINDER_LEAD_HOURS = 1;
+const ADMIN_REMINDER_LEAD_HOURS = 5;
 
 type MiniLog = { info?: (...a: any[]) => void; warn?: (...a: any[]) => void; error?: (...a: any[]) => void };
 type Slot = { day_of_week: string; start_time: string; end_time: string; teacher_name?: string };
@@ -104,6 +105,42 @@ export async function runTeacherSlaTick(teacherDb: DB, cfg: Config, log?: MiniLo
           and coalesce(rs.teacher_slot_status, 'pending') = 'pending' and rs.sla_reminder_at is null`,
       [row.request_id, row.teacher_id]);
     reminded++;
+  }
+
+  // 1b) Admin heads-up: ADMIN_REMINDER_LEAD_HOURS hours before the window closes, email the admin ONCE
+  //     for any request still pending (the teacher has not accepted or declined), so they can nudge or
+  //     step in. Stamped per-request (ta_booking_requests.sla_admin_reminder_at) so it is sent once.
+  const adminTo0 = cfg.adminNotifyEmail || cfg.email.from;
+  if (adminTo0) {
+    const ar = await teacherDb.query(
+      `select r.id as request_id, max(r.student_name) as student_name,
+              max(r.parent_name) as parent_name, max(r.parent_email) as parent_email,
+              json_agg(json_build_object('day_of_week', s.day_of_week, 'start_time', s.start_time,
+                       'end_time', s.end_time, 'teacher_name', s.teacher_name)
+                       order by s.day_of_week, s.start_time) as slots
+         from public.ta_booking_requests r
+         join public.ta_booking_request_slots rs on rs.request_id = r.id
+         join public.ta_slots s on s.id = rs.slot_id
+        where r.status = 'pending'
+          and r.sla_admin_reminder_at is null
+          and coalesce(rs.teacher_slot_status, 'pending') = 'pending'
+          and rs.sla_expired_at is null
+          and r.created_at <= now() - (($1)::text || ' hours')::interval
+          and r.created_at >  now() - (($2)::text || ' hours')::interval
+        group by r.id`,
+      [ACCEPT_WINDOW_HOURS - ADMIN_REMINDER_LEAD_HOURS, ACCEPT_WINDOW_HOURS]);
+    for (const row of ar.rows as any[]) {
+      const slots = (row.slots as Slot[]) || [];
+      const who = esc(row.student_name || 'a student');
+      const inner = h2('Teacher has not responded yet')
+        + preview(`About ${ADMIN_REMINDER_LEAD_HOURS} hours left before this request is auto-declined.`)
+        + `<p style="${P}">A booking request for <strong>${who}</strong> is still pending — the teacher has not accepted or declined it, and the 24-hour window closes in about ${ADMIN_REMINDER_LEAD_HOURS} hours. If they do not respond, the session(s) below will be auto-declined.</p>`
+        + `<p style="${P}">Student: <strong>${who}</strong><br>Parent: ${esc(row.parent_name || '')} — ${esc(row.parent_email || '')}<br>Request ID: ${esc(row.request_id)}</p>`
+        + sessions(slots);
+      await sendEmail(cfg, { to: adminTo0, subject: `TeacherHub: teacher hasn't responded — ~${ADMIN_REMINDER_LEAD_HOURS}h left (${row.student_name || 'student'})`, html: wrap(cfg, inner) }, log);
+      await teacherDb.query(`update public.ta_booking_requests set sla_admin_reminder_at = now() where id = $1 and sla_admin_reminder_at is null`, [row.request_id]);
+      reminded++;
+    }
   }
 
   // 2) Expiry: auto-decline still-pending slots past the window.
