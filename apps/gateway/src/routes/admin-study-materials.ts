@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
 import type { Config } from '../config.js';
@@ -80,6 +80,8 @@ export function registerAdminStudyMaterialRoutes(app: FastifyInstance, db: DB, c
       const kind = (row.source_kind === 'pptx' ? 'pptx' : 'pdf') as 'pdf' | 'pptx';
       const src = await secure.get(row.storage_key);
       if (!src) throw new Error('source bytes missing from secure storage');
+      await db.query('update ccat.content_assets set checksum_sha256=$2 where storage_key=$1',
+        [row.storage_key, createHash('sha256').update(src.bytes).digest('hex')]).catch(() => {});
       const { pageCount, pages } = await rasterizeSource(src.bytes, kind);
       const prefix: string = row.pages_prefix || `study-pages/${materialId}/`;
       await mapPool(pages, 6, async (p) => {
@@ -139,8 +141,12 @@ export function registerAdminStudyMaterialRoutes(app: FastifyInstance, db: DB, c
     // decode and put them now.
     let storageKey: string;
     let byteSize: number | null = b.byte_size ?? null;
+    // content_assets.checksum_sha256 is NOT NULL. Inline path hashes the bytes; signed path has no
+    // bytes here, so seed a deterministic placeholder from the key and fill the real hash at render.
+    let checksum = '';
     if (b.storage_key) {
       storageKey = b.storage_key;
+      checksum = createHash('sha256').update(storageKey).digest('hex');
     } else if (b.data_base64) {
       const raw = b.data_base64.includes(',') ? b.data_base64.slice(b.data_base64.indexOf(',') + 1) : b.data_base64;
       let bytes: Buffer;
@@ -150,15 +156,16 @@ export function registerAdminStudyMaterialRoutes(app: FastifyInstance, db: DB, c
       try { await secure.put(storageKey, bytes, b.mime_type); }
       catch (e) { throw Errors.validation(`Secure storage upload failed: ${(e as Error).message}`); }
       byteSize = bytes.length;
+      checksum = createHash('sha256').update(bytes).digest('hex');
     } else {
       throw Errors.validation('Provide storage_key (after a signed upload) or data_base64');
     }
 
     const materialId = await withTransaction(db, async (c) => {
       const asset = await c.query(
-        `insert into ccat.content_assets(storage_key,mime_type,byte_size,created_by)
-         values ($1,$2,$3,$4) returning id`,
-        [storageKey, b.mime_type, byteSize ?? 0, req.admin!.adminId]);
+        `insert into ccat.content_assets(storage_key,mime_type,byte_size,checksum_sha256,created_by)
+         values ($1,$2,$3,$4,$5) returning id`,
+        [storageKey, b.mime_type, byteSize ?? 0, checksum, req.admin!.adminId]);
       const assetId = asset.rows[0]!.id as string;
       const m = await c.query(
         `insert into ccat.study_materials

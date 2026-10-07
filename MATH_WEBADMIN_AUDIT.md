@@ -21,6 +21,15 @@
 
 ## Change log
 
+### 2026-10-07 (ll) — FIX study-material upload 500 + multi-file upload + chapter rename (Claude / Cowork)
+
+**BUG (reported):** admin Add-material → signed upload + PUT succeeded (200) but `POST /v1/admin/math/study-materials` returned **500 Internal Server Error**. Cause: `ccat.content_assets.checksum_sha256` is **NOT NULL**, and the register insert omitted it → null-violation (whole tx rolled back, so no orphan rows; the signed source object stays in the bucket, harmless).
+**Fix (`apps/gateway/src/routes/admin-study-materials.ts`):** compute `checksum` for the content_assets insert — inline path hashes the decoded bytes; signed path seeds a deterministic placeholder `sha256(storage_key)` (no bytes on hand at register) and the render job overwrites it with the real `sha256(source bytes)` once fetched. Insert now includes `checksum_sha256`. Needs a gateway redeploy.
+**Enhancement 1 — multi-file upload (`MathContent.tsx` AddMaterialModal):** the file input is now `multiple`; selecting >1 file uploads each as its own material titled by its filename (description + chapter applied to all), with per-file progress. Single-file keeps the editable Title field.
+**Enhancement 2 — rename chapter (`MathContent.tsx`):** each chapter row in the FOLDERS panel gets a pencil icon → `RenameFolderModal` → `api.mathRenameFolder` (existing endpoint) → refresh.
+**Deploy (user):** redeploy gateway (checksum fix) + rebuild admin app (multi-file + rename). No DB/migration changes.
+**Verify:** admin-study-materials.ts + MathContent.tsx pass esbuild transpile.
+
 ### 2026-10-07 (kk) — Study Material: Phase 2 STUDENT app wired (Math Olympiad Web) (Claude / Cowork)
 
 **`Math Olympiad Web/src/screens/StudyMaterial.tsx`** — replaced the placeholder with the real screen: a responsive card grid of published materials (PDF/PPT badge, title, description, chapter chip, page count) + a full-screen **Viewer** that pages through the server-watermarked images. No download; `onContextMenu`/drag disabled, `pointer-events:none` on the image, keyboard arrows + Esc, "view only" labels. Honest limit noted in code: screen capture can't be blocked by a web app — the per-student watermark is the deterrent.

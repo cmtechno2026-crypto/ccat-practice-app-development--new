@@ -122,6 +122,7 @@ export function MathContent() {
   const [addFolder, setAddFolder] = useState(false);
   const [bulk, setBulk] = useState(false);
   const [addMaterial, setAddMaterial] = useState(false);
+  const [editChapter, setEditChapter] = useState<{ id: string; name: string } | null>(null);
   const [preview, setPreview] = useState<{ id: string; title: string; pages: number } | null>(null);
   const [defPerSet, setDefPerSet] = useState<number>(loadDefaultPerSet);
   const setDefault = (n: number) => { const v = Math.min(PER_SET_CEILING, Math.max(1, Math.round(n || 1))); setDefPerSet(v); saveDefaultPerSet(v); };
@@ -426,11 +427,17 @@ export function MathContent() {
             {chapters.map(c => {
               const on = c.id === chapterId;
               return (
-                <button key={c.id} onClick={() => setChapterId(c.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '11px 12px', marginBottom: 3, border: 0, borderRadius: 10, cursor: 'pointer', fontSize: 14, background: on ? '#1A5EAB' : 'transparent', color: on ? '#fff' : '#44506A', fontWeight: on ? 800 : 500 }}>
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="M3 7l4-3h5l2 2h7v14H3z" /></svg>
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-                </button>
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', marginBottom: 3, borderRadius: 10, background: on ? '#1A5EAB' : 'transparent' }}>
+                  <button onClick={() => setChapterId(c.id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, textAlign: 'left', padding: '11px 12px', border: 0, borderRadius: 10, cursor: 'pointer', fontSize: 14, background: 'transparent', color: on ? '#fff' : '#44506A', fontWeight: on ? 800 : 500 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="M3 7l4-3h5l2 2h7v14H3z" /></svg>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                  </button>
+                  <button onClick={() => setEditChapter({ id: c.id, name: c.name })} title="Rename chapter" aria-label="Rename chapter"
+                    style={{ flex: 'none', width: 30, height: 30, marginRight: 6, border: 0, borderRadius: 8, background: 'transparent', color: on ? '#CFE0F5' : '#98A2B6', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -485,6 +492,7 @@ export function MathContent() {
         );
       })()}
       {addFolder && <AddFolderModal gradeId={gradeId} onClose={() => setAddFolder(false)} onDone={() => { setAddFolder(false); reloadChaptersFresh(); }} />}
+      {editChapter && <RenameFolderModal id={editChapter.id} initial={editChapter.name} onClose={() => setEditChapter(null)} onDone={() => { setEditChapter(null); reloadChaptersFresh(); }} />}
       {newSet && setTrack && (
         <NewSetModal track={setTrack} gradeId={gradeId} categoryId={defaultCatId} chapterId={fileChapter}
           onClose={() => setNewSet(false)} onDone={() => { setNewSet(false); reloadSetsFresh(); }} />
@@ -525,6 +533,20 @@ function AddFolderModal({ gradeId, onClose, onDone }: { gradeId: string; onClose
   );
 }
 
+function RenameFolderModal({ id, initial, onClose, onDone }: { id: string; initial: string; onClose: () => void; onDone: () => void }) {
+  const [name, setName] = useState(initial); const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const save = async () => { if (!name.trim()) return; setBusy(true); setErr('');
+    try { await api.mathRenameFolder(id, name.trim()); onDone(); } catch (e) { setErr((e as Error).message); setBusy(false); } };
+  return (
+    <Modal title="Rename chapter" onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy || !name.trim()} onClick={save}>{busy ? 'Saving…' : 'Save'}</button></>}>
+      <label style={{ fontWeight: 700, fontSize: 13 }}>Chapter name</label>
+      <input autoFocus style={inputS} value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); }} />
+      {err && <div className="err">{err}</div>}
+    </Modal>
+  );
+}
+
 function NewSetModal({ track, gradeId, categoryId, chapterId, onClose, onDone }: { track: SetTrack; gradeId: string; categoryId: string; chapterId: string | null; onClose: () => void; onDone: () => void }) {
   const [name, setName] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const save = async () => {
@@ -547,32 +569,50 @@ function AddMaterialModal({ gradeId, chapters, defaultChapterId, onClose, onDone
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [chapter, setChapter] = useState<string>(defaultChapterId || '');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
-  const pick = (f: File | null) => { setFile(f); if (f && !title) setTitle(f.name.replace(/\.[^.]+$/, '')); };
+  const [progress, setProgress] = useState('');
+  const multi = files.length > 1;
+  const stripExt = (n: string) => n.replace(/\.[^.]+$/, '');
+  const pick = (fl: FileList | null) => {
+    const arr = fl ? Array.from(fl) : [];
+    setFiles(arr);
+    if (arr.length === 1 && !title) setTitle(stripExt(arr[0]!.name));
+  };
   const save = async () => {
-    if (!file || !title.trim()) return; setBusy(true); setErr('');
+    if (files.length === 0) return;
+    if (!multi && !title.trim()) return;
+    setBusy(true); setErr('');
     try {
-      await api.mathStudyUpload(file, { grade_id: gradeId, chapter_id: chapter || null, title: title.trim(), description: desc.trim() || null });
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i]!;
+        setProgress(`Uploading ${i + 1} / ${files.length}: ${f.name}`);
+        const t = multi ? stripExt(f.name) : title.trim();
+        await api.mathStudyUpload(f, { grade_id: gradeId, chapter_id: chapter || null, title: t, description: desc.trim() || null });
+      }
       onDone();
-    } catch (e) { setErr((e as Error).message); setBusy(false); }
+    } catch (e) { setErr((e as Error).message); setBusy(false); setProgress(''); }
   };
   return (
     <Modal title="Add material" onClose={onClose}
-      footer={<><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy || !file || !title.trim()} onClick={save}>{busy ? 'Uploading…' : 'Upload'}</button></>}>
-      <label style={{ fontWeight: 700, fontSize: 13 }}>File (PDF, PPT or PPTX)</label>
-      <input type="file" accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        onChange={e => pick(e.target.files?.[0] || null)} style={{ fontSize: 13 }} />
-      <label style={{ fontWeight: 700, fontSize: 13 }}>Title</label>
-      <input style={inputS} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Chapter 1 — Concept Notes" />
-      <label style={{ fontWeight: 700, fontSize: 13 }}>Description <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
+      footer={<><button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button><button className="btn" disabled={busy || files.length === 0 || (!multi && !title.trim())} onClick={save}>{busy ? 'Uploading…' : (multi ? `Upload ${files.length} files` : 'Upload')}</button></>}>
+      <label style={{ fontWeight: 700, fontSize: 13 }}>File(s) (PDF, PPT or PPTX)</label>
+      <input type="file" multiple accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        onChange={e => pick(e.target.files)} style={{ fontSize: 13 }} />
+      {files.length > 0 && <div className="muted" style={{ fontSize: 12 }}>{files.length} file{files.length === 1 ? '' : 's'} selected{multi ? ' — each becomes its own material, titled by its filename' : ''}</div>}
+      {!multi && (<>
+        <label style={{ fontWeight: 700, fontSize: 13 }}>Title</label>
+        <input style={inputS} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Chapter 1 — Concept Notes" />
+      </>)}
+      <label style={{ fontWeight: 700, fontSize: 13 }}>Description <span className="muted" style={{ fontWeight: 400 }}>(optional{multi ? ', applied to all' : ''})</span></label>
       <input style={inputS} value={desc} onChange={e => setDesc(e.target.value)} placeholder="e.g. Teaching notes · 18 pages" />
-      <label style={{ fontWeight: 700, fontSize: 13 }}>Folder (chapter)</label>
+      <label style={{ fontWeight: 700, fontSize: 13 }}>Folder (chapter){multi ? ' (applied to all)' : ''}</label>
       <select style={inputS} value={chapter} onChange={e => setChapter(e.target.value)}>
         <option value="">{NO_FOLDER}</option>
         {chapters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
-      <div className="muted" style={{ fontSize: 12 }}>View-only for students. The file is converted to watermarked page images on our server — the original is never downloadable. Large files upload directly and may take a moment to finish processing.</div>
+      <div className="muted" style={{ fontSize: 12 }}>View-only for students. Each file is converted to watermarked page images on our server — the original is never downloadable. Large files upload directly and may take a moment to finish processing.</div>
+      {busy && progress && <div className="muted" style={{ fontSize: 12 }}>{progress}</div>}
       {err && <div className="err">{err}</div>}
     </Modal>
   );
