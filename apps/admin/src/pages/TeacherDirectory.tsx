@@ -278,16 +278,6 @@ export function TeacherDirectory() {
     } catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not update slot' })); }
     finally { setSavingSlot(null); }
   };
-  const deleteSlot = async (teacherId: string, slot: Slot) => {
-    if (!window.confirm(`Delete this slot (${slot.day_of_week} ${slot.start_time}\u2013${slot.end_time})? This cannot be undone.`)) return;
-    setSavingSlot(slot.id);
-    try {
-      await api.teacherDeleteSlot(slot.id);
-      setSlots(m => ({ ...m, [teacherId]: (m[teacherId] || []).filter(x => x.id !== slot.id) }));
-      setPopSlot(null);
-    } catch (e) { setSlotErr(m => ({ ...m, [teacherId]: (e as Error).message || 'Could not delete slot' })); }
-    finally { setSavingSlot(null); }
-  };
 
   // Per-request slot selection (toggle which accepted slots to book; the rest are declined).
   const pickFor = (reqId: string, mineIds: string[]) => reqPick[reqId] ?? new Set(mineIds);
@@ -381,7 +371,6 @@ export function TeacherDirectory() {
             {isAvail && <button onClick={() => book(id, s)} disabled={savingSlot === s.id} style={{ flex: '1 1 100%', fontWeight: 800, padding: '7px', borderRadius: 8, border: 0, background: 'var(--teal,#0f766e)', color: '#fff', cursor: 'pointer', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Booking…' : 'Book'}</button>}
             {!isAvail && <button onClick={() => (hasStudent ? doUnbook(id, s) : unbook(id, s))} disabled={savingSlot === s.id} style={{ ...slotBtn, flex: '1 1 100%', background: hasStudent ? 'var(--teal,#0f766e)' : 'var(--card,#fff)', color: hasStudent ? '#fff' : 'inherit', border: hasStudent ? 0 : '1px solid var(--line,#d7dce8)', opacity: savingSlot === s.id ? .6 : 1 }}>{savingSlot === s.id ? 'Working…' : (hasStudent ? (ubEnd ? 'End series' : 'Unbook') : 'Make available')}</button>}
             {s.status !== 'unavailable' && <button onClick={() => setUnavailable(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, color: 'var(--amber,#b45309)', opacity: savingSlot === s.id ? .6 : 1 }}>Make unavailable</button>}
-            <button onClick={() => deleteSlot(id, s)} disabled={savingSlot === s.id} style={{ ...slotBtn, color: 'var(--coral,#c0392b)', opacity: savingSlot === s.id ? .6 : 1 }}>Delete</button>
           </div>
         </div>
       </>
