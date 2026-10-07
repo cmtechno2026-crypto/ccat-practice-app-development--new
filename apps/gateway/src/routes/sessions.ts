@@ -412,6 +412,8 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     if (s.rows.length === 0) throw Errors.notFound('Session not found');
     const sess = s.rows[0]!;
     if (sess.state !== 'IN_PROGRESS') throw Errors.sessionTerminal();
+    // Resuming activity clears any "Save & Leave" marker so the admin list returns to In progress.
+    await db.query(`update ccat.sessions set left_at = null where id = $1 and left_at is not null`, [id]);
     // Exam sets now run as a single server-timed session (one per-set deadline), so the standard
     // deadline guard below covers them — no separate per-battery expiry check.
     // Deadline-aware guard (§14): a timed session past its deadline cannot accept answers;
@@ -488,6 +490,20 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     );
     await db.query(`update ccat.session_answers set is_locked = true where session_id = $1`, [id]);
     return { session_id: id, terminal_state: 'ABANDONED' };
+  });
+
+  // POST /v1/sessions/:id/leave — "Save & Leave": record that the student exited WITHOUT submitting. The
+  // session stays IN_PROGRESS and fully resumable; this only stamps left_at so the ADMIN assignment list
+  // can show the set as Done (ungraded). Cleared on the next answer activity (see PATCH /answers), so a
+  // resume flips the admin status back to In progress. No-op on a terminal session.
+  app.post('/v1/sessions/:id/leave', { preHandler: [app.authenticateStudent] }, async (req) => {
+    const id = (req.params as { id: string }).id;
+    const r = await db.query(
+      `update ccat.sessions set left_at = now() where id = $1 and student_id = $2 and state = 'IN_PROGRESS' returning id`,
+      [id, req.student!.studentId],
+    );
+    if (r.rows.length === 0) throw Errors.notFound('Session not found');
+    return { session_id: id, left_at: true };
   });
 
   // GET /v1/sessions/:id/result — recovery after a lost response (§13.3)

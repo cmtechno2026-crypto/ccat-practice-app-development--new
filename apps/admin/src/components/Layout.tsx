@@ -137,6 +137,16 @@ const TEACHER_ONLY_RAIL: RailItem[] = [
   { to: '/teacher-exam', label: 'Exam', ic: '📝', match: '/teacher-exam' },
 ];
 
+// Math Olympiad teacher rail — the solid-chip mockup (Students / Test Prep / Quiz Arena / Support).
+// Only teacher accounts with the Math program selected; CCAT/NGAT teachers keep TEACHER_ONLY_RAIL above.
+// Test Prep -> the timed exam tool; Quiz Arena -> the practice tool (both already program-aware).
+const TEACHER_MATH_RAIL: RailItem[] = [
+  { to: '/students', label: 'Students', ic: '🧒', match: '/students', svg: 'M12 11a3.4 3.4 0 100-6.8 3.4 3.4 0 000 6.8zM5.5 20a6.5 6.5 0 0113 0', tone: '#E8A020' },
+  { to: '/teacher-exam', label: 'Test Prep', ic: '📝', match: '/teacher-exam', svg: 'M7 3h8l3 3v15H7zM10 11h5M10 15h4', tone: '#D4620E' },
+  { to: '/teacher-practice', label: 'Quiz Arena', ic: '📚', match: '/teacher-practice', svg: 'M12 4l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L4.8 9.3l5-.7z', tone: '#1E9E63' },
+  { to: '/support', label: 'Support', ic: '💬', match: '/support', svg: 'M4 5h16v10H9l-4 4zM8 9h8M8 12h5', tone: '#2E86D4' },
+];
+
 // Support is MATH OLYMPIAD only — injected into the active rail solely when the Math program is selected
 // (both admins and teacher accounts). Teachers see Support for their assigned students; admins for all.
 const SUPPORT_ITEM: RailItem = { to: '/support', label: 'Support', ic: '💬', match: '/support', svg: 'M21 12a9 9 0 11-3.2-6.9L21 4M8 10h8M8 14h5', tone: '#4FA3E3' };
@@ -151,10 +161,10 @@ export function Layout() {
   const { me, logout, can, sites, activeSite, switchSite, program } = useAuth();
   const loc = useLocation();
   const [siteMenu, setSiteMenu] = useState(false);
-  const baseRail = me?.is_teacher ? TEACHER_ONLY_RAIL : railForSite(activeSite);
+  const baseRail = me?.is_teacher ? (program === 'math' ? TEACHER_MATH_RAIL : TEACHER_ONLY_RAIL) : railForSite(activeSite);
   const RAIL_ACTIVE = (program === 'math' && activeSite !== 'teacher')
     ? (me?.is_teacher
-        ? [...baseRail, SUPPORT_ITEM]
+        ? (baseRail.some(r => r.to === '/support') ? baseRail : [...baseRail, SUPPORT_ITEM])
         : (() => { const i = baseRail.findIndex(r => r.to === '/teachers'); return i >= 0 ? [...baseRail.slice(0, i + 1), SUPPORT_ITEM, ...baseRail.slice(i + 1)] : [...baseRail, SUPPORT_ITEM]; })())
     : baseRail;
   // Keep the active site in sync with the URL so a hard refresh / deep-link to a /teacher/* page shows

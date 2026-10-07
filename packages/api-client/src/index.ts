@@ -310,6 +310,11 @@ export class CcatClient {
   abandon(id: string, confirm = false) {
     return this.request<{ session_id: string; terminal_state: string }>('POST', `/v1/sessions/${id}/abandon`, { auth: true, body: { confirm } });
   }
+  // Save & Leave: records that the student exited WITHOUT submitting. Session stays IN_PROGRESS and
+  // resumable; only stamps left_at so the admin assignment list shows the set as Done (ungraded).
+  leave(id: string) {
+    return this.request<{ session_id: string; left_at: boolean }>('POST', `/v1/sessions/${id}/leave`, { auth: true });
+  }
   batteryStart(sessionId: string, key: string) {
     return this.request<BatteryState>('POST', `/v1/sessions/${sessionId}/batteries/${key}/start`, { auth: true });
   }

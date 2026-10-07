@@ -12,7 +12,7 @@ const toDateInputIST = (iso?: string | null): string => { if (!iso) return ''; c
 export function StudentDetail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const { can, me } = useAuth();
+  const { can, me, program } = useAuth();
   // Teachers get read-only student detail with guardian CONTACT info withheld (no email / phone).
   const hideContact = !!me?.is_teacher;
   const toast = useToast();
@@ -165,6 +165,9 @@ export function StudentDetail() {
           <button className="btn ghost sm" onClick={() => rejectGrade(d.grade_change_request.id)}>Reject</button>
         </>}
       </div>}
+      {program === 'math' ? (
+        <MathStatsGrid d={d} />
+      ) : (
       <div className="stats">
         <Stat n={<StatusPill status={d.status} />} label="Status" />
         <Stat n={`Grade ${d.grade_number}`} label="Grade" />
@@ -174,6 +177,7 @@ export function StudentDetail() {
         <Stat n={d.progress_totals ? `${d.progress_totals.practiceSetsDone} / ${d.progress_totals.practiceSetsTotal}` : '—'} label="Practice sets done" color="var(--blue, #2f6fd0)" />
         <Stat n={d.progress_totals ? `${d.progress_totals.examPapersDone} / ${d.progress_totals.examPapersTotal}` : '—'} label="Exam sets done" color="var(--blue, #2f6fd0)" />
       </div>
+      )}
 
       <style>{`
         .sdbento{--sd-card:#fff;--sd-line:#e7e8f2;--sd-card2:#f7f7fb;display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:190px;gap:14px;grid-auto-flow:row dense;margin-top:16px}
@@ -396,7 +400,7 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
         .apx-hint{font-size:11px;color:var(--muted,#6b6f8a);margin:2px 2px 0}
       `}</style>
 
-      <div className="apx-h">Battery Practice</div>
+      <div className="apx-h">{program === 'math' ? 'Quiz Arena' : 'Battery Practice'}</div>
       <div className="apx-card">
         {loading ? <Loading /> : error ? <ErrorBox e={error} /> : batteries.length === 0 ? (
           <div className="muted">No practice yet — nothing to show.</div>
@@ -444,7 +448,7 @@ function AdminProgressSections({ studentId, onOpenSet }: { studentId: string; on
         </>)}
       </div>
 
-      <div className="apx-h">Exam Progress</div>
+      <div className="apx-h">{program === 'math' ? 'Test Prep' : 'Exam Progress'}</div>
       <div className="apx-card">
         {loading ? null : error ? null : (
           <div className="apx-boxes" style={{ marginBottom: 14 }}>
@@ -561,7 +565,12 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
 
       {rv?.found && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--line, #e6e6ef)', background: 'var(--card, #fff)', flexShrink: 0 }}>
-          <span style={{ fontSize: 13, color: 'var(--muted, #6b6f8a)' }}>Score <b>{rv.score?.correct ?? 0}/{rv.score?.total ?? 0}</b> · Accuracy <b>{rv.accuracyPct != null ? `${rv.accuracyPct}%` : '—'}</b> · Time <b>{rv.timeSeconds != null ? `${Math.round(rv.timeSeconds / 60)}m` : '—'}</b></span>
+          <span style={{ fontSize: 13, color: 'var(--muted, #6b6f8a)', display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {rv.inProgress && <span style={{ fontSize: 11.5, fontWeight: 800, color: '#b7791f', background: '#fdf3e2', borderRadius: 999, padding: '3px 10px' }}>In progress</span>}
+            <span>Score <b>{rv.score?.correct ?? 0}/{rv.score?.total ?? 0}</b>{rv.inProgress
+              ? <> · Answered <b>{rv.answeredCount ?? 0}/{rv.score?.total ?? 0}</b></>
+              : <> · Accuracy <b>{rv.accuracyPct != null ? `${rv.accuracyPct}%` : '—'}</b> · Time <b>{rv.timeSeconds != null ? `${Math.round(rv.timeSeconds / 60)}m` : '—'}</b></>}</span>
+          </span>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 18, flexWrap: 'wrap' }}>
             {chk(showCorrect, () => setShowCorrect(v => !v), 'Correct')}
             {chk(showWrong, () => setShowWrong(v => !v), 'Wrong / unattempted')}
@@ -574,7 +583,7 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
       <div style={{ flex: 1, overflow: 'auto', direction: 'rtl' }}>
         <div style={{ direction: 'ltr', padding: '16px 20px', maxWidth: 900, width: '100%', margin: '0 auto' }}>
         {loading ? <Loading /> : error ? <ErrorBox e={error} /> : !rv?.found ? (
-          <div className="muted">No submitted attempt found for this set.</div>
+          <div className="muted">No attempt yet for this set.</div>
         ) : shown.length === 0 ? (
           <div className="muted">Nothing to show — adjust the filters above.</div>
         ) : shown.map((q: any) => {
@@ -618,6 +627,44 @@ function SetReviewModal({ studentId, setId, label, studentName, onClose }: { stu
   );
 }
 
+
+// ---- Math Olympiad stat tiles (mockup): white cards, a colour dot, big value, caption. Test Prep =
+// timed exam/test papers; Quiz = practice sets (the Math catalog's two tracks).
+function MathStatsGrid({ d }: { d: any }) {
+  const pt = d.progress_totals;
+  const tiles: { label: string; value: React.ReactNode; tone: string; badge?: boolean }[] = [
+    { label: 'STATUS', value: <StatusPill status={d.status} />, tone: '#19B07A', badge: true },
+    { label: 'GRADE', value: `Grade ${d.grade_number}`, tone: '#1A5EAB' },
+    { label: 'AGE (COMPUTED)', value: d.age_years ?? '—', tone: '#1A5EAB' },
+    { label: 'XP', value: d.xp_total ?? 0, tone: '#19B07A' },
+    { label: 'COINS', value: d.coins ?? 0, tone: '#B4540C' },
+    { label: 'TEST PREP DONE', value: pt ? `${pt.examPapersDone} / ${pt.examPapersTotal}` : '—', tone: '#1A5EAB' },
+    { label: 'QUIZ DONE', value: pt ? `${pt.practiceSetsDone} / ${pt.practiceSetsTotal}` : '—', tone: '#1A5EAB' },
+  ];
+  return (
+    <>
+      <style>{`
+        .msg{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:16px}
+        .msg .mtile{background:var(--card,#fff);border:1px solid var(--line,#E6EAF2);border-radius:14px;padding:16px 18px}
+        .msg .mtop{display:flex;align-items:center;gap:8px;margin-bottom:12px;min-height:24px}
+        .msg .mdot{width:7px;height:7px;flex:none;border-radius:999px}
+        .msg .mval{font-size:21px;font-weight:800;letter-spacing:-.5px;color:var(--ink,#15233D)}
+        .msg .mlab{font-size:11.5px;font-weight:800;letter-spacing:.6px;color:#8E99AE;line-height:1.45}
+      `}</style>
+      <div className="msg">
+        {tiles.map((t, i) => (
+          <div className="mtile" key={i}>
+            <div className="mtop">
+              <span className="mdot" style={{ background: t.tone }} />
+              {t.badge ? t.value : <span className="mval">{t.value}</span>}
+            </div>
+            <div className="mlab">{t.label}</div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
 
 // ---- Assignment Panel (teacher -> student SET assignments) -----------------------------------------
 // Teacher assigns published sets/papers to a student; each row shows live status (Assigned / In progress
@@ -686,7 +733,7 @@ function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSe
         .asgt-x{background:none;border:none;color:var(--muted,#9aa1b4);cursor:pointer;font-size:12.5px;font-weight:700;padding:0}
         .asgt-mut{color:var(--muted,#9aa1b4);font-size:12.5px}
       `}</style>
-      <div className="asgt-h">Assignments {items.length > 0 && <span className="count">{items.length}</span>}
+      <div className="asgt-h">{program === 'math' ? 'Homework' : 'Assignments'} {items.length > 0 && <span className="count">{items.length}</span>}
         <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAssignOpen(true)}>+ Assign set</button>
       </div>
       {loading ? <Loading /> : error ? <ErrorBox e={error} /> : items.length === 0 ? (
@@ -729,11 +776,13 @@ function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSe
                     </td>
                     <td><span className={`asgt-st ${stCls}`}>{a.status === 'done' ? 'Done' : a.status === 'in_progress' ? 'In progress' : 'Assigned'}</span></td>
                     <td style={{ textAlign: 'right' }}>
-                      {a.status === 'done' ? (
-                        <button className="asgt-link" onClick={() => onOpenSet(a.question_set_id, a.name)}>View set →</button>
-                      ) : a.status === 'assigned' ? (
+                      {a.status === 'assigned' ? (
                         <button className="asgt-x" title="Remove assignment" onClick={() => remove(a.id)}>✕ Remove</button>
-                      ) : <span className="asgt-mut">—</span>}
+                      ) : (
+                        // Done AND in-progress both open the set-review drawer — admins can watch an
+                        // attempt mid-flight, not only after submission.
+                        <button className="asgt-link" onClick={() => onOpenSet(a.question_set_id, a.name)}>View set →</button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -795,9 +844,9 @@ function AssignModal({ studentId, onClose, onAssigned }: { studentId: string; on
   });
   const seg = (
     <div style={{ display: 'flex', padding: 4, borderRadius: 9, background: 'var(--sky,#e8ecf3)' }}>
-      <button style={segBtn(mode === 'practice', true)} onClick={() => goMode('practice')}>Practice</button>
+      <button style={segBtn(mode === 'practice', true)} onClick={() => goMode('practice')}>{program === 'math' ? 'Quiz Arena' : 'Practice'}</button>
       <button style={segBtn(mode === 'exam', examAccess)} title={examAccess ? '' : 'Exam papers require a Plus or Premium plan'} onClick={() => goMode('exam')}>
-        {examAccess ? 'Exam' : '🔒 Exam'}
+        {examAccess ? (program === 'math' ? 'Test Prep' : 'Exam') : (program === 'math' ? '🔒 Test Prep' : '🔒 Exam')}
       </button>
     </div>
   );

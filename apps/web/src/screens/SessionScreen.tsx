@@ -239,6 +239,9 @@ export function SessionScreen() {
     // offers BOTH Resume and Redo afterwards — identical to exiting via the Back control. Practice answers
     // are already committed server-side per attempt, so nothing is lost by leaving without abandon. (Redo
     // from the set card is what abandons the old in-progress session before starting a fresh attempt.)
+    // Mark the attempt as left so the teacher/admin assignment list shows it as Done (still resumable;
+    // answering again clears the marker). Best-effort — never block the exit on it.
+    try { await client.leave(id); } catch { /* ignore — progress is already saved per answer */ }
     flash('Progress saved.');
     nav('/home', { replace: true });
   }

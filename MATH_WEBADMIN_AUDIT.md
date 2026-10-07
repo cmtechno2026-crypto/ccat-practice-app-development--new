@@ -21,6 +21,14 @@
 
 ## Change log
 
+### 2026-10-06 (gg) — Admin sidebar: solid-chip icons (Practice workspace) per mockup (Claude / Cowork)
+
+Restyled the Practice-workspace rail to the `Sidebar-Solid-Chips` mockup: each nav item now shows a full-colour circular chip (32px) with a white glyph instead of an emoji, keeping the existing navy rail, white active pill, hover-expand, and footer. Per-item tones/paths from the mockup — Dashboard #2FA86A, Content #1A5EAB, Students #E8A020, Teachers #D4620E, Announcements #E8A020, Audit log #9A8CE0, Membership #2FA86A, Support (Math) #4FA3E3.
+
+Implementation: `RailItem` gains optional `svg`/`tone`; added them to `BASE_RAIL`, the Membership item, and the Math `SUPPORT_ITEM`; the rail renders a `.rchip` chip when both are present, else the old emoji. **TeacherHub & teacher-only rails are untouched** (their items have no `svg`/`tone`, so they keep emoji). CSS scoped with `:has(.rchip)` so chip sizing/height apply only to chip items — no effect on TeacherHub. Files: `components/Layout.tsx`, `theme.css`. `tsc` clean + `esbuild Layout.tsx` transforms clean (full vite build runs on the Windows checkout; the Linux device VM has no usable vite). **Deploy admin (Vercel).** No gateway/DB change.
+
+---
+
 ### 2026-10-06 (ff) — FIX: Test Prep list showed 100 min instead of admin's 30 (Claude / Cowork)
 
 The Test Prep list card showed "100 questions · 100 min" — `TestPrep.tsx` computed the shown limit as `question_count` (1 min/question), ignoring the set's `duration_minutes`. (The in-run timer was already fixed in (bb)/(cc); this was only the list display, which reads the catalog, not the session.) Fixes:

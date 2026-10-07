@@ -332,24 +332,41 @@ export async function computeProgressSets(db: DB, sid: string, battery: string, 
 // GET /v1/progress/set-review — the student's LATEST submitted attempt of a set, rebuilt for read-only
 // review: each question with its options, the correct answer(s) and what the child picked, in the SAME
 // order the child saw (same seeded shuffle as the player), plus a summary (score / accuracy / time).
-export async function computeSetReview(db: DB, sid: string, setId: string) {
-  const empty = { found: false, setName: null as string | null, score: { correct: 0, total: 0 }, accuracyPct: null as number | null, timeSeconds: null as number | null, questions: [] as any[] };
+export async function computeSetReview(db: DB, sid: string, setId: string, opts?: { allowInProgress?: boolean }) {
+  const empty = { found: false, inProgress: false, setName: null as string | null, score: { correct: 0, total: 0 }, answeredCount: 0, accuracyPct: null as number | null, timeSeconds: null as number | null, questions: [] as any[] };
   if (!setId) return empty;
 
-  const sRes = await db.query(
-    `select s.id, s.set_version_id, s.question_order_seed, s.option_order_seed, sv.preserve_order,
-            qs.name as set_name, s.started_at, s.terminal_at,
-            sr.score_correct::int as score_correct, sr.score_total::int as score_total
-       from ccat.sessions s
-       join ccat.session_results sr on sr.session_id = s.id
-       join ccat.question_set_versions sv on sv.id = s.set_version_id
-       join ccat.question_sets qs on qs.id = sv.question_set_id
-      where s.student_id = $1 and qs.id = $2
-        and sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')
-      order by s.terminal_at desc nulls last, sr.created_at desc
-      limit 1`, [sid, setId]);
+  // Admin review (allowInProgress) shows the MOST RECENT attempt whatever its state — a submitted run
+  // renders as a full review, a live run as answered-so-far. The student route keeps terminal-only.
+  const sRes = opts?.allowInProgress
+    ? await db.query(
+      `select s.id, s.set_version_id, s.question_order_seed, s.option_order_seed, sv.preserve_order,
+              qs.name as set_name, s.started_at, s.terminal_at,
+              sr.score_correct::int as score_correct, sr.score_total::int as score_total,
+              sr.terminal_state
+         from ccat.sessions s
+         join ccat.question_set_versions sv on sv.id = s.set_version_id
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+         left join ccat.session_results sr on sr.session_id = s.id
+        where s.student_id = $1 and qs.id = $2
+        order by s.started_at desc nulls last
+        limit 1`, [sid, setId])
+    : await db.query(
+      `select s.id, s.set_version_id, s.question_order_seed, s.option_order_seed, sv.preserve_order,
+              qs.name as set_name, s.started_at, s.terminal_at,
+              sr.score_correct::int as score_correct, sr.score_total::int as score_total,
+              sr.terminal_state
+         from ccat.sessions s
+         join ccat.session_results sr on sr.session_id = s.id
+         join ccat.question_set_versions sv on sv.id = s.set_version_id
+         join ccat.question_sets qs on qs.id = sv.question_set_id
+        where s.student_id = $1 and qs.id = $2
+          and sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')
+        order by s.terminal_at desc nulls last, sr.created_at desc
+        limit 1`, [sid, setId]);
   if (sRes.rows.length === 0) return empty;
   const sess = sRes.rows[0]!;
+  const isTerminal = sess.terminal_state === 'SUBMITTED' || sess.terminal_state === 'AUTO_SUBMITTED';
 
   const qRes = await db.query(
     `select svq.position, qv.id as question_version_id, qv.question_type,
@@ -387,13 +404,30 @@ export async function computeSetReview(db: DB, sid: string, setId: string) {
       correct: selected.length > 0 && eqSet(selected, correctIds),
     };
   });
+  const answeredCount = (questions as any[]).filter((q) => q.answered).length;
+  if (!isTerminal) {
+    // Live attempt: score = correct-so-far / total questions; no accuracy or time until submission.
+    const correctSoFar = (questions as any[]).filter((q) => q.correct).length;
+    return {
+      found: true,
+      inProgress: true,
+      setName: sess.set_name as string,
+      score: { correct: correctSoFar, total: questions.length },
+      answeredCount,
+      accuracyPct: null,
+      timeSeconds: null,
+      questions,
+    };
+  }
   const timeSeconds = sess.started_at && sess.terminal_at
     ? Math.max(0, Math.round((new Date(sess.terminal_at).getTime() - new Date(sess.started_at).getTime()) / 1000))
     : null;
   return {
     found: true,
+    inProgress: false,
     setName: sess.set_name as string,
     score: { correct: sess.score_correct as number, total: sess.score_total as number },
+    answeredCount,
     accuracyPct: sess.score_total > 0 ? Math.round((100 * sess.score_correct) / sess.score_total) : null,
     timeSeconds,
     questions,

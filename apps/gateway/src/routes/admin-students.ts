@@ -161,7 +161,8 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     await assertStudentVisible(db, req, id);
     const q: any = req.query || {};
     const setId = typeof q.setId === 'string' ? q.setId.trim() : '';
-    return computeSetReview(db, id, setId);
+    // Admins can open an IN-PROGRESS attempt to watch answered-so-far, not only submitted runs.
+    return computeSetReview(db, id, setId, { allowInProgress: true });
   });
   // Exam papers the student has finished (latest attempt per paper) for the Exam Progress panel. Read-only.
   app.get('/v1/admin/students/:id/exams/history', guard, async (req) => {
@@ -202,6 +203,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
          left join lateral (
            select true as has_session,
                   (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) as is_terminal,
+                  (s.left_at is not null) as has_left,
                   sr.score_correct::int as score_correct, sr.score_total::int as score_total,
                   s.started_at, s.terminal_at,
                   (select count(*)::int from ccat.session_answers sa
@@ -218,7 +220,10 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
     return {
       assignments: rows.map((r: any) => {
         const isExam = r.allowed_exam === true;
-        const status = r.is_terminal ? 'done' : (r.has_session ? 'in_progress' : 'assigned');
+        // Save & Leave stamps left_at (session stays resumable): admin treats a left attempt as Done,
+        // but it carries no graded result until the student actually submits.
+        const leftNotGraded = !r.is_terminal && r.has_left === true;
+        const status = (r.is_terminal || leftNotGraded) ? 'done' : (r.has_session ? 'in_progress' : 'assigned');
         const wall = (r.started_at && r.terminal_at)
           ? Math.max(0, Math.round((new Date(r.terminal_at).getTime() - new Date(r.started_at).getTime()) / 1000)) : null;
         const total = Number(r.score_total ?? 0);
@@ -237,7 +242,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
           status,
           progress: status === 'in_progress'
             ? { answered: Number(r.answered_count ?? 0), total: Number(r.question_count ?? 0) } : null,
-          result: status === 'done' ? {
+          result: r.is_terminal ? {
             score: { correct: Number(r.score_correct ?? 0), total },
             accuracyPct: total > 0 ? Math.round((100 * Number(r.score_correct ?? 0)) / total) : null,
             avgSecondsPerQuestion: (wall != null && total > 0) ? Math.round(wall / total) : null,
