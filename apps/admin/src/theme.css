@@ -70,6 +70,9 @@ label{display:block;font-weight:700;color:var(--ink);font-size:13px;margin:12px 
 .role{background:var(--lilac);color:var(--purple);border-radius:999px;padding:3px 10px;font-weight:800;font-size:11px}
 .iconbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--line-strong);background:var(--card);color:var(--ink);display:flex;align-items:center;justify-content:center}
 .page{padding:22px;max-width:1200px;width:100%}
+/* Availability Calendar: full-bleed, fills the content area (flush to rail, top bar, bottom). */
+.page:has(.avcal){padding:0;max-width:none;flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.avcal{flex:1;min-height:0}
 .page h2{font-size:22px;margin-bottom:4px} .page .lead{color:var(--muted);margin-bottom:18px;font-size:14px}
 
 /* cards / panels */
