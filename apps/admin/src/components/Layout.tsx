@@ -18,13 +18,16 @@ export const NOTIF_META: Record<string, { label: string; color: string; icon: st
 // of the relevant permissions (the endpoint self-filters), so the badge simply never appears for them.
 function NotificationBell() {
   const nav = useNavigate();
-  const { activeSite } = useAuth();
+  const { activeSite, can } = useAuth();
   const teacherMode = activeSite === 'teacher';
   const [items, setItems] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const load = () => {
     if (teacherMode) {
       // TeacherHub scope: pending parent booking requests (via booking links) + pending teacher leave.
+      // Only poll when this admin actually holds teacher.directory (what both endpoints require) — otherwise
+      // the two calls return 403 on every tick. Matches the rail-badge gate below.
+      if (!can('teacher.directory')) { setItems([]); return; }
       Promise.all([
         api.teacherBookingRequests({ status: 'pending' }).then(r => r.requests || []).catch(() => []),
         api.teacherLeaveRequests('pending').then(r => (r.requests as any[]) || []).catch(() => []),

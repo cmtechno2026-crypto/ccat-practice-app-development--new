@@ -545,7 +545,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       body = h2('Your booking is confirmed')
         + preview(`We have booked the requested sessions for ${who}.`)
         + `<p style="${P}">Hello ${parent},</p>`
-        + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked with the child's name in TeacherHub.</p>`
+        + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked.</p>`
         + sessions(booked)
         + `<p style="${P}">Please keep these times available for ${who}. If you need to make a change, contact us as soon as possible so we can check availability.</p>`;
     } else if (o.decision === 'partially_approved') {
@@ -555,7 +555,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       body = h2('Your booking is confirmed')
         + preview(`We have booked the available sessions for ${who}.`)
         + `<p style="${P}">Hello ${parent},</p>`
-        + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked with the child's name in TeacherHub.</p>`
+        + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked.</p>`
         + sessions(booked)
         + `<p style="${P}">A few of the other requested times were no longer available. Our office will help with alternatives if you would like another session.</p>`;
     } else {
