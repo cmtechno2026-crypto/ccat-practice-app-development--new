@@ -122,13 +122,13 @@ const RAIL: RailItem[] = PAYMENTS_ENABLED
 // TeacherHub rail (multi-site admin). Shown when the active site is 'teacher'. Items gate on
 // teacher.* permissions; super_admin sees all.
 const TEACHER_RAIL: RailItem[] = [
-  { to: '/teacherhub', label: 'Dashboard', ic: '📊', match: '/teacherhub', perm: 'teacher.directory' },
-  { to: '/teacherhub/teachers', label: 'Teachers', ic: '👩\u200d🏫', match: '/teacherhub/teachers', perm: 'teacher.directory' },
-  { to: '/teacherhub/booking-links', label: 'Link Generator', ic: '🔗', match: '/teacherhub/booking-links', perm: 'teacher.directory' },
-  { to: '/teacherhub/requests', label: 'Requests', ic: (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>), match: '/teacherhub/requests', perm: 'teacher.directory' },
-  { to: '/teacherhub/training', label: 'Training', ic: '🎓', match: '/teacherhub/training', perm: 'teacher.directory' },
-  { to: '/teacherhub/training/progress', label: 'Teacher Progress', ic: '📈', match: '/teacherhub/training/progress', perm: 'teacher.directory' },
-  { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit' },
+  { to: '/teacherhub', label: 'Dashboard', ic: '📊', match: '/teacherhub', perm: 'teacher.directory', svg: 'M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z', tone: '#2FA86A' },
+  { to: '/teacherhub/teachers', label: 'Teachers', ic: '👩\u200d🏫', match: '/teacherhub/teachers', perm: 'teacher.directory', svg: 'M12 3l9 5-9 5-9-5zM7 11v5c0 1.7 2.2 3 5 3s5-1.3 5-3v-5', tone: '#1A5EAB' },
+  { to: '/teacherhub/training', label: 'Training', ic: '🎓', match: '/teacherhub/training', perm: 'teacher.directory', svg: 'M5 3h14v18H5zM8 8h8M8 12h8M8 16h5', tone: '#E8A020' },
+  { to: '/teacherhub/booking-links', label: 'Link Generator', ic: '🔗', match: '/teacherhub/booking-links', perm: 'teacher.directory', svg: 'M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1 1M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1-1', tone: '#D4620E' },
+  { to: '/teacherhub/requests', label: 'Requests', ic: '📥', match: '/teacherhub/requests', perm: 'teacher.directory', svg: 'M3 5h18v14H3zM3 6l9 7 9-7', tone: '#7C3AED' },
+  { to: '/teacherhub/training/progress', label: 'Teacher Progress', ic: '📈', match: '/teacherhub/training/progress', perm: 'teacher.directory', svg: 'M3 17l6-6 4 4 7-7M18 8h3v3', tone: '#2E86D4' },
+  { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit', svg: 'M7 3h10v18H7zM10 8h4M10 12h4M10 16h3', tone: '#0E9D8C' },
 ];
 const SITE_NAMES: Record<string, string> = { ccat: 'Practice Web', teacher: 'TeacherHub' };
 function railForSite(site: string): RailItem[] { return site === 'teacher' ? TEACHER_RAIL : RAIL; }
@@ -246,7 +246,7 @@ export function Layout() {
         <button className="railclose" onClick={() => setDrawer(false)} aria-label="Close menu">✕</button>
         <Link to={homePath} className="brandhdr" aria-label="Dashboard">
           <span className="logo"><span className="cm">CM</span></span>
-          <span className="bt"><b>{activeSite === 'teacher' ? 'TeacherHub' : 'CCAT Admin'}</b><span>v8.0 · ca-central-1</span></span>
+          <span className="bt"><b>{activeSite === 'teacher' ? 'TeacherHub' : 'CCAT Admin'}</b><span>{activeSite === 'teacher' ? `${me?.role === 'super_admin' ? 'SUPER-ADMIN' : 'ADMIN'} · CA-CENTRAL-1` : 'v8.0 · ca-central-1'}</span></span>
         </Link>
         {visible.map(r => (
           <NavLink
