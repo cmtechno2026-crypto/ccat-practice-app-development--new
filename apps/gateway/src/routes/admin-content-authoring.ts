@@ -103,6 +103,7 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     category_id: z.string().uuid(),
     // Exam sets are single-battery with NO subcategory → null. Practice sets require one (checked below).
     subcategory_id: z.string().uuid().nullish(),
+    chapter_id: z.string().uuid().nullish(), // Math Olympiad: curriculum chapter grouping (null elsewhere)
     difficulty_id: z.string().uuid().optional(),
     allowed_practice: z.boolean().default(true),
     allowed_exam: z.boolean().default(false),
@@ -134,9 +135,9 @@ export function registerAdminContentAuthoringRoutes(app: FastifyInstance, db: DB
     const timers = b.allowed_timers ?? (b.allowed_exam ? ['timed'] : ['untimed']);
     const setVersionId = await withTransaction(db, async (c) => {
       const qs = await c.query(
-        `insert into ccat.question_sets(grade_id, category_id, subcategory_id, name, created_by)
-         values ($1,$2,$3,$4,$5) returning id`,
-        [b.grade_id, b.category_id, subId, b.name, req.admin!.adminId],
+        `insert into ccat.question_sets(grade_id, category_id, subcategory_id, chapter_id, name, created_by)
+         values ($1,$2,$3,$4,$5,$6) returning id`,
+        [b.grade_id, b.category_id, subId, b.chapter_id ?? null, b.name, req.admin!.adminId],
       );
       const sv = await c.query(
         `insert into ccat.question_set_versions(question_set_id, version_number, difficulty_id, allowed_practice, allowed_exam, allowed_timers, question_count, duration_minutes, state, created_by)

@@ -123,7 +123,7 @@ export const api = {
   teacherSummary: () => req<{ teachers: number; published_slots: number; open_slots: number; booked_slots: number; pending_requests: number; ready_to_book: number; pending_leave: number; active_links: number; expired_links: number; requests_this_week: number; booked_this_week: number; new_teachers_week: number }>('GET', '/v1/admin/teacher/summary'),
   teacherTrainingProgress: () => req<{ total: number; modules: { id: number; title: string; icon: string | null }[]; teachers: { id: string; name: string; email: string; passed: number; in_progress: number; last_at: string | null; passed_ids: number[]; started_ids: number[] }[] }>('GET', '/v1/admin/teacher/training-progress'),
   teacherTeachers: (search?: string) => { const p = new URLSearchParams(); if (search) p.set('search', search); const qs = p.toString(); return req<{ teachers: any[] }>('GET', `/v1/admin/teacher/teachers${qs ? '?' + qs : ''}`); },
-  teacherSlots: (teacher_id?: string, withArchived?: boolean) => { const p = new URLSearchParams(); if (teacher_id) p.set('teacher_id', teacher_id); if (withArchived) p.set('with_archived', '1'); const qs = p.toString(); return req<{ slots: any[] }>('GET', `/v1/admin/teacher/slots${qs ? '?' + qs : ''}`); },
+  teacherSlots: (teacher_id?: string) => { const p = new URLSearchParams(); if (teacher_id) p.set('teacher_id', teacher_id); const qs = p.toString(); return req<{ slots: any[] }>('GET', `/v1/admin/teacher/slots${qs ? '?' + qs : ''}`); },
   teacherSetSlotStatus: (id: string, status: 'available' | 'booked' | 'unavailable', details?: { student?: string; note?: string; session_type?: 'demo' | 'recurring' | 'makeup'; parent_email?: string }) => req<any>('PATCH', `/v1/admin/teacher/slots/${id}`, { status, ...(details || {}) }),
   teacherCreateSlot: (body: { teacher_id: string; day_of_week: string; start_time: string; end_time: string; subject?: string; grade_min?: number; grade_max?: number; status: 'available' | 'booked'; student?: string; note?: string; session_type?: 'demo' | 'recurring' | 'makeup'; parent_email?: string }) => req<any>('POST', '/v1/admin/teacher/slots', body),
   teacherDeleteSlot: (id: string) => req<{ deleted: string }>('DELETE', `/v1/admin/teacher/slots/${id}`),
@@ -360,7 +360,40 @@ export const api = {
   mathRenameSubfolder: (id: string, name: string) => req<{ id: string; name: string }>('PATCH', `/v1/admin/math/subfolders/${id}`, { name }),
   mathDeleteFolder: (id: string) => req<{ deleted: boolean }>('DELETE', `/v1/admin/math/folders/${id}`),
   mathDeleteSubfolder: (id: string) => req<{ deleted: boolean }>('DELETE', `/v1/admin/math/subfolders/${id}`),
-  mathCreateSet: (b: { track: 'curriculum' | 'quiz' | 'test'; grade_id: string; category_id: string; subcategory_id?: string | null; name: string }) => req<{ id: string; state: string }>('POST', '/v1/admin/math/sets', b),
+  mathCreateSet: (b: { track: 'curriculum' | 'quiz' | 'test'; grade_id: string; category_id: string; subcategory_id?: string | null; chapter_id?: string | null; name: string }) => req<{ id: string; state: string }>('POST', '/v1/admin/math/sets', b),
+  // File a test/quiz SET into a curriculum chapter (or out of one with null). Uses the question_set id.
+  mathSetChapter: (setId: string, chapter_id: string | null) => req<{ id: string; chapter_id: string | null }>('PATCH', `/v1/admin/math/sets/${setId}/chapter`, { chapter_id }),
+  // ---- Study Material (view-only, server-rasterized + watermarked). Admin CRUD + signed upload. ----
+  mathStudyList: (grade_id: string, chapter_id?: string) => { const p = new URLSearchParams(); if (grade_id) p.set('grade_id', grade_id); if (chapter_id !== undefined) p.set('chapter_id', chapter_id); return req<{ materials: any[] }>('GET', `/v1/admin/math/study-materials?${p.toString()}`); },
+  mathStudyUploadUrl: (file_name: string, mime_type: string) => req<{ storage_key: string; source_kind: string; upload_url: string | null; mode: string }>('POST', '/v1/admin/math/study-materials/upload-url', { file_name, mime_type }),
+  mathStudyRegister: (b: { grade_id: string; chapter_id?: string | null; title: string; description?: string | null; file_name: string; mime_type: string; byte_size?: number; storage_key?: string; data_base64?: string }) => req<{ id: string; render_state: string }>('POST', '/v1/admin/math/study-materials', b),
+  mathStudyPatch: (id: string, b: { title?: string; description?: string | null; chapter_id?: string | null; display_order?: number }) => req<any>('PATCH', `/v1/admin/math/study-materials/${id}`, b),
+  mathStudyPublish: (id: string) => req<any>('POST', `/v1/admin/math/study-materials/${id}/publish`),
+  mathStudyRetire: (id: string) => req<any>('POST', `/v1/admin/math/study-materials/${id}/retire`),
+  mathStudyReprocess: (id: string) => req<any>('POST', `/v1/admin/math/study-materials/${id}/reprocess`),
+  mathStudyDelete: (id: string) => req<{ deleted: boolean }>('DELETE', `/v1/admin/math/study-materials/${id}`),
+  // Fetch a watermarked page image WITH the admin auth header, return a blob object URL (for <img>).
+  // The caller must URL.revokeObjectURL it when done.
+  mathStudyPageUrl: async (id: string, n: number): Promise<string> => {
+    const h: Record<string, string> = { 'x-admin-site': getAdminSite() };
+    const t = getToken(); if (t) h['authorization'] = `Bearer ${t}`;
+    const res = await fetch(`${GATEWAY}/v1/admin/math/study-materials/${id}/pages/${n}`, { headers: h });
+    if (!res.ok) throw new ApiError(res.status, 'PAGE_FETCH', `Page fetch failed (${res.status})`);
+    return URL.createObjectURL(await res.blob());
+  },
+  // Full upload flow: signed URL → PUT the raw file straight to the private bucket → register
+  // (so the multi-MB bytes never transit the gateway). Dev/local driver has no signed URL → base64.
+  mathStudyUpload: async (file: File, meta: { grade_id: string; chapter_id?: string | null; title: string; description?: string | null }) => {
+    const mime = file.type || 'application/octet-stream';
+    const u = await api.mathStudyUploadUrl(file.name, mime);
+    if (u.upload_url) {
+      const put = await fetch(u.upload_url, { method: 'PUT', headers: { 'content-type': mime, 'x-upsert': 'true' }, body: file });
+      if (!put.ok) throw new ApiError(put.status, 'UPLOAD_FAILED', `File upload failed (${put.status})`);
+      return api.mathStudyRegister({ ...meta, file_name: file.name, mime_type: mime, byte_size: file.size, storage_key: u.storage_key });
+    }
+    const b64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',').pop() || ''); r.onerror = () => reject(r.error); r.readAsDataURL(file); });
+    return api.mathStudyRegister({ ...meta, file_name: file.name, mime_type: mime, byte_size: file.size, data_base64: b64 });
+  },
   // ---- Support console (Math Olympiad only). Lists STUDENTS (all, or a teacher's assigned); staff can
   // message anyone. Thread + send are keyed by student id; a case is created on the first staff message. ----
   supportStudents: () => req<{ items: any[] }>('GET', '/v1/admin/support/students'),

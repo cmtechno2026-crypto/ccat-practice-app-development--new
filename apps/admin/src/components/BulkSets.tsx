@@ -222,8 +222,8 @@ export function BulkSets({ ctx, existingSets, onClose, onDone, taxonomy, exam }:
         const name = (names[i] ?? defaultSetName(plan.numbers[i])).trim();
         setProgress(`Creating ${name} (${i + 1}/${chunks.length})…`);
         const r = await api.createSet(exam
-          ? { name, grade_id: ctx.gradeId, category_id: ctx.catId, allowed_practice: false, allowed_exam: true, allowed_timers: ['timed'], question_version_ids: [], duration_minutes: Math.max(1, Math.min(180, Number(examDur) || 25)) }
-          : { name, grade_id: ctx.gradeId, category_id: ctx.catId, subcategory_id: ctx.subId || null, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
+          ? { name, grade_id: ctx.gradeId, category_id: ctx.catId, chapter_id: (ctx as any).chapterId ?? null, allowed_practice: false, allowed_exam: true, allowed_timers: ['timed'], question_version_ids: [], duration_minutes: Math.max(1, Math.min(180, Number(examDur) || 25)) }
+          : { name, grade_id: ctx.gradeId, category_id: ctx.catId, chapter_id: (ctx as any).chapterId ?? null, subcategory_id: ctx.subId || null, difficulty_id: ctx.diffId, allowed_practice: true, allowed_exam: false, allowed_timers: ['untimed'], question_version_ids: [] });
         await api.authorSet(r.set_version_id, chunks[i].map(cardToPayload));
         done.push({ name, id: r.set_version_id, count: chunks[i].length, full: chunks[i].length >= perSet });
       }

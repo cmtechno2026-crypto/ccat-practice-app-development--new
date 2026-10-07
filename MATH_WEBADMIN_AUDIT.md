@@ -21,6 +21,41 @@
 
 ## Change log
 
+### 2026-10-07 (kk) — Study Material: Phase 2 STUDENT app wired (Math Olympiad Web) (Claude / Cowork)
+
+**`Math Olympiad Web/src/screens/StudyMaterial.tsx`** — replaced the placeholder with the real screen: a responsive card grid of published materials (PDF/PPT badge, title, description, chapter chip, page count) + a full-screen **Viewer** that pages through the server-watermarked images. No download; `onContextMenu`/drag disabled, `pointer-events:none` on the image, keyboard arrows + Esc, "view only" labels. Honest limit noted in code: screen capture can't be blocked by a web app — the per-student watermark is the deterrent.
+**`Math Olympiad Web/src/lib/api.ts`** — `studyMaterials()`, `studyMaterial(id)`, `studyPageUrl(id,n)` (auth-fetched blob URL for `<img>`; caller revokes).
+**`Math Olympiad Web/src/lib/types.ts`** — `StudyMaterialItem` interface.
+**Already correct, no change:** Test Prep (`api.catalog('test')`) and Quiz Arena (`api.catalog('quiz')`) — the gateway catalog joins sets on the student's grade across ALL categories, so they already span every chapter. Route `/material` already existed.
+
+**Deploy (user-run):** rebuild + deploy Math Olympiad Web (vite, Windows). Still pending from earlier: gateway Docker redeploy (render packages) and admin app build. No DB changes this turn.
+
+**Verify:** StudyMaterial.tsx, api.ts, types.ts pass esbuild transpile (cloud). Phase 1 + 2 code-complete; only the three user-run deploys remain.
+
+### 2026-10-07 (jj) — Study Material + chapters: Phase 1 ADMIN UI (Content page rebuilt to mockup) (Claude / Cowork)
+
+**Owner decisions this turn (AskUserQuestion):** inside a chapter, Tests/Quiz sub-tabs do FULL management, auto-filed to that chapter; curriculum-track question sets dropped from the page (user asked to delete Math curriculum sets from DB too); Study Material **Replace** NOT built (Delete + Add only).
+
+**DB check:** queried the live DB for Math (site='math') curriculum-track question sets → **0 found** (only 2 empty Math curriculum categories, which are the chapters). So nothing was deleted — the destructive op was unnecessary; the 2 categories stay as chapters.
+
+**`apps/admin/src/pages/MathContent.tsx` — rebuilt (609 lines) to `Content-Page-standalone.html`:**
+- Four top tabs: **Curriculum · Study Material · Tests · Quiz Arena** (amber underline, same tab card + Grade dropdown as before).
+- **Curriculum**: FOLDERS(chapters) panel + "+ add chapter"; selecting a chapter shows pill sub-tabs **Study Material / Tests / Quiz Arena**, each full-management and auto-filed to that chapter (`chapter_id`).
+- **Study Material** (top tab): flat list of all materials across chapters; each row has a FOLDER dropdown (move chapter), Preview, Publish/Retire, Reprocess (when not ready), Delete; render-status chips (⏳ Processing / ⚠ Failed / state badge); auto-polls every 4 s while any material is processing.
+- **Tests / Quiz Arena** (top tabs): flat set tables with a per-row FOLDER dropdown (`mathSetChapter`), plus the existing Bulk add / Upload set / Default-per-set / Edit / Publish / Delete (+ Tests time-limit column). Inside a chapter the same tables are scoped+filed to the chapter.
+- **Add material modal**: file picker (PDF/PPT/PPTX) → `api.mathStudyUpload` (signed direct-to-bucket, base64 fallback) → register; title/description/chapter.
+- **Preview modal**: pages through the watermarked images via `api.mathStudyPageUrl` (auth-fetched blob URLs, revoked on change). Reused SWR tree cache + grade dropdown; `fileSet`/`fileMaterial` optimistic.
+
+**`apps/admin/src/lib/api.ts`** (merged over a concurrent user edit): `mathSetChapter`, `mathStudyList/UploadUrl/Register/Patch/Publish/Retire/Reprocess/Delete`, `mathStudyPageUrl` (auth blob), `mathStudyUpload` (full signed flow); `mathCreateSet` gained `chapter_id`.
+
+**`apps/admin/src/components/BulkSets.tsx`**: threads `ctx.chapterId` into both exam/practice `createSet` bodies so bulk-created sets file into the chapter atomically (CCAT/NGAT pass nothing → unchanged).
+
+**`apps/gateway/src/routes/admin-content-authoring.ts`**: `POST /v1/admin/content/sets` now accepts optional `chapter_id` and persists it on `question_sets` (null for CCAT/NGAT — non-breaking). This is the bulk-create path.
+
+**Deploy (user-run):** admin app must be rebuilt (vite, on Windows — can't build in the Linux VM). Gateway redeploy (already required from entry ii) now also carries the content-authoring `chapter_id` change.
+
+**Verify:** MathContent.tsx, api.ts, BulkSets.tsx, admin-content-authoring.ts all pass esbuild transpile (cloud). Not vite-built here (no Windows toolchain in the VM).
+
 ### 2026-10-07 (ii) — Study Material + curriculum-chapter restructure: Phase 1 BACKEND (Claude / Cowork)
 
 **Scope:** Math Olympiad only (`program='math'`, `site_id='math'`). CCAT/NGAT untouched. Owner decisions: view-only files with the STRONGEST real hard-block (server-rasterized page images + per-student watermark — the raw file never reaches the browser; screenshots cannot be blocked by any browser, stated plainly to the owner); support **PDF + PPT/PPTX**; phase backend first.
