@@ -21,6 +21,16 @@
 
 ## Change log
 
+### 2026-10-07 (mm) — Content page: full-height panel + responsive tables (all 3) (Claude / Cowork)
+
+**Reported:** panel left dead space below; Publish/Retire/Delete were off-screen (fixed huge table min-width forced a horizontal scroll past the actions). Owner picked (via 2 rendered samples): **wide table → column-collapse at mid → cards on phone**, applied to **Study Material + Tests + Quiz**.
+**`apps/admin/src/pages/MathContent.tsx`:**
+- Full-height: root is `.mc-root` (flex column); injected `<style>` adds `.page:has(.mc-root){flex:1;min-height:0;display:flex;…;max-width:none;padding:16px 20px}` — the same `:has()` full-height hook the shell already uses for the calendar — so the panel attaches to the sidebar, the tab card, and the bottom of the viewport. Tables are flex:1 with an internal-scroll `.mc-tbody` and a sticky header.
+- Responsive (CSS media queries, since inline styles can't): **≤1150px** hides low-priority columns (sets→UPDATED; materials→SIZE+UPDATED) and the grid retemplates; **≤980px** stacks the FOLDERS panel above the table; **≤720px** each row becomes a card (chips + full-width folder dropdown + full-size action buttons), no horizontal scroll.
+- Both table renderers (`renderSetTable`, `renderMaterialTable`) rewritten from inline-grid to `.mc-*` classes; Publish/Retire/Delete (+ Preview/Edit/Reprocess) now always visible. Behaviour unchanged.
+**Deploy (user):** rebuild admin app (vite). No gateway/DB changes. (Gateway checksum-fix redeploy from entry ll is already done — uploads work; see the 2 Draft PDFs.)
+**Verify:** esbuild transpile OK; responsive pattern validated against the two rendered samples.
+
 ### 2026-10-07 (ll) — FIX study-material upload 500 + multi-file upload + chapter rename (Claude / Cowork)
 
 **BUG (reported):** admin Add-material → signed upload + PUT succeeded (200) but `POST /v1/admin/math/study-materials` returned **500 Internal Server Error**. Cause: `ccat.content_assets.checksum_sha256` is **NOT NULL**, and the register insert omitted it → null-violation (whole tx rolled back, so no orphan rows; the signed source object stays in the bucket, harmless).

@@ -134,9 +134,17 @@ export async function watermarkPng(basePng: Buffer, text: string): Promise<Buffe
     const outP = join(dir, 'out.png');
     await writeFile(baseP, basePng);
     await writeFile(tileP, tile);
+    // Build the watermark layer as a TRANSPARENT tiled canvas, then composite it
+    // over the page. NOTE: `-size WxH tile:<file>` flattens the transparent tile
+    // onto an OPAQUE (black) canvas, which blacked out the whole page. The correct
+    // idiom is a transparent canvas (xc:none) painted with the tile as the fill
+    // pattern via `-tile … -draw rectangle`, which preserves per-pixel alpha so
+    // only the translucent text lands on the page.
     await exec(
       'convert',
-      [baseP, '(', '-size', `${width}x${height}`, `tile:${tileP}`, ')', '-compose', 'over', '-composite', outP],
+      [baseP,
+        '(', '-size', `${width}x${height}`, 'xc:none', '-tile', tileP, '-draw', `rectangle 0,0 ${width},${height}`, ')',
+        '-compose', 'over', '-composite', outP],
       { timeout: CONVERT_TIMEOUT_MS, maxBuffer: BIG_BUFFER },
     );
     return await readFile(outP);

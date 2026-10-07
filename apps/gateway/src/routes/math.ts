@@ -601,11 +601,20 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
       [session.id],
     );
     const byQ = new Map<string, any>(ans.rows.map((a: any) => [a.question_version_id, a]));
+    // Which of this set's questions the student has already bookmarked, so the
+    // runner can seed the flag icons on load (persisted across sessions/devices).
+    const bmres = await db.query(
+      `select question_version_id from ccat.math_bookmarks
+        where student_id=$1 and question_version_id = any($2::uuid[])`,
+      [sid, qrows.map((r: any) => r.question_version_id)],
+    );
+    const bookmarked = new Set<string>(bmres.rows.map((r: any) => r.question_version_id));
     const questions = qrows.map((r: any) => {
       const saved = byQ.get(r.question_version_id);
       return {
         question_version_id: r.question_version_id,
         prompt: bt(r.prompt_blocks),
+        bookmarked: bookmarked.has(r.question_version_id),
         options: (Array.isArray(r.option_blocks) ? r.option_blocks : []).map((o: any, i: number) => ({
           id: o.option_id ?? String(i), key: 'ABCDEFGH'[i] ?? String(i + 1), text: bt(o.content),
         })),
@@ -752,9 +761,98 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     return { score: sres.rows[0].score, total: sres.rows[0].total };
   });
 
-  // Bookmarks — kept empty/no-op for v1 (no content to bookmark yet).
-  app.get('/v1/math/bookmarks', authed, async () => [] as unknown[]);
-  app.delete('/v1/math/bookmarks', authed, async (_req, reply) => { reply.code(204); return null; });
+  // ---- Bookmarks (real, backed by ccat.math_bookmarks) ----
+  // A student can bookmark any question they can reach in a published math set
+  // (Test Prep / Quiz Arena / Curriculum / Homework). Stored per
+  // (student_id, question_version_id) in a MATH-only table — CCAT's own
+  // ccat.bookmarks is keyed to logical_questions and is left untouched.
+  //
+  // Preview text for a bookmark card (first ~120 chars of the question prompt).
+  const bmPreview = (blocks: unknown): string => {
+    const t = bt(blocks);
+    return t.length > 120 ? `${t.slice(0, 117)}…` : t;
+  };
+
+  // Is this question_version reachable by this student? (grade-gated, published,
+  // active in a math set). Guards POST so a student can't bookmark arbitrary ids.
+  async function mathQuestionAccessible(studentId: string, questionVersionId: string): Promise<boolean> {
+    const { rows } = await db.query(
+      `select 1
+         from ccat.students st
+         join ccat.question_sets qs on qs.grade_id = st.grade_id
+         join ccat.categories cat on cat.id = qs.category_id
+              and cat.program = 'math' and cat.site_id = 'math' and cat.active
+         join ccat.question_set_versions sv on sv.question_set_id = qs.id and sv.state = 'published'
+         join ccat.set_version_questions svq on svq.set_version_id = sv.id and svq.active = true
+        where st.id = $1 and svq.question_version_id = $2
+        limit 1`,
+      [studentId, questionVersionId],
+    );
+    return rows.length > 0;
+  }
+
+  // GET /v1/math/bookmarks — the student's bookmarked questions as list cards.
+  // Shape matches the client Bookmark type { id, kind, title, meta }: id is the
+  // question_version_id (used for Remove), kind is the category, title is the
+  // prompt preview, meta is "<set> · Q<position> · <difficulty>".
+  app.get('/v1/math/bookmarks', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const { rows } = await db.query(
+      `select mb.question_version_id, mb.created_at, qv.prompt_blocks,
+              m.set_name, m.category, m.difficulty, m.position
+         from ccat.math_bookmarks mb
+         join ccat.question_versions qv on qv.id = mb.question_version_id
+         left join lateral (
+            select qs.name as set_name, cat.name as category, d.key as difficulty, svq.position
+              from ccat.set_version_questions svq
+              join ccat.question_set_versions sv on sv.id = svq.set_version_id and sv.state = 'published'
+              join ccat.question_sets qs on qs.id = sv.question_set_id
+              join ccat.categories cat on cat.id = qs.category_id
+                   and cat.program = 'math' and cat.site_id = 'math'
+              left join ccat.difficulties d on d.id = sv.difficulty_id
+             where svq.question_version_id = mb.question_version_id and svq.active = true
+             order by svq.position
+             limit 1
+         ) m on true
+        where mb.student_id = $1
+        order by mb.created_at desc`,
+      [sid],
+    );
+    return rows.map((r: any) => ({
+      id: r.question_version_id,
+      kind: r.category ?? 'Question',
+      title: bmPreview(r.prompt_blocks) || 'Question',
+      meta: [r.set_name, r.position != null ? `Q${r.position}` : null, r.difficulty]
+        .filter(Boolean).join(' · '),
+    }));
+  });
+
+  // POST /v1/math/bookmarks — add/update (idempotent). Body { question_version_id, note? }.
+  const bmPutSchema = z.object({ question_version_id: z.string().uuid(), note: z.string().max(500).optional() });
+  app.post('/v1/math/bookmarks', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const b = bmPutSchema.parse(req.body);
+    if (!(await mathQuestionAccessible(sid, b.question_version_id))) throw Errors.notFound('Question not found');
+    await db.query(
+      `insert into ccat.math_bookmarks(student_id, question_version_id, note) values ($1,$2,$3)
+       on conflict (student_id, question_version_id) do update set note = excluded.note`,
+      [sid, b.question_version_id, b.note ?? null],
+    );
+    return { bookmarked: true, question_version_id: b.question_version_id };
+  });
+
+  // DELETE /v1/math/bookmarks — remove. Accepts the id in the JSON body (the client
+  // sends { id }) or as a ?question_version_id= query param.
+  app.delete('/v1/math/bookmarks', authed, async (req, reply) => {
+    const sid = req.student!.studentId;
+    const body = (req.body ?? {}) as { id?: string; question_version_id?: string };
+    const qp = (req.query as { question_version_id?: string }).question_version_id;
+    const qvid = body.question_version_id ?? body.id ?? qp;
+    if (!qvid) throw Errors.validation('question_version_id required');
+    await db.query('delete from ccat.math_bookmarks where student_id=$1 and question_version_id=$2', [sid, qvid]);
+    reply.code(204);
+    return null;
+  });
 
   // ---- Notes (real, backed by ccat.student_notes) ----
   app.get('/v1/math/notes', authed, async (req) => {
