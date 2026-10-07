@@ -188,6 +188,18 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
          values ($1, 'admin', 'teacher.slot.status', 'ta_slot', $2, $3)`,
         [req.admin!.adminId, id, JSON.stringify({ status: b.status, student: booking ? b.student : null, teacher: rows[0]!.teacher_name })]);
     } catch { /* audit is best-effort */ }
+    if (booking) {
+      // Email the teacher that the admin booked this slot for them (same 'New class booked' notice +
+      // calendar invite as the parent-request flow). Best-effort: never fail the booking on a mail error.
+      try {
+        await sendTeacherConfirmations(req.log, [{
+          outcome: 'approved', teacher_id: rows[0]!.teacher_id as string, teacher_name: rows[0]!.teacher_name as string,
+          subject: rows[0]!.subject as string, day_of_week: rows[0]!.day_of_week as string,
+          start_time: rows[0]!.start_time as string, end_time: rows[0]!.end_time as string,
+          timezone: rows[0]!.timezone as string, session_type: rows[0]!.session_type as string | null,
+        }], (rows[0]!.booked_student as string) || null);
+      } catch (e) { req.log?.warn?.({ err: (e as Error).message }, 'admin-book teacher email failed'); }
+    }
     return rows[0];
   });
 
@@ -245,6 +257,17 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
          values ($1,'admin','teacher.slot.create','ta_slot',$2,$3)`,
         [req.admin!.adminId, rows[0].id, JSON.stringify({ teacher: t.rows[0].name, status: b.status, subject })]);
     } catch { /* audit best-effort */ }
+    if (booking) {
+      // Email the teacher about this admin-created booking (same notice + calendar invite). Best-effort.
+      try {
+        await sendTeacherConfirmations(req.log, [{
+          outcome: 'approved', teacher_id: rows[0].teacher_id as string, teacher_name: rows[0].teacher_name as string,
+          subject: rows[0].subject as string, day_of_week: rows[0].day_of_week as string,
+          start_time: rows[0].start_time as string, end_time: rows[0].end_time as string,
+          timezone: rows[0].timezone as string, session_type: rows[0].session_type as string | null,
+        }], (rows[0].booked_student as string) || null);
+      } catch (e) { req.log?.warn?.({ err: (e as Error).message }, 'admin-create-book teacher email failed'); }
+    }
     return rows[0];
   });
 
