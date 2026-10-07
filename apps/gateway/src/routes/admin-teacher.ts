@@ -152,6 +152,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     student: z.string().trim().max(120).optional(),
     note: z.string().trim().max(500).optional(),
     session_type: z.enum(['demo', 'recurring', 'makeup']).optional(),
+    parent_email: z.union([z.string().trim().email().max(200), z.literal('')]).optional(),
   }).refine((v) => v.status !== 'booked' || !!(v.student && v.student.length > 0), { message: 'Student name is required to book', path: ['student'] });
 
   app.patch('/v1/admin/teacher/slots/:id', { preHandler: [authenticateAdmin] }, async (req) => {
@@ -199,6 +200,17 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
           timezone: rows[0]!.timezone as string, session_type: rows[0]!.session_type as string | null,
         }], (rows[0]!.booked_student as string) || null);
       } catch (e) { req.log?.warn?.({ err: (e as Error).message }, 'admin-book teacher email failed'); }
+      const pe = (b.parent_email ?? '').trim();
+      if (pe) {
+        try {
+          await sendDecisionEmail(req.log, { decision: 'approved', to: pe, parentName: 'Parent',
+            studentName: (rows[0]!.booked_student as string) || null, numClasses: 1, reason: null,
+            slots: [{ outcome: 'approved', teacher_id: rows[0]!.teacher_id as string, teacher_name: rows[0]!.teacher_name as string,
+              subject: rows[0]!.subject as string, day_of_week: rows[0]!.day_of_week as string,
+              start_time: rows[0]!.start_time as string, end_time: rows[0]!.end_time as string,
+              timezone: rows[0]!.timezone as string, session_type: rows[0]!.session_type as string | null }] });
+        } catch (e) { req.log?.warn?.({ err: (e as Error).message }, 'admin-book parent email failed'); }
+      }
     }
     return rows[0];
   });
@@ -218,6 +230,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     student: z.string().trim().max(120).optional(),
     note: z.string().trim().max(500).optional(),
     session_type: z.enum(['demo','recurring','makeup']).optional(),
+    parent_email: z.union([z.string().trim().email().max(200), z.literal('')]).optional(),
   }).refine((v) => v.grade_min == null || v.grade_max == null || v.grade_min <= v.grade_max, { message: 'grade_min must be <= grade_max', path: ['grade_max'] })
     .refine((v) => v.status !== 'booked' || !!(v.student && v.student.length > 0), { message: 'Student name is required to book', path: ['student'] });
   app.post('/v1/admin/teacher/slots', { preHandler: [authenticateAdmin] }, async (req) => {
@@ -267,6 +280,17 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
           timezone: rows[0].timezone as string, session_type: rows[0].session_type as string | null,
         }], (rows[0].booked_student as string) || null);
       } catch (e) { req.log?.warn?.({ err: (e as Error).message }, 'admin-create-book teacher email failed'); }
+      const pe = (b.parent_email ?? '').trim();
+      if (pe) {
+        try {
+          await sendDecisionEmail(req.log, { decision: 'approved', to: pe, parentName: 'Parent',
+            studentName: (rows[0].booked_student as string) || null, numClasses: 1, reason: null,
+            slots: [{ outcome: 'approved', teacher_id: rows[0].teacher_id as string, teacher_name: rows[0].teacher_name as string,
+              subject: rows[0].subject as string, day_of_week: rows[0].day_of_week as string,
+              start_time: rows[0].start_time as string, end_time: rows[0].end_time as string,
+              timezone: rows[0].timezone as string, session_type: rows[0].session_type as string | null }] });
+        } catch (e) { req.log?.warn?.({ err: (e as Error).message }, 'admin-create-book parent email failed'); }
+      }
     }
     return rows[0];
   });
@@ -535,7 +559,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const footer = `
       <div style="margin:34px 0 0;padding-top:22px;border-top:1px solid #edeff3;text-align:center;">
         <p style="margin:0 0 10px;color:#6b7280;font-size:13px;line-height:1.7;text-align:center;"><strong style="color:${CM_BLUE};">Need help? We're here.</strong></p>
-        <p style="margin:0 0 10px;color:#6b7280;font-size:13px;line-height:1.7;text-align:center;">Phone support: <a href="tel:+19054696087" style="color:${CM_BLUE};text-decoration:none;">+1 905-469-6087</a><br/>Call / WhatsApp: <a href="tel:+16477656606" style="color:${CM_BLUE};text-decoration:none;">+1 (647) 765-6606</a></p>
+        <p style="margin:0 0 10px;color:#6b7280;font-size:13px;line-height:1.7;text-align:center;">Phone support: <a href="tel:+19054696087" style="color:${CM_BLUE};text-decoration:none;">+1 905-469-6087</a><br/>WhatsApp: <a href="tel:+16477656606" style="color:${CM_BLUE};text-decoration:none;">+1 (647) 765-6606</a></p>
         <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.7;text-align:center;">Concept Mastery, 2161 Overfield Rd, Oakville, ON L6M 3T1, Canada</p>
       </div>`;
 
@@ -543,7 +567,6 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     if (o.decision === 'approved') {
       subject = 'Your Concept Mastery booking is confirmed';
       body = h2('Your booking is confirmed')
-        + preview(`We have booked the requested sessions for ${who}.`)
         + `<p style="${P}">Hello ${parent},</p>`
         + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked.</p>`
         + sessions(booked)
@@ -553,7 +576,6 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       // requested times were not available. No separate "No longer available" table.
       subject = 'Your Concept Mastery booking is confirmed';
       body = h2('Your booking is confirmed')
-        + preview(`We have booked the available sessions for ${who}.`)
         + `<p style="${P}">Hello ${parent},</p>`
         + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked.</p>`
         + sessions(booked)

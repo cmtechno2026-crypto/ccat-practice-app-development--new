@@ -83,6 +83,7 @@ export function TeacherDirectory() {
   const [comboSel, setComboSel] = useState<Record<string, string>>({});
   const [pStudent, setPStudent] = useState('');
   const [pNote, setPNote] = useState('');
+  const [pEmail, setPEmail] = useState('');
   const [pErr, setPErr] = useState('');
   const [ubScope, setUbScope] = useState<'slot' | 'child'>('slot');
   const [ubEnd, setUbEnd] = useState(false);
@@ -95,13 +96,14 @@ export function TeacherDirectory() {
   const [cStatus, setCStatus] = useState<'available' | 'booked'>('available');
   const [cStudent, setCStudent] = useState('');
   const [cNote, setCNote] = useState('');
+  const [cEmail, setCEmail] = useState('');
   const [cType, setCType] = useState<'demo' | 'recurring' | 'makeup'>('recurring');
   const [cErr, setCErr] = useState('');
   const [cSaving, setCSaving] = useState(false);
   const openCreate = (teacherId: string, day: string, range: string) => {
     const parts = range.split('\u2013'); const start = parts[0]; const end = parts[1] || parts[0];
     setCreateCell({ teacherId, day, start, end });
-    setCStatus('available'); setCStudent(''); setCNote(''); setCType('recurring'); setCErr('');
+    setCStatus('available'); setCStudent(''); setCNote(''); setCEmail(''); setCType('recurring'); setCErr('');
   };
   const doCreate = async () => {
     if (!createCell) return;
@@ -112,7 +114,7 @@ export function TeacherDirectory() {
       await api.teacherCreateSlot({
         teacher_id: createCell.teacherId, day_of_week: createCell.day, start_time: createCell.start, end_time: createCell.end,
         status: cStatus,
-        ...(cStatus === 'booked' ? { student: cStudent.trim(), note: cNote.trim() || undefined, session_type: cType } : {}),
+        ...(cStatus === 'booked' ? { student: cStudent.trim(), note: cNote.trim() || undefined, session_type: cType, parent_email: cEmail.trim() || undefined } : {}),
       });
       const r = await api.teacherSlots(createCell.teacherId); setSlots(sx => ({ ...sx, [createCell.teacherId]: r.slots || [] }));
       setCreateCell(null);
@@ -207,7 +209,7 @@ export function TeacherDirectory() {
   const reqsForTeacher = (id: string): Req[] => (allReqs || []).filter(r => (r.slots || []).some(s => s.teacher_id === id));
   const reqBadge = (id: string) => reqsForTeacher(id).filter(r => r.teacher_status === 'accepted' && r.status === 'pending').length;
 
-  const openPopover = (slotId: string) => { setPopSlot(slotId); setPStudent(''); setPNote(''); setPErr(''); setPType('recurring'); setTimeout(() => studentRef.current?.focus(), 0); };
+  const openPopover = (slotId: string) => { setPopSlot(slotId); setPStudent(''); setPNote(''); setPEmail(''); setPErr(''); setPType('recurring'); setTimeout(() => studentRef.current?.focus(), 0); };
   useEffect(() => {
     setUbScope('slot'); setUbEnd(false); setUbEndMode('date'); setUbDate(''); setUbCount(''); setOccDates([]);
     if (!popSlot) return;
@@ -246,7 +248,7 @@ export function TeacherDirectory() {
     if (!pStudent.trim()) { setPErr('Student name is required.'); studentRef.current?.focus(); return; }
     setSavingSlot(slot.id); setPErr('');
     try {
-      const u = await api.teacherSetSlotStatus(slot.id, 'booked', { student: pStudent.trim(), note: pNote.trim(), session_type: pType });
+      const u = await api.teacherSetSlotStatus(slot.id, 'booked', { student: pStudent.trim(), note: pNote.trim(), session_type: pType, parent_email: pEmail.trim() || undefined });
       patchLocal(teacherId, slot.id, { status: 'booked', booked_student: u.booked_student, booked_note: u.booked_note, booked_by: u.booked_by });
       setPopSlot(null);
     } catch (e) { setPErr((e as Error).message || 'Could not book'); }
@@ -357,6 +359,9 @@ export function TeacherDirectory() {
           {isAvail && <>
             <input ref={studentRef} value={pStudent} onChange={e => setPStudent(e.target.value)} placeholder="Student name" autoComplete="off" style={inp}
               onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
+            <input value={pEmail} onChange={e => setPEmail(e.target.value)} placeholder="Parent email (optional)" type="email" autoComplete="off" style={inp}
+              onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
+            <div style={{ fontSize: 11, color: 'var(--muted,#8a97ad)', marginTop: -2 }}>If set, we’ll email them a booking confirmation.</div>
             <input value={pNote} onChange={e => setPNote(e.target.value)} placeholder="Note (optional)" style={inp}
               onKeyDown={e => { if (e.key === 'Enter') book(id, s); if (e.key === 'Escape') setPopSlot(null); }} />
             <select value={pType} onChange={e => setPType(e.target.value as 'demo' | 'recurring' | 'makeup')} style={inp}>
@@ -389,6 +394,8 @@ export function TeacherDirectory() {
           </div>
           {cStatus === 'booked' && <>
             <input value={cStudent} onChange={e => setCStudent(e.target.value)} placeholder="Student name" style={inp} />
+            <input value={cEmail} onChange={e => setCEmail(e.target.value)} placeholder="Parent email (optional)" type="email" style={inp} />
+            <div style={{ fontSize: 11, color: 'var(--muted,#8a97ad)', marginTop: -2 }}>If set, we’ll email them a booking confirmation.</div>
             <input value={cNote} onChange={e => setCNote(e.target.value)} placeholder="Note (optional)" style={inp} />
             <select value={cType} onChange={e => setCType(e.target.value as 'demo' | 'recurring' | 'makeup')} style={inp}><option value="recurring">Recurring</option><option value="makeup">Make-Up / On Demand</option><option value="demo">Demo</option></select>
           </>}
