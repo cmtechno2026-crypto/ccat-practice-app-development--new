@@ -128,7 +128,6 @@ const TEACHER_RAIL: RailItem[] = [
   { to: '/teacherhub/training', label: 'Training', ic: '🎓', match: '/teacherhub/training', perm: 'teacher.directory', svg: 'M5 3h14v18H5zM8 8h8M8 12h8M8 16h5', tone: '#E8A020' },
   { to: '/teacherhub/booking-links', label: 'Link Generator', ic: '🔗', match: '/teacherhub/booking-links', perm: 'teacher.directory', svg: 'M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1 1M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1-1', tone: '#D4620E' },
   { to: '/teacherhub/requests', label: 'Requests', ic: '📥', match: '/teacherhub/requests', perm: 'teacher.directory', svg: 'M3 5h18v14H3zM3 6l9 7 9-7', tone: '#7C3AED' },
-  { to: '/teacherhub/training/progress', label: 'Teacher Progress', ic: '📈', match: '/teacherhub/training/progress', perm: 'teacher.directory', svg: 'M3 17l6-6 4 4 7-7M18 8h3v3', tone: '#2E86D4' },
   { to: '/audit', label: 'Audit log', ic: '🧾', match: '/audit', svg: 'M7 3h10v18H7zM10 8h4M10 12h4M10 16h3', tone: '#0E9D8C' },
 ];
 const SITE_NAMES: Record<string, string> = { ccat: 'Practice Web', teacher: 'TeacherHub' };
