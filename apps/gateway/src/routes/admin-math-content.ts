@@ -53,16 +53,21 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
     // category per grade so Bulk add / Upload always have a target. Curriculum keeps real folders.
     if (gradeId && (track === 'test' || track === 'quiz')) {
       const defName = track === 'test' ? 'All test papers' : 'All quizzes';
+      // Find the default (active OR soft-deleted). If it was previously deleted, REACTIVATE it rather
+      // than inserting a new row — the key is unique, so a blind insert would collide and 500.
       const existing = await db.query(
-        `select 1 from ccat.categories where program=$1 and site_id=$2 and track=$3 and grade_id=$4 and active limit 1`,
+        `select id, active from ccat.categories where program=$1 and site_id=$2 and track=$3 and grade_id=$4 limit 1`,
         [PROGRAM, SITE, track, gradeId],
       );
       if (existing.rows.length === 0) {
         await db.query(
           `insert into ccat.categories (key, name, program, site_id, track, grade_id, display_order, active)
-           values ($1,$2,$3,$4,$5,$6,0,true)`,
+           values ($1,$2,$3,$4,$5,$6,0,true)
+           on conflict (key) do update set active=true, updated_at=now()`,
           [`math-${track}-all-${gradeId}`, defName, PROGRAM, SITE, track, gradeId],
         );
+      } else if (!existing.rows[0].active) {
+        await db.query('update ccat.categories set active=true, updated_at=now() where id=$1', [existing.rows[0].id]);
       }
     }
     // Run the three tree reads in parallel — one trans-Pacific round trip instead of three serial ones.

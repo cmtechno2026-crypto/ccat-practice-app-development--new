@@ -57,27 +57,27 @@ const MC_STYLE = `
 .mc-tbody .mc-row{border-bottom:1px solid var(--line,#F3F5FA)}
 .mc-right{text-align:right}
 .mc-acts{display:flex;gap:7px;justify-content:flex-end;flex-wrap:nowrap}
-.mc-set:not(.mc-test) .mc-thead,.mc-set:not(.mc-test) .mc-row{grid-template-columns:minmax(0,1.5fr) 130px 110px 100px 180px minmax(220px,auto)}
-.mc-set.mc-test .mc-thead,.mc-set.mc-test .mc-row{grid-template-columns:minmax(0,1.5fr) 130px 110px 100px 150px 180px minmax(220px,auto)}
-.mc-mat .mc-thead,.mc-mat .mc-row{grid-template-columns:minmax(0,1.7fr) 80px 110px 110px 180px minmax(230px,auto)}
+.mc-set:not(.mc-test) .mc-thead,.mc-set:not(.mc-test) .mc-row{grid-template-columns:minmax(150px,1.5fr) 130px 110px 100px 180px minmax(220px,auto)}
+.mc-set.mc-test .mc-thead,.mc-set.mc-test .mc-row{grid-template-columns:minmax(150px,1.5fr) 130px 110px 100px 150px 180px minmax(220px,auto)}
+.mc-mat .mc-thead,.mc-mat .mc-row{grid-template-columns:minmax(180px,1.7fr) 80px 110px 110px 180px minmax(230px,auto)}
+/* Mid widths (980–1150): drop low-priority columns so the rest never collide. */
 @media(max-width:1150px){
   .mc-c-upd,.mc-c-size{display:none}
-  .mc-set:not(.mc-test) .mc-thead,.mc-set:not(.mc-test) .mc-row{grid-template-columns:minmax(0,1.5fr) 130px 110px 180px minmax(210px,auto)}
-  .mc-set.mc-test .mc-thead,.mc-set.mc-test .mc-row{grid-template-columns:minmax(0,1.5fr) 130px 110px 150px 180px minmax(210px,auto)}
-  .mc-mat .mc-thead,.mc-mat .mc-row{grid-template-columns:minmax(0,1.7fr) 80px 180px minmax(210px,auto)}
+  .mc-set:not(.mc-test) .mc-thead,.mc-set:not(.mc-test) .mc-row{grid-template-columns:minmax(140px,1.5fr) 120px 110px 170px minmax(210px,auto)}
+  .mc-set.mc-test .mc-thead,.mc-set.mc-test .mc-row{grid-template-columns:minmax(140px,1.4fr) 120px 110px 140px 170px minmax(210px,auto)}
+  .mc-mat .mc-thead,.mc-mat .mc-row{grid-template-columns:minmax(160px,1.7fr) 80px 170px minmax(210px,auto)}
 }
+/* Narrow / phone (≤980): each row becomes a card — no grid, nothing cut off or overlapping. */
 @media(max-width:980px){
   .mc-work{flex-direction:column}
   .mc-folders{width:auto;flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px;max-height:30vh}
-}
-@media(max-width:720px){
   .mc-thead{display:none!important}
   .mc-tbody{display:flex;flex-direction:column;gap:12px;padding:12px}
-  .mc-tbody .mc-row{display:block;border:1px solid var(--line,#E6EAF2);border-radius:14px;padding:14px}
-  .mc-c-type,.mc-c-size,.mc-c-upd,.mc-c-q,.mc-c-status,.mc-c-tl{display:inline-flex!important;align-items:center;gap:6px;margin:0 14px 10px 0;vertical-align:middle}
-  .mc-c-name,.mc-c-mat{margin-bottom:8px}
-  .mc-c-fold{display:block;margin-bottom:10px}
-  .mc-c-fold select{max-width:none!important}
+  .mc-tbody .mc-row{display:block!important;border:1px solid var(--line,#E6EAF2);border-radius:14px;padding:14px}
+  .mc-c-type,.mc-c-size,.mc-c-upd,.mc-c-q,.mc-c-status,.mc-c-tl{display:inline-flex!important;align-items:center;gap:6px;margin:0 14px 10px 0;vertical-align:top}
+  .mc-c-name,.mc-c-mat{display:flex!important;margin-bottom:10px}
+  .mc-c-fold{display:block!important;margin-bottom:10px}
+  .mc-c-fold select{max-width:none!important;width:100%}
   .mc-acts{justify-content:flex-start;flex-wrap:wrap}
   .mc-acts>*{flex:1 1 auto;min-width:92px}
 }

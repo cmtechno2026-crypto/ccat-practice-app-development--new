@@ -21,6 +21,17 @@
 
 ## Change log
 
+### 2026-10-07 (nn) — FIX Tests/Quiz tree 500 (deleted default folder) + responsive overlap (Claude / Cowork)
+
+**BUG — `GET /v1/admin/math/tree?track=test` 500** (curriculum + study-materials were 200). Root cause: the auto default category ("All test papers" / "All quizzes") for a grade had `active=false` (it had been deleted). The tree handler's ensure-step looked only for an ACTIVE default, found none, and tried to INSERT a new row with the same unique `key` → unique-constraint violation → 500.
+- **Immediate (live DB):** reactivated the 3 soft-deleted Math default categories (`active=true` where `key like 'math-%-all-%'`, track test/quiz) — Tests/Quiz load again on refresh, no redeploy needed.
+- **Permanent (`apps/gateway/src/routes/admin-math-content.ts`):** ensure-step now finds the default regardless of `active`; reactivates it if soft-deleted, inserts only when truly absent (with `on conflict (key) do update set active=true` as a race-safety net). Needs gateway redeploy.
+
+**UI — cards/overlap (`MathContent.tsx` MC_STYLE):** the panel at ~735px fell into the cramped mid grid (header labels + icon/badge/status overlapped). Raised the card breakpoint **720 → 980** (narrow widths now render as cards, not a squeezed grid), gave the first column a min width (sets 150/140, materials 180/160), and tightened the 980–1150 mid templates. Verified with a harness at 735/1050/1300: cards clean at narrow, table clean at mid, actions always visible, full-height preserved. Needs admin rebuild.
+
+**Deploy (user):** redeploy gateway (ensure-step fix) + rebuild admin (responsive fix). The DB reactivation already unblocked Tests/Quiz now.
+**Verify:** both files esbuild-clean; responsive harness screenshots confirmed.
+
 ### 2026-10-07 (mm) — Content page: full-height panel + responsive tables (all 3) (Claude / Cowork)
 
 **Reported:** panel left dead space below; Publish/Retire/Delete were off-screen (fixed huge table min-width forced a horizontal scroll past the actions). Owner picked (via 2 rendered samples): **wide table → column-collapse at mid → cards on phone**, applied to **Study Material + Tests + Quiz**.
