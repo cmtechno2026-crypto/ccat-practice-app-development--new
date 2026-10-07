@@ -14,6 +14,7 @@ interface Slot {
   day_of_week: string; start_time: string; end_time: string;
   status: string; timezone: string; session_type?: string | null;
   booked_student?: string | null; booked_at?: string | null; is_custom?: boolean;
+  archived?: boolean;
 }
 
 const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -52,7 +53,7 @@ function gradeMatches(s: Slot, g: number): boolean {
   return false;
 }
 
-interface Ev { slot: Slot; dayIdx: number; startMin: number; endMin: number; color: string; label: string; altLabel: string; kind: string; oneTime: boolean; occ: Date | null; }
+interface Ev { slot: Slot; dayIdx: number; startMin: number; endMin: number; color: string; label: string; altLabel: string; kind: string; oneTime: boolean; occ: Date | null; archived: boolean; }
 
 export function AvailabilityCalendar() {
   const { zone } = useTeacherHubTz();
@@ -62,6 +63,7 @@ export function AvailabilityCalendar() {
 
   const [sel, setSel] = useState<Record<string, Set<any>>>({ teacher: new Set(), subject: new Set(), grade: new Set(), type: new Set(TYPE_KEYS) });
   const [openDim, setOpenDim] = useState<string | null>(null);
+  const [dimQ, setDimQ] = useState<Record<string, string>>({});
   const [span, setSpan] = useState<'Weekly' | 'Monthly'>('Weekly');
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -72,7 +74,7 @@ export function AvailabilityCalendar() {
   useEffect(() => {
     let alive = true;
     setLoading(true); setErr('');
-    api.teacherSlots().then(r => { if (alive) { setSlots((r.slots as Slot[]) || []); setLoading(false); } })
+    api.teacherSlots(undefined, true).then(r => { if (alive) { setSlots((r.slots as Slot[]) || []); setLoading(false); } })
       .catch(e => { if (alive) { setErr((e as Error).message || 'Could not load availability'); setLoading(false); } });
     return () => { alive = false; };
   }, []);
@@ -96,8 +98,10 @@ export function AvailabilityCalendar() {
         : `Open · ${s.subject || 'Availability'} · ${s.teacher_name}`;
       const kind = booked ? (st === 'makeup' ? 'Make-Up / On Demand' : st === 'demo' ? 'Demo' : 'Recurring') : 'Open availability';
       // For a PAST available slot the chip shows the slot's own session type instead of "Open".
-      const typeWord = s.session_type ? (st === 'makeup' ? 'Make-Up' : st === 'demo' ? 'Demo' : 'Recurring') : null;
-      const altLabel = (!booked && typeWord) ? `${typeWord} · ${s.subject || 'Availability'} · ${s.teacher_name}` : label;
+      // Available slots carry no session_type in the DB for plain recurring availability, so default to Recurring.
+      const typeWord = st === 'makeup' ? 'Make-Up' : st === 'demo' ? 'Demo' : 'Recurring';
+      const suffix = s.archived ? ' · deleted' : '';
+      const altLabel = (!booked ? `${typeWord} · ${s.subject || 'Availability'} · ${s.teacher_name}` : label) + suffix;
       let occ: Date | null = null;
       if (oneTime && s.booked_at && dayIdx >= 0) {
         const b = new Date(s.booked_at);
@@ -105,7 +109,7 @@ export function AvailabilityCalendar() {
         for (let i = 0; i < 7; i++) { if (d.getDay() === dayIdx) break; d = addDays(d, 1); }
         occ = d;
       }
-      return { slot: s, dayIdx, startMin: timeMin(cs.time), endMin: timeMin(ce.time), color, label, altLabel, kind, oneTime, occ };
+      return { slot: s, dayIdx, startMin: timeMin(cs.time), endMin: timeMin(ce.time), color, label: label + suffix, altLabel, kind, oneTime, occ, archived: !!s.archived };
     })
     .filter(e => e.dayIdx >= 0 && e.endMin > e.startMin), [slots, zone]);
 
@@ -127,12 +131,14 @@ export function AvailabilityCalendar() {
 
   const onDate = (e: Ev, d: Date) => e.oneTime ? (e.occ != null && sameDate(e.occ, d)) : (d.getDay() === e.dayIdx);
   const isPast = (e: Ev, d: Date) => { const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0); dt.setMinutes(e.startMin); return dt.getTime() < now.getTime(); };
+  // Deleted (archived) slots are shown only on past dates — never as current/upcoming availability.
+  const showOn = (e: Ev, d: Date) => onDate(e, d) && (!e.archived || isPast(e, d));
 
   const weekDates = useMemo(() => { const ws = addDays(startOfWeek(now), weekOffset * 7); return Array.from({ length: 7 }, (_, i) => addDays(ws, i)); }, [weekOffset]);
   const weekRange = `${MNAMES[weekDates[0].getMonth()].slice(0, 3)} ${weekDates[0].getDate()} – ${MNAMES[weekDates[6].getMonth()].slice(0, 3)} ${weekDates[6].getDate()}, ${weekDates[6].getFullYear()}`;
 
   // Per-day event lists for the viewed week + the hour range to show.
-  const dayLists = useMemo(() => weekDates.map(d => ev.filter(e => onDate(e, d)).sort((a, b) => a.startMin - b.startMin)), [ev, weekDates]);
+  const dayLists = useMemo(() => weekDates.map(d => ev.filter(e => showOn(e, d)).sort((a, b) => a.startMin - b.startMin)), [ev, weekDates]);
   const hours = useMemo(() => {
     let lo = 24, hi = 0;
     dayLists.forEach(list => list.forEach(e => { lo = Math.min(lo, Math.floor(e.startMin / 60)); hi = Math.max(hi, Math.ceil(e.endMin / 60)); }));
@@ -190,12 +196,18 @@ export function AvailabilityCalendar() {
                 <span style={{ color: '#64708a', fontSize: 10.5, fontWeight: 900, letterSpacing: '.11em', textTransform: 'uppercase' }}>{d.title}</span>
                 <button onClick={() => setAll(d.key, vals, true)} style={{ border: 0, background: 'none', color: '#1d5db5', fontSize: 12, fontWeight: 900, cursor: 'pointer', padding: 0 }}>Clear</button>
               </div>
+              {d.options.length > 8 && (
+                <div style={{ padding: '6px 6px 0' }}>
+                  <input value={dimQ[d.key] || ''} onChange={e => setDimQ(q => ({ ...q, [d.key]: e.target.value }))} placeholder={`Search ${d.label.toLowerCase()}…`} autoFocus
+                    style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #e2e7f0', borderRadius: 7, padding: '7px 9px', font: 'inherit', fontSize: 13.5 }} />
+                </div>
+              )}
               <div style={{ padding: 6, maxHeight: 248, overflowY: 'auto' }}>
                 <button onClick={() => setAll(d.key, vals, allSel)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 34, marginBottom: 4, padding: '0 10px', border: 0, borderBottom: '1px solid #eef2f8', borderRadius: 6, background: allSel ? '#eaf2ff' : '#fff', color: '#0f1b33', fontSize: 14, fontWeight: 900, cursor: 'pointer', textAlign: 'left' }}>
                   <span style={{ display: 'grid', placeItems: 'center', width: 17, height: 17, borderRadius: 4, border: `2px solid ${count ? '#1d5db5' : '#c3ccdb'}`, background: count ? '#1d5db5' : '#fff', color: '#fff', fontSize: 11, fontWeight: 900, flex: 'none' }}>{allSel ? '✓' : count ? '–' : ''}</span>
                   {allSel ? 'Unselect all' : 'Select all'}
                 </button>
-                {d.options.map(o => {
+                {d.options.filter(o => { const ql = (dimQ[d.key] || '').toLowerCase(); return !ql || o.label.toLowerCase().includes(ql); }).map(o => {
                   const on = sel[d.key].has(o.value);
                   const c = o.sw ? COLORS[o.sw] : null;
                   return (
@@ -296,7 +308,7 @@ export function AvailabilityCalendar() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,minmax(0,1fr))', gap: 6 }}>
               {month.cells.map((d, i) => {
                 if (!d) return <div key={'b' + i} style={{ minHeight: 112, padding: 7, border: '1px solid #eef2f8', borderRadius: 9, background: '#fafbfe' }} />;
-                const dayEv = ev.filter(e => onDate(e, d)).sort((a, b) => a.startMin - b.startMin);
+                const dayEv = ev.filter(e => showOn(e, d)).sort((a, b) => a.startMin - b.startMin);
                 const today = sameDate(d, now); const isOpen = openDay === d.toDateString(); const past = d < new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 const shown = dayEv.slice(0, 3);
                 return (
@@ -313,7 +325,7 @@ export function AvailabilityCalendar() {
             </div>
           </div>
           {openDay && (() => {
-            const d = new Date(openDay); const rows = ev.filter(e => onDate(e, d)).sort((a, b) => a.startMin - b.startMin);
+            const d = new Date(openDay); const rows = ev.filter(e => showOn(e, d)).sort((a, b) => a.startMin - b.startMin);
             return (
               <div style={{ margin: '0 18px 16px', border: '1px solid #e1e9f6', borderRadius: 11, background: '#fff', overflow: 'hidden' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px', background: '#f7f9fd', borderBottom: '1px solid #eef2f8' }}>

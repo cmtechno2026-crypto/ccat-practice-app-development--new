@@ -54,6 +54,7 @@ export interface Config {
   supabaseUrl: string;
   supabaseServiceKey: string;
   storageBucket: string;      // Supabase Storage bucket name (default 'assets')
+  secureStorageBucket: string; // PRIVATE bucket for Study Material (source files + base page images)
 }
 
 // Shared marker for the one-time cutover: the revoke stamps this on every device it revokes, and the
@@ -142,5 +143,6 @@ export function loadConfig(): Config {
     supabaseUrl: (process.env.SUPABASE_URL ?? '').replace(/\/$/, ''),
     supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
     storageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? 'assets',
+    secureStorageBucket: process.env.SUPABASE_SECURE_BUCKET ?? 'study-secure',
   };
 }

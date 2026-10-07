@@ -11,6 +11,8 @@ import {
 } from '../security/token.js';
 import { isWeakPin } from '../lib/pin.js';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
+import { createSecureStorage } from '../services/storage.js';
+import { watermarkPng as studyWatermark } from '../lib/studyRender.js';
 
 // ============================================================================
 // Math Olympiad — site-scoped STUDENT API (site = 'math').
@@ -27,6 +29,12 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js';
 const SITE = 'math';
 
 export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
+  // PRIVATE storage for Study Material page images (same bucket the admin writes). Read-only here.
+  const studySecure = createSecureStorage({
+    driver: cfg.storageDriver, uploadsDir: cfg.uploadsDir,
+    supabaseUrl: cfg.supabaseUrl, supabaseServiceKey: cfg.supabaseServiceKey,
+    secureBucket: cfg.secureStorageBucket,
+  });
   // ---- shared: is this guardian email already tied to a live MATH account? ----
   async function emailInUse(email: string, exceptGuardianId?: string): Promise<boolean> {
     const r = await db.query(
@@ -366,6 +374,68 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
       cta: 'Start',
     }));
   });
+  // ---- Study Material (view-only, hard-blocked) ----------------------------------------------
+  // Students see every PUBLISHED, fully-rendered material for their GRADE across ALL chapters. The
+  // list carries NO file URL; each page is fetched separately as a server-watermarked PNG. The
+  // original file never leaves the gateway (owner decision: strongest real protection). Screenshots
+  // cannot be prevented by any browser — the watermark is the deterrent, not a guarantee.
+  app.get('/v1/math/study-materials', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const { rows } = await db.query(
+      `select sm.id, sm.title, sm.description, sm.source_kind, sm.page_count,
+              coalesce(c.name, '') as chapter
+         from ccat.students st
+         join ccat.study_materials sm on sm.grade_id = st.grade_id
+              and sm.program='math' and sm.site_id='math' and sm.active
+              and sm.state='published' and sm.render_state='ready'
+         left join ccat.categories c on c.id = sm.chapter_id
+        where st.id=$1
+        order by sm.display_order, sm.created_at desc`, [sid]);
+    return rows.map((r: any) => ({
+      id: r.id, title: r.title, description: r.description ?? '', chapter: r.chapter,
+      kind: r.source_kind, page_count: r.page_count ?? 0,
+    }));
+  });
+
+  app.get('/v1/math/study-materials/:id', authed, async (req) => {
+    const sid = req.student!.studentId;
+    const id = (req.params as any).id as string;
+    const { rows } = await db.query(
+      `select sm.id, sm.title, sm.description, sm.source_kind, sm.page_count
+         from ccat.students st
+         join ccat.study_materials sm on sm.grade_id = st.grade_id
+              and sm.program='math' and sm.site_id='math' and sm.active
+              and sm.state='published' and sm.render_state='ready'
+        where st.id=$1 and sm.id=$2`, [sid, id]);
+    if (rows.length === 0) throw Errors.notFound('Study material not found');
+    const r: any = rows[0];
+    return { id: r.id, title: r.title, description: r.description ?? '', kind: r.source_kind, page_count: r.page_count ?? 0 };
+  });
+
+  app.get('/v1/math/study-materials/:id/pages/:n', authed, async (req, reply) => {
+    const sid = req.student!.studentId;
+    const id = (req.params as any).id as string;
+    const n = Math.max(1, parseInt(String((req.params as any).n), 10) || 1);
+    const { rows } = await db.query(
+      `select sm.pages_prefix, sm.page_count, st.display_name, st.id as student_id
+         from ccat.students st
+         join ccat.study_materials sm on sm.grade_id = st.grade_id
+              and sm.program='math' and sm.site_id='math' and sm.active
+              and sm.state='published' and sm.render_state='ready'
+        where st.id=$1 and sm.id=$2`, [sid, id]);
+    if (rows.length === 0) throw Errors.notFound('Study material not found');
+    const row: any = rows[0];
+    if (n > Number(row.page_count || 0)) throw Errors.notFound('Page out of range');
+    const prefix: string = row.pages_prefix || `study-pages/${id}/`;
+    const obj = await studySecure.get(`${prefix}p-${n}.png`);
+    if (!obj) throw Errors.notFound('Page image missing');
+    const label = `${row.display_name || 'Student'} · ${String(row.student_id).slice(0, 8)}`;
+    const marked = await studyWatermark(obj.bytes, label);
+    reply.header('content-type', 'image/png');
+    reply.header('cache-control', 'private, no-store');
+    return reply.send(marked);
+  });
+
   app.get('/v1/math/leaderboard', authed, async () => [] as unknown[]);
   app.get('/v1/math/activity', authed, async () => [] as unknown[]);
   app.get('/v1/math/activity/heatmap', authed, async () => [] as number[]);

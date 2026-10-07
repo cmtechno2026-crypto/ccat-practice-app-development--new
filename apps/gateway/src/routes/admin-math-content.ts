@@ -86,7 +86,7 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
         [PROGRAM, SITE, track, gradeId],
       ),
       db.query(
-        `select sv.id set_version_id, qs.id set_id, qs.name, qs.category_id, qs.subcategory_id,
+        `select sv.id set_version_id, qs.id set_id, qs.name, qs.category_id, qs.subcategory_id, qs.chapter_id,
                 sv.state, sv.question_count, sv.allowed_practice, sv.allowed_exam, sv.duration_minutes,
                 coalesce(sv.published_at, sv.created_at) updated_at
            from ccat.question_sets qs
@@ -206,10 +206,20 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
 
   // Create an empty draft SET under a folder/subfolder. Questions are added later via the content
   // editor (same pipeline). quiz->practice, test->exam, curriculum->practice by default.
+  // A curriculum chapter that a test/quiz set may belong to (or none). Chapters are curriculum-track
+  // categories; the set's KIND stays its own category's track.
+  async function assertChapter(chapterId: string): Promise<void> {
+    const r = await db.query(
+      `select 1 from ccat.categories where id=$1 and program=$2 and site_id=$3 and track='curriculum' and active`,
+      [chapterId, PROGRAM, SITE]);
+    if (r.rows.length === 0) throw Errors.notFound('Chapter not found');
+  }
+
   const setSchema = z.object({
     grade_id: z.string().uuid(),
     category_id: z.string().uuid(),
     subcategory_id: z.string().uuid().nullish(),
+    chapter_id: z.string().uuid().nullish(),
     name: z.string().trim().min(1).max(160),
     track: z.enum(TRACKS),
   });
@@ -218,12 +228,13 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
     const b = setSchema.parse(req.body);
     const cat = await db.query('select 1 from ccat.categories where id=$1 and program=$2 and site_id=$3', [b.category_id, PROGRAM, SITE]);
     if (cat.rows.length === 0) throw Errors.notFound('Folder not found');
+    if (b.chapter_id) await assertChapter(b.chapter_id);
     const isExam = b.track === 'test';
     const newId = await withTransaction(db, async (c) => {
       const qs = await c.query(
-        `insert into ccat.question_sets (grade_id, category_id, subcategory_id, name, created_by, site_id)
-         values ($1,$2,$3,$4,$5,$6) returning id`,
-        [b.grade_id, b.category_id, b.subcategory_id ?? null, b.name, req.admin!.adminId, SITE]);
+        `insert into ccat.question_sets (grade_id, category_id, subcategory_id, chapter_id, name, created_by, site_id)
+         values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+        [b.grade_id, b.category_id, b.subcategory_id ?? null, b.chapter_id ?? null, b.name, req.admin!.adminId, SITE]);
       const sv = await c.query(
         `insert into ccat.question_set_versions
            (question_set_id, version_number, difficulty_id, allowed_practice, allowed_exam, allowed_timers,
@@ -235,5 +246,20 @@ export function registerAdminMathContentRoutes(app: FastifyInstance, db: DB, cfg
     });
     await audit(db, req, 'math.set.created', 'set_version', newId, `${b.track}/${b.name}`);
     return { id: newId, state: 'draft' };
+  });
+
+  // File a SET into a curriculum chapter, or out of one (chapter_id: null). Operates on the question
+  // set (by set_id). The set's track/category are unchanged — this only sets the chapter grouping.
+  const setChapterSchema = z.object({ chapter_id: z.string().uuid().nullable() });
+  app.patch('/v1/admin/math/sets/:id/chapter', guard, async (req) => {
+    gate(req);
+    const setId = (req.params as any).id as string;
+    const b = setChapterSchema.parse(req.body);
+    const owns = await db.query('select 1 from ccat.question_sets where id=$1 and site_id=$2', [setId, SITE]);
+    if (owns.rows.length === 0) throw Errors.notFound('Set not found');
+    if (b.chapter_id) await assertChapter(b.chapter_id);
+    await db.query('update ccat.question_sets set chapter_id=$2 where id=$1', [setId, b.chapter_id]);
+    await audit(db, req, 'math.set.chapter', 'question_set', setId, b.chapter_id ?? 'none');
+    return { id: setId, chapter_id: b.chapter_id };
   });
 }

@@ -42,6 +42,7 @@ import { registerAdminEntitlementsRoutes } from './routes/admin-entitlements.js'
 import { registerAdminTeacherRoutes } from './routes/admin-teacher.js';
 import { registerAdminSupportRoutes } from './routes/admin-support.js';
 import { registerAdminMathContentRoutes } from './routes/admin-math-content.js';
+import { registerAdminStudyMaterialRoutes } from './routes/admin-study-materials.js';
 import { registerAdminTrainingRoutes } from './routes/admin-training.js';
 
 declare module 'fastify' {
@@ -182,6 +183,7 @@ export async function buildApp(cfg: Config, existingPool?: DB): Promise<FastifyI
   registerAdminEntitlementsRoutes(app, db, cfg);
   registerAdminSupportRoutes(app, db, cfg);
   registerAdminMathContentRoutes(app, db, cfg);
+  registerAdminStudyMaterialRoutes(app, db, cfg);
 
   // Teacher Hub (multi-site): second pool to the TeacherHub "cm-whiteboard" DB via TEACHER_DATABASE_URL.
   // Null when unset -> teacher routes mount but return 503 SITE_NOT_CONFIGURED (never crashes boot).

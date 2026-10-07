@@ -5,6 +5,12 @@ import { dirname, join, resolve } from 'node:path';
 // Storage service abstraction (Blueprint §36 asset storage). The Gateway depends only on this interface;
 // the driver is chosen by config (STORAGE_DRIVER). Local disk for dev; Supabase Storage for production so
 // uploaded images survive Render's ephemeral disk across deploys/restarts.
+//
+// Two instances exist in production:
+//   • the PUBLIC 'assets' bucket (question figures, avatars) — objects served by public CDN URL;
+//   • the PRIVATE 'study-secure' bucket (Study Material source files + base page images) — created
+//     with { private: true }, so publicUrl() is null and get() reads via the authenticated object
+//     route with the service-role key. Secure objects are NEVER reachable by URL.
 
 export interface StoredObject { key: string; url: string }
 export interface FetchedObject { bytes: Buffer; contentType: string }
@@ -16,11 +22,11 @@ export interface StorageService {
   /** Remove an object. Must resolve (no throw) when the object is already absent. */
   delete(key: string): Promise<void>;
   /** Absolute, client-usable URL for the object (e.g. a public CDN URL), or null when the object must be
-   *  served back through the Gateway's own asset route (the local-disk driver). */
+   *  served back through the Gateway's own asset route (local-disk driver, or any PRIVATE bucket). */
   publicUrl(key: string): string | null;
   /** Legacy per-asset-id route (kept for interface compatibility). */
   urlFor(assetId: string): string;
-  /** Mint a short-lived signed URL the browser can PUT ONE object to directly (offloads image bytes from
+  /** Mint a short-lived signed URL the browser can PUT ONE object to directly (offloads file bytes from
    *  the gateway). Returns null when the driver can't sign (local disk) so callers fall back to server upload. */
   createSignedUploadUrl(key: string): Promise<{ uploadUrl: string } | null>;
 }
@@ -57,12 +63,15 @@ class LocalDiskStorage implements StorageService {
   async createSignedUploadUrl(): Promise<{ uploadUrl: string } | null> { return null; } // no direct upload in dev
 }
 
-/** Supabase Storage driver — uploads via the Storage REST API using the SERVER-ONLY service-role key,
- *  and returns a stable public URL (bucket must be set public-read in the Supabase dashboard). Uses global
- *  fetch (Node 18+); no SDK dependency. Objects persist independently of the Gateway's disk. */
+/** Supabase Storage driver — uploads via the Storage REST API using the SERVER-ONLY service-role key.
+ *  Public buckets return a stable public URL; PRIVATE buckets ({ private: true }) return null from
+ *  publicUrl() and read via the authenticated object route. Uses global fetch (Node 18+); no SDK. */
 class SupabaseStorage implements StorageService {
   readonly driver = 'supabase';
-  constructor(private baseUrl: string, private serviceKey: string, private bucket: string) {}
+  private isPrivate: boolean;
+  constructor(private baseUrl: string, private serviceKey: string, private bucket: string, opts?: { private?: boolean }) {
+    this.isPrivate = opts?.private === true;
+  }
 
   private objectUrl(key: string): string {
     return `${this.baseUrl}/storage/v1/object/${this.bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
@@ -85,7 +94,11 @@ class SupabaseStorage implements StorageService {
     }
   }
   async get(key: string): Promise<FetchedObject | null> {
-    const res = await fetch(this.publicUrl(key));
+    // Private bucket: authenticated object route (service-role key). Public bucket: public CDN route.
+    const url = this.isPrivate ? this.objectUrl(key) : this.publicUrl(key)!;
+    const res = await fetch(url, this.isPrivate
+      ? { headers: { authorization: `Bearer ${this.serviceKey}`, apikey: this.serviceKey } }
+      : undefined);
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     return { bytes: buf, contentType: res.headers.get('content-type') ?? 'application/octet-stream' };
@@ -101,7 +114,8 @@ class SupabaseStorage implements StorageService {
       throw new Error(`Supabase Storage delete failed (${res.status}): ${detail.slice(0, 300)}`);
     }
   }
-  publicUrl(key: string): string {
+  publicUrl(key: string): string | null {
+    if (this.isPrivate) return null; // secure objects are never reachable by URL
     return `${this.baseUrl}/storage/v1/object/public/${this.bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
   }
   async createSignedUploadUrl(key: string): Promise<{ uploadUrl: string } | null> {
@@ -156,5 +170,37 @@ export function createStorage(opts: StorageOpts): StorageService {
       return new UnconfiguredCloudStorage(opts.driver);
     default:
       return new LocalDiskStorage(resolve(opts.uploadsDir));
+  }
+}
+
+export interface SecureStorageOpts {
+  driver: string;
+  uploadsDir: string;
+  supabaseUrl?: string;
+  supabaseServiceKey?: string;
+  secureBucket?: string;
+}
+
+/** PRIVATE storage for secure study material. Supabase → a private bucket (publicUrl null, reads via
+ *  the authenticated object route). Local/dev → a 'secure/' subtree of the uploads dir served only
+ *  through the Gateway. Mirrors createStorage()'s driver selection so dev parity holds. */
+export function createSecureStorage(opts: SecureStorageOpts): StorageService {
+  switch (opts.driver) {
+    case 'supabase':
+      if (opts.supabaseUrl && opts.supabaseServiceKey) {
+        return new SupabaseStorage(
+          opts.supabaseUrl.replace(/\/$/, ''),
+          opts.supabaseServiceKey,
+          opts.secureBucket || 'study-secure',
+          { private: true },
+        );
+      }
+      return new UnconfiguredCloudStorage('supabase');
+    case 's3':
+    case 'gcs':
+      return new UnconfiguredCloudStorage(opts.driver);
+    case 'local':
+    default:
+      return new LocalDiskStorage(resolve(join(opts.uploadsDir, 'secure')));
   }
 }

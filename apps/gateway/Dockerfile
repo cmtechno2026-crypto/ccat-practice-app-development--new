@@ -14,6 +14,20 @@ RUN pnpm install --filter @ccat/gateway... --prod=false --no-frozen-lockfile
 
 FROM node:22-slim AS run
 RUN corepack enable
+# Study Material render pipeline (Math Olympiad): LibreOffice headless (pptx→pdf), poppler
+# (pdf→page images), ImageMagick (per-request identity watermark), DejaVu/Liberation fonts for
+# render + watermark fidelity. Heavy layer (LibreOffice ~400-600 MB) but cached independent of app
+# code. ImageMagick is used ONLY for PNG compositing, never PDF, so the default policy.xml PDF
+# restriction is irrelevant here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       poppler-utils \
+       libreoffice-impress \
+       libreoffice-core \
+       imagemagick \
+       fonts-dejavu-core \
+       fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
 ENV NODE_ENV=production
 COPY --from=deps /repo/node_modules ./node_modules

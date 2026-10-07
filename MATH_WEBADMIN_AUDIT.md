@@ -21,6 +21,30 @@
 
 ## Change log
 
+### 2026-10-07 (ii) — Study Material + curriculum-chapter restructure: Phase 1 BACKEND (Claude / Cowork)
+
+**Scope:** Math Olympiad only (`program='math'`, `site_id='math'`). CCAT/NGAT untouched. Owner decisions: view-only files with the STRONGEST real hard-block (server-rasterized page images + per-student watermark — the raw file never reaches the browser; screenshots cannot be blocked by any browser, stated plainly to the owner); support **PDF + PPT/PPTX**; phase backend first.
+
+**DB (live `cqzpzhdleqyrmedymypg`, applied via Supabase MCP; files in `packages/contracts/migrations/`):**
+- `0066_math_study_material_and_chapters.sql` — `question_sets.chapter_id` (nullable → a curriculum category); new `ccat.study_materials` (grade-scoped, optional chapter, draft/published/retired), RLS enabled+forced+revoked like every Math table.
+- `0067_math_study_material_render.sql` — `study_materials` render columns (`source_kind`, `page_count`, `render_state`, `render_error`, `pages_prefix`); provisions PRIVATE Storage bucket `study-secure` (public=false), guarded so the gateway migrate-runner skips it where it lacks storage privileges.
+
+**Storage (`apps/gateway/src/services/storage.ts`):** `SupabaseStorage` gained a `private` mode (reads via the authenticated object route; `publicUrl()`→null). New `createSecureStorage()` → private `study-secure` (Supabase) or a local `secure/` subtree (dev). Public `assets` path unchanged. New config `secureStorageBucket` (`SUPABASE_SECURE_BUCKET`, default `study-secure`).
+
+**Render pipeline (`apps/gateway/src/lib/studyRender.ts`, NEW):** `sourceKindOf`; `rasterizeSource` (pptx→pdf via LibreOffice headless, pdf→page PNGs via poppler `pdftoppm` @150dpi); `watermarkPng` (tiled rotated translucent identity watermark via ImageMagick `convert`, bounded tile cache). Renders run SERIALLY in-process (LibreOffice memory).
+
+**Admin API (`apps/gateway/src/routes/admin-study-materials.ts`, NEW; registered in `app.ts`):** signed direct-to-private-bucket upload (`POST /upload-url`) so multi-MB files bypass the gateway's 16 MB JSON limit and never transit the student-data boundary; `POST /study-materials` (register + kick async render; dev base64 fallback); list (flat / by chapter / `none`=unassigned); patch (title/desc/move chapter); publish (blocked until render `ready`) / retire / reprocess / soft-delete (+best-effort object cleanup); watermarked admin page preview. Permission `content.create`; all audited.
+
+**Student API (`apps/gateway/src/routes/math.ts`):** `GET /v1/math/study-materials` (published+ready, grade-scoped, ALL chapters, NO file URL), `/:id` (meta), `/:id/pages/:n` (watermarked PNG, `no-store`). Test Prep / Quiz Arena already span all chapters (catalog joins on grade, not chapter), so `chapter_id` is admin-organisational only.
+
+**Sets↔chapters (`apps/gateway/src/routes/admin-math-content.ts`):** set-create accepts optional `chapter_id` (validated as a curriculum chapter); new `PATCH /v1/admin/math/sets/:id/chapter` files a set in/out of a chapter; tree `sets` now carry `chapter_id`.
+
+**Infra (`apps/gateway/Dockerfile`):** run stage installs `poppler-utils`, `libreoffice-impress`, `libreoffice-core`, `imagemagick`, `fonts-dejavu-core`, `fonts-liberation` (heavy layer, cached independent of app code). ImageMagick is used ONLY for PNG compositing (PDF via poppler), so the default IM PDF-policy restriction is irrelevant.
+
+**Deploy (user-run, not done here):** the gateway Docker image must be **rebuilt** (new system packages) and redeployed on Render; migrations are already applied to prod. No admin/student UI yet — Phase 1 admin Content-page rebuild + Phase 2 student wiring are next.
+
+**Verify:** all new/edited gateway files pass esbuild transpile (cloud). Gateway runs via `tsx` (transpile-only — no type-check at boot), so syntax-clean = boots. Device-VM `tsc` can't resolve `@types/node` through Windows pnpm symlinks (environment, not code). DB columns + private bucket confirmed on the live DB.
+
 ### 2026-10-06 (hh) — Teacher Admin (Math Olympiad) restyled to the Teacher_Admin mockup (Claude / Cowork)
 
 Scope confirmed with the user: **Math Olympiad program only** (CCAT/NGAT unchanged). Two parts, admin-only:

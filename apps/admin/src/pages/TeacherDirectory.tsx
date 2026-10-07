@@ -351,7 +351,7 @@ export function TeacherDirectory() {
                 <button onClick={() => setUbScope('child')} style={segBtn(ubScope === 'child')}>All of {s.booked_student}'s slots</button>
               </div>
               <button onClick={() => setUbEnd(!ubEnd)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: '9px 11px', fontSize: 12.5, fontWeight: 700, color: 'var(--muted,#44546f)', background: ubEnd ? '#eef7f3' : 'var(--card,#fff)', cursor: 'pointer' }}>
-                <span>End the series instead of now</span>
+                <span>Set a future end date</span>
                 <span style={{ width: 38, height: 22, borderRadius: 999, background: ubEnd ? 'var(--teal,#0f766e)' : '#cbd5e6', position: 'relative', flex: 'none' }}><span style={{ position: 'absolute', top: 2, left: ubEnd ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: '.15s' }} /></span>
               </button>
               {ubEnd && <div style={{ display: 'grid', gap: 7 }}>

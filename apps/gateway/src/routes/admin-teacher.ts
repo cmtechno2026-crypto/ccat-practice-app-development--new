@@ -118,26 +118,36 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     // Free up one-time (demo/make-up) bookings whose session already passed, so the grid shows them
     // as available rather than permanently booked. Best-effort; never blocks the read.
     try { await releasePastOneTimeBookings(tdb()); } catch { /* best-effort */ }
-    const q = req.query as { teacher_id?: string };
+    const q = req.query as { teacher_id?: string; with_archived?: string };
     const teacherId = (q.teacher_id ?? '').trim();
+    // Calendar passes with_archived=1 (no teacher filter) to also receive deleted slots (past-only, flagged).
+    const withArchived = String(q.with_archived ?? '') === '1' && !teacherId;
     const params: any[] = [];
     let where = '';
     if (teacherId) { params.push(teacherId); where = 'where s.teacher_id = $1'; }
-    const { rows } = await tdb().query(
+    const active =
       `select s.id, s.teacher_id, s.teacher_name, s.subject, s.grade, s.grade_min, s.grade_max, s.day_of_week,
               s.start_time, s.end_time, s.status, s.timezone, s.notes,
               s.booked_student, s.booked_note, s.booked_by, s.booked_at, s.is_custom,
-              coalesce(brs.session_type, s.session_type, br.session_type) as session_type
+              coalesce(brs.session_type, s.session_type, br.session_type) as session_type, false as archived
          from public.ta_slots s
          left join public.ta_booking_requests br on br.id = s.booked_request_id
          left join public.ta_booking_request_slots brs on brs.request_id = s.booked_request_id and brs.slot_id = s.id
-         ${where}
-         order by s.teacher_name,
-                  case s.day_of_week
+         ${where}`;
+    const archivedSel =
+      `select r.id, r.teacher_id, r.teacher_name, r.subject, r.grade, r.grade_min, r.grade_max, r.day_of_week,
+              r.start_time, r.end_time, r.status, r.timezone, r.notes,
+              r.booked_student, r.booked_note, r.booked_by, r.booked_at, r.is_custom,
+              r.session_type, true as archived
+         from public.ta_deleted_slots a, lateral jsonb_populate_record(null::public.ta_slots, a.data) r`;
+    const { rows } = await tdb().query(
+      `select * from ( ${active} ${withArchived ? 'union all ' + archivedSel : ''} ) u
+         order by u.teacher_name,
+                  case u.day_of_week
                     when 'Monday' then 1 when 'Tuesday' then 2 when 'Wednesday' then 3
                     when 'Thursday' then 4 when 'Friday' then 5 when 'Saturday' then 6
                     when 'Sunday' then 7 else 8 end,
-                  s.start_time`,
+                  u.start_time`,
       params);
     return { slots: rows };
   });
@@ -300,8 +310,16 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     requirePermission(req, 'teacher.slots.manage');
     requireSite(req, 'teacher');
     const id = (req.params as { id: string }).id;
+    // Archive the row into ta_deleted_slots before removing it, so the Availability Calendar can
+    // still show its past sessions. The active row is still physically deleted (never bookable again).
     const { rows } = await tdb().query(
-      `delete from public.ta_slots where id = $1 returning id, teacher_name, status, day_of_week, start_time`, [id]);
+      `with d as (delete from public.ta_slots where id = $1 returning *),
+            arch as (
+              insert into public.ta_deleted_slots (id, data)
+              select id, to_jsonb(d) from d
+              on conflict (id) do update set data = excluded.data, archived_at = now()
+            )
+       select id, teacher_name, status, day_of_week, start_time from d`, [id]);
     if (rows.length === 0) throw Errors.notFound('Slot not found');
     try {
       await db.query(
