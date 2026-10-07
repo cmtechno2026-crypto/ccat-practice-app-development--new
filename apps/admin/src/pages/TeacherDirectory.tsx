@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useTeacherHubTz, thConvert, thZoneLabel } from '../lib/thtz';
 
 // Teacher Hub — Sample A (master-detail). Left: teacher roster. Right: the selected teacher's grouped
 // subject+grade offerings, a status-only week of slots (Available / Unavailable / Booked), and the
@@ -92,7 +93,7 @@ export function TeacherDirectory() {
   const [ubCount, setUbCount] = useState('');
   const [occDates, setOccDates] = useState<string[]>([]);
   const [pType, setPType] = useState<'demo' | 'recurring' | 'makeup'>('recurring');
-  const [createCell, setCreateCell] = useState<{ teacherId: string; day: string; start: string; end: string } | null>(null);
+  const [createCell, setCreateCell] = useState<{ teacherId: string; day: string; start: string; end: string; baseTz: string } | null>(null);
   const [cStatus, setCStatus] = useState<'available' | 'booked'>('available');
   const [cStudent, setCStudent] = useState('');
   const [cNote, setCNote] = useState('');
@@ -102,7 +103,13 @@ export function TeacherDirectory() {
   const [cSaving, setCSaving] = useState(false);
   const openCreate = (teacherId: string, day: string, range: string) => {
     const parts = range.split('\u2013'); const start = parts[0]; const end = parts[1] || parts[0];
-    setCreateCell({ teacherId, day, start, end });
+    // `day`/`start`/`end` come from the grid, which is drawn in the selected display zone.
+    // Store new slots in the teacher's own (base) zone so their availability stays consistent;
+    // conversion is DST-accurate and round-trips to exactly what the admin clicked.
+    const baseTz = ((slots[teacherId] || []).find(x => x.timezone) || {} as any).timezone || 'IST';
+    const st = thConvert(day, start, zone, baseTz);
+    const en = thConvert(day, end, zone, baseTz);
+    setCreateCell({ teacherId, day: st.day, start: st.time, end: en.time, baseTz });
     setCStatus('available'); setCStudent(''); setCNote(''); setCEmail(''); setCType('recurring'); setCErr('');
   };
   const doCreate = async () => {
@@ -132,6 +139,7 @@ export function TeacherDirectory() {
   const [linkErr, setLinkErr] = useState('');
   const studentRef = useRef<HTMLInputElement>(null);
   const { can } = useAuth();
+  const { zone, convertSlot } = useTeacherHubTz();
   const canManage = can('teacher.slots.manage');
 
   const load = (q: string) => { setErr(''); api.teacherTeachers(q).then(r => setRows(r.teachers || [])).catch(e => setErr((e as Error).message || 'Failed to load')); };
@@ -328,7 +336,9 @@ export function TeacherDirectory() {
         <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 300, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
           <button aria-label="Close" onClick={() => setPopSlot(null)} style={{ position: 'absolute', top: 10, right: 10, width: 26, height: 26, borderRadius: '50%', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer', fontWeight: 800, lineHeight: 1 }}>✕</button>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>{DAY_ABBR[s.day_of_week] || s.day_of_week} · {s.start_time}–{s.end_time} · {s.subject}</div>
+          {(() => { const cv = convertSlot(s); return (
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>{DAY_ABBR[cv.day] || cv.day} · {cv.start}–{cv.end} <span style={{ color: 'var(--muted,#8a97ad)' }}>{thZoneLabel(zone)}</span> · {s.subject}</div>
+          ); })()}
           {hasStudent && <div style={{ fontSize: 13 }}>Booked for <b>{s.booked_student}</b>{stBadge(s.session_type)}{s.is_custom ? <span style={{ marginLeft: 6, display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe', fontSize: 10.5, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', verticalAlign: 'middle' }}>✎ Custom</span> : null}{s.booked_by ? <span className="muted"> · by {s.booked_by}</span> : null}</div>}
           {hasStudent && s.booked_note && <div className="muted" style={{ fontSize: 12 }}>📝 {s.booked_note}</div>}
           {hasStudent && (s.session_type || 'recurring') === 'recurring' && (() => {
@@ -384,7 +394,9 @@ export function TeacherDirectory() {
         <button aria-label="Close" onClick={() => setCreateCell(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,22,40,.28)', border: 0, zIndex: 40, cursor: 'default' }} />
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 50, width: 320, maxWidth: '92vw', background: 'var(--card,#fff)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 12, boxShadow: '0 20px 50px rgba(10,28,56,.32)', padding: 14, display: 'grid', gap: 8 }}>
           <button aria-label="Close" onClick={() => setCreateCell(null)} style={{ position: 'absolute', top: 10, right: 10, width: 26, height: 26, borderRadius: '50%', border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', color: 'var(--muted,#5c7080)', cursor: 'pointer', fontWeight: 800, lineHeight: 1 }}>✕</button>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>New slot · {DAY_ABBR[createCell.day] || createCell.day} · {createCell.start}–{createCell.end}</div>
+          {(() => { const cs = thConvert(createCell.day, createCell.start, createCell.baseTz, zone); const ce = thConvert(createCell.day, createCell.end, createCell.baseTz, zone); return (
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--faint,#93a6b3)', paddingRight: 26 }}>New slot · {DAY_ABBR[cs.day] || cs.day} · {cs.time}–{ce.time} <span style={{ color: 'var(--muted,#8a97ad)' }}>{thZoneLabel(zone)}</span></div>
+          ); })()}
           {cStatus === 'booked' && <div style={{ fontSize: 11.5, color: 'var(--muted,#64748b)' }}>Subject &amp; grade follow the teacher's profile.</div>}
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={() => setCStatus('available')} style={{ flex: 1, fontWeight: 800, padding: '7px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: cStatus === 'available' ? '#e6f7f2' : 'var(--card,#fff)', color: cStatus === 'available' ? '#0f766e' : 'inherit', cursor: 'pointer' }}>Available</button>
@@ -414,10 +426,15 @@ export function TeacherDirectory() {
     const combos = [...comboMap.values()].sort((a, b) => a.label.localeCompare(b.label));
     const selCombo = comboSel[id] || 'all';
     const filtered = selCombo === 'all' ? list : list.filter(s => (s.subject + '|' + gkey(s)) === selCombo);
-    const tz = (filtered.find(s => s.timezone) || {} as any).timezone || '';
     const rowMap = new Map<string, { label: string; key: number }>();
     const cell: Record<string, Slot> = {};
-    filtered.forEach(s => { const range = s.start_time + '–' + s.end_time; if (!rowMap.has(range)) rowMap.set(range, { label: range, key: timeMin(s.start_time) }); cell[s.day_of_week + '|' + range] = s; });
+    const conv: Record<string, { day: string; start: string; end: string }> = {};
+    filtered.forEach(s => {
+      const c = convertSlot(s); conv[s.id] = c;
+      const range = c.start + '–' + c.end;
+      if (!rowMap.has(range)) rowMap.set(range, { label: range, key: timeMin(c.start) });
+      cell[c.day + '|' + range] = s;
+    });
     const rowKeys = [...rowMap.keys()].sort((a, b) => rowMap.get(a)!.key - rowMap.get(b)!.key);
     return (
       <>
@@ -440,7 +457,7 @@ export function TeacherDirectory() {
             <tbody>
               {rowKeys.map(rk => (
                 <tr key={rk}>
-                  <td className="cm-wg-tl">{rowMap.get(rk)!.label}{tz ? <span className="cm-wg-tz"> {tzLabel(tz)}</span> : null}</td>
+                  <td className="cm-wg-tl">{rowMap.get(rk)!.label}<span className="cm-wg-tz"> {thZoneLabel(zone)}</span></td>
                   {WEEK_FULL.map(d => {
                     const s = cell[d + '|' + rk];
                     if (!s) return <td key={d}><div className="cm-wg-empty" onClick={canManage ? () => openCreate(id, d, rk) : undefined} title={canManage ? 'Add a slot here' : undefined} style={{ cursor: canManage ? 'pointer' : 'default' }}>{canManage ? '+' : '·'}</div></td>;
@@ -475,7 +492,7 @@ export function TeacherDirectory() {
                   const lab = hasStudent ? 'Booked' : s2.status === 'available' ? 'Available' : 'Unavailable';
                   return (
                     <button key={s2.id} className="cm-wg-srow" onClick={canManage ? () => openPopover(s2.id) : undefined} style={{ cursor: canManage ? 'pointer' : 'default' }}>
-                      <span className="cm-wg-stime">{s2.start_time}–{s2.end_time}</span>
+                      <span className="cm-wg-stime">{(conv[s2.id] || { start: s2.start_time, end: s2.end_time }).start}–{(conv[s2.id] || { start: s2.start_time, end: s2.end_time }).end} <span style={{ opacity: .7, fontWeight: 700 }}>{thZoneLabel(zone)}</span></span>
                       <span className={'cm-wg-chip ' + cls}>{lab}{hasStudent ? ' · ' + s2.booked_student : ''}</span>
                     </button>
                   );
@@ -484,7 +501,7 @@ export function TeacherDirectory() {
             );
           })}
         </div>
-        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk-rec" /> Recurring<span className="cm-wg-sw bk-dem" /> Demo<span className="cm-wg-sw bk-mku" /> Make-Up / On Demand<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{tz ? 'Times in ' + tzLabel(tz) : ''}</div>
+        <div className="cm-wg-legend"><span className="cm-wg-sw av" /> Available<span className="cm-wg-sw bk-rec" /> Recurring<span className="cm-wg-sw bk-dem" /> Demo<span className="cm-wg-sw bk-mku" /> Make-Up / On Demand<span className="cm-wg-sw un" /> Unavailable<span style={{ flex: 1 }} />{'Times in ' + thZoneLabel(zone)}</div>
         {renderPopover(id)}
         {renderCreate()}
       </>

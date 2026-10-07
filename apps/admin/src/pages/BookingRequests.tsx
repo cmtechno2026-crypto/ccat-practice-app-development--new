@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useTeacherHubTz, thConvert, thZoneLabel } from '../lib/thtz';
 
 // Requests (TeacherHub) — one unified inbox for parent booking requests.
 // Flow: parent requests slots → teacher accepts/rejects in the teacher app → admin books the accepted ones.
@@ -95,6 +96,7 @@ const fmtLeave = (d: string) => { const dt = new Date(d + (d.length <= 10 ? 'T00
 
 export function BookingRequests() {
   const { can } = useAuth();
+  const { zone, convertSlot } = useTeacherHubTz();
   const canManage = can('teacher.slots.manage');
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [leave, setLeave] = useState<LeaveRow[]>([]);
@@ -228,7 +230,8 @@ export function BookingRequests() {
     };
     const c = m[stt] || m.pending;
     const stKey = s.session_type || r.session_type; const st = stKey ? SESSION_TYPE[stKey] : null;
-    return <span key={s.slot_id} style={chip(c[1], c[2], c[3])} title={`${s.day_of_week} ${s.start_time}–${s.end_time} · ${s.teacher_name}`}>{c[0]} {shortDay(s.day_of_week)} {s.start_time}{st ? ` ${st.label}` : ''}</span>;
+    const cv = convertSlot(s);
+    return <span key={s.slot_id} style={chip(c[1], c[2], c[3])} title={`${cv.day} ${cv.start}–${cv.end} ${thZoneLabel(zone)} · ${s.teacher_name}`}>{c[0]} {shortDay(cv.day)} {cv.start}{st ? ` ${st.label}` : ''}</span>;
   };
 
   return (
@@ -361,7 +364,7 @@ export function BookingRequests() {
                           return (
                             <div key={s.slot_id} style={{ display: 'grid', gridTemplateColumns: '44px minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.1fr)', gap: 14, alignItems: 'center', padding: '12px 18px', borderTop: '1px solid #f0f4fa', background: bg }}>
                               {actionable && bookable ? <input type="checkbox" checked={checked} onChange={() => toggleSlot(r, s.slot_id)} style={{ width: 18, height: 18, cursor: 'pointer' }} /> : <span />}
-                              <span style={{ fontSize: 14.5, fontWeight: 900 }}>{shortDay(s.day_of_week)} <span style={{ color: '#8b93aa', fontWeight: 800, fontSize: 13 }}>{s.start_time}–{s.end_time}</span>{(() => { const tk = s.session_type || r.session_type; const mm = tk ? SESSION_TYPE[tk] : null; return mm ? <span style={{ marginLeft: 8, padding: '1px 7px', borderRadius: 999, background: mm.bg, color: mm.fg, fontSize: 10.5, fontWeight: 800 }}>{mm.label}</span> : null; })()}</span>
+                              <span style={{ fontSize: 14.5, fontWeight: 900 }}>{(() => { const cv = convertSlot(s); return <>{shortDay(cv.day)} <span style={{ color: '#8b93aa', fontWeight: 800, fontSize: 13 }}>{cv.start}–{cv.end} {thZoneLabel(zone)}</span></>; })()}{(() => { const tk = s.session_type || r.session_type; const mm = tk ? SESSION_TYPE[tk] : null; return mm ? <span style={{ marginLeft: 8, padding: '1px 7px', borderRadius: 999, background: mm.bg, color: mm.fg, fontSize: 10.5, fontWeight: 800 }}>{mm.label}</span> : null; })()}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 900, color: tp.fg }}><span style={{ width: 9, height: 9, borderRadius: 99, background: tp.dot, flex: 'none' }} />{tp.label}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 900, color: ap.fg }}><span style={{ width: 9, height: 9, borderRadius: 99, background: ap.dot, flex: 'none' }} />{ap.label}{tt !== 'accepted' && s.outcome !== 'approved' ? ` · ${tt === 'pending' ? 'teacher hasn’t replied' : 'teacher rejected'}` : ''}</span>
                             </div>
@@ -453,7 +456,7 @@ export function BookingRequests() {
                     const matched = openSet.has(keyOf(t));
                     return (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, border: '1px solid #e3e9f2', borderRadius: 10, padding: '9px 11px' }}>
-                        <span style={{ fontWeight: 800, color: '#30405c' }}>{t.day_of_week} {fmt(t.start_time)}–{fmt(t.end_time)}</span>
+                        <span style={{ fontWeight: 800, color: '#30405c' }}>{(() => { const cd = thConvert(t.day_of_week, fmt(t.start_time), (t as any).timezone || 'IST', zone); const ce = thConvert(t.day_of_week, fmt(t.end_time), (t as any).timezone || 'IST', zone); return `${cd.day} ${cd.time}–${ce.time} ${thZoneLabel(zone)}`; })()}</span>
                         <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, borderRadius: 999, padding: '3px 10px', ...(matched ? { background: '#eafaf1', color: '#0e7a52', border: '1px solid #bfe8d2' } : { background: '#fff7ed', color: '#9a6a12', border: '1px solid #f3d9ae' }) }}>
                           {matched ? '✓ Matches open slot' : '+ Added as custom time'}
                         </span>

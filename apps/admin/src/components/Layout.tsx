@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { PAYMENTS_ENABLED } from '../lib/payments';
 import { api } from '../lib/api';
 import { ProgramPills } from './ProgramPills';
+import { TeacherHubTzProvider, useTeacherHubTz, TH_ZONES } from '../lib/thtz';
 
 // Request kinds surfaced in the bell + Students highlighting, each with its own colour so the two
 // surfaces read consistently (grade-change = blue, deletion = coral, break-glass = amber).
@@ -160,6 +161,24 @@ function sectionFor(path: string, rail: RailItem[]): RailItem | undefined {
     .sort((a, b) => b.match.length - a.match.length)[0];
 }
 
+// TeacherHub timezone picker — sits in the top panel of every TeacherHub-workspace page.
+// Converts all displayed slot times to the chosen zone (DST-accurate), mirroring the teacher app.
+function TeacherHubTzPicker() {
+  const { zone, setZone } = useTeacherHubTz();
+  return (
+    <span className="hide-mobile" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 8 }}>
+      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.06em', color: 'var(--muted,#8a90a6)' }}>TIMEZONE</span>
+      <select
+        aria-label="Display timezone"
+        value={zone}
+        onChange={e => setZone(e.target.value)}
+        style={{ font: 'inherit', fontSize: 12.5, fontWeight: 700, color: 'var(--ink,#1f2a44)', background: 'var(--card2,#eef2f7)', border: '1px solid var(--line,#e6e6ef)', borderRadius: 9, padding: '6px 10px', cursor: 'pointer' }}>
+        {TH_ZONES.map(z => <option key={z.key} value={z.key}>{z.label}</option>)}
+      </select>
+    </span>
+  );
+}
+
 export function Layout() {
   const { me, logout, can, sites, activeSite, switchSite, program } = useAuth();
   const loc = useLocation();
@@ -221,6 +240,7 @@ export function Layout() {
   const tabs = section?.tabs?.filter(t => !t.perm || can(t.perm)) || [];
 
   return (
+    <TeacherHubTzProvider>
     <div className="shell">
       <nav className={`rail ${drawer ? 'open' : ''}`} aria-label="Primary">
         <button className="railclose" onClick={() => setDrawer(false)} aria-label="Close menu">✕</button>
@@ -290,6 +310,7 @@ export function Layout() {
             <span id="th-crumb" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 2, minWidth: 0, overflow: 'hidden' }} />
           </span>
           <div className="who">
+            {activeSite === 'teacher' && <TeacherHubTzPicker />}
             {me?.is_teacher && (loc.pathname.startsWith('/teacher-practice') || loc.pathname.startsWith('/teacher-exam') || loc.pathname.startsWith('/students')) && (
               <span className="hide-mobile" style={{ marginRight: 4 }}><ProgramPills /></span>
             )}
@@ -331,5 +352,6 @@ export function Layout() {
         <div className="page" key={activeSite + ':' + program}><Outlet /></div>
       </div>
     </div>
+    </TeacherHubTzProvider>
   );
 }
