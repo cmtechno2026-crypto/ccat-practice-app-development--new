@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { DB } from '../db.js';
 import { withTransaction } from '../db.js';
@@ -12,7 +13,7 @@ import {
 import { isWeakPin } from '../lib/pin.js';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { createSecureStorage } from '../services/storage.js';
-import { watermarkPng as studyWatermark } from '../lib/studyRender.js';
+import { renderWatermarkedPage } from '../lib/studyRender.js';
 
 // ============================================================================
 // Math Olympiad — site-scoped STUDENT API (site = 'math').
@@ -412,12 +413,50 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     return { id: r.id, title: r.title, description: r.description ?? '', kind: r.source_kind, page_count: r.page_count ?? 0 };
   });
 
+  // Downscale target for study-material page images (applied at request time). 1240px keeps text
+  // crisp while cutting the stored ~2084px (150-DPI) page to ~40% of the pixels: smaller files and
+  // a faster composite — so EXISTING materials speed up without being re-rendered.
+  const STUDY_PAGE_MAX_WIDTH = Number(process.env.STUDY_PAGE_MAX_WIDTH || 1240);
+  const STUDY_WARM_MAX = Number(process.env.STUDY_WARM_MAX_PAGES || 60);
+  const warmingMaterials = new Set<string>(); // in-flight guard, per (student, material, version, label)
+
+  // Background cache-warm: render ALL pages of a material into the cache so paging through is
+  // instant after the first page. Fire-and-forget, best-effort, concurrency 2, skips already-cached
+  // pages. Only triggered on a COLD page request, so an already-warm material never re-warms.
+  async function warmStudyMaterial(sid: string, id: string, prefix: string, label: string,
+                                   total: number, verTag: string, labelTag: string): Promise<void> {
+    const gkey = `${sid}:${id}:${verTag}:${labelTag}`;
+    if (warmingMaterials.has(gkey) || total <= 1) return;
+    warmingMaterials.add(gkey);
+    try {
+      const pages = Math.min(total, STUDY_WARM_MAX);
+      let next = 1;
+      const worker = async () => {
+        for (let p = next++; p <= pages; p = next++) {
+          const base = `study-cache/${sid}/${id}/p-${p}-${verTag}-${labelTag}`;
+          const cached = (await studySecure.get(`${base}.webp`).catch(() => null))
+                      || (await studySecure.get(`${base}.png`).catch(() => null));
+          if (cached) continue;
+          const src = await studySecure.get(`${prefix}p-${p}.png`).catch(() => null);
+          if (!src) continue;
+          try {
+            const { bytes, contentType } = await renderWatermarkedPage(src.bytes, label, { webp: true, maxWidth: STUDY_PAGE_MAX_WIDTH });
+            await studySecure.put(`${base}.${contentType === 'image/webp' ? 'webp' : 'png'}`, bytes, contentType).catch(() => {});
+          } catch { /* skip one page */ }
+        }
+      };
+      await Promise.all([worker(), worker()]);
+    } finally {
+      warmingMaterials.delete(gkey);
+    }
+  }
+
   app.get('/v1/math/study-materials/:id/pages/:n', authed, async (req, reply) => {
     const sid = req.student!.studentId;
     const id = (req.params as any).id as string;
     const n = Math.max(1, parseInt(String((req.params as any).n), 10) || 1);
     const { rows } = await db.query(
-      `select sm.pages_prefix, sm.page_count, st.display_name, st.id as student_id
+      `select sm.pages_prefix, sm.page_count, sm.updated_at, st.display_name, st.id as student_id
          from ccat.students st
          join ccat.study_materials sm on sm.grade_id = st.grade_id
               and sm.program='math' and sm.site_id='math' and sm.active
@@ -427,13 +466,42 @@ export function registerMathRoutes(app: FastifyInstance, db: DB, cfg: Config) {
     const row: any = rows[0];
     if (n > Number(row.page_count || 0)) throw Errors.notFound('Page out of range');
     const prefix: string = row.pages_prefix || `study-pages/${id}/`;
+    const label = `${row.display_name || 'Student'} · ${String(row.student_id).slice(0, 8)}`;
+
+    const serve = (bytes: Buffer, contentType: string) => {
+      reply.header('content-type', contentType);
+      // Private per-browser cache: the image is already watermarked with the student's identity,
+      // so caching it in THAT student's browser is acceptable and makes revisits/reloads instant.
+      // Never public/shared. A re-render bumps the material's updated_at, which changes the cache
+      // key below, so the server serves fresh bytes; a browser may hold a stale page up to max-age.
+      reply.header('cache-control', 'private, max-age=86400');
+      return reply.send(bytes);
+    };
+
+    // Per-student watermarked-page cache. The watermark is identity-stable (name + short id, no
+    // timestamp), so the composited image is deterministic — render once, then later views (any
+    // device/session) just stream bytes and skip the ImageMagick subprocess. The key folds in a
+    // version tag (updated_at → invalidates on re-render) and a label hash (invalidates on a name
+    // change). Stored in the same private 'study-secure' bucket under study-cache/.
+    const verTag = createHash('sha1').update(String(row.updated_at ?? '')).digest('hex').slice(0, 8);
+    const labelTag = createHash('sha1').update(label).digest('hex').slice(0, 8);
+    const keyFor = (p: number) => `study-cache/${row.student_id}/${id}/p-${p}-${verTag}-${labelTag}`;
+    const EXT: Record<string, string> = { webp: 'image/webp', png: 'image/png' };
+
+    for (const ext of Object.keys(EXT)) {
+      const hit = await studySecure.get(`${keyFor(n)}.${ext}`).catch(() => null);
+      if (hit) return serve(hit.bytes, EXT[ext]!);
+    }
+
     const obj = await studySecure.get(`${prefix}p-${n}.png`);
     if (!obj) throw Errors.notFound('Page image missing');
-    const label = `${row.display_name || 'Student'} · ${String(row.student_id).slice(0, 8)}`;
-    const marked = await studyWatermark(obj.bytes, label);
-    reply.header('content-type', 'image/png');
-    reply.header('cache-control', 'private, no-store');
-    return reply.send(marked);
+    const { bytes, contentType } = await renderWatermarkedPage(obj.bytes, label, { webp: true, maxWidth: STUDY_PAGE_MAX_WIDTH });
+    const ext = contentType === 'image/webp' ? 'webp' : 'png';
+    // Serve first; fill this page's cache AND warm the rest of the material in the background so the
+    // response isn't blocked by storage writes or further rendering.
+    void studySecure.put(`${keyFor(n)}.${ext}`, bytes, contentType).catch(() => {});
+    void warmStudyMaterial(sid, id, prefix, label, Number(row.page_count || 0), verTag, labelTag);
+    return serve(bytes, contentType);
   });
 
   app.get('/v1/math/leaderboard', authed, async () => [] as unknown[]);

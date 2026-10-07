@@ -25,6 +25,7 @@ RUN apt-get update \
        libreoffice-impress \
        libreoffice-core \
        imagemagick \
+       libmagickcore-6.q16-6-extra \
        fonts-dejavu-core \
        fonts-liberation \
     && rm -rf /var/lib/apt/lists/*

@@ -22,7 +22,7 @@ export interface RasterResult {
   pages: { index: number; png: Buffer }[];
 }
 
-const RENDER_DPI = Number(process.env.STUDY_RENDER_DPI || 150);
+const RENDER_DPI = Number(process.env.STUDY_RENDER_DPI || 120); // 120 is crisp for text workbooks; smaller + faster than 150
 const MAX_PAGES = Number(process.env.STUDY_MAX_PAGES || 400); // safety cap
 const SOFFICE_TIMEOUT_MS = 180_000;
 const PDFTOPPM_TIMEOUT_MS = 180_000;
@@ -122,33 +122,64 @@ async function tileFor(text: string): Promise<Buffer> {
   }
 }
 
-/** Composite a tiled, rotated, translucent identity watermark over a base page PNG. Returns PNG bytes. */
-export async function watermarkPng(basePng: Buffer, text: string): Promise<Buffer> {
+// ImageMagick args that composite the translucent tiled watermark over the base page.
+// Build the watermark layer as a TRANSPARENT tiled canvas, then composite it over the page.
+// NOTE: `-size WxH tile:<file>` flattens the transparent tile onto an OPAQUE (black) canvas,
+// which blacked out the whole page. The correct idiom is a transparent canvas (xc:none)
+// painted with the tile as the fill pattern via `-tile … -draw rectangle`, which preserves
+// per-pixel alpha so only the translucent text lands on the page.
+// ImageMagick args that downscale the base to the target size, then composite the translucent
+// tiled watermark over it. Downscaling the stored 150-DPI base at request time (tw/th ≤ source)
+// cuts both the composite cost and the output size — so EXISTING materials get smaller/faster
+// without re-rendering. The watermark canvas is sized to the SAME target dims so it lands exactly.
+// NOTE: `-size WxH tile:<file>` flattens the transparent tile onto an OPAQUE (black) canvas, which
+// blacked out the whole page; the correct idiom is a transparent canvas (xc:none) painted with the
+// tile as the fill pattern via `-tile … -draw rectangle`, which preserves per-pixel alpha.
+function compositeArgs(baseP: string, tileP: string, tw: number, th: number): string[] {
+  return [baseP, '-resize', `${tw}x${th}`,
+    '(', '-size', `${tw}x${th}`, 'xc:none', '-tile', tileP, '-draw', `rectangle 0,0 ${tw},${th}`, ')',
+    '-compose', 'over', '-composite'];
+}
+
+/** Composite the identity watermark over a base page PNG and encode the result. Optionally
+ *  downscales to `maxWidth` (preserving aspect, never upscaling). Prefers WebP (far smaller than
+ *  PNG → much faster transfer); falls back to PNG if the ImageMagick webp delegate is unavailable,
+ *  so a page always renders. Returns the bytes and their mime type. */
+export async function renderWatermarkedPage(
+  basePng: Buffer, text: string, opts?: { webp?: boolean; quality?: number; maxWidth?: number },
+): Promise<{ bytes: Buffer; contentType: string }> {
   const safe = (text || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 80) || 'Concept Mastery';
   const tile = await tileFor(safe);
   const { width, height } = pngSize(basePng);
+  const maxW = opts?.maxWidth ?? 0;
+  let tw = width, th = height;
+  if (maxW > 0 && width > maxW) { const s = maxW / width; tw = Math.round(width * s); th = Math.round(height * s); }
+  const wantWebp = opts?.webp !== false;
+  const quality = String(opts?.quality ?? 82);
   const dir = await mkdtemp(join(tmpdir(), 'wm-'));
   try {
     const baseP = join(dir, 'base.png');
     const tileP = join(dir, 'tile.png');
-    const outP = join(dir, 'out.png');
     await writeFile(baseP, basePng);
     await writeFile(tileP, tile);
-    // Build the watermark layer as a TRANSPARENT tiled canvas, then composite it
-    // over the page. NOTE: `-size WxH tile:<file>` flattens the transparent tile
-    // onto an OPAQUE (black) canvas, which blacked out the whole page. The correct
-    // idiom is a transparent canvas (xc:none) painted with the tile as the fill
-    // pattern via `-tile … -draw rectangle`, which preserves per-pixel alpha so
-    // only the translucent text lands on the page.
-    await exec(
-      'convert',
-      [baseP,
-        '(', '-size', `${width}x${height}`, 'xc:none', '-tile', tileP, '-draw', `rectangle 0,0 ${width},${height}`, ')',
-        '-compose', 'over', '-composite', outP],
-      { timeout: CONVERT_TIMEOUT_MS, maxBuffer: BIG_BUFFER },
-    );
-    return await readFile(outP);
+    const args = compositeArgs(baseP, tileP, tw, th);
+    if (wantWebp) {
+      const outW = join(dir, 'out.webp');
+      try {
+        await exec('convert', [...args, '-quality', quality, outW], { timeout: CONVERT_TIMEOUT_MS, maxBuffer: BIG_BUFFER });
+        const b = await readFile(outW);
+        if (b.length > 0) return { bytes: b, contentType: 'image/webp' };
+      } catch { /* webp delegate missing → fall through to PNG */ }
+    }
+    const outP = join(dir, 'out.png');
+    await exec('convert', [...args, outP], { timeout: CONVERT_TIMEOUT_MS, maxBuffer: BIG_BUFFER });
+    return { bytes: await readFile(outP), contentType: 'image/png' };
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/** Back-compat PNG-only watermark (returns bytes). */
+export async function watermarkPng(basePng: Buffer, text: string): Promise<Buffer> {
+  return (await renderWatermarkedPage(basePng, text, { webp: false })).bytes;
 }
