@@ -24,6 +24,7 @@ import { Audit } from './pages/Audit';
 import { Membership } from './pages/Membership';
 import { TeacherDashboard } from './pages/TeacherDashboard';
 import { TeacherDirectory } from './pages/TeacherDirectory';
+import { AvailabilityCalendar } from './pages/AvailabilityCalendar';
 import { BookingLinks } from './pages/BookingLinks';
 import { BookingRequests } from './pages/BookingRequests';
 import { TrainingAdmin } from './pages/TrainingAdmin';
@@ -271,6 +272,7 @@ export function App() {
         {/* Teacher Hub site (multi-site admin) */}
         <Route path="/teacherhub" element={<TeacherDashboard />} />
         <Route path="/teacherhub/teachers" element={<TeacherDirectory />} />
+        <Route path="/teacherhub/availability" element={<AvailabilityCalendar />} />
         <Route path="/teacherhub/booking-links" element={<BookingLinks />} />
         <Route path="/teacherhub/requests" element={<BookingRequests />} />
         <Route path="/teacherhub/training" element={<TrainingHome />} />

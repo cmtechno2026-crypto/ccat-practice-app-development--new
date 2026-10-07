@@ -124,6 +124,7 @@ const RAIL: RailItem[] = PAYMENTS_ENABLED
 const TEACHER_RAIL: RailItem[] = [
   { to: '/teacherhub', label: 'Dashboard', ic: '📊', match: '/teacherhub', perm: 'teacher.directory', svg: 'M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z', tone: '#2FA86A' },
   { to: '/teacherhub/teachers', label: 'Teachers', ic: '👩\u200d🏫', match: '/teacherhub/teachers', perm: 'teacher.directory', svg: 'M12 3l9 5-9 5-9-5zM7 11v5c0 1.7 2.2 3 5 3s5-1.3 5-3v-5', tone: '#1A5EAB' },
+  { to: '/teacherhub/availability', label: 'Availability Calendar', ic: '🗓', match: '/teacherhub/availability', perm: 'teacher.directory', svg: 'M4 5h16v16H4zM4 9h16M8 3v4M16 3v4', tone: '#0F8C9E' },
   { to: '/teacherhub/training', label: 'Training', ic: '🎓', match: '/teacherhub/training', perm: 'teacher.directory', svg: 'M5 3h14v18H5zM8 8h8M8 12h8M8 16h5', tone: '#E8A020' },
   { to: '/teacherhub/booking-links', label: 'Link Generator', ic: '🔗', match: '/teacherhub/booking-links', perm: 'teacher.directory', svg: 'M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1 1M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1-1', tone: '#D4620E' },
   { to: '/teacherhub/requests', label: 'Requests', ic: '📥', match: '/teacherhub/requests', perm: 'teacher.directory', svg: 'M3 5h18v14H3zM3 6l9 7 9-7', tone: '#7C3AED' },
