@@ -52,7 +52,7 @@ function gradeMatches(s: Slot, g: number): boolean {
   return false;
 }
 
-interface Ev { slot: Slot; dayIdx: number; startMin: number; endMin: number; color: string; label: string; kind: string; oneTime: boolean; occ: Date | null; }
+interface Ev { slot: Slot; dayIdx: number; startMin: number; endMin: number; color: string; label: string; altLabel: string; kind: string; oneTime: boolean; occ: Date | null; }
 
 export function AvailabilityCalendar() {
   const { zone } = useTeacherHubTz();
@@ -95,6 +95,9 @@ export function AvailabilityCalendar() {
         ? `${s.booked_student}${gl ? ` (${gl})` : ''} · ${s.subject || 'Session'} · ${s.teacher_name}`
         : `Open · ${s.subject || 'Availability'} · ${s.teacher_name}`;
       const kind = booked ? (st === 'makeup' ? 'Make-Up / On Demand' : st === 'demo' ? 'Demo' : 'Recurring') : 'Open availability';
+      // For a PAST available slot the chip shows the slot's own session type instead of "Open".
+      const typeWord = s.session_type ? (st === 'makeup' ? 'Make-Up' : st === 'demo' ? 'Demo' : 'Recurring') : null;
+      const altLabel = (!booked && typeWord) ? `${typeWord} · ${s.subject || 'Availability'} · ${s.teacher_name}` : label;
       let occ: Date | null = null;
       if (oneTime && s.booked_at && dayIdx >= 0) {
         const b = new Date(s.booked_at);
@@ -102,7 +105,7 @@ export function AvailabilityCalendar() {
         for (let i = 0; i < 7; i++) { if (d.getDay() === dayIdx) break; d = addDays(d, 1); }
         occ = d;
       }
-      return { slot: s, dayIdx, startMin: timeMin(cs.time), endMin: timeMin(ce.time), color, label, kind, oneTime, occ };
+      return { slot: s, dayIdx, startMin: timeMin(cs.time), endMin: timeMin(ce.time), color, label, altLabel, kind, oneTime, occ };
     })
     .filter(e => e.dayIdx >= 0 && e.endMin > e.startMin), [slots, zone]);
 
@@ -216,12 +219,13 @@ export function AvailabilityCalendar() {
   // chip — no time text (the Time column carries it); colored dot + label.
   const chip = (e: Ev, d: Date, key: string) => {
     const c = COLORS[e.color]; const past = isPast(e, d);
+    const lab = past && e.color === 'open' ? e.altLabel : e.label;
     return (
-      <button key={key} title={`${e.label} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)} ${thZoneLabel(zone)}${past ? ' · past' : ''}`}
-        onClick={ev2 => { ev2.stopPropagation(); setPicked({ label: e.label, kind: past ? 'Past · ' + e.kind : e.kind, color: e.color, when: `${DOW3[d.getDay()]} ${MNAMES[d.getMonth()].slice(0, 3)} ${d.getDate()} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)} ${thZoneLabel(zone)}` }); }}
+      <button key={key} title={`${lab} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)} ${thZoneLabel(zone)}${past ? ' · past' : ''}`}
+        onClick={ev2 => { ev2.stopPropagation(); setPicked({ label: lab, kind: past ? 'Past · ' + e.kind : e.kind, color: e.color, when: `${DOW3[d.getDay()]} ${MNAMES[d.getMonth()].slice(0, 3)} ${d.getDate()} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)} ${thZoneLabel(zone)}` }); }}
         style={{ display: 'flex', alignItems: 'flex-start', gap: 6, width: '100%', border: `1px solid ${past ? PAST_BORDER : c.border}`, borderRadius: 7, background: past ? PAST_BG : c.bg, color: past ? PAST_FG : c.fg, opacity: past ? .75 : 1, padding: '5px 7px', textAlign: 'left', cursor: 'pointer' }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: past ? PAST_DOT : c.dot, flex: 'none', marginTop: 3 }} />
-        <span style={{ fontSize: 10.5, fontWeight: 700, lineHeight: 1.22 }}>{e.label}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, lineHeight: 1.22 }}>{lab}</span>
       </button>
     );
   };
@@ -298,9 +302,9 @@ export function AvailabilityCalendar() {
                 return (
                   <div key={d.toDateString()} onClick={() => { setOpenDay(d.toDateString()); setPicked(null); }} style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 112, padding: 7, border: `1px solid ${isOpen ? '#1d5db5' : today ? '#9cc2ef' : '#e6ebf4'}`, borderRadius: 9, background: isOpen ? '#e4efff' : today ? '#eaf2ff' : past ? '#fbfcfe' : '#fff', cursor: 'pointer' }}>
                     <span style={{ fontSize: 13, fontWeight: 900, color: today ? '#15215c' : past ? '#9aa6b8' : '#0f1b33' }}>{d.getDate()}</span>
-                    {shown.map((e, k) => { const c = COLORS[e.color]; const ep = isPast(e, d); return (
-                      <button key={e.slot.id + '|' + k} title={`${e.label} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)}`} onClick={ev2 => { ev2.stopPropagation(); setOpenDay(d.toDateString()); }}
-                        style={{ display: '-webkit-box', WebkitLineClamp: 2 as any, WebkitBoxOrient: 'vertical', overflow: 'hidden', width: '100%', padding: '3px 6px', border: `1px solid ${ep ? PAST_BORDER : c.border}`, borderRadius: 5, background: ep ? PAST_BG : c.bg, color: ep ? PAST_FG : c.fg, fontSize: 9.5, fontWeight: 800, lineHeight: 1.25, textAlign: 'left', cursor: 'pointer' }}>{e.label}</button>
+                    {shown.map((e, k) => { const c = COLORS[e.color]; const ep = isPast(e, d); const lab = ep && e.color === 'open' ? e.altLabel : e.label; return (
+                      <button key={e.slot.id + '|' + k} title={`${lab} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)}`} onClick={ev2 => { ev2.stopPropagation(); setOpenDay(d.toDateString()); }}
+                        style={{ display: '-webkit-box', WebkitLineClamp: 2 as any, WebkitBoxOrient: 'vertical', overflow: 'hidden', width: '100%', padding: '3px 6px', border: `1px solid ${ep ? PAST_BORDER : c.border}`, borderRadius: 5, background: ep ? PAST_BG : c.bg, color: ep ? PAST_FG : c.fg, fontSize: 9.5, fontWeight: 800, lineHeight: 1.25, textAlign: 'left', cursor: 'pointer' }}>{lab}</button>
                     ); })}
                     {dayEv.length > 3 && <span style={{ color: '#8a93a6', fontSize: 10.5, fontWeight: 800 }}>+{dayEv.length - 3} more</span>}
                   </div>
@@ -319,10 +323,10 @@ export function AvailabilityCalendar() {
                   </div>
                   <button onClick={() => setOpenDay(null)} style={{ display: 'grid', placeItems: 'center', width: 32, height: 32, border: '1px solid #d5deec', borderRadius: 999, background: '#fff', color: '#44546e', fontSize: 13, fontWeight: 900, cursor: 'pointer' }}>✕</button>
                 </div>
-                {rows.map((e, i) => { const c = COLORS[e.color]; const past = isPast(e, d); return (
+                {rows.map((e, i) => { const c = COLORS[e.color]; const past = isPast(e, d); const lab = past && e.color === 'open' ? e.altLabel : e.label; return (
                   <div key={e.slot.id + '|' + i} style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '11px 16px', borderBottom: '1px solid #f1f4fa', background: past ? '#fbfcfe' : '#fff' }}>
                     <span style={{ minWidth: 150, fontSize: 14, fontWeight: 900, letterSpacing: '-.01em', color: '#0f1b33' }}>{timeLabel(e.startMin)} – {timeLabel(e.endMin)}</span>
-                    <span style={{ flex: 1, minWidth: 180, fontSize: 14, fontWeight: 700, color: '#2a3550' }}>{e.label}</span>
+                    <span style={{ flex: 1, minWidth: 180, fontSize: 14, fontWeight: 700, color: '#2a3550' }}>{lab}</span>
                     <span style={{ padding: '3px 10px', borderRadius: 999, background: past ? '#eef1f6' : c.bg, color: past ? '#8a93a6' : c.fg, fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>{past ? 'Past' : e.kind}</span>
                   </div>
                 ); })}
