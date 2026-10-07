@@ -4,8 +4,9 @@ import { useTeacherHubTz, thConvert, thZoneLabel } from '../lib/thtz';
 
 // Availability Calendar — TeacherHub workspace. Full-bleed panel (flush to the rail, top bar and
 // bottom of the screen). Shows real availability across all teachers, projected onto actual
-// week/month dates, in the timezone chosen in the top-panel selector. Weekly = a readable per-day
-// list (no overlap); Monthly = month grid + day panel. Display-only — no writes here.
+// week/month dates, in the timezone chosen in the top-panel selector. Weekly = a time-row grid with
+// a left Time column; events sit in their hour row and stack (no overlap). Monthly = month grid +
+// day panel. Display-only — no writes here.
 
 interface Slot {
   id: string; teacher_id: string; teacher_name: string; subject: string;
@@ -19,19 +20,21 @@ const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', '
 const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MNAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// Event colors keyed by type.
-const COLORS: Record<string, { bg: string; line: string; fg: string }> = {
-  open: { bg: '#eaf7ec', line: '#7fc78f', fg: '#1d5b2c' },
-  recurring: { bg: '#f1faf0', line: '#bfe0b8', fg: '#2f6b2a' },
-  makeup: { bg: '#fdf4e0', line: '#e8c583', fg: '#7a5200' },
-  demo: { bg: '#fdf0f6', line: '#e9bed5', fg: '#8a3a62' },
+// Scheme 4: strong tint fill + colored dot, dark text. Available=green, Recurring=blue, Make-Up=orange, Demo=purple.
+const COLORS: Record<string, { bg: string; border: string; fg: string; dot: string }> = {
+  open: { bg: '#bfeccd', border: '#15a34a', fg: '#105a2c', dot: '#15a34a' },
+  recurring: { bg: '#c3d6fb', border: '#2563eb', fg: '#17357f', dot: '#2563eb' },
+  makeup: { bg: '#fbd3a6', border: '#ea6a0c', fg: '#8a4408', dot: '#ea6a0c' },
+  demo: { bg: '#d9c9fa', border: '#7c3aed', fg: '#4a2596', dot: '#7c3aed' },
 };
+const PAST_BG = '#f2f4f7', PAST_BORDER = '#cfd6e4', PAST_FG = '#8a93a6', PAST_DOT = '#b9c2d0';
 const TYPE_KEYS = ['open', 'recurring', 'makeup', 'demo'];
 const TYPE_LABELS: Record<string, string> = { open: 'Available', recurring: 'Recurring', makeup: 'Make-Up / On Demand', demo: 'Demo' };
 
 const timeMin = (t: string) => { const p = String(t).split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); };
 const pad2 = (n: number) => (n < 10 ? '0' + n : '' + n);
 const timeLabel = (mins: number) => { const h = Math.floor(mins / 60) % 24, m = mins % 60; const ap = h < 12 ? 'am' : 'pm'; const hh = h % 12 === 0 ? 12 : h % 12; return `${hh}:${pad2(m)} ${ap}`; };
+const hourLabel = (h: number) => { const ap = h < 12 ? 'am' : 'pm'; const hh = h % 12 === 0 ? 12 : h % 12; return `${hh} ${ap}`; };
 const sameDate = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const startOfWeek = (d: Date) => addDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), -d.getDay());
@@ -125,6 +128,16 @@ export function AvailabilityCalendar() {
   const weekDates = useMemo(() => { const ws = addDays(startOfWeek(now), weekOffset * 7); return Array.from({ length: 7 }, (_, i) => addDays(ws, i)); }, [weekOffset]);
   const weekRange = `${MNAMES[weekDates[0].getMonth()].slice(0, 3)} ${weekDates[0].getDate()} – ${MNAMES[weekDates[6].getMonth()].slice(0, 3)} ${weekDates[6].getDate()}, ${weekDates[6].getFullYear()}`;
 
+  // Per-day event lists for the viewed week + the hour range to show.
+  const dayLists = useMemo(() => weekDates.map(d => ev.filter(e => onDate(e, d)).sort((a, b) => a.startMin - b.startMin)), [ev, weekDates]);
+  const hours = useMemo(() => {
+    let lo = 24, hi = 0;
+    dayLists.forEach(list => list.forEach(e => { lo = Math.min(lo, Math.floor(e.startMin / 60)); hi = Math.max(hi, Math.ceil(e.endMin / 60)); }));
+    if (lo > hi) { lo = 8; hi = 20; }
+    lo = Math.max(0, Math.min(lo, 23)); hi = Math.min(24, Math.max(hi, lo + 1));
+    return Array.from({ length: hi - lo }, (_, i) => lo + i);
+  }, [dayLists]);
+
   const month = useMemo(() => {
     const base = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
     const y = base.getFullYear(), mi = base.getMonth();
@@ -154,7 +167,6 @@ export function AvailabilityCalendar() {
 
   const barBtn: React.CSSProperties = { minHeight: 36, padding: '0 14px', border: '1px solid #cfd6ea', borderRadius: 7, background: '#fff', color: '#15215c', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' };
 
-  // ---- a single filter dropdown ----
   const dropdown = (d: { key: string; label: string; title: string; options: Opt[] }) => {
     const count = sel[d.key].size;
     const vals = d.options.map(o => o.value);
@@ -186,7 +198,7 @@ export function AvailabilityCalendar() {
                   return (
                     <button key={String(o.value)} onClick={() => toggleOpt(d.key, o.value)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 34, padding: '0 10px', border: 0, borderRadius: 6, background: on ? '#eaf2ff' : '#fff', color: '#0f1b33', fontSize: 14, fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}>
                       <span style={{ display: 'grid', placeItems: 'center', width: 17, height: 17, borderRadius: 4, border: `2px solid ${on ? '#1d5db5' : '#c3ccdb'}`, background: on ? '#1d5db5' : '#fff', color: '#fff', fontSize: 11, fontWeight: 900, flex: 'none' }}>{on ? '✓' : ''}</span>
-                      {c && <span style={{ width: 11, height: 11, borderRadius: 3, background: c.bg, border: `1px solid ${c.line}`, flex: 'none' }} />}
+                      {c && <span style={{ width: 11, height: 11, borderRadius: 3, background: c.bg, border: `1px solid ${c.border}`, flex: 'none' }} />}
                       {o.label}
                     </button>
                   );
@@ -201,17 +213,20 @@ export function AvailabilityCalendar() {
     );
   };
 
+  // chip — no time text (the Time column carries it); colored dot + label.
   const chip = (e: Ev, d: Date, key: string) => {
     const c = COLORS[e.color]; const past = isPast(e, d);
     return (
       <button key={key} title={`${e.label} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)} ${thZoneLabel(zone)}${past ? ' · past' : ''}`}
-        onClick={() => setPicked({ label: e.label, kind: past ? 'Past · ' + e.kind : e.kind, color: e.color, when: `${DOW3[d.getDay()]} ${MNAMES[d.getMonth()].slice(0, 3)} ${d.getDate()} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)} ${thZoneLabel(zone)}` })}
-        style={{ display: 'block', width: '100%', border: `1px solid ${past ? '#cfd6e4' : c.line}`, borderRadius: 7, background: c.bg, color: c.fg, opacity: past ? .5 : 1, padding: '6px 8px', textAlign: 'left', cursor: 'pointer' }}>
-        <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: '-.01em' }}>{timeLabel(e.startMin)}–{timeLabel(e.endMin)}</div>
-        <div style={{ fontSize: 10.5, fontWeight: 700, lineHeight: 1.25, marginTop: 1 }}>{e.label}</div>
+        onClick={ev2 => { ev2.stopPropagation(); setPicked({ label: e.label, kind: past ? 'Past · ' + e.kind : e.kind, color: e.color, when: `${DOW3[d.getDay()]} ${MNAMES[d.getMonth()].slice(0, 3)} ${d.getDate()} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)} ${thZoneLabel(zone)}` }); }}
+        style={{ display: 'flex', alignItems: 'flex-start', gap: 6, width: '100%', border: `1px solid ${past ? PAST_BORDER : c.border}`, borderRadius: 7, background: past ? PAST_BG : c.bg, color: past ? PAST_FG : c.fg, opacity: past ? .75 : 1, padding: '5px 7px', textAlign: 'left', cursor: 'pointer' }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: past ? PAST_DOT : c.dot, flex: 'none', marginTop: 3 }} />
+        <span style={{ fontSize: 10.5, fontWeight: 700, lineHeight: 1.22 }}>{e.label}</span>
       </button>
     );
   };
+
+  const legendSwatch = (k: string) => { const c = COLORS[k]; return <span style={{ width: 13, height: 13, borderRadius: 4, background: c.bg, border: `1px solid ${c.border}`, flex: 'none' }} />; };
 
   return (
     <div className="avcal" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: '#fff' }}>
@@ -233,33 +248,36 @@ export function AvailabilityCalendar() {
       {loading && <div style={{ padding: '40px 24px', color: '#8a93a6', fontSize: 14.5, fontWeight: 700 }}>Loading availability…</div>}
       {err && !loading && <div style={{ padding: '24px', color: '#c22a21', fontSize: 14.5, fontWeight: 700 }}>{err}</div>}
 
-      {/* WEEKLY — per-day agenda lists */}
+      {/* WEEKLY — time-row grid with a left Time column */}
       {!loading && !err && span === 'Weekly' && (
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          <div style={{ minWidth: 820 }}>
-            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'grid', gridTemplateColumns: 'repeat(7,minmax(0,1fr))', borderBottom: '1px solid #e6ebf4', background: '#fff' }}>
+          <div style={{ minWidth: 900 }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'grid', gridTemplateColumns: '62px repeat(7,minmax(0,1fr))', borderBottom: '1px solid #e6ebf4', background: '#fff' }}>
+              <div style={{ borderRight: '1px solid #eef1f7', display: 'grid', placeItems: 'center', color: '#aab3c2', fontSize: 10.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase' }}>Time</div>
               {weekDates.map((d, di) => {
                 const on = focus === di; const today = sameDate(d, now);
                 return (
-                  <button key={di} onClick={() => setFocus(f => f === di ? null : di)} style={{ padding: '10px 0', textAlign: 'center', background: on ? '#f2f5fd' : '#fff', border: 0, borderLeft: di ? '1px solid #eef1f7' : 0, borderBottom: `3px solid ${on ? '#1d5db5' : today ? '#9cc2ef' : 'transparent'}`, cursor: 'pointer', width: '100%' }}>
-                    <span style={{ fontSize: 17, fontWeight: 800, color: on || today ? '#15215c' : '#8a93a6' }}>{d.getDate()}</span>
+                  <button key={di} onClick={() => setFocus(f => f === di ? null : di)} style={{ padding: '9px 0', textAlign: 'center', background: on ? '#f2f5fd' : '#fff', border: 0, borderLeft: '1px solid #eef1f7', borderBottom: `3px solid ${on ? '#1d5db5' : today ? '#9cc2ef' : 'transparent'}`, cursor: 'pointer', width: '100%' }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: on || today ? '#15215c' : '#8a93a6' }}>{d.getDate()}</span>
                     <span style={{ marginLeft: 5, fontSize: 12, fontWeight: 600, color: on ? '#5a6576' : '#aab3c2' }}>{DOW3[d.getDay()]}</span>
+                    <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: '#aab3c2' }}>{dayLists[di].length}</span>
                   </button>
                 );
               })}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,minmax(0,1fr))', alignItems: 'start' }}>
-              {weekDates.map((d, di) => {
-                const list = ev.filter(e => onDate(e, d)).sort((a, b) => a.startMin - b.startMin);
-                return (
-                  <div key={di} onClick={() => setFocus(di)} style={{ borderLeft: di ? '1px solid #eef1f7' : 0, padding: '8px 7px 14px', display: 'flex', flexDirection: 'column', gap: 6, background: focus === di ? '#f6f9ff' : '#fff', cursor: 'pointer' }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: '#8a93a6', textAlign: 'center', paddingBottom: 2 }}>{list.length} slot{list.length === 1 ? '' : 's'}</div>
-                    {list.map((e, i) => chip(e, d, e.slot.id + '|' + i))}
-                    {list.length === 0 && <div style={{ color: '#c3ccdb', fontSize: 11, fontWeight: 700, textAlign: 'center', padding: '8px 0' }}>—</div>}
-                  </div>
-                );
-              })}
-            </div>
+            {hours.map(hr => (
+              <div key={hr} style={{ display: 'grid', gridTemplateColumns: '62px repeat(7,minmax(0,1fr))', borderBottom: '1px solid #f1f4f9' }}>
+                <div style={{ padding: '7px 8px 0 0', textAlign: 'right', color: '#8a93a6', fontSize: 11.5, fontWeight: 700, borderRight: '1px solid #eef1f7' }}>{hourLabel(hr)}</div>
+                {weekDates.map((d, di) => {
+                  const cellEv = dayLists[di].filter(e => Math.floor(e.startMin / 60) === hr);
+                  return (
+                    <div key={di} onClick={() => setFocus(di)} style={{ borderLeft: '1px solid #f1f4f9', padding: 5, display: 'flex', flexDirection: 'column', gap: 5, minHeight: 50, background: focus === di ? '#f6f9ff' : '#fff', cursor: 'pointer' }}>
+                      {cellEv.map((e, i) => chip(e, d, e.slot.id + '|' + i))}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -282,7 +300,7 @@ export function AvailabilityCalendar() {
                     <span style={{ fontSize: 13, fontWeight: 900, color: today ? '#15215c' : past ? '#9aa6b8' : '#0f1b33' }}>{d.getDate()}</span>
                     {shown.map((e, k) => { const c = COLORS[e.color]; const ep = isPast(e, d); return (
                       <button key={e.slot.id + '|' + k} title={`${e.label} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)}`} onClick={ev2 => { ev2.stopPropagation(); setOpenDay(d.toDateString()); }}
-                        style={{ display: '-webkit-box', WebkitLineClamp: 2 as any, WebkitBoxOrient: 'vertical', overflow: 'hidden', width: '100%', padding: '3px 6px', border: `1px solid ${ep ? '#cfd6e4' : c.line}`, borderRadius: 5, background: c.bg, color: c.fg, opacity: ep ? .5 : 1, fontSize: 9.5, fontWeight: 800, lineHeight: 1.25, textAlign: 'left', cursor: 'pointer' }}>{e.label}</button>
+                        style={{ display: '-webkit-box', WebkitLineClamp: 2 as any, WebkitBoxOrient: 'vertical', overflow: 'hidden', width: '100%', padding: '3px 6px', border: `1px solid ${ep ? PAST_BORDER : c.border}`, borderRadius: 5, background: ep ? PAST_BG : c.bg, color: ep ? PAST_FG : c.fg, fontSize: 9.5, fontWeight: 800, lineHeight: 1.25, textAlign: 'left', cursor: 'pointer' }}>{e.label}</button>
                     ); })}
                     {dayEv.length > 3 && <span style={{ color: '#8a93a6', fontSize: 10.5, fontWeight: 800 }}>+{dayEv.length - 3} more</span>}
                   </div>
@@ -318,12 +336,11 @@ export function AvailabilityCalendar() {
       {/* legend */}
       {!loading && !err && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', padding: '9px 18px', borderTop: '1px solid #e6ebf4', background: '#fbfcff', flex: 'none' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}><span style={{ width: 13, height: 13, borderRadius: 4, background: '#f1faf0', border: '1px solid #bfe0b8', flex: 'none' }} />Upcoming</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}><span style={{ width: 13, height: 13, borderRadius: 4, background: '#f1faf0', border: '1px solid #cfd6e4', opacity: .5, flex: 'none' }} />Past</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}><span style={{ width: 13, height: 13, borderRadius: 4, background: '#eaf7ec', border: '1px solid #7fc78f', flex: 'none' }} />Available</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}><span style={{ width: 13, height: 13, borderRadius: 4, background: '#f1faf0', border: '1px solid #bfe0b8', flex: 'none' }} />Recurring</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}><span style={{ width: 13, height: 13, borderRadius: 4, background: '#fdf4e0', border: '1px solid #e8c583', flex: 'none' }} />Make-Up</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}><span style={{ width: 13, height: 13, borderRadius: 4, background: '#fdf0f6', border: '1px solid #e9bed5', flex: 'none' }} />Demo</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}>{legendSwatch('open')}Available</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}>{legendSwatch('recurring')}Recurring</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}>{legendSwatch('makeup')}Make-Up</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}>{legendSwatch('demo')}Demo</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#44546e', fontSize: 12.5, fontWeight: 700 }}><span style={{ width: 13, height: 13, borderRadius: 4, background: PAST_BG, border: `1px solid ${PAST_BORDER}`, flex: 'none' }} />Past</span>
         </div>
       )}
 

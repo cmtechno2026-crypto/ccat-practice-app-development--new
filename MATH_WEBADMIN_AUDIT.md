@@ -21,6 +21,17 @@
 
 ## Change log
 
+### 2026-10-06 (hh) — Teacher Admin (Math Olympiad) restyled to the Teacher_Admin mockup (Claude / Cowork)
+
+Scope confirmed with the user: **Math Olympiad program only** (CCAT/NGAT unchanged). Two parts, admin-only:
+
+- **Teacher sidebar (`components/Layout.tsx`).** New `TEACHER_MATH_RAIL` = Students / Test Prep / Quiz Arena / Support as solid-colour chips (mockup tones: amber/orange/green/blue). Used when `me.is_teacher && program === 'math'`; CCAT/NGAT teachers keep Students / Practice / Exam. Nav mapping per the user: Test Prep → the timed exam tool (`/teacher-exam`), Quiz Arena → the practice tool (`/teacher-practice`), Support → `/support` (already program-aware). Fixed the Support double-inject guard so the Math rail doesn't duplicate it.
+- **Student Detail (`pages/StudentDetail.tsx`), Math branch only.** New `MathStatsGrid` renders the mockup's 7 white stat tiles with colour dots — Status (badge), Grade, Age (computed), XP, Coins, **Test Prep done** (= exam/test papers), **Quiz done** (= practice sets); the existing `.stats` row stays for CCAT/NGAT. Section labels for Math: Assignments→**Homework**, Battery Practice→**Quiz Arena**, Exam Progress→**Test Prep**, and the Assign-sets modal toggle Practice/Exam→**Quiz Arena/Test Prep**. All gated on `program === 'math'`; the underlying data hooks, assignment endpoints and panels are reused unchanged (no backend work).
+
+`tsc --noEmit` clean + `esbuild` transforms clean for both files. **Deploy admin (Vercel).** No gateway/DB change. (Not changed: deeper pixel polish of the assignment table / progress cards — the existing panels already carry this data and function; can refine further on request.)
+
+---
+
 ### 2026-10-06 (gg) — Admin sidebar: solid-chip icons (Practice workspace) per mockup (Claude / Cowork)
 
 Restyled the Practice-workspace rail to the `Sidebar-Solid-Chips` mockup: each nav item now shows a full-colour circular chip (32px) with a white glyph instead of an emoji, keeping the existing navy rail, white active pill, hover-expand, and footer. Per-item tones/paths from the mockup — Dashboard #2FA86A, Content #1A5EAB, Students #E8A020, Teachers #D4620E, Announcements #E8A020, Audit log #9A8CE0, Membership #2FA86A, Support (Math) #4FA3E3.
