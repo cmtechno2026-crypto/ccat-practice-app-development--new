@@ -361,7 +361,7 @@ export function SessionScreen() {
             return (
               <button key={oid} className={cls} disabled={disabled}
                 role={isExam ? 'radio' : undefined} aria-checked={isExam ? examChosen.includes(oid) : undefined} onClick={onClick}>
-                <span className="key">{KEYS[oi]}</span>
+                <span className="key" translate="no">{KEYS[oi]}</span>
                 {(() => {
                   const otext = blocksToText(opt.content);
                   return (

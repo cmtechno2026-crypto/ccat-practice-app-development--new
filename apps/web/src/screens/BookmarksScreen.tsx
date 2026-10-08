@@ -101,7 +101,7 @@ function ReviewPlayer({ ids, onClose, onUnbookmark }: { ids: string[]; onClose: 
               } else if (picks.includes(oid)) cls += ' chosen';
               return (
                 <button key={oid} className={cls} disabled={checked} onClick={() => togglePick(oid)}>
-                  <span className="key">{KEYS[oi]}</span>
+                  <span className="key" translate="no">{KEYS[oi]}</span>
                   {(() => {
                     const otext = blocksToText(opt.content);
                     return (
