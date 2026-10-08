@@ -17,7 +17,13 @@ interface Slot {
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY3 = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const BANDS = ['All hours', 'Morning (06–12)', 'Afternoon (12–17)', 'Evening (17–24)'];
+const BANDS: { label: string; all?: boolean; lo?: number; hi?: number }[] = [
+  { label: 'All 24h', all: true },
+  { label: '2am–8am', lo: 2, hi: 8 },
+  { label: '8am–2pm', lo: 8, hi: 14 },
+  { label: '2pm–8pm', lo: 14, hi: 20 },
+  { label: '8pm–2am', lo: 20, hi: 26 },
+];
 
 const hourOf = (t: string) => Number(String(t).split(':')[0]) || 0;
 const hourLabel = (h: number) => { const ap = h < 12 ? 'am' : 'pm'; const hh = h % 12 === 0 ? 12 : h % 12; return `${hh}:00 ${ap}`; };
@@ -32,8 +38,9 @@ export function ReportsHome() {
   const [err, setErr] = useState('');
 
   const [weekIdx, setWeekIdx] = useState(0);
-  const [band, setBand] = useState('All hours');
+  const [band, setBand] = useState('All 24h');
   const [days, setDays] = useState<Set<string>>(new Set(DAYS));
+  const [teacherQ, setTeacherQ] = useState('');
 
   useEffect(() => {
     let alive = true; setLoading(true); setErr('');
@@ -49,7 +56,7 @@ export function ReportsHome() {
   }, []);
   const week = weeks[weekIdx] || weeks[0];
 
-  const bandOn = (h: number) => band === 'All hours' ? true : band.startsWith('Morning') ? (h >= 6 && h < 12) : band.startsWith('Afternoon') ? (h >= 12 && h < 17) : (h >= 17 && h < 24);
+  const bandOn = (h: number) => { const b = BANDS.find(x => x.label === band) || BANDS[0]; if (b.all) return true; if (b.lo === 20) return h >= 20 || h < 2; return h >= (b.lo as number) && h < (b.hi as number); };
 
   // Normalise slots → rows that pass the Week filter + carry the fields the report needs.
   const rows = useMemo(() => slots
@@ -111,6 +118,7 @@ export function ReportsHome() {
 
   const maxTeacherTotal = Math.max(1, ...data.byTeacher.map(t => t.total));
   const grand = data.total;
+  const teacherRows = data.byTeacher.filter(t => { const q = teacherQ.trim().toLowerCase(); return !q || t.name.toLowerCase().includes(q); });
 
   const exportCsv = () => {
     const out = [['Teacher', 'Subject', 'Available', 'Booked', 'Make-up', 'Total', 'Utilisation %'],
@@ -142,11 +150,12 @@ export function ReportsHome() {
             {weeks.map((w, i) => <option key={i} value={i}>{w.label}</option>)}
           </select>
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, fontWeight: 700, color: '#b9c6e8' }}>Time
-          <select value={band} onChange={e => setBand(e.target.value)} style={{ ...sel, minWidth: 170 }}>
-            {BANDS.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+          <span style={{ color: '#b9c6e8', fontSize: 13.5, fontWeight: 700 }}>Time</span>
+          {BANDS.map(b => { const on = band === b.label; return (
+            <button key={b.label} onClick={() => setBand(b.label)} style={{ minHeight: 34, padding: '0 14px', border: `1px solid ${on ? '#1d5db5' : '#cfd6ea'}`, borderRadius: 999, background: on ? '#1d5db5' : '#fff', color: on ? '#fff' : '#44465a', fontSize: 13.5, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>{b.label}</button>
+          ); })}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
           <span style={{ color: '#b9c6e8', fontSize: 13.5, fontWeight: 700 }}>Days</span>
           {DAYS.map((d, i) => { const on = days.has(d); return (
@@ -200,15 +209,18 @@ export function ReportsHome() {
 
           {/* Slots by teacher */}
           <div style={card}>
-            <h2 style={{ margin: '0 0 4px', fontSize: 19, fontWeight: 900, letterSpacing: '-.02em' }}>Slots by teacher</h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 900, letterSpacing: '-.02em' }}>Slots by teacher</h2>
+              <input value={teacherQ} onChange={e => setTeacherQ(e.target.value)} placeholder="Search teacher…" style={{ width: 240, maxWidth: '60vw', boxSizing: 'border-box', border: '1px solid #dbe4f4', borderRadius: 9, padding: '8px 12px', font: 'inherit', fontSize: 14 }} />
+            </div>
             <p style={{ margin: '0 0 14px', color: '#6f7890', fontSize: 14, fontWeight: 600 }}>Total slots given (available + booked), plus make-up / on-demand bookings.</p>
             <div style={{ overflowX: 'auto' }}>
               <div style={{ minWidth: 760 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(190px,1.4fr) 140px 100px 100px 96px 110px minmax(120px,1fr)', gap: 10, padding: '9px 12px', background: '#f7f9fd', borderRadius: 8, ...th }}>
                   <span>Teacher</span><span>Subject</span><span>Available</span><span>Booked</span><span>Make-up</span><span>Total slots</span><span>Utilisation</span>
                 </div>
-                {data.byTeacher.length === 0 && <div style={{ color: '#8a93a6', fontSize: 14, fontWeight: 700, padding: '12px' }}>No teachers match the current filters.</div>}
-                {data.byTeacher.map(t => (
+                {teacherRows.length === 0 && <div style={{ color: '#8a93a6', fontSize: 14, fontWeight: 700, padding: '12px' }}>No teachers match{teacherQ.trim() ? ' your search' : ' the current filters'}.</div>}
+                {teacherRows.map(t => (
                   <div key={t.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(190px,1.4fr) 140px 100px 100px 96px 110px minmax(120px,1fr)', gap: 10, alignItems: 'center', padding: '11px 12px', borderBottom: '1px solid #eef2f9', fontSize: 14 }}>
                     <span style={{ fontWeight: 900 }}>{t.name}</span>
                     <span style={{ color: '#44465a', fontWeight: 700 }}>{t.subject}</span>
