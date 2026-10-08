@@ -7,7 +7,7 @@ import { useTeacherHubTz, thConvert, thZoneLabel } from '../lib/thtz';
 // subject+grade offerings, a status-only week of slots (Available / Unavailable / Booked), and the
 // parent booking requests for that teacher. A request the TEACHER has accepted (teacher_status) shows
 // a Book action here; booking writes the slot in the Teacher Hub DB with the child's name.
-interface TeacherRow { id: string; name: string; email: string; subjects: string[]; inactive_subjects?: string[] | null; profile_approved?: boolean; slots: number; open_slots: number; created_at: string; banned_at?: string | null; photo_url?: string | null; }
+interface TeacherRow { id: string; name: string; email: string; subjects: string[]; inactive_subjects?: string[] | null; profile_approved?: boolean; slots: number; open_slots: number; created_at: string; banned_at?: string | null; photo_url?: string | null; phone?: string | null; country?: string | null; state?: string | null; resume?: string | null; consent_at?: string | null; consent_decision?: string | null; }
 interface Slot {
   id: string; subject: string; grade: number | null; grade_min?: number | null; grade_max?: number | null; day_of_week: string; start_time: string; end_time: string;
   status: string; timezone: string; notes: string;
@@ -45,6 +45,8 @@ function slotGrades(s: Slot) {
 function gkey(s: Slot) { const g = slotGrades(s); return (g.lo === 1 && g.hi === 12) ? 'all' : (g.lo === g.hi ? String(g.lo) : (g.lo + '-' + g.hi)); }
 function gradeShort(s: Slot) { const g = slotGrades(s); if (g.lo === 1 && g.hi === 12) return ''; return g.lo === g.hi ? ('G' + g.lo) : ('G' + g.lo + '-' + g.hi); }
 function tzLabel(z: string) { return (({ EST: 'ET', PST: 'PT', CST: 'CT', MST: 'MT', IST: 'IST' } as Record<string, string>)[z]) || z || ''; }
+function fmtDate(v?: string | null) { if (!v) return ''; const d = new Date(v); return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
+function fmtDateTime(v?: string | null) { if (!v) return ''; const d = new Date(v); return isNaN(d.getTime()) ? '' : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
 function comboColor(subject: string, grade: string) {
   const k = String(subject || '').toLowerCase().trim() + '|' + (grade || 'all');
   let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
@@ -76,6 +78,7 @@ export function TeacherDirectory() {
   const [selected, setSelected] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 640);
   const [detailView, setDetailView] = useState<'slots' | 'profile'>('slots');
+  const [consentOpen, setConsentOpen] = useState(false);
   useEffect(() => { const on = () => setIsMobile(window.innerWidth <= 640); window.addEventListener('resize', on); return () => window.removeEventListener('resize', on); }, []);
   const [slots, setSlots] = useState<Record<string, Slot[]>>({});
   const [slotErr, setSlotErr] = useState<Record<string, string>>({});
@@ -209,7 +212,7 @@ export function TeacherDirectory() {
     catch (e) { setSlotErr(m => ({ ...m, [id]: (e as Error).message || 'Failed to load slots' })); }
     finally { setLoadingId(null); }
   };
-  const selectTeacher = (id: string) => { setSelected(id); setPopSlot(null); setDetailView('slots'); ensureSlots(id); };
+  const selectTeacher = (id: string) => { setSelected(id); setPopSlot(null); setDetailView('slots'); setConsentOpen(false); ensureSlots(id); };
   // Auto-select the first teacher once the roster loads.
   useEffect(() => {
     if (!rows || !rows.length || selected) return;
@@ -649,6 +652,73 @@ export function TeacherDirectory() {
                     </div>
                   )}
                 </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Profile details</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,220px),1fr))', gap: 10 }}>
+                    {([['Full name', d.name], ['Email', d.email], ['Phone number', d.phone], ['Country', d.country], ['State / Province', d.state], ['Joined', fmtDate(d.created_at)], ['Status', d.banned_at ? 'Banned' : d.profile_approved === false ? 'Unapproved' : 'Approved']] as [string, string | null | undefined][]).map(([label, val]) => (
+                      <div key={label} style={{ padding: '11px 13px', border: '1px solid var(--line,#e6e9f0)', borderRadius: 10, background: 'var(--card2,#fafcff)' }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--muted,#64748b)', marginBottom: 6 }}>{label}</div>
+                        <div style={{ fontSize: 14.5, fontWeight: 800, color: (val && String(val).trim()) ? 'var(--ink,#0f1b33)' : 'var(--muted,#9aa6bb)' }}>{(val && String(val).trim()) ? val : 'Not provided'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Professional summary</h4>
+                  <div style={{ padding: '12px 14px', border: '1px solid var(--line,#e6e9f0)', borderRadius: 10, background: 'var(--card2,#fafcff)' }}>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, lineHeight: 1.6, color: (d.resume && d.resume.trim()) ? 'var(--ink,#2a3550)' : 'var(--muted,#9aa6bb)', whiteSpace: 'pre-wrap' }}>{(d.resume && d.resume.trim()) ? d.resume : 'No professional summary added yet.'}</p>
+                  </div>
+                </div>
+
+                {(() => {
+                  const decided = !!d.consent_at;
+                  const declined = d.consent_decision === 'declined';
+                  const accepted = decided && !declined;
+                  const accent = accepted ? '#0e8f65' : declined ? '#b3261e' : '#c08a1e';
+                  const bg = accepted ? '#eaf7f1' : declined ? '#fdecea' : '#fff8eb';
+                  const line = accepted ? '#bfe6d6' : declined ? '#f3c9c4' : '#f0dcae';
+                  const mark = accepted ? '✓' : declined ? '✕' : '!';
+                  const title = accepted ? 'Consent submitted' : declined ? 'Consent declined' : 'Consent not submitted';
+                  const sub = accepted ? 'Personal Data Use & Terms Acknowledgement accepted by the teacher.'
+                    : declined ? 'Teacher declined the Personal Data Use & Terms Acknowledgement.'
+                    : 'Awaiting the teacher’s response to the Personal Data Use & Terms Acknowledgement.';
+                  const statusTxt = accepted ? 'Accepted' : declined ? 'Declined' : 'Pending';
+                  return (
+                  <div>
+                    <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Staff data &amp; media consent</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '14px 16px', border: '1px solid ' + line, borderLeft: '4px solid ' + accent, borderRadius: 12, background: bg }}>
+                      <span style={{ display: 'grid', placeItems: 'center', width: 38, height: 38, borderRadius: '50%', background: accent, color: '#fff', fontSize: 17, fontWeight: 900, flex: 'none' }}>{mark}</span>
+                      <span style={{ flex: 1, minWidth: 170 }}>
+                        <span style={{ display: 'block', fontSize: 15.5, fontWeight: 900, letterSpacing: '-.01em', color: 'var(--ink,#0f1b33)' }}>{title}</span>
+                        <span style={{ display: 'block', marginTop: 2, color: 'var(--muted,#44546e)', fontSize: 13, fontWeight: 600 }}>{sub}</span>
+                      </span>
+                      <span style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                        <span>
+                          <span style={{ display: 'block', marginBottom: 2, color: 'var(--muted,#64748b)', fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase' }}>Reference</span>
+                          <span style={{ display: 'block', fontSize: 13, fontWeight: 900, color: 'var(--ink,#0f1b33)' }}>CM-CONSENT-STAFF</span>
+                        </span>
+                        <span>
+                          <span style={{ display: 'block', marginBottom: 2, color: 'var(--muted,#64748b)', fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase' }}>Date</span>
+                          <span style={{ display: 'block', fontSize: 13, fontWeight: 900, color: 'var(--ink,#0f1b33)' }}>{decided ? fmtDate(d.consent_at) : '—'}</span>
+                        </span>
+                        <span>
+                          <span style={{ display: 'block', marginBottom: 2, color: 'var(--muted,#64748b)', fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase' }}>Status</span>
+                          <span style={{ display: 'block', fontSize: 13, fontWeight: 900, color: accent }}>{statusTxt}</span>
+                        </span>
+                      </span>
+                      {decided && <button onClick={() => setConsentOpen(o => !o)} style={{ minHeight: 38, padding: '0 15px', border: '1px solid var(--line,#d5deec)', borderRadius: 9, background: 'var(--card,#fff)', color: 'var(--ink,#15215c)', fontSize: 13.5, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>{consentOpen ? 'Hide record' : 'View record'}</button>}
+                    </div>
+                    {decided && consentOpen && (
+                      <div style={{ marginTop: 10, padding: '13px 15px', border: '1px solid ' + line, borderRadius: 11, background: 'var(--card2,#fafcff)' }}>
+                        <p style={{ margin: '0 0 9px', fontSize: 13.5, fontWeight: 600, lineHeight: 1.6, color: 'var(--ink,#2a3550)' }}>Your name, professional profile, profile photo, likeness, and testimonials may be used on parent-facing pages, website pages, social media, email campaigns, printed materials, and promotional content.</p>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--muted,#64748b)' }}>Decision: <span style={{ color: accent }}>{statusTxt}</span> &middot; {fmtDateTime(d.consent_at)}</div>
+                      </div>
+                    )}
+                  </div>
+                  );
+                })()}
 
                 </>}
                 {detailView === 'slots' && <>

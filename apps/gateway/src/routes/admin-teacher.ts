@@ -100,6 +100,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     params.push(limit);
     const { rows } = await tdb().query(
       `select t.id, t.name, t.email, t.subjects, t.inactive_subjects, t.profile_approved, t.created_at, t.banned_at, t.photo_url,
+              t.phone, t.country, t.state, t.resume, t.consent_at, t.consent_decision,
               (select count(*)::int from public.ta_slots s where s.teacher_id = t.id)                          as slots,
               (select count(*)::int from public.ta_slots s where s.teacher_id = t.id and s.status = 'available') as open_slots
          from public.ta_teachers t
