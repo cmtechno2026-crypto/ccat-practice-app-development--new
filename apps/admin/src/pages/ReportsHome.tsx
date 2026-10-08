@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
+import { useNavigate } from 'react-router-dom';
 import { useTeacherHubTz, thConvert, thZoneLabel } from '../lib/thtz';
 
 // Reports — TeacherHub workspace. Availability/booking analytics computed live from all teachers'
@@ -41,6 +42,9 @@ export function ReportsHome() {
   const [band, setBand] = useState('All 24h');
   const [days, setDays] = useState<Set<string>>(new Set(DAYS));
   const [teacherQ, setTeacherQ] = useState('');
+  const nav = useNavigate();
+  const [teacherSort, setTeacherSort] = useState<'name' | 'available' | 'booked'>('name');
+  const [teacherDir, setTeacherDir] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     let alive = true; setLoading(true); setErr('');
@@ -73,7 +77,7 @@ export function ReportsHome() {
         for (let i = 0; i < 7; i++) { if (((d.getDay() + 6) % 7) === dayIdx) break; d = addDays(d, 1); }
         occ = d;
       }
-      return { teacher: s.teacher_name || 'Unknown', subject: s.subject || '—', dayIdx, hour: hourOf(cv.time), booked, makeup: booked && (st === 'makeup' || st === 'demo'), oneTime, occ };
+      return { teacher: s.teacher_name || 'Unknown', tid: s.teacher_id, subject: s.subject || '—', dayIdx, hour: hourOf(cv.time), booked, makeup: booked && (st === 'makeup' || st === 'demo'), oneTime, occ };
     })
     .filter(r => r.dayIdx >= 0), [slots, zone]);
 
@@ -84,7 +88,7 @@ export function ReportsHome() {
     const f = rows.filter(passFilters);
     let total = 0, avail = 0, booked = 0, makeup = 0;
     // by teacher
-    const tMap = new Map<string, { name: string; subjects: Set<string>; avail: number; booked: number; makeup: number }>();
+    const tMap = new Map<string, { id: string; name: string; subjects: Set<string>; avail: number; booked: number; makeup: number }>();
     // by subject
     const sMap = new Map<string, { avail: number; booked: number; teachers: Set<string> }>();
     // by hour × day
@@ -92,33 +96,37 @@ export function ReportsHome() {
     const grid: Record<string, { a: number; b: number }> = {}; // key hour|dayIdx
     f.forEach(r => {
       total++; if (r.booked) booked++; else avail++; if (r.makeup) makeup++;
-      let t = tMap.get(r.teacher); if (!t) { t = { name: r.teacher, subjects: new Set(), avail: 0, booked: 0, makeup: 0 }; tMap.set(r.teacher, t); }
+      let t = tMap.get(r.teacher); if (!t) { t = { id: r.tid, name: r.teacher, subjects: new Set(), avail: 0, booked: 0, makeup: 0 }; tMap.set(r.teacher, t); }
       t.subjects.add(r.subject); if (r.booked) t.booked++; else t.avail++; if (r.makeup) t.makeup++;
       let sj = sMap.get(r.subject); if (!sj) { sj = { avail: 0, booked: 0, teachers: new Set() }; sMap.set(r.subject, sj); }
       if (r.booked) sj.booked++; else sj.avail++; sj.teachers.add(r.teacher);
       hourSet.add(r.hour);
       const k = r.hour + '|' + r.dayIdx; const g = grid[k] || (grid[k] = { a: 0, b: 0 }); if (r.booked) g.b++; else g.a++;
     });
-    const byTeacher = [...tMap.values()].map(t => { const tot = t.avail + t.booked; return { name: t.name, subject: [...t.subjects].join(', ') || '—', avail: t.avail, booked: t.booked, makeup: t.makeup, total: tot, pct: tot ? Math.round(t.booked / tot * 100) : 0 }; }).sort((a, b) => b.total - a.total);
+    const byTeacher = [...tMap.values()].map(t => { const tot = t.avail + t.booked; return { id: t.id, name: t.name, subject: [...t.subjects].join(', ') || '—', avail: t.avail, booked: t.booked, makeup: t.makeup, total: tot, pct: tot ? Math.round(t.booked / tot * 100) : 0 }; }).sort((a, b) => b.total - a.total);
     const bySubject = [...sMap.entries()].map(([name, s]) => { const tot = s.avail + s.booked; return { name, teachers: s.teachers.size, avail: s.avail, booked: s.booked, total: tot }; }).sort((a, b) => b.total - a.total);
     const hours = [...hourSet].sort((a, b) => a - b);
     const hourRows = hours.map(h => {
       let rb = 0, ra = 0;
       const cells = DAYS.map((_, di) => {
-        if (!days.has(DAYS[di])) return { v: '–', bg: '#fafbfe', fg: '#c3ccdb' };
+        if (!days.has(DAYS[di])) return { empty: true, a: 0, b: 0 };
         const g = grid[h + '|' + di]; const a = g ? g.a : 0, b = g ? g.b : 0; rb += b; ra += a;
-        if (!g) return { v: '–', bg: '#fafbfe', fg: '#c3ccdb' };
-        const sh = a === 0 ? { bg: '#fdf3f2', fg: '#c22a21' } : a <= 2 ? { bg: '#fff8e8', fg: '#8a5a00' } : { bg: '#eefaf4', fg: '#0e7a52' };
-        return { v: b + ' / ' + a, ...sh };
+        if (!g) return { empty: true, a: 0, b: 0 };
+        return { empty: false, a, b };
       });
-      return { label: hourLabel(h), cells, sum: rb + ' / ' + ra };
+      return { label: hourLabel(h), cells, sumA: ra, sumB: rb };
     });
     return { total, avail, booked, makeup, byTeacher, bySubject, hourRows };
   }, [rows, weekIdx, band, days]);
 
   const maxTeacherTotal = Math.max(1, ...data.byTeacher.map(t => t.total));
   const grand = data.total;
-  const teacherRows = data.byTeacher.filter(t => { const q = teacherQ.trim().toLowerCase(); return !q || t.name.toLowerCase().includes(q); });
+  const teacherRows = (() => {
+    const q = teacherQ.trim().toLowerCase();
+    const list = data.byTeacher.filter(t => !q || t.name.toLowerCase().includes(q));
+    const dir = teacherDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => teacherSort === 'name' ? a.name.localeCompare(b.name) * dir : teacherSort === 'available' ? (a.avail - b.avail) * dir : (a.booked - b.booked) * dir);
+  })();
 
   const exportCsv = () => {
     const out = [['Teacher', 'Subject', 'Available', 'Booked', 'Make-up', 'Total', 'Utilisation %'],
@@ -185,21 +193,23 @@ export function ReportsHome() {
           {/* Slots by hour */}
           <div style={card}>
             <h2 style={{ margin: '0 0 4px', fontSize: 19, fontWeight: 900, letterSpacing: '-.02em' }}>Slots by hour</h2>
-            <p style={{ margin: '0 0 14px', color: '#6f7890', fontSize: 14, fontWeight: 600 }}>Shown as <strong style={{ color: '#1a4f9e' }}>booked</strong> / <strong style={{ color: '#0e7a52' }}>available</strong> across all teachers for each hour. Times in {thZoneLabel(zone)}.</p>
+            <p style={{ margin: '0 0 14px', color: '#6f7890', fontSize: 14, fontWeight: 600 }}>Shown as <strong style={{ color: '#0e7a52' }}>available</strong> / <strong style={{ color: '#1a4f9e' }}>booked</strong> across all teachers for each hour. Times in {thZoneLabel(zone)}.</p>
             <div style={{ overflowX: 'auto' }}>
-              <div style={{ minWidth: 680 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7,minmax(0,1fr)) 86px', gap: 6, paddingBottom: 7 }}>
+              <div style={{ minWidth: 720 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7,minmax(0,1fr)) 80px 80px', gap: 6, paddingBottom: 7 }}>
                   <span style={th}>Hour</span>
                   {DAY3.map(d => <span key={d} style={{ ...th, textAlign: 'center' }}>{d}</span>)}
-                  <span style={{ ...th, textAlign: 'center' }}>Total</span>
+                  <span style={{ ...th, textAlign: 'center' }}>Total avail</span>
+                  <span style={{ ...th, textAlign: 'center' }}>Total booked</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {data.hourRows.length === 0 && <div style={{ color: '#8a93a6', fontSize: 14, fontWeight: 700, padding: '10px 2px' }}>No slots match the current filters.</div>}
                   {data.hourRows.map(r => (
-                    <div key={r.label} style={{ display: 'grid', gridTemplateColumns: '120px repeat(7,minmax(0,1fr)) 86px', gap: 6, alignItems: 'center' }}>
+                    <div key={r.label} style={{ display: 'grid', gridTemplateColumns: '120px repeat(7,minmax(0,1fr)) 80px 80px', gap: 6, alignItems: 'center' }}>
                       <span style={{ fontSize: 13.5, fontWeight: 800, color: '#44465a' }}>{r.label}</span>
-                      {r.cells.map((c, i) => <span key={i} style={{ display: 'grid', placeItems: 'center', minHeight: 36, borderRadius: 8, background: c.bg, color: c.fg, fontSize: 14, fontWeight: 900 }}>{c.v}</span>)}
-                      <span style={{ display: 'grid', placeItems: 'center', minHeight: 36, borderRadius: 8, background: '#102842', color: '#fff', fontSize: 14, fontWeight: 900 }}>{r.sum}</span>
+                      {r.cells.map((c, i) => <span key={i} style={{ display: 'grid', placeItems: 'center', minHeight: 36, borderRadius: 8, background: c.empty ? '#fafbfe' : '#e9f6ef', color: c.empty ? '#c3ccdb' : '#0b5d4f', fontSize: 14, fontWeight: 900 }}>{c.empty ? '–' : <span>{c.a} / <span style={{ color: '#1a4f9e' }}>{c.b}</span></span>}</span>)}
+                      <span style={{ display: 'grid', placeItems: 'center', minHeight: 36, borderRadius: 8, background: '#dcf0e5', color: '#0b5d4f', fontSize: 14, fontWeight: 900 }}>{r.sumA}</span>
+                      <span style={{ display: 'grid', placeItems: 'center', minHeight: 36, borderRadius: 8, background: '#eef3ff', color: '#1a4f9e', fontSize: 14, fontWeight: 900 }}>{r.sumB}</span>
                     </div>
                   ))}
                 </div>
@@ -211,7 +221,18 @@ export function ReportsHome() {
           <div style={card}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
               <h2 style={{ margin: 0, fontSize: 19, fontWeight: 900, letterSpacing: '-.02em' }}>Slots by teacher</h2>
-              <input value={teacherQ} onChange={e => setTeacherQ(e.target.value)} placeholder="Search teacher…" style={{ width: 240, maxWidth: '60vw', boxSizing: 'border-box', border: '1px solid #dbe4f4', borderRadius: 9, padding: '8px 12px', font: 'inherit', fontSize: 14 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <input value={teacherQ} onChange={e => setTeacherQ(e.target.value)} placeholder="Search teacher…" style={{ width: 200, maxWidth: '55vw', boxSizing: 'border-box', border: '1px solid #dbe4f4', borderRadius: 9, padding: '8px 12px', font: 'inherit', fontSize: 14 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: '#64708a' }}>Sort</span>
+                  <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 999, background: '#eef2f8' }}>
+                    {([['name', 'Name'], ['available', 'Available'], ['booked', 'Booked']] as const).map(([k, lbl]) => {
+                      const on = teacherSort === k;
+                      return <button key={k} onClick={() => { if (teacherSort === k) setTeacherDir(d => d === 'asc' ? 'desc' : 'asc'); else { setTeacherSort(k); setTeacherDir(k === 'name' ? 'asc' : 'desc'); } }} style={{ border: 0, borderRadius: 999, padding: '6px 11px', fontSize: 12, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap', background: on ? '#fff' : 'transparent', color: on ? '#15215c' : '#64708a', boxShadow: on ? '0 1px 3px rgba(16,32,64,.18)' : 'none' }}>{lbl}{on ? (teacherDir === 'asc' ? ' ↑' : ' ↓') : ''}</button>;
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
             <p style={{ margin: '0 0 14px', color: '#6f7890', fontSize: 14, fontWeight: 600 }}>Total slots given (available + booked), plus make-up / on-demand bookings.</p>
             <div style={{ overflowX: 'auto' }}>
@@ -222,7 +243,7 @@ export function ReportsHome() {
                 {teacherRows.length === 0 && <div style={{ color: '#8a93a6', fontSize: 14, fontWeight: 700, padding: '12px' }}>No teachers match{teacherQ.trim() ? ' your search' : ' the current filters'}.</div>}
                 {teacherRows.map(t => (
                   <div key={t.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(190px,1.4fr) 140px 100px 100px 96px 110px minmax(120px,1fr)', gap: 10, alignItems: 'center', padding: '11px 12px', borderBottom: '1px solid #eef2f9', fontSize: 14 }}>
-                    <span style={{ fontWeight: 900 }}>{t.name}</span>
+                    <button onClick={() => t.id && nav('/teacherhub/teachers?teacher=' + encodeURIComponent(t.id))} title="Open in Teachers" style={{ textAlign: 'left', border: 0, background: 'none', padding: 0, cursor: t.id ? 'pointer' : 'default', fontWeight: 900, fontSize: 14, color: t.id ? '#1a4f9e' : 'inherit', fontFamily: 'inherit' }}>{t.name}{t.id ? ' ↗' : ''}</button>
                     <span style={{ color: '#44465a', fontWeight: 700 }}>{t.subject}</span>
                     <span style={{ fontWeight: 900, color: '#0e7a52' }}>{t.avail}</span>
                     <span style={{ fontWeight: 900, color: '#1a4f9e' }}>{t.booked}</span>

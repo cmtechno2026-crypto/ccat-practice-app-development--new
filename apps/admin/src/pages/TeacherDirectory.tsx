@@ -211,7 +211,14 @@ export function TeacherDirectory() {
   };
   const selectTeacher = (id: string) => { setSelected(id); setPopSlot(null); setDetailView('slots'); ensureSlots(id); };
   // Auto-select the first teacher once the roster loads.
-  useEffect(() => { if (rows && rows.length && !selected) selectTeacher(rows[0].id); /* eslint-disable-next-line */ }, [rows]);
+  useEffect(() => {
+    if (!rows || !rows.length || selected) return;
+    let want: string | null = null;
+    try { want = new URLSearchParams(window.location.search).get('teacher'); } catch { /* noop */ }
+    const hit = want ? rows.find(t => t.id === want) : null;
+    selectTeacher(hit ? hit.id : rows[0].id);
+    /* eslint-disable-next-line */
+  }, [rows]);
 
   const reqsForTeacher = (id: string): Req[] => (allReqs || []).filter(r => (r.slots || []).some(s => s.teacher_id === id));
   const reqBadge = (id: string) => reqsForTeacher(id).filter(r => r.teacher_status === 'accepted' && r.status === 'pending').length;
