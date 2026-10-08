@@ -25,6 +25,7 @@ import { Membership } from './pages/Membership';
 import { TeacherDashboard } from './pages/TeacherDashboard';
 import { TeacherDirectory } from './pages/TeacherDirectory';
 import { AvailabilityCalendar } from './pages/AvailabilityCalendar';
+import { ReportsHome } from './pages/ReportsHome';
 import { BookingLinks } from './pages/BookingLinks';
 import { BookingRequests } from './pages/BookingRequests';
 import { TrainingAdmin } from './pages/TrainingAdmin';
@@ -275,6 +276,7 @@ export function App() {
         <Route path="/teacherhub/availability" element={<AvailabilityCalendar />} />
         <Route path="/teacherhub/booking-links" element={<BookingLinks />} />
         <Route path="/teacherhub/requests" element={<BookingRequests />} />
+        <Route path="/teacherhub/reports" element={<ReportsHome />} />
         <Route path="/teacherhub/training" element={<TrainingHome />} />
         <Route path="/teacherhub/training/modules" element={<TrainingAdmin />} />
         <Route path="/teacherhub/training/roleplays" element={<RolePlayAdmin />} />

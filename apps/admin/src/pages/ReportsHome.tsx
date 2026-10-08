@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
+import { useTeacherHubTz, thConvert, thZoneLabel } from '../lib/thtz';
 
 // Reports — TeacherHub workspace. Availability/booking analytics computed live from all teachers'
 // slots (api.teacherSlots). KPIs, slots-by-hour, slots-by-teacher, weekly-by-subject, with Week/Time/
@@ -25,6 +26,7 @@ const mondayOf = (d: Date) => { const x = new Date(d.getFullYear(), d.getMonth()
 const sameOrAfter = (a: Date, b: Date) => a.getTime() >= b.getTime();
 
 export function ReportsHome() {
+  const { zone } = useTeacherHubTz();
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -53,7 +55,8 @@ export function ReportsHome() {
   const rows = useMemo(() => slots
     .filter(s => s.status === 'available' || s.status === 'booked')
     .map(s => {
-      const dayIdx = DAYS.indexOf(s.day_of_week);
+      const cv = thConvert(s.day_of_week, s.start_time, s.timezone || 'IST', zone);
+      const dayIdx = DAYS.indexOf(cv.day);
       const booked = s.status === 'booked' && !!(s.booked_student && s.booked_student.trim());
       const st = (s.session_type || 'recurring').toLowerCase();
       const oneTime = booked && (st === 'makeup' || st === 'demo');
@@ -63,9 +66,9 @@ export function ReportsHome() {
         for (let i = 0; i < 7; i++) { if (((d.getDay() + 6) % 7) === dayIdx) break; d = addDays(d, 1); }
         occ = d;
       }
-      return { teacher: s.teacher_name || 'Unknown', subject: s.subject || '—', dayIdx, hour: hourOf(s.start_time), booked, makeup: booked && (st === 'makeup' || st === 'demo'), oneTime, occ };
+      return { teacher: s.teacher_name || 'Unknown', subject: s.subject || '—', dayIdx, hour: hourOf(cv.time), booked, makeup: booked && (st === 'makeup' || st === 'demo'), oneTime, occ };
     })
-    .filter(r => r.dayIdx >= 0), [slots]);
+    .filter(r => r.dayIdx >= 0), [slots, zone]);
 
   const inWeek = (r: typeof rows[number]) => !r.oneTime || (r.occ != null && sameOrAfter(r.occ, week.start) && r.occ.getTime() <= addDays(week.end, 1).getTime() - 1);
   const passFilters = (r: typeof rows[number]) => inWeek(r) && days.has(DAYS[r.dayIdx]) && bandOn(r.hour);
@@ -131,7 +134,7 @@ export function ReportsHome() {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: '#f4f7ff' }}>
+    <div className="avrep" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: '#f4f7ff' }}>
       {/* filter bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '12px 20px', background: '#15215c', color: '#fff' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, fontWeight: 700, color: '#b9c6e8' }}>Week
@@ -173,7 +176,7 @@ export function ReportsHome() {
           {/* Slots by hour */}
           <div style={card}>
             <h2 style={{ margin: '0 0 4px', fontSize: 19, fontWeight: 900, letterSpacing: '-.02em' }}>Slots by hour</h2>
-            <p style={{ margin: '0 0 14px', color: '#6f7890', fontSize: 14, fontWeight: 600 }}>Shown as <strong style={{ color: '#1a4f9e' }}>booked</strong> / <strong style={{ color: '#0e7a52' }}>available</strong> across all teachers for each hour.</p>
+            <p style={{ margin: '0 0 14px', color: '#6f7890', fontSize: 14, fontWeight: 600 }}>Shown as <strong style={{ color: '#1a4f9e' }}>booked</strong> / <strong style={{ color: '#0e7a52' }}>available</strong> across all teachers for each hour. Times in {thZoneLabel(zone)}.</p>
             <div style={{ overflowX: 'auto' }}>
               <div style={{ minWidth: 680 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7,minmax(0,1fr)) 86px', gap: 6, paddingBottom: 7 }}>
