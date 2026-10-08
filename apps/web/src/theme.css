@@ -54,7 +54,7 @@ p { line-height: 1.5; }
 /* layout */
 .app-root { min-height: 100%; }
 .app-shell { min-height: 100%; display: flex; flex-direction: column; }
-.content { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 18px 16px 48px; flex: 1; }
+.content { width: 100%; max-width: none; margin: 0 auto; padding: 18px clamp(16px, 4vw, 64px) 48px; flex: 1; }
 
 /* ---- Left sidebar (app menu): PUSH model. Collapsed 64px icon rail ↔ expanded 220px labelled panel.
    The panel is fixed at the left and the content area (.main) reserves the rail width; on expand the
@@ -115,7 +115,7 @@ p { line-height: 1.5; }
 
 /* header */
 .appbar { position: sticky; top: 0; z-index: 20; background: linear-gradient(155deg, var(--primary), var(--primary-dark)); color: #fff; padding: 16px 16px 18px; box-shadow: 0 8px 22px -14px rgba(47, 95, 192, .8); }
-.appbar .inner { width: 100%; max-width: var(--maxw); margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+.appbar .inner { width: 100%; max-width: none; margin: 0 auto; padding: 0 clamp(16px, 4vw, 64px); display: flex; align-items: center; gap: 12px; }
 .appbar h1 { color: #fff; font-size: 20px; }
 .appbar .sub { color: rgba(255,255,255,.9); font-weight: 700; font-size: 12.5px; }
 .avatar-chip { width: 42px; height: 42px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; flex: none; box-shadow: inset 0 0 0 1px rgba(42,46,67,.06); }
@@ -232,7 +232,7 @@ p { line-height: 1.5; }
 /* ---- Desktop + tablet first-class (fluid; mobile stays functional, polish deferred) ---- */
 @media (min-width: 768px) {
   :root { --maxw: 900px; }
-  .content { padding: 24px 24px 48px; }
+  .content { padding: 24px clamp(24px, 4vw, 64px) 48px; }
   .session-content { max-width: 820px; }
   .options-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
   .option { padding: 15px 16px; font-size: 16px; }
@@ -260,8 +260,8 @@ p { line-height: 1.5; }
 .bm-box { width: 22px; height: 22px; flex: none; border-radius: 7px; border: 2px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: #fff; }
 .bm-box.on { background: var(--primary); border-color: var(--primary); }
 .bm-selall { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: none; font: inherit; font-weight: 800; font-size: 13px; color: var(--ink-soft); cursor: pointer; }
-.bm-bulkbar { position: sticky; bottom: 0; margin: 0 auto; max-width: var(--maxw); width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-lift); padding: 12px 16px; }
-.bm-review { max-width: var(--maxw); margin: 0 auto; width: 100%; padding: 18px 16px 48px; display: flex; flex-direction: column; gap: 14px; }
+.bm-bulkbar { position: sticky; bottom: 0; margin: 0 auto; max-width: none; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-lift); padding: 12px 16px; }
+.bm-review { max-width: none; margin: 0 auto; width: 100%; padding: 18px 16px 48px; display: flex; flex-direction: column; gap: 14px; }
 .bm-review-bar { display: flex; align-items: center; gap: 8px; }
 
 /* ---- Achievements: accordion detail ---- */
@@ -427,7 +427,7 @@ p { line-height: 1.5; }
 
 /* ============================ HOME — Option A (two-column) ============================ */
 /* Wider cap than the default 720 so the two columns FILL the space instead of a thin strip. */
-.home-a { width: 100%; max-width: 1240px; margin: 0 auto; padding: 18px 16px 44px; }
+.home-a { width: 100%; max-width: none; margin: 0 auto; padding: 18px clamp(16px, 4vw, 64px) 44px; }
 
 /* Header band (purple gradient) */
 .home-hero {
@@ -533,7 +533,7 @@ p { line-height: 1.5; }
 .hp-sets { background: linear-gradient(180deg, var(--tint-lilac), var(--card) 70%); }
 .hp-time { background: linear-gradient(180deg, var(--amber-tint), var(--card) 70%); }
 
-.content.content-wide { max-width: 1240px; padding: 24px 28px 44px; }
+.content.content-wide { max-width: none; padding: 24px clamp(24px, 4vw, 64px) 44px; }
 @media (max-width: 600px) { .content.content-wide { padding: 18px 16px 40px; } }
 
 .prog-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
@@ -730,10 +730,10 @@ p { line-height: 1.5; }
 /* Header (wide): align the inner content to the same 1240px column + side padding as .content-wide,
    so Back is hard-left over "DATE RANGE" and the avatar hard-right over the right card. */
 .appbar:has(.inner-wide) { padding-left: 0; padding-right: 0; }
-.appbar .inner-wide { box-sizing: border-box; max-width: 1240px; margin: 0 auto; padding: 0 28px; }
+.appbar .inner-wide { box-sizing: border-box; max-width: none; margin: 0 auto; padding: 0 clamp(16px, 4vw, 64px); }
 @media (max-width: 600px) { .appbar .inner-wide { padding: 0 16px; } }
 /* Plan page: align Back (hard-left) and Grade+avatar (hard-right) with the pricing cards' column. */
-.appbar:has(+ .plan-wrap) .inner-wide { max-width: 1400px; padding: 0 22px; }
+.appbar:has(+ .plan-wrap) .inner-wide { max-width: none; padding: 0 clamp(16px, 4vw, 64px); }
 @media (max-width: 600px) { .appbar:has(+ .plan-wrap) .inner-wide { padding: 0 16px; } }
 
 /* Colourful "sets done" boxes (one per battery + Total) and Battery-test metric boxes — light shades
@@ -930,7 +930,7 @@ p { line-height: 1.5; }
 @media (max-width: 700px) { .pp-plans { grid-template-columns: 1fr; } }
 
 /* My Plan: full-width pricing (aligns with the header back arrow ↔ fox) */
-.plan-wrap { width: 100%; max-width: 1400px; margin: 0 auto; padding: 16px 22px 48px; }
+.plan-wrap { width: 100%; max-width: none; margin: 0 auto; padding: 16px clamp(16px, 4vw, 64px) 48px; }
 
 /* Brand logo mark in the sidebar rail (replaces the old "CM" letters). */
 .sidebar img.brand-tile { padding: 4px; object-fit: contain; background: #fff; }

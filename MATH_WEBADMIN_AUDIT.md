@@ -21,6 +21,14 @@
 
 ## Change log
 
+### 2026-10-08 (oo) — Fluid full-width layouts across all app UIs (Claude / Cowork)
+
+Owner choice: **fluid full-width with a responsive side gutter**, **app pages only** (public landing/marketing pages left centered). Done centrally in each app's global CSS — no per-page edits. Gutter = `clamp(16px,4vw,64px)` so content never touches the screen edge and the margin grows on large monitors.
+- **CCAT/NGAT student web** (`apps/web/src/theme.css`): removed the `--maxw` 720/900 cap on `.content`, `.appbar .inner`, `.inner-wide`, `.bm-bulkbar`, `.bm-review`; and the per-page caps `.home-a` (1240), `.content-wide` (1240), `.plan-wrap` (1400) + its appbar. All → `max-width:none` + clamp gutter. Reading/form blocks kept centered on purpose (`.session-content` 820 quiz, `.center-narrow` 440 login) — the PAGE is full-width, the card stays readable.
+- **Admin console** (`apps/admin/src/theme.css`): `.page` 1200 cap → `max-width:none` + clamp gutter (every admin page now full-width; the Math content page already was via `.page:has(.mc-root)`). `.edbody` (single-question editor, 900) left centered intentionally.
+- **Math Olympiad Web**: already fluid — its `<main>` is `flex:1` with no max-width cap, so no change needed.
+**Deploy (user):** rebuild + deploy **web** and **admin** (vite). Math unchanged. CSS-only; no gateway/DB.
+
 ### 2026-10-07 (nn) — FIX Tests/Quiz tree 500 (deleted default folder) + responsive overlap (Claude / Cowork)
 
 **BUG — `GET /v1/admin/math/tree?track=test` 500** (curriculum + study-materials were 200). Root cause: the auto default category ("All test papers" / "All quizzes") for a grade had `active=false` (it had been deleted). The tree handler's ensure-step looked only for an ACTIVE default, found none, and tried to INSERT a new row with the same unique `key` → unique-constraint violation → 500.
