@@ -62,7 +62,7 @@ const G_ZONE_IANA: Record<string, string> = { IST: 'Asia/Kolkata', EST: 'America
 function gZoneOffMin(iana: string, date: Date): number {
   const dtf = new Intl.DateTimeFormat('en-US', { timeZone: iana, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const m: Record<string, string> = {}; dtf.formatToParts(date).forEach((x) => { m[x.type] = x.value; });
-  const asUTC = Date.UTC(+m.year, +m.month - 1, +m.day, +m.hour, +m.minute, +m.second);
+  const asUTC = Date.UTC(+(m.year ?? '0'), +(m.month ?? '1') - 1, +(m.day ?? '1'), +(m.hour ?? '0'), +(m.minute ?? '0'), +(m.second ?? '0'));
   return Math.round((asUTC - date.getTime()) / 60000);
 }
 function gWallMs(dn: number, h: number, mi: number, iana: string): number {
@@ -86,12 +86,12 @@ function slotTimeInZone(s: { day_of_week: string; start_time: string; end_time: 
   const src = s.iana_timezone || G_ZONE_IANA[s.timezone || 'IST'] || 'Asia/Kolkata';
   const tz = targetIana || src;
   const dn = G_DAY_IDX[s.day_of_week] ?? 1;
-  const pt = (t: string): [number, number] => { const a = String(t || '0:0').split(':'); return [(+a[0] || 0), (+a[1] || 0)]; };
+  const pt = (t: string): [number, number] => { const a = String(t || '0:0').split(':'); return [(+(a[0] ?? '0') || 0), (+(a[1] ?? '0') || 0)]; };
   const [sh, sm] = pt(s.start_time); const [eh, em] = pt(s.end_time);
   let sMs = gWallMs(dn, sh, sm, src); let eMs = gWallMs(dn, eh, em, src); if (eMs <= sMs) eMs += 86400000;
   const so = gPartsIn(sMs, tz); const eo = gPartsIn(eMs, tz);
-  const hm = (o: Record<string, string>) => (o.hour === '24' ? '00' : o.hour) + ':' + o.minute;
-  return { day: so.weekday, start: hm(so), end: hm(eo), label: gZoneLabel(tz, new Date(sMs)) };
+  const hm = (o: Record<string, string>) => ((o.hour ?? '00') === '24' ? '00' : (o.hour ?? '00')) + ':' + (o.minute ?? '00');
+  return { day: so.weekday ?? '', start: hm(so), end: hm(eo), label: gZoneLabel(tz, new Date(sMs)) };
 }
 
 // Teacher Hub (TeacherHub) admin surface. This site's data lives in a SEPARATE Supabase project
