@@ -64,7 +64,9 @@ export function AvailabilityCalendar() {
   const [sel, setSel] = useState<Record<string, Set<any>>>({ teacher: new Set(), subject: new Set(), grade: new Set(), type: new Set(TYPE_KEYS) });
   const [openDim, setOpenDim] = useState<string | null>(null);
   const [dimQ, setDimQ] = useState<Record<string, string>>({});
-  const [span, setSpan] = useState<'Weekly' | 'Monthly'>('Weekly');
+  const [span, setSpan] = useState<'Weekly' | 'Daily' | 'Monthly'>('Weekly');
+  const [spanOpen, setSpanOpen] = useState(false);
+  const [dayOffset, setDayOffset] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
   const [focus, setFocus] = useState<number | null>(null);
@@ -93,15 +95,17 @@ export function AvailabilityCalendar() {
       const oneTime = booked && (st === 'makeup' || st === 'demo');
       const color = !booked ? 'open' : (st === 'makeup' ? 'makeup' : st === 'demo' ? 'demo' : 'recurring');
       const gl = gradeLabel(s);
-      const label = booked
-        ? `${s.booked_student}${gl ? ` (${gl})` : ''} · ${s.subject || 'Session'} · ${s.teacher_name}`
-        : `Open · ${s.subject || 'Availability'} · ${s.teacher_name}`;
-      const kind = booked ? (st === 'makeup' ? 'Make-Up / On Demand' : st === 'demo' ? 'Demo' : 'Recurring') : 'Open availability';
-      // For a PAST available slot the chip shows the slot's own session type instead of "Open".
-      // Available slots carry no session_type in the DB for plain recurring availability, so default to Recurring.
-      const typeWord = st === 'makeup' ? 'Make-Up' : st === 'demo' ? 'Demo' : 'Recurring';
+      // Chip format: "Type · Teacher · Student (Grade)". Type is "Open" for an available slot, or the
+      // session type for a booked one; student + grade only when booked. An available slot is always
+      // "Open" (past or not) — open slots carry no real session_type, so never infer one for them.
+      const typeWord = booked ? (st === 'makeup' ? 'Make-Up' : st === 'demo' ? 'Demo' : 'Recurring') : 'Open';
       const suffix = s.archived ? ' · deleted' : '';
-      const altLabel = (!booked ? `${typeWord} · ${s.subject || 'Availability'} · ${s.teacher_name}` : label) + suffix;
+      const core = booked
+        ? `${typeWord} · ${s.teacher_name} · ${s.booked_student}${gl ? ` (${gl})` : ''}`
+        : `Open · ${s.teacher_name}`;
+      const label = core + suffix;
+      const kind = booked ? (st === 'makeup' ? 'Make-Up / On Demand' : st === 'demo' ? 'Demo' : 'Recurring') : 'Open availability';
+      const altLabel = label;
       let occ: Date | null = null;
       if (oneTime && s.booked_at && dayIdx >= 0) {
         const b = new Date(s.booked_at);
@@ -109,7 +113,7 @@ export function AvailabilityCalendar() {
         for (let i = 0; i < 7; i++) { if (d.getDay() === dayIdx) break; d = addDays(d, 1); }
         occ = d;
       }
-      return { slot: s, dayIdx, startMin: timeMin(cs.time), endMin: timeMin(ce.time), color, label: label + suffix, altLabel, kind, oneTime, occ, archived: !!s.archived };
+      return { slot: s, dayIdx, startMin: timeMin(cs.time), endMin: timeMin(ce.time), color, label, altLabel, kind, oneTime, occ, archived: !!s.archived };
     })
     .filter(e => e.dayIdx >= 0 && e.endMin > e.startMin), [slots, zone]);
 
@@ -136,6 +140,11 @@ export function AvailabilityCalendar() {
 
   const weekDates = useMemo(() => { const ws = addDays(startOfWeek(now), weekOffset * 7); return Array.from({ length: 7 }, (_, i) => addDays(ws, i)); }, [weekOffset]);
   const weekRange = `${MNAMES[weekDates[0].getMonth()].slice(0, 3)} ${weekDates[0].getDate()} – ${MNAMES[weekDates[6].getMonth()].slice(0, 3)} ${weekDates[6].getDate()}, ${weekDates[6].getFullYear()}`;
+
+  // Daily view: a single focused day (offset from today) + its agenda.
+  const dayDate = useMemo(() => addDays(new Date(now.getFullYear(), now.getMonth(), now.getDate()), dayOffset), [dayOffset]);
+  const dayRange = `${DOW[dayDate.getDay()]}, ${MNAMES[dayDate.getMonth()].slice(0, 3)} ${dayDate.getDate()}, ${dayDate.getFullYear()}`;
+  const dayAgenda = useMemo(() => ev.filter(e => showOn(e, dayDate)).sort((a, b) => a.startMin - b.startMin), [ev, dayDate]);
 
   // Per-day event lists for the viewed week + the hour range to show.
   const dayLists = useMemo(() => weekDates.map(d => ev.filter(e => showOn(e, d)).sort((a, b) => a.startMin - b.startMin)), [ev, weekDates]);
@@ -252,12 +261,24 @@ export function AvailabilityCalendar() {
           {DIMS.map(dropdown)}
           <span style={{ color: '#b9c6e8', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{filterNote} · {thZoneLabel(zone)}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
-          <span style={{ color: '#b9c6e8', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{span === 'Monthly' ? month.label : weekRange}</span>
-          <button onClick={() => { setWeekOffset(0); setMonthOffset(0); setFocus(null); setOpenDay(null); setPicked(null); }} style={barBtn}>Today</button>
-          <button title={span === 'Monthly' ? 'Previous month' : 'Previous week'} onClick={() => { span === 'Monthly' ? setMonthOffset(o => o - 1) : setWeekOffset(o => o - 1); setPicked(null); setOpenDay(null); }} style={{ display: 'grid', placeItems: 'center', width: 32, height: 36, border: 0, borderRadius: 7, background: 'transparent', color: '#dbe3f7', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>‹</button>
-          <button title={span === 'Monthly' ? 'Next month' : 'Next week'} onClick={() => { span === 'Monthly' ? setMonthOffset(o => o + 1) : setWeekOffset(o => o + 1); setPicked(null); setOpenDay(null); }} style={{ display: 'grid', placeItems: 'center', width: 32, height: 36, border: 0, borderRadius: 7, background: 'transparent', color: '#dbe3f7', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>›</button>
-          <button title="Switch between weekly and monthly" onClick={() => { setSpan(s => s === 'Weekly' ? 'Monthly' : 'Weekly'); setPicked(null); }} style={{ display: 'flex', alignItems: 'center', gap: 9, minHeight: 36, padding: '0 14px', border: '1px solid #cfd6ea', borderRadius: 7, background: '#fff', color: '#0f1b33', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>{span}<span style={{ color: '#64708a', fontSize: 11 }}>⇄</span></button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginLeft: 'auto', flexWrap: 'wrap' }}>
+          <span style={{ color: '#b9c6e8', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{span === 'Monthly' ? month.label : span === 'Daily' ? dayRange : weekRange}</span>
+          <button onClick={() => { setWeekOffset(0); setMonthOffset(0); setDayOffset(0); setFocus(null); setOpenDay(null); setPicked(null); }} style={barBtn}>Today</button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button title={span === 'Monthly' ? 'Previous month' : span === 'Daily' ? 'Previous day' : 'Previous week'} onClick={() => { span === 'Monthly' ? setMonthOffset(o => o - 1) : span === 'Daily' ? setDayOffset(o => o - 1) : setWeekOffset(o => o - 1); setPicked(null); setOpenDay(null); }} style={{ display: 'grid', placeItems: 'center', width: 40, height: 40, border: '1px solid #39477f', borderRadius: 8, background: '#1d2c6b', color: '#dbe3f7', fontSize: 20, fontWeight: 800, cursor: 'pointer', lineHeight: 1 }}>‹</button>
+            <button title={span === 'Monthly' ? 'Next month' : span === 'Daily' ? 'Next day' : 'Next week'} onClick={() => { span === 'Monthly' ? setMonthOffset(o => o + 1) : span === 'Daily' ? setDayOffset(o => o + 1) : setWeekOffset(o => o + 1); setPicked(null); setOpenDay(null); }} style={{ display: 'grid', placeItems: 'center', width: 40, height: 40, border: '1px solid #39477f', borderRadius: 8, background: '#1d2c6b', color: '#dbe3f7', fontSize: 20, fontWeight: 800, cursor: 'pointer', lineHeight: 1 }}>›</button>
+          </div>
+          <div style={{ position: 'relative' }}>
+            <button title="Change view" onClick={() => setSpanOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 38, padding: '0 14px', border: '1px solid #cfd6ea', borderRadius: 8, background: '#fff', color: '#0f1b33', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>{span}<span style={{ color: '#64708a', fontSize: 11 }}>{spanOpen ? '⌃' : '⌄'}</span></button>
+            {spanOpen && <>
+              <div onClick={() => setSpanOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 25 }} />
+              <div style={{ position: 'absolute', top: 44, right: 0, zIndex: 26, width: 150, background: '#fff', border: '1px solid #e3e9f2', borderRadius: 10, boxShadow: '0 14px 34px rgba(10,22,48,.3)', overflow: 'hidden' }}>
+                {(['Weekly', 'Daily', 'Monthly'] as const).map(v => (
+                  <button key={v} onClick={() => { setSpan(v); setSpanOpen(false); setPicked(null); setOpenDay(null); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '10px 13px', border: 0, background: span === v ? '#eef3ff' : '#fff', color: span === v ? '#15215c' : '#0f1b33', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', textAlign: 'left' }}>{v}{span === v && <span style={{ color: '#1d5db5', fontWeight: 900 }}>✓</span>}</button>
+                ))}
+              </div>
+            </>}
+          </div>
         </div>
       </div>
 
@@ -294,6 +315,23 @@ export function AvailabilityCalendar() {
                 })}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* DAILY — agenda list for a single day */}
+      {!loading && !err && span === 'Daily' && (
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '14px 18px 18px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 820 }}>
+            {dayAgenda.map((e, i) => { const c = COLORS[e.color]; const past = isPast(e, dayDate); return (
+              <button key={e.slot.id + '|' + i} onClick={() => setPicked({ label: e.label, kind: past ? 'Past · ' + e.kind : e.kind, color: e.color, when: `${dayRange} · ${timeLabel(e.startMin)}–${timeLabel(e.endMin)} ${thZoneLabel(zone)}` })}
+                style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', textAlign: 'left', width: '100%', padding: '11px 14px', border: `1px solid ${past ? PAST_BORDER : '#e6ebf4'}`, borderLeft: `4px solid ${past ? PAST_BORDER : c.dot}`, borderRadius: 10, background: past ? '#fbfcfe' : '#fff', cursor: 'pointer' }}>
+                <span style={{ minWidth: 150, fontSize: 14, fontWeight: 900, letterSpacing: '-.01em', color: past ? '#9aa6b8' : '#0f1b33' }}>{timeLabel(e.startMin)} – {timeLabel(e.endMin)}</span>
+                <span style={{ flex: 1, minWidth: 180, fontSize: 14, fontWeight: 700, color: past ? '#9aa6b8' : '#2a3550' }}>{e.label}</span>
+                <span style={{ padding: '3px 11px', borderRadius: 999, background: past ? '#eef1f6' : c.bg, color: past ? '#8a93a6' : c.fg, fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>{past ? 'Past' : e.kind}</span>
+              </button>
+            ); })}
+            {dayAgenda.length === 0 && <p style={{ margin: 0, padding: '28px 4px', color: '#8a93a6', fontSize: 14.5, fontWeight: 700 }}>No sessions on this day with the current filters.</p>}
           </div>
         </div>
       )}
