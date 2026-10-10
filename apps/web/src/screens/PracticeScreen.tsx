@@ -148,6 +148,13 @@ export function PracticeScreen() {
         openUpgrade(item.is_combine ? 'combine' : (mode === 'exam' ? 'exam' : 'practice'));
         return;
       }
+      // Server backstop: another exam is already in progress → show the resume/end popup instead of an error.
+      if (e instanceof ApiError && e.code === 'EXAM_IN_PROGRESS') {
+        const running = (data ?? []).find((c) => c.allowed_modes.includes('exam') && c.progress?.status === 'in_progress' && c.set_version_id !== item.set_version_id);
+        if (running) setExamConflict({ running, next: item });
+        else { flash('You already have an exam in progress — finish it first.'); reload(); }
+        return;
+      }
       // A saved/left session must NOT block starting another set (the gateway no longer holds a
       // one-active-session lock). No special "resume it from Home" blocking toast — surface only a real error.
       flash(e instanceof ApiError ? e.message : (e as Error).message);

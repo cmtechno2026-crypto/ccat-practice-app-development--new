@@ -186,6 +186,25 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     }
     if (body.mode === 'practice' && !set.allowed_practice) throw Errors.validation('Practice not allowed', { code: 'MODE_NOT_ALLOWED' });
     if (body.mode === 'exam' && !set.allowed_exam) throw Errors.validation('Exam not allowed', { code: 'MODE_NOT_ALLOWED' });
+    // One exam at a time (backstop to the client's "exam in progress" popup): a student may not start a
+    // second EXAM while another exam session is still IN_PROGRESS. Practice is unaffected, and this never
+    // blocks resuming the running exam (resume does not hit /start). The client turns this code back into
+    // the resume/end popup. Redo abandons the old exam first, so that path passes.
+    if (body.mode === 'exam') {
+      const running = await db.query(
+        `select s.id, qs.name from ccat.sessions s
+           join ccat.question_set_versions sv on sv.id = s.set_version_id
+           join ccat.question_sets qs on qs.id = sv.question_set_id
+          where s.student_id = $1 and s.mode = 'exam' and s.state = 'IN_PROGRESS'
+          limit 1`,
+        [studentId],
+      );
+      if (running.rows.length > 0) {
+        throw new AppError(409, 'EXAM_IN_PROGRESS', 'You already have an exam in progress', {
+          session_id: running.rows[0]!.id, set_name: running.rows[0]!.name,
+        });
+      }
+    }
     // Exam sets are single-battery and run as ONE server-timed session: the whole set has a single
     // deadline computed from the set's own duration_minutes. The clock runs on the server (deadline_at),
     // so leaving/closing the page does not pause it; the overdue worker (finalizeOverdueSessions) and the
