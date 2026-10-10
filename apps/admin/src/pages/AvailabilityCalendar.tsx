@@ -94,14 +94,13 @@ export function AvailabilityCalendar() {
       const st = (s.session_type || 'recurring').toLowerCase();
       const oneTime = booked && (st === 'makeup' || st === 'demo');
       const color = !booked ? 'open' : (st === 'makeup' ? 'makeup' : st === 'demo' ? 'demo' : 'recurring');
-      const gl = gradeLabel(s);
       // Chip format: "Type · Teacher · Student (Grade)". Type is "Open" for an available slot, or the
       // session type for a booked one; student + grade only when booked. An available slot is always
       // "Open" (past or not) — open slots carry no real session_type, so never infer one for them.
       const typeWord = booked ? (st === 'makeup' ? 'Make-Up' : st === 'demo' ? 'Demo' : 'Recurring') : 'Open';
       const suffix = s.archived ? ' · deleted' : '';
       const core = booked
-        ? `${typeWord} · ${s.teacher_name} · ${s.booked_student}${gl ? ` (${gl})` : ''}`
+        ? `${typeWord} · ${s.teacher_name} · ${s.booked_student}`
         : `Open · ${s.teacher_name}`;
       const label = core + suffix;
       const kind = booked ? (st === 'makeup' ? 'Make-Up / On Demand' : st === 'demo' ? 'Demo' : 'Recurring') : 'Open availability';
@@ -119,7 +118,7 @@ export function AvailabilityCalendar() {
 
   const opts = useMemo(() => {
     const teachers = [...new Set(slots.map(s => s.teacher_name).filter(Boolean))].sort();
-    const subjects = [...new Set(slots.map(s => s.subject).filter(Boolean))].sort();
+    const subjects = [...new Set(slots.map(s => s.subject).filter(s => !!s && s.toLowerCase() !== 'availability'))].sort();
     const grades = new Set<number>();
     slots.forEach(s => { if (s.grade != null) grades.add(s.grade); else { if (s.grade_min != null && s.grade_max != null) for (let g = s.grade_min; g <= s.grade_max; g++) grades.add(g); else if (s.grade_min != null) grades.add(s.grade_min); } });
     return { teachers, subjects, grades: [...grades].sort((a, b) => a - b) };

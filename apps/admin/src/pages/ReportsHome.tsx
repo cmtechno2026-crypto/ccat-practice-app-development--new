@@ -31,6 +31,12 @@ const hourLabel = (h: number) => { const ap = h < 12 ? 'am' : 'pm'; const hh = h
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const mondayOf = (d: Date) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const wd = (x.getDay() + 6) % 7; return addDays(x, -wd); };
 const sameOrAfter = (a: Date, b: Date) => a.getTime() >= b.getTime();
+// A slot/teacher subject entry like "Math (Grade 11)" or "Science (All grades)" → "Math".
+const subjName = (s: string) => String(s || '').replace(/\s*\(Grade[^)]*\)\s*$/i, '').replace(/\s*\(All grades\)\s*$/i, '').trim();
+// Teacher's registered subjects → unique display names, with the meaningless "Availability" placeholder dropped.
+function teacherSubjectNames(subjects?: string[] | null): string {
+  return [...new Set((subjects || []).map(subjName).filter(x => x && x.toLowerCase() !== 'availability'))].join(', ');
+}
 
 export function ReportsHome() {
   const { zone } = useTeacherHubTz();
@@ -45,6 +51,7 @@ export function ReportsHome() {
   const nav = useNavigate();
   const [teacherSort, setTeacherSort] = useState<'name' | 'available' | 'booked'>('name');
   const [teacherDir, setTeacherDir] = useState<'asc' | 'desc'>('asc');
+  const [teacherSubj, setTeacherSubj] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let alive = true; setLoading(true); setErr('');
@@ -52,6 +59,12 @@ export function ReportsHome() {
       .catch(e => { if (alive) { setErr((e as Error).message || 'Could not load reports'); setLoading(false); } });
     return () => { alive = false; };
   }, []);
+
+  // Fix 1: Subject in "Slots by teacher" comes from each teacher's registered subjects, not the
+  // slot's snapshot subject (which can be a stale "Availability" placeholder from earlier creation).
+  useEffect(() => { api.teacherTeachers().then(r => {
+    const m: Record<string, string> = {}; (r.teachers || []).forEach((t: any) => { m[String(t.id)] = teacherSubjectNames(t.subjects); }); setTeacherSubj(m);
+  }).catch(() => {}); }, []);
 
   const now = new Date();
   const weeks = useMemo(() => {
@@ -103,8 +116,8 @@ export function ReportsHome() {
       hourSet.add(r.hour);
       const k = r.hour + '|' + r.dayIdx; const g = grid[k] || (grid[k] = { a: 0, b: 0 }); if (r.booked) g.b++; else g.a++;
     });
-    const byTeacher = [...tMap.values()].map(t => { const tot = t.avail + t.booked; return { id: t.id, name: t.name, subject: [...t.subjects].join(', ') || '—', avail: t.avail, booked: t.booked, makeup: t.makeup, total: tot, pct: tot ? Math.round(t.booked / tot * 100) : 0 }; }).sort((a, b) => b.total - a.total);
-    const bySubject = [...sMap.entries()].map(([name, s]) => { const tot = s.avail + s.booked; return { name, teachers: s.teachers.size, avail: s.avail, booked: s.booked, total: tot }; }).sort((a, b) => b.total - a.total);
+    const byTeacher = [...tMap.values()].map(t => { const tot = t.avail + t.booked; const slotSubj = [...t.subjects].map(subjName).filter(x => x && x.toLowerCase() !== 'availability').join(', '); const subject = teacherSubj[t.id] || slotSubj || '—'; return { id: t.id, name: t.name, subject, avail: t.avail, booked: t.booked, makeup: t.makeup, total: tot, pct: tot ? Math.round(t.booked / tot * 100) : 0 }; }).sort((a, b) => b.total - a.total);
+    const bySubject = [...sMap.entries()].filter(([name]) => String(name).toLowerCase() !== 'availability').map(([name, s]) => { const tot = s.avail + s.booked; return { name: subjName(name) || name, teachers: s.teachers.size, avail: s.avail, booked: s.booked, total: tot }; }).sort((a, b) => b.total - a.total);
     const hours = [...hourSet].sort((a, b) => a - b);
     const hourRows = hours.map(h => {
       let rb = 0, ra = 0;
@@ -117,7 +130,7 @@ export function ReportsHome() {
       return { label: hourLabel(h), cells, sumA: ra, sumB: rb };
     });
     return { total, avail, booked, makeup, byTeacher, bySubject, hourRows };
-  }, [rows, weekIdx, band, days]);
+  }, [rows, weekIdx, band, days, teacherSubj]);
 
   const maxTeacherTotal = Math.max(1, ...data.byTeacher.map(t => t.total));
   const grand = data.total;
