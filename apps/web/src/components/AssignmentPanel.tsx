@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Assignment } from '@ccat/api-client';
 import { client } from '../lib/api';
 import { useApp } from '../lib/store';
 import { useAsync, Loader } from './ui';
 import { assignmentTitle, assignDateStamp, batteryVis, openAssignment } from '../lib/assignments';
+import { ExamConflictModal, type ExamConflictInfo } from './ExamConflictModal';
 
 // HOME — Assignment panel. Sits in the slot that used to hold the Coins/XP/Badges stat tiles: a compact,
 // scrollable agenda of the sets a teacher assigned to this child. Incomplete sets (assigned / in
@@ -62,9 +64,19 @@ export function AssignmentPanel() {
 
 export function TodoRow({ a, nav, flash, compact }: { a: Assignment; nav: ReturnType<typeof useNavigate>; flash: (m: string) => void; compact?: boolean }) {
   const { setActiveMode } = useApp();
+  const [conflict, setConflict] = useState<{ running: ExamConflictInfo; next: Assignment } | null>(null);
   const stamp = assignDateStamp(a.assigned_at);
   const vis = batteryVis(a.category_key);
   const cont = a.status === 'in_progress';
+  // A DIFFERENT exam is already running → show the resume/end popup right here (no error toast / redirect).
+  const showConflict = (running: ExamConflictInfo, next: Assignment) => setConflict({ running, next });
+  const endAndStart = async () => {
+    if (!conflict) return;
+    const { running, next } = conflict;
+    setConflict(null);
+    try { await client.abandon(running.session_id, true); } catch { /* already terminal — ignore */ }
+    openAssignment(next, nav, flash, setActiveMode, showConflict);
+  };
   return (
     <div className="asgn-row">
       <div className="asgn-date" style={{ color: vis.color, background: vis.tint }}>
@@ -78,9 +90,18 @@ export function TodoRow({ a, nav, flash, compact }: { a: Assignment; nav: Return
           {!compact && a.question_count ? ` · ${a.question_count} questions` : ''}
         </div>
       </div>
-      <button className="asgn-start" onClick={() => openAssignment(a, nav, flash, setActiveMode)}>
+      <button className="asgn-start" onClick={() => openAssignment(a, nav, flash, setActiveMode, showConflict)}>
         {cont ? 'Continue' : 'Start'}
       </button>
+      {conflict && (
+        <ExamConflictModal
+          running={conflict.running}
+          nextLabel={[conflict.next.category_name, conflict.next.name].filter(Boolean).join(' · ')}
+          onResume={() => { const sid = conflict.running.session_id; setConflict(null); if (sid) nav(`/session/${sid}`); }}
+          onEndStart={() => void endAndStart()}
+          onClose={() => setConflict(null)}
+        />
+      )}
     </div>
   );
 }

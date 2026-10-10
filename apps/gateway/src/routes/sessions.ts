@@ -192,9 +192,13 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     // the resume/end popup. Redo abandons the old exam first, so that path passes.
     if (body.mode === 'exam') {
       const running = await db.query(
-        `select s.id, s.set_version_id, qs.name from ccat.sessions s
+        `select s.id, s.set_version_id, qs.name, cat.name as category_name, sv.duration_minutes, sv.question_count, s.deadline_at,
+                (select count(*)::int from ccat.session_answers sa
+                   where sa.session_id = s.id and coalesce(array_length(sa.selected_option_ids,1),0) > 0) as answered_count
+           from ccat.sessions s
            join ccat.question_set_versions sv on sv.id = s.set_version_id
            join ccat.question_sets qs on qs.id = sv.question_set_id
+           join ccat.categories cat on cat.id = qs.category_id
           where s.student_id = $1 and s.mode = 'exam' and s.state = 'IN_PROGRESS'
           -- Prefer the SAME set the student is trying to start, so the client can resume it rather than
           -- treat it as a different-exam conflict; otherwise the most recent in-progress exam.
@@ -203,8 +207,11 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
         [studentId, body.set_version_id],
       );
       if (running.rows.length > 0) {
+        const rr = running.rows[0]!;
         throw new AppError(409, 'EXAM_IN_PROGRESS', 'You already have an exam in progress', {
-          session_id: running.rows[0]!.id, set_version_id: running.rows[0]!.set_version_id, set_name: running.rows[0]!.name,
+          session_id: rr.id, set_version_id: rr.set_version_id, set_name: rr.name,
+          category_name: rr.category_name, duration_minutes: rr.duration_minutes,
+          question_count: rr.question_count, answered_count: rr.answered_count, deadline_at: rr.deadline_at,
         });
       }
     }

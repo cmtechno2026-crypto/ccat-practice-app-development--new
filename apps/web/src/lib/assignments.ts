@@ -1,6 +1,7 @@
 import type { NavigateFunction } from 'react-router-dom';
 import type { Assignment } from '@ccat/api-client';
 import { ApiError } from '@ccat/api-client';
+import type { ExamConflictInfo } from '../components/ExamConflictModal';
 import { client } from './api';
 
 // Per-battery colour + tint for the assignment date stamp / dot (matches the Home progress rings).
@@ -37,6 +38,8 @@ export async function openAssignment(
   // Lets the caller set the sidebar's active mode BEFORE the /session route mounts, so the
   // Practice/Exam highlight is correct immediately (no Practice flash while the session loads).
   onMode?: (m: 'practice' | 'exam') => void,
+  // When a DIFFERENT exam is already running, the caller shows the resume/end popup instead of an error.
+  onExamConflict?: (running: ExamConflictInfo, next: Assignment) => void,
 ) {
   try {
     onMode?.(a.is_exam ? 'exam' : 'practice');
@@ -54,8 +57,21 @@ export async function openAssignment(
     // One-exam-at-a-time backstop. If THIS exam is the one already running, resume it; if a DIFFERENT exam
     // is running, send them to the exam list (the resume/end popup handles it) — never a dead end.
     if (e instanceof ApiError && e.code === 'EXAM_IN_PROGRESS') {
-      const d = (e.details ?? {}) as { session_id?: string; set_version_id?: string };
+      const d = (e.details ?? {}) as {
+        session_id?: string; set_version_id?: string; set_name?: string; category_name?: string;
+        duration_minutes?: number | null; question_count?: number | null; answered_count?: number | null; deadline_at?: string | null;
+      };
+      // The SAME exam is already running → just resume it.
       if (d.set_version_id === a.set_version_id && d.session_id) { nav(`/session/${d.session_id}`); return; }
+      // A DIFFERENT exam is running → show the resume/end popup on this page (no error toast / no redirect).
+      if (onExamConflict && d.session_id) {
+        onExamConflict({
+          session_id: d.session_id, set_version_id: d.set_version_id ?? '',
+          label: [d.category_name, d.set_name].filter(Boolean).join(' · ') || 'your exam',
+          duration_minutes: d.duration_minutes, answered: d.answered_count, total: d.question_count, deadline_at: d.deadline_at,
+        }, a);
+        return;
+      }
       onError?.('Finish or end your current exam first.');
       nav('/practice?mode=exam');
       return;

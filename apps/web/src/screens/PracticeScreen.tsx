@@ -8,18 +8,8 @@ import { useApp } from '../lib/store';
 import { AppBar, Card, Loader, ErrorNote, useAsync } from '../components/ui';
 import { capsOf, PAYMENTS_ENABLED, type UpgradeFeature } from '../lib/entitlements';
 import { UpgradePanel, LockBadge } from '../components/UpgradePanel';
+import { ExamCountdown, ExamConflictModal } from '../components/ExamConflictModal';
 import { PromoInline } from '../components/DiscountBanner';
-
-// Live countdown for an in-progress (Resume) exam set — the clock keeps running server-side, so this
-// shows the true remaining time and ticks every second, turning amber then red as it runs low.
-function ExamCountdown({ deadline }: { deadline: string }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(t); }, []);
-  const rem = Math.max(0, Math.round((new Date(deadline).getTime() - now) / 1000));
-  const mm = Math.floor(rem / 60), ss = rem % 60;
-  const color = rem <= 0 ? 'var(--coral)' : rem < 60 ? 'var(--coral)' : rem < 180 ? 'var(--amber)' : 'var(--green)';
-  return <span style={{ color, fontWeight: 700 }}>⏳ {rem <= 0 ? 'time up' : `${mm}:${String(ss).padStart(2, '0')}`}</span>;
-}
 
 // PRACTICE — 3-level browse that ends in a quiz (mockup: CCAT Practice.dc.html), desktop layout,
 // mockup tokens:  BATTERY (3) → CATEGORY (subcategories) → SET → start screen → practice quiz.
@@ -209,39 +199,23 @@ export function PracticeScreen() {
     if (sid) { try { await client.abandon(sid, true); } catch { /* already terminal — ignore */ } }
     await startSet(next, null, { force: true });
   }
-  const examConflictEl = examConflict ? (() => {
-    const r = examConflict.running;
-    const label = (c: CatalogItem) => `${(c.category_name ?? c.category_key).replace('_', '-')} · ${c.name}`;
-    return (
-      <div className="modal-scrim" role="dialog" aria-label="Exam in progress" onClick={() => setExamConflict(null)}>
-        <div className="modal" style={{ maxWidth: 360, position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-          <button aria-label="Close" onClick={() => setExamConflict(null)}
-            style={{ position: 'absolute', top: 10, right: 10, width: 30, height: 30, borderRadius: 8, border: 0, background: 'var(--coral, #e0533d)', color: '#fff', fontSize: 16, fontWeight: 900, lineHeight: 1, cursor: 'pointer' }}>✕</button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, paddingRight: 34 }}>
-            <div style={{ width: 34, height: 34, flex: 'none', borderRadius: 10, background: 'var(--amber-bg, #fdf3e2)', color: 'var(--amber, #b7791f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }} aria-hidden>⚠️</div>
-            <h3 style={{ margin: 0, fontSize: 16.5 }}>An exam is still in progress</h3>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid var(--line, #e5e9f2)', borderRadius: 14, padding: '13px 14px', marginBottom: 16 }}>
-            <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, background: 'var(--primary, #2f6fd0)' }} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 14.5 }}>{label(r)}</div>
-              <div style={{ fontSize: 12, color: 'var(--muted, #6b7389)', marginTop: 2 }}>Exam paper{r.duration_minutes ? ` · ${r.duration_minutes} min` : ''}{r.progress?.answered_count != null ? ` · ${r.progress.answered_count} of ${r.question_count} answered` : ''}</div>
-            </div>
-            {r.progress?.deadline_at && (
-              <div style={{ marginLeft: 'auto', textAlign: 'right', flex: 'none' }}>
-                <div style={{ fontSize: 15, fontWeight: 900 }}><ExamCountdown deadline={r.progress.deadline_at} /></div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted, #6b7389)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>left</div>
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-            <button className="btn" onClick={() => { const sid = r.progress?.session_id; setExamConflict(null); if (sid) nav(`/session/${sid}`); }}>↩ Resume this exam</button>
-            <button className="btn" style={{ background: 'var(--coral, #e0533d)', color: '#fff' }} onClick={() => void endAndStart()}>End &amp; start {label(examConflict.next)}</button>
-          </div>
-        </div>
-      </div>
-    );
-  })() : null;
+  const examConflictEl = examConflict ? (
+    <ExamConflictModal
+      running={{
+        session_id: examConflict.running.progress?.session_id ?? '',
+        set_version_id: examConflict.running.set_version_id,
+        label: `${(examConflict.running.category_name ?? examConflict.running.category_key).replace('_', '-')} · ${examConflict.running.name}`,
+        duration_minutes: examConflict.running.duration_minutes,
+        answered: examConflict.running.progress?.answered_count ?? null,
+        total: examConflict.running.question_count,
+        deadline_at: examConflict.running.progress?.deadline_at ?? null,
+      }}
+      nextLabel={`${(examConflict.next.category_name ?? examConflict.next.category_key).replace('_', '-')} · ${examConflict.next.name}`}
+      onResume={() => { const sid = examConflict.running.progress?.session_id; setExamConflict(null); if (sid) nav(`/session/${sid}`); }}
+      onEndStart={() => void endAndStart()}
+      onClose={() => setExamConflict(null)}
+    />
+  ) : null;
 
   // ============================ EXAM (battery-first → per-battery set list) ============================
   // Exam page mirrors the Practice battery landing: 3 battery cards → click a battery → that battery's

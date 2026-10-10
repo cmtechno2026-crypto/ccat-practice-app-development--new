@@ -225,6 +225,7 @@ export function TeacherDirectory() {
 
   const reqsForTeacher = (id: string): Req[] => (allReqs || []).filter(r => (r.slots || []).some(s => s.teacher_id === id));
   const reqBadge = (id: string) => reqsForTeacher(id).filter(r => r.teacher_status === 'accepted' && r.status === 'pending').length;
+  const reqCountBySlot = (id: string): Record<string, number> => { const m: Record<string, number> = {}; (allReqs || []).forEach(r => { if (r.status !== 'pending') return; (r.slots || []).forEach(sl => { if (sl.teacher_id !== id) return; if (sl.outcome && sl.outcome !== 'pending') return; m[sl.slot_id] = (m[sl.slot_id] || 0) + 1; }); }); return m; };
 
   const openPopover = (slotId: string) => { setPopSlot(slotId); setPStudent(''); setPNote(''); setPEmail(''); setPErr(''); setPType('recurring'); setTimeout(() => studentRef.current?.focus(), 0); };
   useEffect(() => {
@@ -432,6 +433,7 @@ export function TeacherDirectory() {
     if (slotErr[id]) return <div className="empty" style={{ padding: '10px 0' }}>{slotErr[id]}</div>;
     const list = slots[id] || [];
     if (list.length === 0) return <div className="muted" style={{ padding: '10px 0' }}>No slots for this teacher.</div>;
+    const reqCount = reqCountBySlot(id);
     const timeMin = (t: string) => { const p = String(t).split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); };
     const comboMap = new Map<string, { key: string; label: string; count: number }>();
     list.forEach(s => { const key = s.subject + '|' + gkey(s); const gs = gradeShort(s); const label = s.subject + (gs ? ' · ' + gs : ''); const e = comboMap.get(key); if (e) e.count++; else comboMap.set(key, { key, label, count: 1 }); });
@@ -480,7 +482,7 @@ export function TeacherDirectory() {
                       <td key={d}>
                         <div className={'cm-wg-cell ' + cls} onClick={canManage ? () => openPopover(s.id) : undefined} title={s.subject + (gradeShort(s) ? ' · ' + gradeShort(s) : '') + (s.is_custom ? ' · Custom time' : '')} style={{ cursor: canManage ? 'pointer' : 'default', position: 'relative' }}>
                           {s.is_custom && hasStudent && <span title="Custom time" style={{ position: 'absolute', top: 2, right: 4, fontSize: 9, fontWeight: 800, color: '#6b21a8' }}>✎</span>}
-                          <span>{lab}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{lab}{reqCount[s.id] > 0 && <span title={reqCount[s.id] + ' parent request' + (reqCount[s.id] > 1 ? 's' : '')} style={{ fontSize: 12, lineHeight: 1 }}>🔔{reqCount[s.id] > 1 ? reqCount[s.id] : ''}</span>}</span>
                           {hasStudent && <span className="cm-wg-who">{s.booked_student}</span>}
                         </div>
                       </td>
@@ -505,7 +507,7 @@ export function TeacherDirectory() {
                   return (
                     <button key={s2.id} className="cm-wg-srow" onClick={canManage ? () => openPopover(s2.id) : undefined} style={{ cursor: canManage ? 'pointer' : 'default' }}>
                       <span className="cm-wg-stime">{(conv[s2.id] || { start: s2.start_time, end: s2.end_time }).start}–{(conv[s2.id] || { start: s2.start_time, end: s2.end_time }).end} <span style={{ opacity: .7, fontWeight: 700 }}>{thZoneLabel(zone)}</span></span>
-                      <span className={'cm-wg-chip ' + cls}>{lab}{hasStudent ? ' · ' + s2.booked_student : ''}</span>
+                      <span className={'cm-wg-chip ' + cls}>{lab}{reqCount[s2.id] > 0 ? ' 🔔' + (reqCount[s2.id] > 1 ? reqCount[s2.id] : '') : ''}{hasStudent ? ' · ' + s2.booked_student : ''}</span>
                     </button>
                   );
                 })}
