@@ -264,6 +264,17 @@ export async function releasePastOneTimeBookings(teacherDb: DB, log?: MiniLog): 
       where s.id = due.id
      returning s.id`);
   const n = r.rows.length;
-  if (n > 0) log?.info?.({ released: n }, 'auto-released past one-time (demo/make-up) bookings');
+  if (n > 0) {
+    // The one-time session happened; mark its fulfilled request row(s) 'completed' so the now-freed
+    // slot no longer carries a decided-but-open request (which would keep it hidden from the booking
+    // page and show a stale "approved" on the request). Idempotent.
+    const freedIds = r.rows.map((x) => x.id as string);
+    try {
+      await teacherDb.query(
+        `update public.ta_booking_request_slots set outcome = 'completed'
+          where slot_id = any($1::uuid[]) and outcome = 'approved'`, [freedIds]);
+    } catch (e) { log?.warn?.({ err: (e as Error).message }, 'mark released one-time requests completed failed'); }
+    log?.info?.({ released: n }, 'auto-released past one-time (demo/make-up) bookings');
+  }
   return n;
 }

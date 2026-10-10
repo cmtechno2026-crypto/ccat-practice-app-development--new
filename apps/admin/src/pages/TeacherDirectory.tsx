@@ -184,11 +184,6 @@ export function TeacherDirectory() {
     catch (e) { const m = (e as Error).message || 'Unknown error'; setErr(m); window.alert('Could not delete this teacher: ' + m); }
     finally { setActing(false); }
   };
-  const setApproval = async (t: TeacherRow, approved: boolean) => {
-    if (!approved && !window.confirm(`Unapprove ${t.name}'s profile? They stop being bookable until re-approved.`)) return;
-    setActing(true);
-    try { await api.teacherSetApproval(t.id, approved); load(search); } catch (e) { setErr((e as Error).message); } finally { setActing(false); }
-  };
   const toggleCapability = async (t: TeacherRow, subject: string, active: boolean) => {
     try { await api.teacherSetCapability(t.id, subject, active); load(search); } catch (e) { setErr((e as Error).message); }
   };
@@ -611,9 +606,7 @@ export function TeacherDirectory() {
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {reqBadge(d.id) > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(d.id)} ready to book</span>}
                     {d.banned_at && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--coral,#c0392b)', background: 'var(--coral-soft,#fdece9)', borderRadius: 999, padding: '2px 10px' }}>Banned</span>}
-                    {d.profile_approved === false && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--amber,#b45309)', background: 'var(--amber-soft,#fbeeda)', borderRadius: 999, padding: '2px 10px' }}>Unapproved</span>}
                     {canManage && <button onClick={() => openEditProfile(d)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--brand,#2563eb)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--brand,#2563eb)', opacity: acting ? 0.6 : 1 }}>✎ Edit profile</button>}
-                    {canManage && <button onClick={() => setApproval(d, d.profile_approved === false)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.profile_approved === false ? 'Approve' : 'Unapprove'}</button>}
                     {canManage && <button onClick={() => banTeacher(d, !d.banned_at)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.banned_at ? 'Unban' : 'Ban'}</button>}
                     {canManage && <button onClick={() => deleteTeacher(d)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--coral,#c0392b)', opacity: acting ? 0.6 : 1 }}>Delete</button>}
                   </div>
@@ -661,7 +654,7 @@ export function TeacherDirectory() {
                 <div>
                   <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Profile details</h4>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,220px),1fr))', gap: 10 }}>
-                    {([['Full name', d.name], ['Email', d.email], ['Phone number', d.phone], ['Country', d.country], ['State / Province', d.state], ['Joined', fmtDate(d.created_at)], ['Status', d.banned_at ? 'Banned' : d.profile_approved === false ? 'Unapproved' : 'Approved']] as [string, string | null | undefined][]).map(([label, val]) => (
+                    {([['Full name', d.name], ['Email', d.email], ['Phone number', d.phone], ['Country', d.country], ['State / Province', d.state], ['Joined', fmtDate(d.created_at)], ['Status', d.banned_at ? 'Banned' : 'Active']] as [string, string | null | undefined][]).map(([label, val]) => (
                       <div key={label} style={{ padding: '11px 13px', border: '1px solid var(--line,#e6e9f0)', borderRadius: 10, background: 'var(--card2,#fafcff)' }}>
                         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--muted,#64748b)', marginBottom: 6 }}>{label}</div>
                         <div style={{ fontSize: 14.5, fontWeight: 800, color: (val && String(val).trim()) ? 'var(--ink,#0f1b33)' : 'var(--muted,#9aa6bb)' }}>{(val && String(val).trim()) ? val : 'Not provided'}</div>
