@@ -59,6 +59,7 @@ const PILL: Record<string, { label: string; bg: string; fg: string }> = {
   partial: { label: 'PARTIALLY BOOKED', bg: '#e0f3ff', fg: '#0b6f9e' },
   declined: { label: 'DECLINED', bg: '#fdecea', fg: '#c62a1e' },
   norefused: { label: 'TEACHER REJECTED', bg: '#f5e7ff', fg: '#7b3fb0' },
+  noslots: { label: 'NO SLOTS', bg: '#eef0f4', fg: '#6b7280' },
 };
 const FILTERS: [string, string, string][] = [
   ['Needs booking', 'action', '#2f6fde'], ['Awaiting teacher', 'awaiting', '#f7b12b'],
@@ -75,7 +76,11 @@ const SESSION_TYPE: Record<string, { label: string; bg: string; fg: string }> = 
 const stageOf = (r: RequestRow): keyof typeof PILL => {
   if (r.status === 'approved') return 'booked';
   if (r.status === 'partially_approved') return 'partial';
-  if (r.status === 'rejected') return r.teacher_status === 'declined' ? 'norefused' : 'declined';
+  // Any other non-pending status (rejected, cancelled, …) is closed.
+  if (r.status !== 'pending') return r.teacher_status === 'declined' ? 'norefused' : 'declined';
+  // Pending but no slots left (its slot was deleted and the FK cascade removed the link) — a
+  // dead-end that can never be booked. Show as "No slots" instead of a bookable "Needs booking".
+  if ((r.slots || []).length === 0) return 'noslots';
   if (r.teacher_status === 'declined') return 'norefused';
   if (r.teacher_status === 'accepted') return 'action';
   return 'awaiting';

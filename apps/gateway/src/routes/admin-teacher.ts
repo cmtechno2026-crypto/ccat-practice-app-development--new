@@ -351,6 +351,14 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     requirePermission(req, 'teacher.slots.manage');
     requireSite(req, 'teacher');
     const id = (req.params as { id: string }).id;
+    // Guard: never hard-delete a slot that still has an OPEN parent request. The slot_id FK cascades,
+    // so deleting would wipe the request's slot link and strand it as "needs booking" with no slots.
+    const openReq = await tdb().query(
+      `select 1 from public.ta_booking_request_slots rs
+         join public.ta_booking_requests r on r.id = rs.request_id
+        where rs.slot_id = $1 and r.status = 'pending' and coalesce(rs.outcome, 'pending') <> 'rejected'
+        limit 1`, [id]);
+    if (openReq.rows.length) throw Errors.conflict('SLOT_HAS_OPEN_REQUEST', 'This slot has an open parent request. Decline or book that request first, then delete the slot.');
     // Archive the row into ta_deleted_slots before removing it, so the Availability Calendar can
     // still show its past sessions. The active row is still physically deleted (never bookable again).
     const { rows } = await tdb().query(
