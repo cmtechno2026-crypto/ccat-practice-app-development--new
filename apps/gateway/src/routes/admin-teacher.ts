@@ -54,6 +54,46 @@ function buildIcsBase64(events: IcsEvent[]): string {
   return Buffer.from(lines.join('\r\n'), 'utf8').toString('base64');
 }
 
+// ── Email time-zone conversion ─────────────────────────────────────────────
+// A slot's start/end are wall-clock in the slot's OWN zone (iana_timezone). For e-mail we convert
+// to the recipient's zone and always append a short label. DST-accurate via Intl.
+const G_DAY_IDX: Record<string, number> = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 0 };
+const G_ZONE_IANA: Record<string, string> = { IST: 'Asia/Kolkata', EST: 'America/Toronto' };
+function gZoneOffMin(iana: string, date: Date): number {
+  const dtf = new Intl.DateTimeFormat('en-US', { timeZone: iana, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const m: Record<string, string> = {}; dtf.formatToParts(date).forEach((x) => { m[x.type] = x.value; });
+  const asUTC = Date.UTC(+m.year, +m.month - 1, +m.day, +m.hour, +m.minute, +m.second);
+  return Math.round((asUTC - date.getTime()) / 60000);
+}
+function gWallMs(dn: number, h: number, mi: number, iana: string): number {
+  const g = Date.UTC(2024, 0, 7 + (dn === 0 ? 7 : dn), h, mi); // a known week; weekday aligns 2024-01-08=Mon
+  const off = gZoneOffMin(iana, new Date(g)); let dt = new Date(g - off * 60000);
+  const off2 = gZoneOffMin(iana, dt); if (off2 !== off) dt = new Date(g - off2 * 60000);
+  return dt.getTime();
+}
+function gPartsIn(ms: number, iana: string): Record<string, string> {
+  const o: Record<string, string> = {};
+  new Intl.DateTimeFormat('en-US', { timeZone: iana, hour12: false, weekday: 'long', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms)).forEach((x) => { o[x.type] = x.value; });
+  return o;
+}
+function gZoneLabel(iana: string, instant: Date): string {
+  const M: Record<string, string> = { 'Asia/Kolkata': 'IST', 'Asia/Calcutta': 'IST', 'America/Toronto': 'ET', 'America/New_York': 'ET', 'America/Montreal': 'ET', 'America/Chicago': 'CT', 'America/Winnipeg': 'CT', 'America/Denver': 'MT', 'America/Edmonton': 'MT', 'America/Los_Angeles': 'PT', 'America/Vancouver': 'PT' };
+  if (M[iana]) return M[iana];
+  try { const pr = new Intl.DateTimeFormat('en-US', { timeZone: iana, timeZoneName: 'short' }).formatToParts(instant).find((x) => x.type === 'timeZoneName'); return (pr && pr.value) || iana; } catch { return iana; }
+}
+// Render a slot's time for e-mail in the target zone (tz = null → the slot's own zone). Always labelled.
+function slotTimeInZone(s: { day_of_week: string; start_time: string; end_time: string; timezone?: string; iana_timezone?: string | null }, targetIana?: string | null): { day: string; start: string; end: string; label: string } {
+  const src = s.iana_timezone || G_ZONE_IANA[s.timezone || 'IST'] || 'Asia/Kolkata';
+  const tz = targetIana || src;
+  const dn = G_DAY_IDX[s.day_of_week] ?? 1;
+  const pt = (t: string): [number, number] => { const a = String(t || '0:0').split(':'); return [(+a[0] || 0), (+a[1] || 0)]; };
+  const [sh, sm] = pt(s.start_time); const [eh, em] = pt(s.end_time);
+  let sMs = gWallMs(dn, sh, sm, src); let eMs = gWallMs(dn, eh, em, src); if (eMs <= sMs) eMs += 86400000;
+  const so = gPartsIn(sMs, tz); const eo = gPartsIn(eMs, tz);
+  const hm = (o: Record<string, string>) => (o.hour === '24' ? '00' : o.hour) + ':' + o.minute;
+  return { day: so.weekday, start: hm(so), end: hm(eo), label: gZoneLabel(tz, new Date(sMs)) };
+}
+
 // Teacher Hub (TeacherHub) admin surface. This site's data lives in a SEPARATE Supabase project
 // ("cm-whiteboard", public.ta_* tables), reached through a dedicated read pool (`teacherDb`, from
 // TEACHER_DATABASE_URL). Every route is gated by requirePermission('teacher.*') AND
@@ -518,24 +558,8 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     return String(v ?? '').replace(/[&<>"']/g, (c) => (({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string));
   }
   type DecisionSlot = { outcome: string; teacher_name: string; subject: string; day_of_week: string; start_time: string; end_time: string; timezone: string; slot_id?: string; teacher_id?: string; iana_timezone?: string | null; session_type?: string | null };
-  // Calendar-invite events for the booked sessions in a decision (used for both the parent
-  // attachment and the per-teacher copies).
-  function icsEventsFor(slots: DecisionSlot[], studentName: string | null): IcsEvent[] {
-    const who = studentName || 'your child';
-    return slots.filter((s) => s.outcome === 'approved').map((s) => {
-      const date = occurrenceDates(s.day_of_week, null, null, 1)[0] || new Date().toISOString().slice(0, 10);
-      const recurring = !(s.session_type === 'demo' || s.session_type === 'makeup');
-      return {
-        uid: `${s.slot_id || Math.random().toString(36).slice(2)}@conceptmastery.teacherhub`,
-        title: `${s.subject || 'Class'} — Concept Mastery`,
-        desc: `Concept Mastery ${s.subject || ''} class for ${who} with ${s.teacher_name}.`.trim(),
-        date, start: String(s.start_time), end: String(s.end_time),
-        tzid: s.iana_timezone || 'Asia/Kolkata', recurring,
-      };
-    });
-  }
   async function sendDecisionEmail(log: FastifyBaseLogger, o: {
-    decision: string; to: string; parentName: string; studentName: string | null; numClasses: number; reason: string | null; slots: DecisionSlot[];
+    decision: string; to: string; parentName: string; studentName: string | null; numClasses: number; reason: string | null; slots: DecisionSlot[]; parentTz?: string | null;
   }): Promise<void> {
     if (!o.to) return;
     const who = escapeHtml(o.studentName || 'your child');
@@ -557,18 +581,18 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     const h2 = (t: string) => `<h2 style="margin:0 0 6px;color:${CM_BLUE};font-size:22px;font-weight:800;line-height:1.25;text-align:center;">${t}</h2>`;
     const preview = (t: string) => `<p style="margin:0 0 22px;color:#6b7280;font-size:15px;line-height:1.6;text-align:center;">${t}</p>`;
     // Day / Time / Teacher sessions table for a set of slots.
-    const sessions = (rows: DecisionSlot[]) => `
+    const sessions = (rows: DecisionSlot[], tz?: string | null) => `
       <table role="presentation" width="100%" style="width:100%;border-collapse:collapse;margin:0 0 18px;color:#33415a;font-size:13px;">
         <tr>
           <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Day</th>
           <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Time</th>
           <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Teacher</th>
         </tr>
-        ${rows.map((x) => `<tr>
-          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(x.day_of_week)}</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(x.start_time)}–${escapeHtml(x.end_time)}</td>
+        ${rows.map((x) => { const c = slotTimeInZone(x, tz); return `<tr>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(c.day)}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(c.start + '–' + c.end + ' ' + c.label)}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(x.teacher_name)}</td>
-        </tr>`).join('')}
+        </tr>`; }).join('')}
       </table>`;
     const panel = (title: string, inner: string) => `
       <div style="margin:0 0 22px;padding:20px;border-radius:10px;background:#eef3fb;">
@@ -588,7 +612,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       body = h2('Your booking is confirmed')
         + `<p style="${P}">Hello ${parent},</p>`
         + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked.</p>`
-        + sessions(booked)
+        + sessions(booked, o.parentTz)
         + `<p style="${P}">Please keep these times available for ${who}. If you need to make a change, contact us as soon as possible so we can check availability.</p>`;
     } else if (o.decision === 'partially_approved') {
       // Folded into the Confirmed email: list the booked sessions and add a short note that a few
@@ -597,7 +621,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       body = h2('Your booking is confirmed')
         + `<p style="${P}">Hello ${parent},</p>`
         + `<p style="${P}">Your Concept Mastery booking for ${who} is confirmed. The following sessions are now booked.</p>`
-        + sessions(booked)
+        + sessions(booked, o.parentTz)
         + `<p style="${P}">A few of the other requested times were no longer available. Our office will help with alternatives if you would like another session.</p>`;
     } else {
       subject = 'Update on your Concept Mastery booking request';
@@ -623,13 +647,13 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       </td></tr></table>
     </body></html>`;
     // Attach a calendar invite for the booked sessions (confirmed bookings only).
-    const icsEvents = (o.decision === 'approved' || o.decision === 'partially_approved') ? icsEventsFor(o.slots, o.studentName) : [];
-    const attachments = icsEvents.length ? [{ name: 'concept-mastery-classes.ics', mime_type: 'text/calendar', content: buildIcsBase64(icsEvents) }] : undefined;
-    try { await sendEmail(cfg, { to: o.to, subject, html, attachments }, log); }
+    // No .ics invite attached (removed per request); the booked times are shown in the e-mail body.
+    try { await sendEmail(cfg, { to: o.to, subject, html }, log); }
     catch (e) { log?.warn?.({ err: (e as Error).message }, 'decision email failed'); }
 
-    // Teacher copy: notify each teacher of the session(s) booked with them, with the same invite.
-    if (icsEvents.length) { try { await sendTeacherConfirmations(log, o.slots, o.studentName); } catch (e) { log?.warn?.({ err: (e as Error).message }, 'teacher confirmation failed'); } }
+    // Teacher copy: notify each teacher of the session(s) booked with them.
+    const anyBooked = (o.decision === 'approved' || o.decision === 'partially_approved') && o.slots.some((x) => x.outcome === 'approved');
+    if (anyBooked) { try { await sendTeacherConfirmations(log, o.slots, o.studentName); } catch (e) { log?.warn?.({ err: (e as Error).message }, 'teacher confirmation failed'); } }
   }
 
   // Send each teacher a confirmation + calendar invite for the sessions booked with them.
@@ -645,16 +669,16 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
       const t = emailById.get(tid);
       if (!t || !t.email) continue;
       const mine = booked.filter((s) => s.teacher_id === tid);
-      const rowsHtml = mine.map((s) => `<tr>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(s.day_of_week)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(String(s.start_time))}–${escapeHtml(String(s.end_time))}</td></tr>`).join('');
+      const rowsHtml = mine.map((s) => { const c = slotTimeInZone(s, null); return `<tr>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(c.day)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${escapeHtml(c.start + '–' + c.end + ' ' + c.label)}</td></tr>`; }).join('');
       const html = `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:'Segoe UI',system-ui,Arial,sans-serif;">
         <table role="presentation" width="100%" style="border-collapse:collapse;background:#f4f5f7;"><tr><td align="center" style="padding:28px 14px;">
         <table role="presentation" width="600" style="max-width:600px;width:100%;background:#fff;border:1px solid #eceff2;border-radius:14px;"><tr><td style="padding:34px 40px;">
         <h2 style="margin:0 0 6px;color:${CM_BLUE};font-size:22px;font-weight:800;text-align:center;">New class booked</h2>
         <p style="margin:0 0 20px;color:#6b7280;font-size:15px;text-align:center;">A session has been booked with you for ${who}.</p>
         <p style="margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;">Hello ${escapeHtml(t.name || 'there')},</p>
-        <p style="margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;">The following class${mine.length > 1 ? 'es have' : ' has'} been booked with you for ${who}. A calendar invite is attached.</p>
+        <p style="margin:0 0 14px;color:#455065;font-size:15px;line-height:1.7;">The following class${mine.length > 1 ? 'es have' : ' has'} been booked with you for ${who}.</p>
         <table role="presentation" width="100%" style="width:100%;border-collapse:collapse;margin:0 0 16px;color:#33415a;font-size:13px;">
           <tr><th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Day</th>
           <th align="left" style="padding:10px 8px;border-bottom:1px solid #e5e7eb;color:${CM_BLUE};font-size:12px;text-transform:uppercase;">Time</th></tr>
@@ -662,9 +686,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
         </table>
         <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.7;">Please keep these times for ${who}. If you cannot take a session, contact the office as soon as possible.</p>
         </td></tr></table></td></tr></table></body></html>`;
-      const events = icsEventsFor(mine, studentName);
-      const attachments = events.length ? [{ name: 'concept-mastery-classes.ics', mime_type: 'text/calendar', content: buildIcsBase64(events) }] : undefined;
-      try { await sendEmail(cfg, { to: t.email, subject: `New class booked with you — ${studentName || 'Concept Mastery'}`, html, attachments }, log); }
+      try { await sendEmail(cfg, { to: t.email, subject: `New class booked with you — ${studentName || 'Concept Mastery'}`, html }, log); }
       catch (e) { log?.warn?.({ err: (e as Error).message, teacher: tid }, 'teacher confirmation send failed'); }
     }
   }
@@ -896,7 +918,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
 
     const result = await withTransaction(tdb(), async (client) => {
       const rq = await client.query(
-        `select id, link_id, parent_name, parent_email, parent_phone, student_name, notes, num_classes, status
+        `select id, link_id, parent_name, parent_email, parent_phone, student_name, notes, num_classes, parent_timezone, status
            from public.ta_booking_requests where id = $1 for update`, [reqId]);
       if (rq.rows.length === 0) throw Errors.notFound('Booking request not found');
       const request = rq.rows[0];
@@ -953,7 +975,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     void sendDecisionEmail(req.log, {
       decision: result.newStatus, to: result.request.parent_email, parentName: result.request.parent_name,
       studentName: result.request.student_name, numClasses: result.request.num_classes, reason: null,
-      slots: result.slots as DecisionSlot[],
+      slots: result.slots as DecisionSlot[], parentTz: (result.request.parent_timezone as string | null) || null,
     });
     return { status: result.newStatus, approved: result.approved, taken: result.taken, rejected: result.rejected };
   });
@@ -969,7 +991,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
 
     const result = await withTransaction(tdb(), async (client) => {
       const rq = await client.query(
-        `select id, link_id, parent_name, parent_email, parent_phone, student_name, num_classes, notes, status
+        `select id, link_id, parent_name, parent_email, parent_phone, student_name, num_classes, notes, parent_timezone, status
            from public.ta_booking_requests where id = $1 for update`, [reqId]);
       if (rq.rows.length === 0) throw Errors.notFound('Booking request not found');
       const request = rq.rows[0];
@@ -995,7 +1017,7 @@ export function registerAdminTeacherRoutes(app: FastifyInstance, db: DB, cfg: Co
     void sendDecisionEmail(req.log, {
       decision: 'rejected', to: result.request.parent_email, parentName: result.request.parent_name,
       studentName: result.request.student_name, numClasses: result.request.num_classes, reason,
-      slots: result.slots as DecisionSlot[],
+      slots: result.slots as DecisionSlot[], parentTz: (result.request.parent_timezone as string | null) || null,
     });
     return { status: 'rejected' };
   });
