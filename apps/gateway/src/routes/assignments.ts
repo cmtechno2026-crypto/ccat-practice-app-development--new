@@ -20,7 +20,7 @@ export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
               sub.key as subcategory_key, sub.name as subcategory,
               sv.question_count, sv.duration_minutes, sv.allowed_exam,
               ap.display_name as assigned_by_name,
-              sess.session_id, sess.has_session, sess.is_terminal,
+              sess.session_id, sess.has_session, sess.is_terminal, sess.is_in_progress,
               sess.score_correct, sess.score_total,
               sess.started_at, sess.terminal_at, sess.answered_count
          from ccat.student_assignments a
@@ -32,6 +32,7 @@ export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
          left join lateral (
            select s.id as session_id, true as has_session,
                   (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) as is_terminal,
+                  (s.state = 'IN_PROGRESS') as is_in_progress,
                   sr.score_correct::int as score_correct, sr.score_total::int as score_total,
                   s.started_at, s.terminal_at,
                   (select count(*)::int from ccat.session_answers sa
@@ -44,7 +45,7 @@ export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
               -- work done ON THE ASSIGNMENT, not the student's older history with the same set. Matches the
               -- admin/teacher list's derivation exactly.
               and s.started_at >= a.assigned_at
-            order by (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) desc, s.started_at desc
+            order by (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) desc, (s.state = 'IN_PROGRESS') desc, s.started_at desc
             limit 1
          ) sess on true
         where a.student_id = $1
@@ -54,8 +55,11 @@ export function registerAssignmentRoutes(app: FastifyInstance, db: DB) {
 
     return rows.map((r: any) => {
       const isExam = r.allowed_exam === true;
+      // in_progress is ONLY a live (IN_PROGRESS) session. An ABANDONED / INVALIDATED / CANCELLED session
+      // is terminal and not resumable (e.g. ended via "End & start" or Redo), so it reverts to "assigned"
+      // (Start), never "Continue".
       const status: 'assigned' | 'in_progress' | 'done' =
-        r.is_terminal ? 'done' : (r.has_session ? 'in_progress' : 'assigned');
+        r.is_terminal ? 'done' : (r.is_in_progress ? 'in_progress' : 'assigned');
       const total = Number(r.score_total ?? 0);
       return {
         id: r.id,

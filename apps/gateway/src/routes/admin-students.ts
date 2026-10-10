@@ -192,7 +192,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
               sub.key as subcategory_key, sub.name as subcategory,
               sv.question_count, sv.duration_minutes, sv.allowed_exam,
               ap.display_name as assigned_by_name,
-              sess.has_session, sess.is_terminal, sess.score_correct, sess.score_total,
+              sess.has_session, sess.is_terminal, sess.is_in_progress, sess.has_left, sess.score_correct, sess.score_total,
               sess.started_at, sess.terminal_at, sess.answered_count
          from ccat.student_assignments a
          join ccat.question_set_versions sv on sv.id = a.set_version_id
@@ -203,6 +203,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
          left join lateral (
            select true as has_session,
                   (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) as is_terminal,
+                  (s.state = 'IN_PROGRESS') as is_in_progress,
                   (s.left_at is not null) as has_left,
                   sr.score_correct::int as score_correct, sr.score_total::int as score_total,
                   s.started_at, s.terminal_at,
@@ -229,7 +230,7 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
         // Save & Leave stamps left_at (session stays resumable): admin treats a left attempt as Done,
         // but it carries no graded result until the student actually submits.
         const leftNotGraded = !r.is_terminal && r.has_left === true;
-        const status = (r.is_terminal || leftNotGraded) ? 'done' : (r.has_session ? 'in_progress' : 'assigned');
+        const status = (r.is_terminal || leftNotGraded) ? 'done' : (r.is_in_progress ? 'in_progress' : 'assigned');
         const wall = (r.started_at && r.terminal_at)
           ? Math.max(0, Math.round((new Date(r.terminal_at).getTime() - new Date(r.started_at).getTime()) / 1000)) : null;
         const total = Number(r.score_total ?? 0);
