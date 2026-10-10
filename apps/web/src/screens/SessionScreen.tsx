@@ -10,6 +10,14 @@ import { resolveAssetUrl } from '../components/Avatar';
 
 const KEYS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
+// Exam battery chip (top bar, exam mode only): icon per battery; the name comes from the DB category_name.
+const BATT_VIS: Record<string, { icon: string }> = {
+  verbal: { icon: '🔤' },
+  quantitative: { icon: '🔢' },
+  non_verbal: { icon: '🧩' },
+  nonverbal: { icon: '🧩' },
+};
+
 // Per-question PRACTICE feedback state (exam leaves this empty and stays silent).
 interface PQ {
   picks: string[];          // wrong options ruled out (disabled)
@@ -50,13 +58,6 @@ export function SessionScreen() {
   const [batState, setBatState] = useState<Record<string, { started_at: string; deadline_at: string; completed_at: string | null }>>({});
   const [nowTs, setNowTs] = useState(Date.now());
   const bufRef = useRef<AnswerBuffer | null>(null);
-  // Exam answer-save resilience: examSelRef mirrors examSel for closure-safe flushing; dirtyRef holds
-  // selections whose live save failed — retried on a timer and force-flushed before submit, so a flaky
-  // connection can never silently drop exam answers (which otherwise auto-submit as a 0/60 timeout).
-  const examSelRef = useRef<Record<string, string[]>>({});
-  const dirtyRef = useRef<Record<string, string[]>>({});
-  const sessRef = useRef<SessionWithQuestions | null>(null);
-  const endingRef = useRef(false); // true while submitting/ending so the auto-pause skips a finishing session
 
   const isExam = sess?.mode === 'exam';
 
@@ -69,7 +70,7 @@ export function SessionScreen() {
       bufRef.current = new AnswerBuffer(s.questions);
       const es: Record<string, string[]> = {};
       s.questions.forEach((q) => { if (q.selected_option_ids.length) es[q.question_version_id] = q.selected_option_ids; });
-      setExamSel(es); examSelRef.current = es;
+      setExamSel(es);
       // Seed per-battery timers from the server (rows exist only for batteries already started).
       const bs: Record<string, { started_at: string; deadline_at: string; completed_at: string | null }> = {};
       const bd: Record<string, boolean> = {};
@@ -106,33 +107,6 @@ export function SessionScreen() {
     const t = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [sess?.mode]);
-
-  // Pause a TIMED PRACTICE clock when the student leaves (in-app Back / route change) or hides the tab,
-  // so the away time never counts. pause_only => no "left/Done" mark. Exams keep running; a submitting
-  // or terminal session is skipped. Save & Leave already pauses via its own client.leave(id) call.
-  useEffect(() => { sessRef.current = sess; }, [sess]);
-  useEffect(() => {
-    const maybePause = () => {
-      const s = sessRef.current;
-      if (!s || s.mode !== 'practice' || s.timer_type !== 'timed' || endingRef.current) return;
-      void client.leave(id, true);
-    };
-    const onVis = () => { if (document.visibilityState === 'hidden') maybePause(); };
-    document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('pagehide', maybePause);
-    return () => {
-      document.removeEventListener('visibilitychange', onVis);
-      window.removeEventListener('pagehide', maybePause);
-      maybePause(); // unmount = navigated away (Back) within the SPA
-    };
-  }, [id]);
-
-  // Exam: retry unsaved answers every 8s so a dropped save recovers silently.
-  useEffect(() => {
-    if (sess?.mode !== 'exam') return;
-    const t = setInterval(() => { void flushDirty(); }, 8000);
-    return () => clearInterval(t);
-  }, [sess?.mode, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const batRemaining = (key: string): number | null => {
     const b = batState[key];
@@ -263,50 +237,20 @@ export function SessionScreen() {
   async function choose(optionId: string) {
     if (!q || !bufRef.current) return;
     const sel = [optionId];
-    const qid = q.question_version_id;
-    setExamSel((s) => { const next = { ...s, [qid]: sel }; examSelRef.current = next; return next; });
-    dirtyRef.current[qid] = sel; // treat as unsaved until the server acks
+    setExamSel((s) => ({ ...s, [q.question_version_id]: sel }));
     try {
-      const write = bufRef.current.next(qid, sel);
+      const write = bufRef.current.next(q.question_version_id, sel);
       const acks = await client.saveAnswers(id, [write]);
       acks.forEach((a) => bufRef.current!.accept(a.question_version_id, a.accepted_version));
-      delete dirtyRef.current[qid];
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'STALE_ANSWER') { delete dirtyRef.current[qid]; }
-      else flash('Saving… offline? We’ll keep retrying.'); // stays in dirtyRef for retry/flush
+      if (e instanceof ApiError && e.code === 'STALE_ANSWER') { /* ignore */ }
+      else flash('Could not save that answer — check your connection.');
     }
-  }
-  // Retry any selections whose live save failed. Returns true when nothing is left unsaved.
-  async function flushDirty(): Promise<boolean> {
-    const entries = Object.entries(dirtyRef.current);
-    if (!entries.length || !bufRef.current) return true;
-    const writes = entries.map(([qid, sel]) => bufRef.current!.next(qid, sel));
-    try {
-      const acks = await client.saveAnswers(id, writes);
-      acks.forEach((a) => bufRef.current!.accept(a.question_version_id, a.accepted_version));
-      for (const [qid] of entries) delete dirtyRef.current[qid];
-      return true;
-    } catch { return false; }
   }
 
   async function submit() {
     if (!sess || submitting) return;
     setSubmitting(true);
-    endingRef.current = true;
-    // Safety net: before finalizing an exam, re-send every selection so the server has the latest answers
-    // even if some live saves failed. saveAnswers is versioned + idempotent, so re-sends are safe.
-    if (sess.mode === 'exam' && bufRef.current) {
-      try {
-        const all = Object.entries(examSelRef.current)
-          .filter(([, sel]) => sel && sel.length)
-          .map(([qid, sel]) => bufRef.current!.next(qid, sel));
-        if (all.length) {
-          const acks = await client.saveAnswers(id, all);
-          acks.forEach((a) => bufRef.current!.accept(a.question_version_id, a.accepted_version));
-        }
-        dirtyRef.current = {};
-      } catch { /* best-effort — proceed; deadline/terminal handled below */ }
-    }
     try {
       await client.submit(id, `sub-${id}`, sess.session_version);
       nav(`/result/${id}`, { replace: true });
@@ -316,7 +260,6 @@ export function SessionScreen() {
     }
   }
   async function quit() {
-    endingRef.current = true;
     // Save & Leave leaves the session IN_PROGRESS (resumable) instead of abandoning it, so the set card
     // offers BOTH Resume and Redo afterwards — identical to exiting via the Back control. Practice answers
     // are already committed server-side per attempt, so nothing is lost by leaving without abandon. (Redo
@@ -357,6 +300,10 @@ export function SessionScreen() {
   const requiredCount = isMulti ? (q.multi_count ?? 2) : 1;
   const myMulti = multiPicks[q.question_version_id] ?? [];
   const subLine = [titleCase(sess.subcategory), sess.set_name].filter(Boolean).join(' · ');
+  // Exam battery chip: which battery this paper is (from the current question's category). Label only.
+  const examBattKey = (examBattery ?? q.category_key ?? '') as string;
+  const examBattName = isExam ? (q.category_name ?? (examBattKey ? examBattKey.replace(/_/g, '-') : '')) : '';
+  const examBatt = isExam && examBattName ? { name: titleCase(examBattName), icon: BATT_VIS[examBattKey]?.icon ?? '📝' } : null;
 
   return (
     <>
@@ -365,6 +312,12 @@ export function SessionScreen() {
         back
         right={(
           <span className="row" style={{ gap: 6 }}>
+            {examBatt && (
+              <span className="exam-batt-chip" title={`${examBatt.name} battery`}>
+                <span className="ebc-ic" aria-hidden>{examBatt.icon}</span>
+                <span className="ebc-lbl">{examBatt.name}</span>
+              </span>
+            )}
             {shownRemaining != null && <span className="pill" style={{ color: timerColor }}>⏳ {mmss(shownRemaining)}</span>}
           </span>
         )} />

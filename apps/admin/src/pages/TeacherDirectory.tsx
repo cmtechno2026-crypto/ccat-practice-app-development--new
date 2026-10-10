@@ -77,7 +77,6 @@ export function TeacherDirectory() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 640);
-  const [detailView, setDetailView] = useState<'slots' | 'profile'>('slots');
   const [consentOpen, setConsentOpen] = useState(false);
   useEffect(() => { const on = () => setIsMobile(window.innerWidth <= 640); window.addEventListener('resize', on); return () => window.removeEventListener('resize', on); }, []);
   const [slots, setSlots] = useState<Record<string, Slot[]>>({});
@@ -212,7 +211,7 @@ export function TeacherDirectory() {
     catch (e) { setSlotErr(m => ({ ...m, [id]: (e as Error).message || 'Failed to load slots' })); }
     finally { setLoadingId(null); }
   };
-  const selectTeacher = (id: string) => { setSelected(id); setPopSlot(null); setDetailView('slots'); setConsentOpen(false); ensureSlots(id); };
+  const selectTeacher = (id: string) => { setSelected(id); setPopSlot(null); setConsentOpen(false); ensureSlots(id); };
   // Auto-select the first teacher once the roster loads.
   useEffect(() => {
     if (!rows || !rows.length || selected) return;
@@ -612,12 +611,6 @@ export function TeacherDirectory() {
                     {reqBadge(d.id) > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber,#b45309)' }}>{reqBadge(d.id)} ready to book</span>}
                     {d.banned_at && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--coral,#c0392b)', background: 'var(--coral-soft,#fdece9)', borderRadius: 999, padding: '2px 10px' }}>Banned</span>}
                     {d.profile_approved === false && <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--amber,#b45309)', background: 'var(--amber-soft,#fbeeda)', borderRadius: 999, padding: '2px 10px' }}>Unapproved</span>}
-                    <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 999, background: 'var(--card2,#eef2f8)' }}>
-                      {([['slots', 'Slots & requests'], ['profile', 'Profile details']] as const).map(([v, lbl]) => {
-                        const on = detailView === v;
-                        return <button key={v} onClick={() => setDetailView(v)} style={{ minHeight: 30, padding: '0 13px', border: 0, borderRadius: 999, background: on ? 'var(--card,#fff)' : 'transparent', color: on ? 'var(--ink,#0f1b33)' : 'var(--muted,#64708a)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: on ? '0 1px 3px rgba(16,32,64,.18)' : 'none' }}>{lbl}</button>;
-                      })}
-                    </div>
                     {canManage && <button onClick={() => openEditProfile(d)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--brand,#2563eb)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--brand,#2563eb)', opacity: acting ? 0.6 : 1 }}>✎ Edit profile</button>}
                     {canManage && <button onClick={() => setApproval(d, d.profile_approved === false)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.profile_approved === false ? 'Approve' : 'Unapprove'}</button>}
                     {canManage && <button onClick={() => banTeacher(d, !d.banned_at)} disabled={acting} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line,#d7dce8)', background: 'var(--card,#fff)', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: 'var(--amber,#b45309)', opacity: acting ? 0.6 : 1 }}>{d.banned_at ? 'Unban' : 'Ban'}</button>}
@@ -625,7 +618,6 @@ export function TeacherDirectory() {
                   </div>
                 </div>
 
-                {detailView === 'profile' && <>
                 <div>
                   <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Teaches</h4>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -653,6 +645,16 @@ export function TeacherDirectory() {
                       {linkErr && <div style={{ color: 'var(--coral,#c0392b)', fontSize: 12, marginTop: 5 }}>{linkErr}</div>}
                     </div>
                   )}
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 4px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Availability</h4>
+                  {renderSlots(d.id)}
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Parent requests {reqBadge(d.id) > 0 && <span style={{ ...countBadge, background: 'var(--amber,#b45309)' }}>{reqBadge(d.id)}</span>}</h4>
+                  {renderRequests(d.id)}
                 </div>
 
                 <div>
@@ -722,18 +724,7 @@ export function TeacherDirectory() {
                   );
                 })()}
 
-                </>}
-                {detailView === 'slots' && <>
-                <div>
-                  <h4 style={{ margin: '0 0 4px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Availability</h4>
-                  {renderSlots(d.id)}
-                </div>
-
-                <div>
-                  <h4 style={{ margin: '0 0 8px', fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted,#64748b)' }}>Parent requests {reqBadge(d.id) > 0 && <span style={{ ...countBadge, background: 'var(--amber,#b45309)' }}>{reqBadge(d.id)}</span>}</h4>
-                  {renderRequests(d.id)}
-                </div>
-                </>}    </div>
+    </div>
   );
 
 
