@@ -50,6 +50,11 @@ export function SessionScreen() {
   const [batState, setBatState] = useState<Record<string, { started_at: string; deadline_at: string; completed_at: string | null }>>({});
   const [nowTs, setNowTs] = useState(Date.now());
   const bufRef = useRef<AnswerBuffer | null>(null);
+  // Exam answer-save resilience: examSelRef mirrors examSel for closure-safe flushing; dirtyRef holds
+  // selections whose live save failed — retried on a timer and force-flushed before submit, so a flaky
+  // connection can never silently drop exam answers (which otherwise auto-submit as a 0/60 timeout).
+  const examSelRef = useRef<Record<string, string[]>>({});
+  const dirtyRef = useRef<Record<string, string[]>>({});
 
   const isExam = sess?.mode === 'exam';
 
@@ -62,7 +67,7 @@ export function SessionScreen() {
       bufRef.current = new AnswerBuffer(s.questions);
       const es: Record<string, string[]> = {};
       s.questions.forEach((q) => { if (q.selected_option_ids.length) es[q.question_version_id] = q.selected_option_ids; });
-      setExamSel(es);
+      setExamSel(es); examSelRef.current = es;
       // Seed per-battery timers from the server (rows exist only for batteries already started).
       const bs: Record<string, { started_at: string; deadline_at: string; completed_at: string | null }> = {};
       const bd: Record<string, boolean> = {};
@@ -99,6 +104,13 @@ export function SessionScreen() {
     const t = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [sess?.mode]);
+
+  // Exam: retry unsaved answers every 8s so a dropped save recovers silently.
+  useEffect(() => {
+    if (sess?.mode !== 'exam') return;
+    const t = setInterval(() => { void flushDirty(); }, 8000);
+    return () => clearInterval(t);
+  }, [sess?.mode, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const batRemaining = (key: string): number | null => {
     const b = batState[key];
@@ -229,20 +241,49 @@ export function SessionScreen() {
   async function choose(optionId: string) {
     if (!q || !bufRef.current) return;
     const sel = [optionId];
-    setExamSel((s) => ({ ...s, [q.question_version_id]: sel }));
+    const qid = q.question_version_id;
+    setExamSel((s) => { const next = { ...s, [qid]: sel }; examSelRef.current = next; return next; });
+    dirtyRef.current[qid] = sel; // treat as unsaved until the server acks
     try {
-      const write = bufRef.current.next(q.question_version_id, sel);
+      const write = bufRef.current.next(qid, sel);
       const acks = await client.saveAnswers(id, [write]);
       acks.forEach((a) => bufRef.current!.accept(a.question_version_id, a.accepted_version));
+      delete dirtyRef.current[qid];
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'STALE_ANSWER') { /* ignore */ }
-      else flash('Could not save that answer — check your connection.');
+      if (e instanceof ApiError && e.code === 'STALE_ANSWER') { delete dirtyRef.current[qid]; }
+      else flash('Saving… offline? We’ll keep retrying.'); // stays in dirtyRef for retry/flush
     }
+  }
+  // Retry any selections whose live save failed. Returns true when nothing is left unsaved.
+  async function flushDirty(): Promise<boolean> {
+    const entries = Object.entries(dirtyRef.current);
+    if (!entries.length || !bufRef.current) return true;
+    const writes = entries.map(([qid, sel]) => bufRef.current!.next(qid, sel));
+    try {
+      const acks = await client.saveAnswers(id, writes);
+      acks.forEach((a) => bufRef.current!.accept(a.question_version_id, a.accepted_version));
+      for (const [qid] of entries) delete dirtyRef.current[qid];
+      return true;
+    } catch { return false; }
   }
 
   async function submit() {
     if (!sess || submitting) return;
     setSubmitting(true);
+    // Safety net: before finalizing an exam, re-send every selection so the server has the latest answers
+    // even if some live saves failed. saveAnswers is versioned + idempotent, so re-sends are safe.
+    if (sess.mode === 'exam' && bufRef.current) {
+      try {
+        const all = Object.entries(examSelRef.current)
+          .filter(([, sel]) => sel && sel.length)
+          .map(([qid, sel]) => bufRef.current!.next(qid, sel));
+        if (all.length) {
+          const acks = await client.saveAnswers(id, all);
+          acks.forEach((a) => bufRef.current!.accept(a.question_version_id, a.accepted_version));
+        }
+        dirtyRef.current = {};
+      } catch { /* best-effort — proceed; deadline/terminal handled below */ }
+    }
     try {
       await client.submit(id, `sub-${id}`, sess.session_version);
       nav(`/result/${id}`, { replace: true });

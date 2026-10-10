@@ -211,8 +211,14 @@ export function registerAdminStudentDetailRoutes(app: FastifyInstance, db: DB, c
              from ccat.sessions s
              left join ccat.session_results sr on sr.session_id = s.id
             where s.student_id = a.student_id and s.set_version_id = a.set_version_id
-              and s.started_at >= a.assigned_at   -- only a REDO after the set was assigned counts
-            order by (sr.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')) desc, s.started_at desc
+              -- The assignment reflects the attempt AS OF assignment time: the LATEST attempt started
+              -- on/before assigned_at (so a set the student already did shows its result right after
+              -- assigning), or, when there is none, the FIRST attempt started after. Later redos go to
+              -- Battery/Exam Progress only and do NOT move the assignment; re-assigning (remove + add)
+              -- sets a new assigned_at and re-baselines to the newest attempt.
+            order by (s.started_at <= a.assigned_at) desc,
+                     case when s.started_at <= a.assigned_at then s.started_at end desc nulls last,
+                     s.started_at asc
             limit 1
          ) sess on true
         where a.student_id = $1

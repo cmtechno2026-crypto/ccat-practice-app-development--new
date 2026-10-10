@@ -72,6 +72,9 @@ export async function computeExamHistory(db: DB, sid: string, range: { from?: st
   const cond: string[] = [
     "s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')",
     "not exists (select 1 from ccat.sessions s2 join ccat.question_set_versions sv2 on sv2.id = s2.set_version_id where s2.student_id = $1 and s2.mode = 'exam' and s2.state = 'IN_PROGRESS' and sv2.question_set_id = qs.id)",
+    // Latest ANSWERED attempt per paper: an attempt with zero answered questions (e.g. a never-touched
+    // exam that auto-submitted at its deadline) is not representative and is excluded.
+    "exists (select 1 from ccat.session_answers sa where sa.session_id = s.id and coalesce(array_length(sa.selected_option_ids,1),0) > 0)",
   ];
   if (range.from) { params.push(range.from); cond.push(`s.terminal_at >= $${params.length}`); }
   if (range.to) { params.push(range.to); cond.push(`s.terminal_at < $${params.length}`); }
@@ -554,6 +557,9 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     const cond: string[] = [
       "s.student_id = $1", "s.mode = 'exam'", "r.terminal_state in ('SUBMITTED','AUTO_SUBMITTED')",
       "not exists (select 1 from ccat.sessions s2 join ccat.question_set_versions sv2 on sv2.id = s2.set_version_id where s2.student_id = $1 and s2.mode = 'exam' and s2.state = 'IN_PROGRESS' and sv2.question_set_id = qs.id)",
+      // Latest ANSWERED attempt per paper: a zero-answer attempt is excluded (never-touched exams that
+      // auto-submitted at their deadline must not mask a genuine earlier score).
+      "exists (select 1 from ccat.session_answers sa where sa.session_id = s.id and coalesce(array_length(sa.selected_option_ids,1),0) > 0)",
     ];
     if (q.from) { params.push(q.from); cond.push(`s.terminal_at >= $${params.length}`); }
     if (q.to) { params.push(q.to); cond.push(`s.terminal_at < $${params.length}`); }

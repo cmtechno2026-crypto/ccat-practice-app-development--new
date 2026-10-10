@@ -59,7 +59,14 @@ export async function finalizeSession(
       throw Errors.sessionVersionConflict();
     }
 
-    const terminalState = opts.finalizedBy === 'manual' ? 'SUBMITTED' : 'AUTO_SUBMITTED';
+    // A timed-out EXAM the student never answered is an ABANDONMENT, not a 0/60 result: it must not show
+    // as a graded paper, count toward "papers done", or grant streak/coins. Manual submit is always SUBMITTED.
+    const answeredCount = (await client.query(
+      `select count(*)::int as c from ccat.session_answers where session_id = $1 and coalesce(array_length(selected_option_ids,1),0) > 0`,
+      [sessionId],
+    )).rows[0]?.c ?? 0;
+    const emptyExamAuto = sess.mode === 'exam' && opts.finalizedBy !== 'manual' && answeredCount === 0;
+    const terminalState = opts.finalizedBy === 'manual' ? 'SUBMITTED' : (emptyExamAuto ? 'ABANDONED' : 'AUTO_SUBMITTED');
     const score = await scoreSession(client, sessionId, sess.set_version_id);
 
     const sub = await client.query(
@@ -69,44 +76,53 @@ export async function finalizeSession(
     );
     const submissionPk = sub.rows[0]!.id;
 
-    if (score.xp > 0) {
+    let coinsAwarded = 0;
+    let streak: Awaited<ReturnType<typeof bumpStreakAndMilestones>> | null = null;
+    let achievements: EarnedAchievement[] = [];
+    const xpAwarded = emptyExamAuto ? 0 : score.xp;
+
+    // Rewards + coverage credit + streak/achievements/readiness are skipped for an abandoned (unanswered)
+    // exam auto-finalize — it represents no work done.
+    if (!emptyExamAuto) {
+      if (score.xp > 0) {
+        await client.query(
+          `insert into ccat.xp_transactions(student_id, delta, source_kind, source_id)
+           values ($1,$2,'session_submit',$3)`,
+          [sess.student_id, score.xp, sessionId],
+        );
+        await client.query(
+          `update ccat.students set cached_xp_total = cached_xp_total + $2 where id = $1`,
+          [sess.student_id, score.xp],
+        );
+      }
+
+      // Coverage credit (§15): if the set belongs to the active learning-plan version for the
+      // student's grade, record a completion (idempotent per student+set+plan version).
       await client.query(
-        `insert into ccat.xp_transactions(student_id, delta, source_kind, source_id)
-         values ($1,$2,'session_submit',$3)`,
-        [sess.student_id, score.xp, sessionId],
+        `insert into ccat.set_completions(student_id, question_set_id, learning_plan_version_id, first_session_id, mode)
+         select s.student_id, qs.id, lpv.id, s.id, s.mode
+           from ccat.sessions s
+           join ccat.question_set_versions sv on sv.id = s.set_version_id
+           join ccat.question_sets qs on qs.id = sv.question_set_id
+           join ccat.students st on st.id = s.student_id
+           join ccat.learning_plans lp on lp.grade_id = st.grade_id
+           join ccat.learning_plan_versions lpv on lpv.learning_plan_id = lp.id and lpv.is_active = true
+           join ccat.learning_plan_sets lps on lps.learning_plan_version_id = lpv.id and lps.question_set_id = qs.id
+          where s.id = $1
+         on conflict (student_id, question_set_id, learning_plan_version_id) do nothing`,
+        [sessionId],
       );
-      await client.query(
-        `update ccat.students set cached_xp_total = cached_xp_total + $2 where id = $1`,
-        [sess.student_id, score.xp],
-      );
+
+      // Daily streak (Option A): increment for the student's local day + exactly-once milestone
+      // coins. Runs inside this finalize transaction so it's atomic and once-per-finalized-session.
+      streak = await bumpStreakAndMilestones(client, sess.student_id);
+      coinsAwarded = streak.milestone_coins;
     }
-
-    // Coverage credit (§15): if the set belongs to the active learning-plan version for the
-    // student's grade, record a completion (idempotent per student+set+plan version).
-    await client.query(
-      `insert into ccat.set_completions(student_id, question_set_id, learning_plan_version_id, first_session_id, mode)
-       select s.student_id, qs.id, lpv.id, s.id, s.mode
-         from ccat.sessions s
-         join ccat.question_set_versions sv on sv.id = s.set_version_id
-         join ccat.question_sets qs on qs.id = sv.question_set_id
-         join ccat.students st on st.id = s.student_id
-         join ccat.learning_plans lp on lp.grade_id = st.grade_id
-         join ccat.learning_plan_versions lpv on lpv.learning_plan_id = lp.id and lpv.is_active = true
-         join ccat.learning_plan_sets lps on lps.learning_plan_version_id = lpv.id and lps.question_set_id = qs.id
-        where s.id = $1
-       on conflict (student_id, question_set_id, learning_plan_version_id) do nothing`,
-      [sessionId],
-    );
-
-    // Daily streak (Option A): increment for the student's local day + exactly-once milestone
-    // coins. Runs inside this finalize transaction so it's atomic and once-per-finalized-session.
-    const streak = await bumpStreakAndMilestones(client, sess.student_id);
-    const coinsAwarded = streak.milestone_coins;
 
     await client.query(
       `insert into ccat.session_results(session_id, submission_pk, terminal_state, score_correct, score_total, xp_awarded, coins_awarded, detail)
        values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [sessionId, submissionPk, terminalState, score.correct, score.total, score.xp, coinsAwarded, JSON.stringify(score.detail)],
+      [sessionId, submissionPk, terminalState, score.correct, score.total, xpAwarded, coinsAwarded, JSON.stringify(score.detail)],
     );
     await client.query(
       `update ccat.sessions set state=$2, terminal_at=now(), session_version = session_version + 1 where id=$1`,
@@ -116,16 +132,18 @@ export async function finalizeSession(
     // the student goes, and the answer-guard trigger forbids updating an already-locked row.
     await client.query(`update ccat.session_answers set is_locked = true where session_id = $1 and is_locked = false`, [sessionId]);
 
-    // Achievement evaluation + atomic reward grants (§13.2 step 8, §19.4).
-    const achievements = await evaluateAchievements(client, sess.student_id, sessionId, { correct: score.correct, total: score.total }, streak.current);
+    if (!emptyExamAuto) {
+      // Achievement evaluation + atomic reward grants (§13.2 step 8, §19.4).
+      achievements = await evaluateAchievements(client, sess.student_id, sessionId, { correct: score.correct, total: score.total }, streak!.current);
 
-    // Readiness inputs recompute + snapshot (§16). Uses now-locked answers.
-    const readiness = await computeReadiness(client, sess.student_id);
-    await client.query(
-      `insert into ccat.readiness_snapshots(student_id, readiness_pct, insufficient_data, window_questions, band)
-       values ($1,$2,$3,$4,$5)`,
-      [sess.student_id, readiness.readiness_pct, readiness.insufficient_data, readiness.window_questions, readiness.band],
-    );
+      // Readiness inputs recompute + snapshot (§16). Uses now-locked answers.
+      const readiness = await computeReadiness(client, sess.student_id);
+      await client.query(
+        `insert into ccat.readiness_snapshots(student_id, readiness_pct, insufficient_data, window_questions, band)
+         values ($1,$2,$3,$4,$5)`,
+        [sess.student_id, readiness.readiness_pct, readiness.insufficient_data, readiness.window_questions, readiness.band],
+      );
+    }
 
     return {
       replay: false,
@@ -134,9 +152,9 @@ export async function finalizeSession(
         terminal_state: terminalState,
         score_correct: score.correct,
         score_total: score.total,
-        xp_awarded: score.xp,
+        xp_awarded: xpAwarded,
         coins_awarded: coinsAwarded,
-        streak: { current: streak.current, longest: streak.longest, milestone_coins: streak.milestone_coins },
+        streak: streak ? { current: streak.current, longest: streak.longest, milestone_coins: streak.milestone_coins } : undefined,
         achievements_unlocked: achievements,
       },
     } as FinalizeOutcome;

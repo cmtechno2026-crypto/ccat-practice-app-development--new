@@ -72,6 +72,8 @@ export function PracticeScreen() {
   const setId = sp.get('set');                  // start screen when set
   const { loading, error, data, reload } = useAsync(() => client.catalog(program), [program], `catalog:${program}`);
   const [starting, setStarting] = useState(false);
+  // Exam-conflict popup: set when the student tries to start a NEW exam while another exam is in progress.
+  const [examConflict, setExamConflict] = useState<{ running: CatalogItem; next: CatalogItem } | null>(null);
 
   const initial = loadPrefs();
   const [timerMin, setTimerMin] = useState<number | null>(initial.timerMin);
@@ -116,13 +118,19 @@ export function PracticeScreen() {
     }
   }, [battery, category, grouped, mode]); // eslint-disable-line
 
-  async function startSet(item: CatalogItem, resumeId?: string | null) {
+  async function startSet(item: CatalogItem, resumeId?: string | null, opts?: { force?: boolean }) {
     // Set the sidebar's active mode BEFORE the /session route mounts so Practice/Exam highlights
     // correctly from the first frame (no Practice flash while the session loads over the gateway).
     setActiveMode(mode === 'exam' ? 'exam' : 'practice');
     if (resumeId) { nav(`/session/${resumeId}`); return; }
     // Locked practice set → surface the Upgrade panel, never call the API.
     if (isLocked(item)) { openUpgrade(setFeature(item)); return; }
+    // One exam at a time: starting a NEW exam while another exam is still in progress prompts the student
+    // to resume the running one or end it first (prevents an abandoned paper auto-submitting as a 0/60).
+    if (mode === 'exam' && !opts?.force) {
+      const running = (data ?? []).find((c) => c.allowed_modes.includes('exam') && c.progress?.status === 'in_progress' && c.set_version_id !== item.set_version_id);
+      if (running) { setExamConflict({ running, next: item }); return; }
+    }
     setStarting(true);
     try {
       // Exam sets are always timed with the paper's own duration; practice uses the student's timer pref.
@@ -181,6 +189,49 @@ export function PracticeScreen() {
     if (sid) { try { await client.abandon(sid, true); } catch { /* already terminal — ignore */ } }
     await startSet(item);
   }
+
+  // "End & start new" from the exam-conflict popup: abandon the running exam, then start the new one.
+  async function endAndStart() {
+    if (!examConflict) return;
+    const { running, next } = examConflict;
+    setExamConflict(null);
+    const sid = running.progress?.session_id;
+    if (sid) { try { await client.abandon(sid, true); } catch { /* already terminal — ignore */ } }
+    await startSet(next, null, { force: true });
+  }
+  const examConflictEl = examConflict ? (() => {
+    const r = examConflict.running;
+    const label = (c: CatalogItem) => `${(c.category_name ?? c.category_key).replace('_', '-')} · ${c.name}`;
+    return (
+      <div className="modal-scrim" role="dialog" aria-label="Exam in progress" onClick={() => setExamConflict(null)}>
+        <div className="modal" style={{ maxWidth: 360, position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+          <button aria-label="Close" onClick={() => setExamConflict(null)}
+            style={{ position: 'absolute', top: 10, right: 10, width: 30, height: 30, borderRadius: 8, border: 0, background: 'var(--coral, #e0533d)', color: '#fff', fontSize: 16, fontWeight: 900, lineHeight: 1, cursor: 'pointer' }}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, paddingRight: 34 }}>
+            <div style={{ width: 34, height: 34, flex: 'none', borderRadius: 10, background: 'var(--amber-bg, #fdf3e2)', color: 'var(--amber, #b7791f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }} aria-hidden>⚠️</div>
+            <h3 style={{ margin: 0, fontSize: 16.5 }}>An exam is still in progress</h3>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid var(--line, #e5e9f2)', borderRadius: 14, padding: '13px 14px', marginBottom: 16 }}>
+            <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, background: 'var(--primary, #2f6fd0)' }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 14.5 }}>{label(r)}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted, #6b7389)', marginTop: 2 }}>Exam paper{r.duration_minutes ? ` · ${r.duration_minutes} min` : ''}{r.progress?.answered_count != null ? ` · ${r.progress.answered_count} of ${r.question_count} answered` : ''}</div>
+            </div>
+            {r.progress?.deadline_at && (
+              <div style={{ marginLeft: 'auto', textAlign: 'right', flex: 'none' }}>
+                <div style={{ fontSize: 15, fontWeight: 900 }}><ExamCountdown deadline={r.progress.deadline_at} /></div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted, #6b7389)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>left</div>
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            <button className="btn" onClick={() => { const sid = r.progress?.session_id; setExamConflict(null); if (sid) nav(`/session/${sid}`); }}>↩ Resume this exam</button>
+            <button className="btn" style={{ background: 'var(--coral, #e0533d)', color: '#fff' }} onClick={() => void endAndStart()}>End &amp; start {label(examConflict.next)}</button>
+          </div>
+        </div>
+      </div>
+    );
+  })() : null;
 
   // ============================ EXAM (battery-first → per-battery set list) ============================
   // Exam page mirrors the Practice battery landing: 3 battery cards → click a battery → that battery's
@@ -251,6 +302,7 @@ export function PracticeScreen() {
               );
             })}
           </div>
+          {examConflictEl}
           {upgradeEl}
         </>
       );
