@@ -555,7 +555,7 @@ export function TeacherDirectory() {
             <div key={r.id} style={{ border: '1px solid var(--line,#e6e6ef)', borderLeft: '4px solid ' + (canBook ? 'var(--brand,#2f6fd0)' : r.teacher_status === 'declined' ? 'var(--coral,#c0392b)' : '#e2c05a'), borderRadius: 12, padding: 12, background: 'var(--card,#fff)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 800 }}>{r.parent_name}</span>
-                {tstatusChip(r.teacher_status)}
+                {r.status === 'pending' && tstatusChip(r.teacher_status)}
                 {bstatusChip(r.status)}
                 <span className="muted" style={{ fontSize: 12, marginLeft: 'auto' }}>{new Date(r.created_at).toLocaleDateString()}</span>
               </div>
