@@ -37,6 +37,10 @@ export function SessionScreen() {
   const [examSel, setExamSel] = useState<Record<string, string[]>>({});
   const [pq, setPq] = useState<Record<string, PQ>>({});
   const [multiPicks, setMultiPicks] = useState<Record<string, string[]>>({}); // practice multi-select staging
+  // Optimistic feedback: the option the student just tapped is highlighted + spinnered immediately, and
+  // all options are disabled, while the attempt round-trips to the gateway (cross-region latency ~1s).
+  const [pendingOid, setPendingOid] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   const [hintOpen, setHintOpen] = useState<Record<string, boolean>>({});
   const [quitConfirm, setQuitConfirm] = useState(false);
   // Exam batteries: null = the battery lobby; otherwise the active battery's category_key.
@@ -72,7 +76,11 @@ export function SessionScreen() {
       }
       setRemaining(remainingSeconds(s.deadline_at));
     }).catch((e) => setErr(e instanceof ApiError ? e.message : (e as Error).message));
-    return () => { alive = false; setActiveMode(null); };
+    // NOTE: do NOT reset activeMode to null on unmount. Blanking it caused the sidebar to fall back to
+    // Practice on the /result route (and briefly mid-transition), because null is treated as "practice".
+    // The mode only matters on /session and /result, and both screens set it from their own loaded data;
+    // /practice and /practice?mode=exam highlight purely from the URL, so a stale value can't mis-highlight.
+    return () => { alive = false; };
   }, [id]);
 
   useEffect(() => {
@@ -162,14 +170,20 @@ export function SessionScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sess, idx, examBattery]);
 
+  // Changing question (or exam battery) cancels any pending optimistic highlight/disable.
+  useEffect(() => { setChecking(false); setPendingOid(null); }, [idx, examBattery]);
+
   // ---- PRACTICE: per-question attempt with instant feedback (single OR multi "pick all") ----
   async function attempt(selected: string | string[]) {
     if (!q) return;
     const qid = q.question_version_id;
     const cur = pq[qid];
-    if (cur?.locked) return;
+    if (cur?.locked || checking) return;
     const picksArr = Array.isArray(selected) ? selected : [selected];
     if (!Array.isArray(selected) && cur?.picks.includes(selected)) return;
+    // Optimistic: light up the tapped option now; lock out the others until the server answers.
+    setChecking(true);
+    setPendingOid(Array.isArray(selected) ? null : selected);
     try {
       const r: PracticeAttemptResult = await client.practiceAttempt(id, qid, selected);
       setPq((prev) => {
@@ -194,6 +208,9 @@ export function SessionScreen() {
       if (Array.isArray(selected)) setMultiPicks((m) => ({ ...m, [qid]: [] }));
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not check that answer.');
+    } finally {
+      setChecking(false);
+      setPendingOid(null);
     }
   }
   const toggleMultiPick = (oid: string) => {
@@ -353,6 +370,8 @@ export function SessionScreen() {
               else if (p.picks.includes(oid)) cls += ' wrong';
               disabled = p.locked || p.picks.includes(oid);
             }
+            // Optimistic feedback while the attempt is in flight: highlight the tapped option, freeze the rest.
+            if (!isExam && checking) { disabled = true; if (pendingOid === oid) cls += ' pending'; }
             const onClick = () => {
               if (isExam) return choose(oid);
               if (isMulti && !p?.locked) return toggleMultiPick(oid);
@@ -371,6 +390,7 @@ export function SessionScreen() {
                     </span>
                   );
                 })()}
+                {!isExam && checking && pendingOid === oid && <span className="opt-spin" aria-hidden style={{ marginLeft: 'auto' }} />}
                 {revealedCorrect && <span style={{ marginLeft: 'auto' }}>✅</span>}
                 {!isExam && p?.picks.includes(oid) && !revealedCorrect && <span style={{ marginLeft: 'auto' }}>❌</span>}
               </button>
@@ -379,7 +399,7 @@ export function SessionScreen() {
         </div>
 
         {isMulti && !p?.locked && (
-          <button className="btn" disabled={myMulti.length !== requiredCount} onClick={() => attempt(myMulti)}>Check answer</button>
+          <button className="btn" disabled={myMulti.length !== requiredCount || checking} onClick={() => attempt(myMulti)}>{checking ? 'Checking…' : 'Check answer'}</button>
         )}
 
         {/* PRACTICE feedback panel. The "reveal" case (locked & wrong) is the explanation panel — show it

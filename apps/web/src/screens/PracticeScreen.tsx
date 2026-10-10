@@ -54,7 +54,7 @@ function loadPrefs(): Prefs {
 
 export function PracticeScreen() {
   const nav = useNavigate();
-  const { flash, entitlements, entitlementsLoaded, program } = useApp();
+  const { flash, entitlements, entitlementsLoaded, program, setActiveMode } = useApp();
   const caps = capsOf(entitlements, entitlementsLoaded);
   const [upgrade, setUpgrade] = useState<UpgradeFeature | null>(null);
   // Membership-locked clicks go straight to the plan page (no interstitial popup) when payments is on;
@@ -117,6 +117,9 @@ export function PracticeScreen() {
   }, [battery, category, grouped, mode]); // eslint-disable-line
 
   async function startSet(item: CatalogItem, resumeId?: string | null) {
+    // Set the sidebar's active mode BEFORE the /session route mounts so Practice/Exam highlights
+    // correctly from the first frame (no Practice flash while the session loads over the gateway).
+    setActiveMode(mode === 'exam' ? 'exam' : 'practice');
     if (resumeId) { nav(`/session/${resumeId}`); return; }
     // Locked practice set → surface the Upgrade panel, never call the API.
     if (isLocked(item)) { openUpgrade(setFeature(item)); return; }
@@ -149,6 +152,7 @@ export function PracticeScreen() {
   // attempt, not a data wipe. Then start a clean session and open it at question 1.
   async function redoSet(item: CatalogItem) {
     if (isLocked(item)) { openUpgrade(setFeature(item)); return; }
+    setActiveMode('practice'); // redo is always a practice attempt
     setStarting(true);
     try {
       const sid = item.progress?.status === 'in_progress' ? item.progress.session_id : null;

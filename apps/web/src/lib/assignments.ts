@@ -29,8 +29,16 @@ export function assignDateStamp(iso: string): { day: string; mon: string } {
 // Open an assigned set. In-progress → resume the existing session; assigned → start a fresh session
 // (exam = timed with the paper's duration, practice = untimed); done → the caller decides (Review).
 // On any error, fall back to the Practice list so the button is never a dead end.
-export async function openAssignment(a: Assignment, nav: NavigateFunction, onError?: (msg: string) => void) {
+export async function openAssignment(
+  a: Assignment,
+  nav: NavigateFunction,
+  onError?: (msg: string) => void,
+  // Lets the caller set the sidebar's active mode BEFORE the /session route mounts, so the
+  // Practice/Exam highlight is correct immediately (no Practice flash while the session loads).
+  onMode?: (m: 'practice' | 'exam') => void,
+) {
   try {
+    onMode?.(a.is_exam ? 'exam' : 'practice');
     if (a.status === 'in_progress' && a.session_id) { nav(`/session/${a.session_id}`); return; }
     const isExam = a.is_exam;
     const durationSeconds = isExam ? Math.max(60, (a.duration_minutes ?? 30) * 60) : undefined;

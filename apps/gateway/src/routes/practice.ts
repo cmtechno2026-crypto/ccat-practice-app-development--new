@@ -32,42 +32,58 @@ export function registerPracticeRoutes(app: FastifyInstance, db: DB) {
       const selectedIds: string[] = Array.from(new Set(parsed.selectedOptionIds ?? [parsed.selectedOptionId!]));
       const studentId = req.student!.studentId;
 
-      // Session must be the caller's own, in progress, and PRACTICE.
-      const sres = await db.query(
-        `select id, mode, state, set_version_id from ccat.sessions where id = $1 and student_id = $2`,
-        [sessionId, studentId],
+      // Single combined read (replaces 3 serial round-trips): session ownership/state + question
+      // correctness (active set membership) + the current per-question attempt row, in one query.
+      // Cross-region Render↔Supabase latency dominates here, so collapsing 3 round-trips into 1 is
+      // the dominant win. The inner joins enforce "session owns an active membership of this
+      // question"; the LEFT JOIN brings the attempt row (null on first attempt).
+      const combined = await db.query(
+        `select s.mode, s.state, s.set_version_id,
+                qv.correct_option_ids, qv.explanation_blocks,
+                sa.selected_option_ids, sa.answer_version, sa.is_locked, sa.attempts
+           from ccat.sessions s
+           join ccat.set_version_questions svq
+             on svq.set_version_id = s.set_version_id
+            and svq.question_version_id = $2
+            and svq.active = true
+           join ccat.question_versions qv on qv.id = svq.question_version_id
+           left join ccat.session_answers sa
+             on sa.session_id = s.id and sa.question_version_id = $2
+          where s.id = $1 and s.student_id = $3`,
+        [sessionId, questionVersionId, studentId],
       );
-      if (sres.rows.length === 0) throw Errors.notFound('Session not found');
-      const sess = sres.rows[0]!;
+
+      let sess = combined.rows[0];
+      if (!sess) {
+        // 0 rows is ambiguous (missing session vs question-not-in-set) — a single cheap fallback
+        // ONLY on the error path preserves the exact original error distinctions.
+        const sres = await db.query(
+          `select mode, state from ccat.sessions where id = $1 and student_id = $2`,
+          [sessionId, studentId],
+        );
+        const s = sres.rows[0];
+        if (!s) throw Errors.notFound('Session not found');
+        if (s.state !== 'IN_PROGRESS') throw Errors.sessionTerminal();
+        if (s.mode !== 'practice') {
+          throw Errors.forbidden('PRACTICE_ONLY', 'Per-question feedback is available in practice mode only');
+        }
+        throw Errors.notFound('Question not found in this set');
+      }
       if (sess.state !== 'IN_PROGRESS') throw Errors.sessionTerminal();
       if (sess.mode !== 'practice') {
         // Exam (or any non-practice) can NEVER use per-question feedback.
         throw Errors.forbidden('PRACTICE_ONLY', 'Per-question feedback is available in practice mode only');
       }
 
-      // Question must belong to this session's set (active membership).
-      const qres = await db.query(
-        `select qv.correct_option_ids, qv.explanation_blocks
-           from ccat.set_version_questions svq
-           join ccat.question_versions qv on qv.id = svq.question_version_id
-          where svq.set_version_id = $1 and qv.id = $2 and svq.active = true`,
-        [sess.set_version_id, questionVersionId],
-      );
-      if (qres.rows.length === 0) throw Errors.notFound('Question not found in this set');
-      const correctIds: string[] = qres.rows[0]!.correct_option_ids ?? [];
-      const explanation = qres.rows[0]!.explanation_blocks ?? null; // authored; may be null → degrade
+      const correctIds: string[] = sess.correct_option_ids ?? [];
+      const explanation = sess.explanation_blocks ?? null; // authored; may be null → degrade
       const correctOptionId = correctIds[0] ?? null;
       const isMulti = correctIds.length > 1;
       // Set-equality grading: chosen set must exactly match the correct set (order-independent).
       const setsEqual = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
 
-      // Current per-question attempt state.
-      const cur = await db.query(
-        `select selected_option_ids, answer_version, is_locked, attempts
-           from ccat.session_answers where session_id = $1 and question_version_id = $2`,
-        [sessionId, questionVersionId],
-      );
-      const row = cur.rows[0];
+      // Current per-question attempt state (from the LEFT JOIN above; null on first attempt).
+      const row = sess.selected_option_ids == null && sess.attempts == null ? undefined : sess;
       // Reveal exposes the correct option(s) + authored explanation — only after commit.
       const reveal = () => ({ correctOptionId, correctOptionIds: correctIds, explanation });
 

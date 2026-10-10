@@ -1094,3 +1094,15 @@ p { line-height: 1.5; }
 
 /* NGAT workspace name in the AppBar top-right (T3 plain wordmark; NGAT-enabled accounts only) */
 .appbar-ws { font-weight:900; font-size:18px; letter-spacing:.08em; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.18); padding:2px 6px; }
+
+/* Optimistic answer-checking: the tapped option lights up (primary ring + tint) and shows a small
+   spinner the instant it's clicked, while the attempt round-trips to the gateway. All options are
+   disabled for that moment so a slow network can't read as a frozen/unresponsive UI. */
+.option.pending { border-color: var(--primary); background: var(--tint-blue); }
+.option.pending .key { background: var(--primary); color: #fff; }
+.option .opt-spin {
+  width: 18px; height: 18px; flex: 0 0 auto; border-radius: 50%;
+  border: 2px solid var(--primary); border-top-color: transparent;
+  animation: optspin .6s linear infinite;
+}
+@keyframes optspin { to { transform: rotate(360deg); } }

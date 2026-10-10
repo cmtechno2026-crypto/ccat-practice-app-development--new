@@ -751,6 +751,8 @@ function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSe
             <tbody>
               {items.map((a: any) => {
                 const ch = bChip(a.category_key, a.is_exam);
+                // Battery chip regardless of exam/practice, so exam rows show e.g. "Verbal" + "Exam".
+                const batt = ASG_BCHIP[a.category_key] || { bg: '#eef2f9', fg: '#475569', label: a.category_name || a.category_key };
                 const acc = a.result?.accuracyPct;
                 const accCol = acc == null ? 'inherit' : acc >= 70 ? '#0f9d58' : acc >= 45 ? '#b7791f' : '#e4574f';
                 const pctW = a.progress && a.progress.total > 0 ? Math.min(100, Math.round((100 * a.progress.answered) / a.progress.total)) : 0;
@@ -766,7 +768,10 @@ function AssignmentPanel({ studentId, onOpenSet }: { studentId: string; onOpenSe
                         {` · assigned ${timeAgo(a.assigned_at)}`}
                       </div>
                     </td>
-                    <td><span className="asgt-chip" style={{ background: ch.bg, color: ch.fg }}>{a.is_exam ? 'Exam' : ch.label}</span></td>
+                    <td>
+                      <span className="asgt-chip" style={{ background: batt.bg, color: batt.fg }}>{batt.label}</span>
+                      {a.is_exam && <span className="asgt-chip" style={{ background: '#fdf3e2', color: '#b7791f', marginLeft: 6 }}>Exam</span>}
+                    </td>
                     <td>
                       {a.status === 'done' && a.result ? (
                         <span><b style={{ fontWeight: 800 }}>{a.result.score.correct}/{a.result.score.total}</b> <span style={{ color: accCol, fontWeight: 700 }}>{acc != null ? `(${acc}%)` : ''}</span></span>

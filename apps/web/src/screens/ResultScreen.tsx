@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { pct, mmss } from '@ccat/client-core';
 import { ApiError } from '@ccat/api-client';
@@ -9,7 +9,7 @@ import { AppBar, Loader, ErrorNote, Card, useAsync } from '../components/ui';
 export function ResultScreen() {
   const { id = '' } = useParams();
   const nav = useNavigate();
-  const { flash } = useApp();
+  const { flash, setActiveMode } = useApp();
   const [retrying, setRetrying] = useState(false);
   const { loading, error, data, reload } = useAsync(async () => {
     const [result, session] = await Promise.all([
@@ -19,10 +19,19 @@ export function ResultScreen() {
     return { result, session };
   }, [id]);
 
+  // Keep the sidebar's Practice/Exam highlight correct on the shared /result route. The mode comes from
+  // the loaded result/session (SessionScreen no longer carries it here). result.mode is the source of
+  // truth; fall back to the session when the result hasn't resolved yet.
+  const resultMode = data?.result?.mode ?? data?.session?.mode;
+  useEffect(() => {
+    if (resultMode) setActiveMode(resultMode === 'exam' ? 'exam' : 'practice');
+  }, [resultMode, setActiveMode]);
+
   async function tryAgain() {
     if (!data?.session) return nav('/practice');
     setRetrying(true);
     const s = data.session;
+    setActiveMode(s.mode === 'exam' ? 'exam' : 'practice'); // keep highlight correct before /session mounts
     try {
       const min = s.duration_seconds ? Math.round(s.duration_seconds / 60) : null;
       const ns = await client.sessionStart(s.set_version_id, s.mode, s.timer_type, min ? min * 60 : undefined);

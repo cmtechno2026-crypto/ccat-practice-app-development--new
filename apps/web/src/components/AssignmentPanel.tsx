@@ -61,6 +61,7 @@ export function AssignmentPanel() {
 // ---- rows (shared shape between the Home panel and the full page; `compact` trims the page-only bits) ----
 
 export function TodoRow({ a, nav, flash, compact }: { a: Assignment; nav: ReturnType<typeof useNavigate>; flash: (m: string) => void; compact?: boolean }) {
+  const { setActiveMode } = useApp();
   const stamp = assignDateStamp(a.assigned_at);
   const vis = batteryVis(a.category_key);
   const cont = a.status === 'in_progress';
@@ -77,7 +78,7 @@ export function TodoRow({ a, nav, flash, compact }: { a: Assignment; nav: Return
           {!compact && a.question_count ? ` · ${a.question_count} questions` : ''}
         </div>
       </div>
-      <button className="asgn-start" onClick={() => openAssignment(a, nav, flash)}>
+      <button className="asgn-start" onClick={() => openAssignment(a, nav, flash, setActiveMode)}>
         {cont ? 'Continue' : 'Start'}
       </button>
     </div>
