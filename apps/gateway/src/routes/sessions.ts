@@ -192,16 +192,19 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     // the resume/end popup. Redo abandons the old exam first, so that path passes.
     if (body.mode === 'exam') {
       const running = await db.query(
-        `select s.id, qs.name from ccat.sessions s
+        `select s.id, s.set_version_id, qs.name from ccat.sessions s
            join ccat.question_set_versions sv on sv.id = s.set_version_id
            join ccat.question_sets qs on qs.id = sv.question_set_id
           where s.student_id = $1 and s.mode = 'exam' and s.state = 'IN_PROGRESS'
+          -- Prefer the SAME set the student is trying to start, so the client can resume it rather than
+          -- treat it as a different-exam conflict; otherwise the most recent in-progress exam.
+          order by (s.set_version_id = $2) desc, s.started_at desc
           limit 1`,
-        [studentId],
+        [studentId, body.set_version_id],
       );
       if (running.rows.length > 0) {
         throw new AppError(409, 'EXAM_IN_PROGRESS', 'You already have an exam in progress', {
-          session_id: running.rows[0]!.id, set_name: running.rows[0]!.name,
+          session_id: running.rows[0]!.id, set_version_id: running.rows[0]!.set_version_id, set_name: running.rows[0]!.name,
         });
       }
     }
@@ -297,6 +300,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     const s = await db.query(
       `select s.id, s.set_version_id, s.mode, s.timer_type, s.duration_seconds, s.state, s.session_version, s.started_at, s.deadline_at,
               s.question_order_seed, s.option_order_seed, sv.preserve_order, sv.battery_durations,
+              s.paused_remaining_seconds,
               qs.grade_id, sub.key as subcategory_key,
               qs.name as set_name, cat.key as category_key, sub.name as subcategory, d.key as difficulty
          from ccat.sessions s
@@ -321,6 +325,14 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
         maxQuestionsPerSet: null, // combine detected from subcategory key; avoids the out-of-band column
       });
     }
+    // Resume a paused TIMED PRACTICE: restart its clock from the stored remaining seconds (away time was
+    // not counted). Loading the session == resuming it. Exams are never paused, so this never touches them.
+    if (sess.mode === 'practice' && sess.timer_type === 'timed' && sess.state === 'IN_PROGRESS'
+        && sess.deadline_at == null && sess.paused_remaining_seconds != null) {
+      const newDeadline = new Date(Date.now() + Number(sess.paused_remaining_seconds) * 1000);
+      await db.query(`update ccat.sessions set deadline_at = $2, paused_remaining_seconds = null where id = $1`, [id, newDeadline]);
+      sess.deadline_at = newDeadline.toISOString();
+    }
     const qs = await db.query(
       `select svq.position, qv.id as question_version_id, qv.logical_question_id, qv.question_type, qv.prompt_blocks, qv.option_blocks,
               (coalesce(array_length(qv.correct_option_ids, 1), 1) > 1) as multi,
@@ -339,7 +351,7 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
     // Server-controlled deterministic shuffle by the session's stored seeds (§9.2, §17.3), unless the
     // set fixes authoring order (CONTENT-3 preserve_order), in which case serve by position.
     const orderedQuestions = sess.preserve_order ? qs.rows : seededShuffle(qs.rows, Number(sess.question_order_seed));
-    const { question_order_seed, option_order_seed, preserve_order, grade_id, subcategory_key, battery_durations, ...sessionOut } = sess;
+    const { question_order_seed, option_order_seed, preserve_order, grade_id, subcategory_key, battery_durations, paused_remaining_seconds, ...sessionOut } = sess;
     // Per-battery timing state (rows exist only for batteries the student has started).
     const bstate = await db.query(
       `select category_key, started_at, deadline_at, completed_at from ccat.session_batteries where session_id = $1`,
@@ -520,12 +532,25 @@ export function registerSessionRoutes(app: FastifyInstance, db: DB, cfg: Config)
   // resume flips the admin status back to In progress. No-op on a terminal session.
   app.post('/v1/sessions/:id/leave', { preHandler: [app.authenticateStudent] }, async (req) => {
     const id = (req.params as { id: string }).id;
+    // pause_only (auto-pause on Back / tab-hide) pauses the clock WITHOUT marking the set "left/Done";
+    // an explicit Save & Leave (pause_only false) does both. A TIMED PRACTICE session is paused by storing
+    // its remaining seconds and clearing deadline_at, so the away time never counts and the overdue worker
+    // can't finalize it. Exams are never paused (their server clock keeps running).
+    const pauseOnly = (req.body as { pause_only?: boolean } | null)?.pause_only === true;
     const r = await db.query(
-      `update ccat.sessions set left_at = now() where id = $1 and student_id = $2 and state = 'IN_PROGRESS' returning id`,
-      [id, req.student!.studentId],
+      `update ccat.sessions
+          set left_at = case when $3 then left_at else now() end,
+              paused_remaining_seconds = case
+                when mode = 'practice' and timer_type = 'timed' and deadline_at is not null
+                  then greatest(0, floor(extract(epoch from (deadline_at - now()))))::int
+                else paused_remaining_seconds end,
+              deadline_at = case when mode = 'practice' and timer_type = 'timed' then null else deadline_at end
+        where id = $1 and student_id = $2 and state = 'IN_PROGRESS'
+        returning id`,
+      [id, req.student!.studentId, pauseOnly],
     );
     if (r.rows.length === 0) throw Errors.notFound('Session not found');
-    return { session_id: id, left_at: true };
+    return { session_id: id, paused: true };
   });
 
   // GET /v1/sessions/:id/result — recovery after a lost response (§13.3)

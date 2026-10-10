@@ -31,7 +31,7 @@ function progressQs(q: ProgressQuery): string {
 
 // Thrown on any non-2xx response, carrying the Gateway's structured error envelope (§32.1).
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string, public requestId?: string) {
+  constructor(public status: number, public code: string, message: string, public requestId?: string, public details?: Record<string, unknown>) {
     super(message);
     this.name = 'ApiError';
   }
@@ -125,7 +125,7 @@ export class CcatClient {
         await this.tokens.clear();
       }
       const e = (json as ApiErrorBody | null)?.error;
-      throw new ApiError(res.status, e?.code ?? 'UNKNOWN', e?.message ?? res.statusText, e?.request_id);
+      throw new ApiError(res.status, e?.code ?? 'UNKNOWN', e?.message ?? res.statusText, e?.request_id, (e as { details?: Record<string, unknown> } | undefined)?.details);
     }
     return json as T;
   }
@@ -312,8 +312,8 @@ export class CcatClient {
   }
   // Save & Leave: records that the student exited WITHOUT submitting. Session stays IN_PROGRESS and
   // resumable; only stamps left_at so the admin assignment list shows the set as Done (ungraded).
-  leave(id: string) {
-    return this.request<{ session_id: string; left_at: boolean }>('POST', `/v1/sessions/${id}/leave`, { auth: true });
+  leave(id: string, pauseOnly = false) {
+    return this.request<{ session_id: string; paused: boolean }>('POST', `/v1/sessions/${id}/leave`, { auth: true, body: { pause_only: pauseOnly } });
   }
   batteryStart(sessionId: string, key: string) {
     return this.request<BatteryState>('POST', `/v1/sessions/${sessionId}/batteries/${key}/start`, { auth: true });

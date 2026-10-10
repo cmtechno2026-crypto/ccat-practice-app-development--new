@@ -187,6 +187,9 @@ export async function finalizeOverdueSessions(db: DB): Promise<number> {
   const { rows } = await db.query(
     `select id from ccat.sessions
       where state = 'IN_PROGRESS' and timer_type = 'timed'
+        -- EXAMS only: a timed practice session is pausable (deadline_at is cleared while the student is
+        -- away) and must finalize only when the student ends it or its clock hits 0 while actively in use.
+        and mode = 'exam'
         and (
           (deadline_at is not null and deadline_at <= now())
           or (duration_seconds is not null and started_at + make_interval(secs => duration_seconds) <= now())

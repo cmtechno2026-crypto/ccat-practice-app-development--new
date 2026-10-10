@@ -148,8 +148,11 @@ export function PracticeScreen() {
         openUpgrade(item.is_combine ? 'combine' : (mode === 'exam' ? 'exam' : 'practice'));
         return;
       }
-      // Server backstop: another exam is already in progress → show the resume/end popup instead of an error.
+      // Server backstop: another exam is already in progress.
       if (e instanceof ApiError && e.code === 'EXAM_IN_PROGRESS') {
+        const d = (e.details ?? {}) as { session_id?: string; set_version_id?: string };
+        // Same set already running → just resume it (no "end & start the same set" popup).
+        if (d.set_version_id === item.set_version_id && d.session_id) { nav(`/session/${d.session_id}`); return; }
         const running = (data ?? []).find((c) => c.allowed_modes.includes('exam') && c.progress?.status === 'in_progress' && c.set_version_id !== item.set_version_id);
         if (running) setExamConflict({ running, next: item });
         else { flash('You already have an exam in progress — finish it first.'); reload(); }

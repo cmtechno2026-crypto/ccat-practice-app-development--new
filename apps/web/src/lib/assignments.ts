@@ -1,5 +1,6 @@
 import type { NavigateFunction } from 'react-router-dom';
 import type { Assignment } from '@ccat/api-client';
+import { ApiError } from '@ccat/api-client';
 import { client } from './api';
 
 // Per-battery colour + tint for the assignment date stamp / dot (matches the Home progress rings).
@@ -49,7 +50,16 @@ export async function openAssignment(
       durationSeconds,
     );
     nav(`/session/${session.id}`);
-  } catch {
+  } catch (e) {
+    // One-exam-at-a-time backstop. If THIS exam is the one already running, resume it; if a DIFFERENT exam
+    // is running, send them to the exam list (the resume/end popup handles it) — never a dead end.
+    if (e instanceof ApiError && e.code === 'EXAM_IN_PROGRESS') {
+      const d = (e.details ?? {}) as { session_id?: string; set_version_id?: string };
+      if (d.set_version_id === a.set_version_id && d.session_id) { nav(`/session/${d.session_id}`); return; }
+      onError?.('Finish or end your current exam first.');
+      nav('/practice?mode=exam');
+      return;
+    }
     onError?.('Could not open this set — try it from Practice.');
     nav('/practice');
   }

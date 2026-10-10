@@ -55,6 +55,8 @@ export function SessionScreen() {
   // connection can never silently drop exam answers (which otherwise auto-submit as a 0/60 timeout).
   const examSelRef = useRef<Record<string, string[]>>({});
   const dirtyRef = useRef<Record<string, string[]>>({});
+  const sessRef = useRef<SessionWithQuestions | null>(null);
+  const endingRef = useRef(false); // true while submitting/ending so the auto-pause skips a finishing session
 
   const isExam = sess?.mode === 'exam';
 
@@ -104,6 +106,26 @@ export function SessionScreen() {
     const t = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [sess?.mode]);
+
+  // Pause a TIMED PRACTICE clock when the student leaves (in-app Back / route change) or hides the tab,
+  // so the away time never counts. pause_only => no "left/Done" mark. Exams keep running; a submitting
+  // or terminal session is skipped. Save & Leave already pauses via its own client.leave(id) call.
+  useEffect(() => { sessRef.current = sess; }, [sess]);
+  useEffect(() => {
+    const maybePause = () => {
+      const s = sessRef.current;
+      if (!s || s.mode !== 'practice' || s.timer_type !== 'timed' || endingRef.current) return;
+      void client.leave(id, true);
+    };
+    const onVis = () => { if (document.visibilityState === 'hidden') maybePause(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', maybePause);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', maybePause);
+      maybePause(); // unmount = navigated away (Back) within the SPA
+    };
+  }, [id]);
 
   // Exam: retry unsaved answers every 8s so a dropped save recovers silently.
   useEffect(() => {
@@ -270,6 +292,7 @@ export function SessionScreen() {
   async function submit() {
     if (!sess || submitting) return;
     setSubmitting(true);
+    endingRef.current = true;
     // Safety net: before finalizing an exam, re-send every selection so the server has the latest answers
     // even if some live saves failed. saveAnswers is versioned + idempotent, so re-sends are safe.
     if (sess.mode === 'exam' && bufRef.current) {
@@ -293,6 +316,7 @@ export function SessionScreen() {
     }
   }
   async function quit() {
+    endingRef.current = true;
     // Save & Leave leaves the session IN_PROGRESS (resumable) instead of abandoning it, so the set card
     // offers BOTH Resume and Redo afterwards — identical to exiting via the Back control. Practice answers
     // are already committed server-side per attempt, so nothing is lost by leaving without abandon. (Redo
