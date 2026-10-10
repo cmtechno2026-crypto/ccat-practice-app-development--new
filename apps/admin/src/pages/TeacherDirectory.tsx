@@ -20,7 +20,7 @@ function stBadge(t?: string | null) { const m = t ? SESSION_TYPE_META[t] : null;
 interface Req {
   id: string; num_classes: number; parent_name: string; parent_email: string; parent_phone: string | null;
   student_name: string | null; notes: string | null; status: string; teacher_status: string; teacher_decided_at: string | null;
-  created_at: string; slots: Array<{ slot_id: string; teacher_id: string; teacher_name: string; day_of_week: string; start_time: string; end_time: string; outcome: string }>;
+  created_at: string; slots: Array<{ slot_id: string; teacher_id: string; teacher_name: string; day_of_week: string; start_time: string; end_time: string; outcome: string; teacher_slot_status?: string }>;
 }
 
 const DAY_ABBR: Record<string, string> = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
@@ -540,17 +540,22 @@ export function TeacherDirectory() {
     return (
       <div style={{ display: 'grid', gap: 10 }}>
         {list.map(r => {
-          const canBook = r.teacher_status === 'accepted' && r.status === 'pending';
-          const terminal = r.status !== 'pending';
-          const canAct = !terminal && canManage && r.teacher_status !== 'declined';
           const mine = (r.slots || []).filter(s => s.teacher_id === id);
+          // Teacher decision derived from the authoritative per-slot statuses (the request-level
+          // teacher_status column can lag when a slot is accepted via a path that doesn't roll it up).
+          const mineTs = mine.map(s => s.teacher_slot_status || 'pending');
+          const effTeacherStatus = mineTs.length && mineTs.every(x => x !== 'pending')
+            ? (mineTs.some(x => x === 'accepted') ? 'accepted' : 'declined') : 'pending';
+          const canBook = effTeacherStatus === 'accepted' && r.status === 'pending';
+          const terminal = r.status !== 'pending';
+          const canAct = !terminal && canManage && effTeacherStatus !== 'declined';
           const mineIds = mine.map(s => s.slot_id);
           const picked = pickFor(r.id, mineIds);
           return (
-            <div key={r.id} style={{ border: '1px solid var(--line,#e6e6ef)', borderLeft: '4px solid ' + (canBook ? 'var(--brand,#2f6fd0)' : r.teacher_status === 'declined' ? 'var(--coral,#c0392b)' : '#e2c05a'), borderRadius: 12, padding: 12, background: 'var(--card,#fff)' }}>
+            <div key={r.id} style={{ border: '1px solid var(--line,#e6e6ef)', borderLeft: '4px solid ' + (canBook ? 'var(--brand,#2f6fd0)' : effTeacherStatus === 'declined' ? 'var(--coral,#c0392b)' : '#e2c05a'), borderRadius: 12, padding: 12, background: 'var(--card,#fff)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 800 }}>{r.parent_name}</span>
-                {r.status === 'pending' && tstatusChip(r.teacher_status)}
+                {r.status === 'pending' && tstatusChip(effTeacherStatus)}
                 {bstatusChip(r.status)}
                 <span className="muted" style={{ fontSize: 12, marginLeft: 'auto' }}>{new Date(r.created_at).toLocaleDateString()}</span>
               </div>
